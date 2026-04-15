@@ -1,0 +1,2593 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Plus, 
+  LayoutDashboard, 
+  Calendar as CalendarIcon, 
+  DollarSign, 
+  FileText, 
+  LogOut, 
+  Search,
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+  Download,
+  Trash2,
+  Pencil,
+  Eye,
+  User as UserIcon,
+  Receipt as ReceiptIcon,
+  Share2,
+  Settings,
+  Menu,
+  X
+} from 'lucide-react';
+import { 
+  collection, 
+  onSnapshot, 
+  addDoc, 
+  updateDoc, 
+  doc, 
+  deleteDoc, 
+  query, 
+  orderBy, 
+  Timestamp,
+  setDoc,
+  getDoc
+} from 'firebase/firestore';
+import { 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  onAuthStateChanged, 
+  signOut,
+  User as FirebaseUser
+} from 'firebase/auth';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer, 
+  Cell,
+  PieChart,
+  Pie
+} from 'recharts';
+import { jsPDF } from 'jspdf';
+import 'jspdf-autotable';
+
+import { db, auth, handleFirestoreError, OperationType } from './firebase';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableHead, 
+  TableHeader, 
+  TableRow 
+} from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogDescription, 
+  DialogFooter, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogTrigger 
+} from '@/components/ui/dialog';
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from '@/components/ui/select';
+import { Toaster } from '@/components/ui/sonner';
+import { toast } from 'sonner';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
+
+// --- Helpers ---
+
+function valorPorExtenso(valor: number) {
+  const unidades = ["", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove"];
+  const dezenas = ["", "dez", "vinte", "trinta", "quarenta", "cinquenta", "sessenta", "setenta", "oitenta", "noventa"];
+  const especiais = ["dez", "onze", "doze", "treze", "quatorze", "quinze", "dezesseis", "dezessete", "dezoito", "dezenove"];
+  const centenas = ["", "cem", "duzentos", "trezentos", "quatrocentos", "quinhentos", "seiscentos", "setecentos", "oitocentos", "novecentos"];
+
+  const converter = (n: number): string => {
+    if (n === 0) return "";
+    if (n < 10) return unidades[n];
+    if (n < 20) return especiais[n - 10];
+    if (n < 100) {
+      const d = Math.floor(n / 10);
+      const u = n % 10;
+      return dezenas[d] + (u > 0 ? " e " + unidades[u] : "");
+    }
+    if (n === 100) return "cem";
+    if (n < 1000) {
+      const c = Math.floor(n / 100);
+      const resto = n % 100;
+      let s = centenas[c];
+      if (c === 1 && resto > 0) s = "cento";
+      return s + (resto > 0 ? " e " + converter(resto) : "");
+    }
+    return "";
+  };
+
+  const partes = valor.toFixed(2).split(".");
+  const reais = parseInt(partes[0]);
+  const centavos = parseInt(partes[1]);
+
+  let resultado = "";
+
+  if (reais > 0) {
+    if (reais < 1000) {
+      resultado += converter(reais);
+    } else if (reais < 1000000) {
+      const milhar = Math.floor(reais / 1000);
+      const resto = reais % 1000;
+      resultado += (milhar === 1 ? "" : converter(milhar)) + " mil";
+      if (resto > 0) {
+        resultado += (resto < 100 || resto % 100 === 0 ? " e " : ", ") + converter(resto);
+      }
+    }
+    resultado += reais === 1 ? " real" : " reais";
+  }
+
+  if (centavos > 0) {
+    if (resultado !== "") resultado += " e ";
+    resultado += converter(centavos) + (centavos === 1 ? " centavo" : " centavos");
+  }
+
+  return resultado || "Zero reais";
+}
+
+// --- Types ---
+
+interface TechnicalVisit {
+  id: string;
+  clientName: string;
+  clientPhone: string;
+  address: string;
+  date: any; // Firestore Timestamp
+  scheduledTime?: string;
+  type: 'CFTV' | 'Alarme' | 'Cerca Elétrica' | 'Motor de Portão' | 'Outros';
+  status: 'Agendada' | 'Em Andamento' | 'Concluída' | 'Cancelada';
+  description: string;
+  technicianId: string;
+  technicianName: string;
+  totalValue: number;
+  createdAt: any;
+}
+
+interface FinancialRecord {
+  id: string;
+  type: 'Receita' | 'Despesa';
+  category: string;
+  description: string;
+  value: number;
+  date: any;
+  visitId?: string;
+}
+
+interface Budget {
+  id: string;
+  clientName: string;
+  clientEmail: string;
+  items: { description: string; quantity: number; price: number }[];
+  total: number;
+  status: 'Pendente' | 'Aprovado' | 'Rejeitado';
+  createdAt: any;
+}
+
+interface Client {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  document?: string; // CPF or CNPJ
+  type: 'Avulso' | 'Contrato';
+  contractValue?: number;
+  serviceSpecification?: string;
+  createdAt: any;
+}
+
+interface Receipt {
+  id: string;
+  clientName: string;
+  clientType?: 'Avulso' | 'Contrato';
+  serviceSpecification: string;
+  value: number;
+  referenceMonth?: string;
+  paymentMethod: 'Dinheiro' | 'PIX' | 'Cartão';
+  date: any;
+  createdAt: any;
+}
+
+interface PixSettings {
+  key: string;
+  bank: string;
+  favored: string;
+  document: string;
+}
+
+// --- Components ---
+
+export default function App() {
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [visits, setVisits] = useState<TechnicalVisit[]>([]);
+  const [financials, setFinancials] = useState<FinancialRecord[]>([]);
+  const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [userPhotoError, setUserPhotoError] = useState(false);
+  const [pixSettings, setPixSettings] = useState<PixSettings>({
+    key: '',
+    bank: '',
+    favored: '',
+    document: ''
+  });
+
+  // Auth Listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        // Ensure user document exists
+        const userRef = doc(db, 'users', currentUser.uid);
+        const userSnap = await getDoc(userRef);
+        if (!userSnap.exists()) {
+          await setDoc(userRef, {
+            uid: currentUser.uid,
+            email: currentUser.email,
+            displayName: currentUser.displayName,
+            role: 'admin', // Default to admin for the first user or based on logic
+            createdAt: Timestamp.now()
+          });
+        }
+      }
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Data Listeners
+  useEffect(() => {
+    if (!user) return;
+
+    const visitsUnsubscribe = onSnapshot(
+      query(collection(db, 'visits'), orderBy('date', 'desc')),
+      (snapshot) => {
+        setVisits(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TechnicalVisit)));
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, 'visits')
+    );
+
+    const financialUnsubscribe = onSnapshot(
+      query(collection(db, 'financial'), orderBy('date', 'desc')),
+      (snapshot) => {
+        setFinancials(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FinancialRecord)));
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, 'financial')
+    );
+
+    const budgetsUnsubscribe = onSnapshot(
+      query(collection(db, 'budgets'), orderBy('createdAt', 'desc')),
+      (snapshot) => {
+        setBudgets(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Budget)));
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, 'budgets')
+    );
+
+    const clientsUnsubscribe = onSnapshot(
+      query(collection(db, 'clients'), orderBy('name', 'asc')),
+      (snapshot) => {
+        setClients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client)));
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, 'clients')
+    );
+
+    const receiptsUnsubscribe = onSnapshot(
+      query(collection(db, 'receipts'), orderBy('createdAt', 'desc')),
+      (snapshot) => {
+        setReceipts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Receipt)));
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, 'receipts')
+    );
+
+    const pixUnsubscribe = onSnapshot(
+      doc(db, 'settings', 'pix'),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          setPixSettings(snapshot.data() as PixSettings);
+        }
+      },
+      (error) => handleFirestoreError(error, OperationType.GET, 'settings/pix')
+    );
+
+    return () => {
+      visitsUnsubscribe();
+      financialUnsubscribe();
+      budgetsUnsubscribe();
+      clientsUnsubscribe();
+      receiptsUnsubscribe();
+      pixUnsubscribe();
+    };
+  }, [user]);
+
+  const handleLogin = async () => {
+    const provider = new GoogleAuthProvider();
+    try {
+      await signInWithPopup(auth, provider);
+      toast.success('Login realizado com sucesso!');
+    } catch (error) {
+      console.error(error);
+      toast.error('Erro ao fazer login.');
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      toast.success('Sessão encerrada.');
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#0f1115]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#3b82f6] border-t-transparent"></div>
+          <p className="text-sm font-medium text-[#71717a]">Carregando SegurPro...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center bg-[#0f1115] p-6">
+        <div className="w-full max-w-md space-y-8 text-center">
+          <div className="space-y-2">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[#3b82f6] text-white shadow-xl shadow-blue-900/20">
+              <CheckCircle2 size={32} />
+            </div>
+            <h1 className="text-3xl font-bold tracking-tight text-white">SegurPro Gestão</h1>
+            <p className="text-[#71717a]">Controle total para instaladores de segurança eletrônica.</p>
+          </div>
+          <Card className="border-[#2d3139] bg-[#1a1d23]">
+            <CardHeader>
+              <CardTitle className="text-white">Bem-vindo</CardTitle>
+              <CardDescription className="text-[#71717a]">Faça login para gerenciar suas visitas e finanças.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button onClick={handleLogin} className="w-full gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none">
+                <UserIcon size={18} />
+                Entrar com Google
+              </Button>
+            </CardContent>
+          </Card>
+          <p className="text-xs text-[#555]">© 2026 SegurPro Gestão. Todos os direitos reservados.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-screen bg-[#0f1115] text-[#e0e0e0] overflow-hidden">
+      <Toaster position="top-right" theme="dark" />
+      
+      {/* Sidebar - Desktop */}
+      <aside className="hidden md:flex w-[240px] flex-col border-r border-[#2d3139] bg-[#1a1d23]">
+        <div className="flex h-20 items-center px-8">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#3b82f6] text-white">
+              <CheckCircle2 size={18} />
+            </div>
+            <span className="font-bold tracking-wider text-white text-lg uppercase">SegurPro</span>
+          </div>
+        </div>
+        <ScrollArea className="flex-1 px-4 py-4">
+          <nav className="space-y-1">
+            <SidebarItem 
+              icon={<LayoutDashboard size={18} />} 
+              label="Painel Geral" 
+              active={activeTab === 'dashboard'} 
+              onClick={() => setActiveTab('dashboard')} 
+            />
+            <SidebarItem 
+              icon={<CalendarIcon size={18} />} 
+              label="Visitas Técnicas" 
+              active={activeTab === 'visits'} 
+              onClick={() => setActiveTab('visits')} 
+            />
+            <SidebarItem 
+              icon={<DollarSign size={18} />} 
+              label="Financeiro" 
+              active={activeTab === 'financial'} 
+              onClick={() => setActiveTab('financial')} 
+            />
+            <SidebarItem 
+              icon={<FileText size={18} />} 
+              label="Orçamentos" 
+              active={activeTab === 'budgets'} 
+              onClick={() => setActiveTab('budgets')} 
+            />
+            
+            <div className="pt-6 pb-2 px-4">
+              <span className="text-[11px] uppercase tracking-widest text-[#555] font-semibold">Gestão</span>
+            </div>
+            <SidebarItem 
+              icon={<UserIcon size={18} />} 
+              label="Clientes" 
+              active={activeTab === 'clients'} 
+              onClick={() => setActiveTab('clients')} 
+            />
+            <SidebarItem 
+              icon={<ReceiptIcon size={18} />} 
+              label="Recibos" 
+              active={activeTab === 'receipts'} 
+              onClick={() => setActiveTab('receipts')} 
+            />
+            <SidebarItem 
+              icon={<Settings size={18} />} 
+              label="Configurações" 
+              active={activeTab === 'settings'} 
+              onClick={() => setActiveTab('settings')} 
+            />
+            <SidebarItem 
+              icon={<FileText size={18} />} 
+              label="Relatórios Diários" 
+              active={false} 
+              onClick={() => {}} 
+            />
+          </nav>
+        </ScrollArea>
+        <div className="p-6 border-t border-[#2d3139]">
+          <div className="flex items-center gap-3 px-3 py-3 rounded-lg bg-[#2d3139]/30 mb-4">
+            <div className="h-8 w-8 rounded-full bg-[#2d3139] flex items-center justify-center overflow-hidden border border-[#2d3139]">
+              {user.photoURL && !userPhotoError ? (
+                <img 
+                  src={user.photoURL} 
+                  alt="" 
+                  referrerPolicy="no-referrer" 
+                  onError={() => setUserPhotoError(true)}
+                />
+              ) : <UserIcon size={16} />}
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <p className="text-xs font-semibold truncate text-white">{user.displayName}</p>
+              <p className="text-[10px] text-[#71717a] truncate">{user.email}</p>
+            </div>
+          </div>
+          <Button variant="ghost" className="w-full justify-start gap-2 text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={handleLogout}>
+            <LogOut size={18} />
+            Sair
+          </Button>
+        </div>
+      </aside>
+
+      {/* Mobile Header */}
+      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-[#1a1d23] border-b border-[#2d3139] flex items-center justify-between px-4 z-50">
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#3b82f6] text-white">
+            <CheckCircle2 size={18} />
+          </div>
+          <span className="font-bold tracking-tight text-white">SegurPro</span>
+        </div>
+        <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="text-white">
+          {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+        </Button>
+      </div>
+
+      {/* Mobile Menu Overlay */}
+      {isMobileMenuOpen && (
+        <div className="md:hidden fixed inset-0 bg-[#0f1115] z-40 pt-16 flex flex-col">
+          <nav className="flex-1 p-6 space-y-2">
+            <SidebarItem 
+              icon={<LayoutDashboard size={20} />} 
+              label="Painel Geral" 
+              active={activeTab === 'dashboard'} 
+              onClick={() => { setActiveTab('dashboard'); setIsMobileMenuOpen(false); }} 
+            />
+            <SidebarItem 
+              icon={<CalendarIcon size={20} />} 
+              label="Visitas Técnicas" 
+              active={activeTab === 'visits'} 
+              onClick={() => { setActiveTab('visits'); setIsMobileMenuOpen(false); }} 
+            />
+            <SidebarItem 
+              icon={<DollarSign size={20} />} 
+              label="Financeiro" 
+              active={activeTab === 'financial'} 
+              onClick={() => { setActiveTab('financial'); setIsMobileMenuOpen(false); }} 
+            />
+            <SidebarItem 
+              icon={<FileText size={20} />} 
+              label="Orçamentos" 
+              active={activeTab === 'budgets'} 
+              onClick={() => { setActiveTab('budgets'); setIsMobileMenuOpen(false); }} 
+            />
+            <SidebarItem 
+              icon={<UserIcon size={20} />} 
+              label="Clientes" 
+              active={activeTab === 'clients'} 
+              onClick={() => { setActiveTab('clients'); setIsMobileMenuOpen(false); }} 
+            />
+            <SidebarItem 
+              icon={<ReceiptIcon size={20} />} 
+              label="Recibos" 
+              active={activeTab === 'receipts'} 
+              onClick={() => { setActiveTab('receipts'); setIsMobileMenuOpen(false); }} 
+            />
+            <SidebarItem 
+              icon={<Settings size={20} />} 
+              label="Configurações" 
+              active={activeTab === 'settings'} 
+              onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }} 
+            />
+          </nav>
+          <div className="p-6 border-t border-[#2d3139]">
+            <Button variant="ghost" className="w-full justify-start gap-2 text-[#a0a0a0]" onClick={handleLogout}>
+              <LogOut size={18} />
+              Sair
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col pt-16 md:pt-0 overflow-hidden">
+        <header className="hidden md:flex h-20 items-center justify-between px-10 border-b border-[#2d3139] bg-[#1a1d23]">
+          <div>
+            <p className="text-[11px] text-[#71717a] uppercase tracking-widest mb-1">
+              {format(new Date(), "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })}
+            </p>
+            <h2 className="text-2xl font-medium text-white capitalize">{activeTab === 'dashboard' ? 'Resumo Operacional' : activeTab.replace('-', ' ')}</h2>
+          </div>
+          <div className="flex items-center gap-6">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#71717a]" size={16} />
+              <Input className="pl-9 w-64 bg-[#0f1115] border-[#2d3139] text-white focus:ring-[#3b82f6] transition-all" placeholder="Pesquisar..." />
+            </div>
+            <Button className="bg-[#3b82f6] hover:bg-[#2563eb] text-white h-9 px-4 text-xs font-semibold">
+              <Plus size={16} className="mr-1" /> Nova Visita
+            </Button>
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-y-auto p-6 md:p-10">
+          {activeTab === 'dashboard' && (
+            <Dashboard 
+              visits={visits} 
+              financials={financials} 
+              budgets={budgets} 
+              clients={clients} 
+              onNavigate={(tab) => setActiveTab(tab)}
+            />
+          )}
+          {activeTab === 'visits' && <VisitsManager visits={visits} user={user} clients={clients} />}
+          {activeTab === 'financial' && <FinancialManager financials={financials} visits={visits} />}
+          {activeTab === 'budgets' && <BudgetsManager budgets={budgets} clients={clients} />}
+          {activeTab === 'clients' && <ClientsManager clients={clients} />}
+          {activeTab === 'receipts' && <ReceiptsManager receipts={receipts} clients={clients} pixSettings={pixSettings} />}
+          {activeTab === 'settings' && <SettingsManager pixSettings={pixSettings} />}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function SidebarItem({ icon, label, active, onClick }: { icon: React.ReactNode, label: string, active: boolean, onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-center gap-3 px-4 py-3 rounded-lg text-[14px] font-medium transition-all",
+        active 
+          ? "bg-[#2d3139] text-white" 
+          : "text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]/50"
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+// --- Clients Manager Component ---
+
+function ClientsManager({ clients }: { clients: Client[] }) {
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [newClient, setNewClient] = useState<Partial<Client>>({
+    type: 'Avulso'
+  });
+  const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [clientToDelete, setClientToDelete] = useState<Client | null>(null);
+
+  const handleAddClient = async () => {
+    if (!newClient.name) {
+      toast.error('O nome do cliente é obrigatório.');
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, 'clients'), {
+        ...newClient,
+        type: newClient.type || 'Avulso',
+        contractValue: newClient.type === 'Contrato' ? Number(newClient.contractValue || 0) : 0,
+        createdAt: Timestamp.now()
+      });
+      setIsAddOpen(false);
+      setNewClient({ type: 'Avulso' });
+      toast.success('Cliente cadastrado com sucesso!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'clients');
+    }
+  };
+
+  const handleUpdateClient = async () => {
+    if (!editingClient || !editingClient.name) {
+      toast.error('O nome do cliente é obrigatório.');
+      return;
+    }
+
+    try {
+      const { id, ...data } = editingClient;
+      await updateDoc(doc(db, 'clients', id), {
+        ...data,
+        contractValue: data.type === 'Contrato' ? Number(data.contractValue || 0) : 0
+      });
+      setIsEditOpen(false);
+      setEditingClient(null);
+      toast.success('Cliente atualizado com sucesso!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'clients');
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-white">Gestão de Clientes</h2>
+          <p className="text-[#71717a]">Base de dados de clientes para serviços e orçamentos.</p>
+        </div>
+        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+          <DialogTrigger render={
+            <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+              <Plus size={18} />
+              Novo Cliente
+            </Button>
+          } />
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+            <DialogHeader>
+              <DialogTitle className="text-white">Cadastrar Novo Cliente</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="name" className="text-[#a0a0a0]">Nome Completo</Label>
+                <Input id="name" value={newClient.name || ''} onChange={e => setNewClient({...newClient, name: e.target.value})} placeholder="Ex: João Silva" className="bg-[#0f1115] border-[#2d3139] text-white" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="email" className="text-[#a0a0a0]">Email</Label>
+                  <Input id="email" type="email" value={newClient.email || ''} onChange={e => setNewClient({...newClient, email: e.target.value})} placeholder="joao@email.com" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="phone" className="text-[#a0a0a0]">Telefone</Label>
+                  <Input id="phone" value={newClient.phone || ''} onChange={e => setNewClient({...newClient, phone: e.target.value})} placeholder="(11) 99999-9999" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="document" className="text-[#a0a0a0]">CPF / CNPJ</Label>
+                <Input id="document" value={newClient.document || ''} onChange={e => setNewClient({...newClient, document: e.target.value})} placeholder="000.000.000-00" className="bg-[#0f1115] border-[#2d3139] text-white" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="address" className="text-[#a0a0a0]">Endereço</Label>
+                <Input id="address" value={newClient.address || ''} onChange={e => setNewClient({...newClient, address: e.target.value})} placeholder="Rua, Número, Bairro, Cidade" className="bg-[#0f1115] border-[#2d3139] text-white" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Tipo de Cliente</Label>
+                  <Select value={newClient.type} onValueChange={(val: any) => setNewClient({...newClient, type: val})}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="Avulso">Avulso</SelectItem>
+                      <SelectItem value="Contrato">Contrato Mensal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {newClient.type === 'Contrato' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="contractValue" className="text-[#a0a0a0]">Valor Mensal (R$)</Label>
+                    <Input id="contractValue" type="number" value={newClient.contractValue || ''} onChange={e => setNewClient({...newClient, contractValue: Number(e.target.value)})} placeholder="0,00" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                )}
+              </div>
+              {newClient.type === 'Contrato' && (
+                <div className="space-y-2">
+                  <Label htmlFor="serviceSpecification" className="text-[#a0a0a0]">Especificação do Serviço</Label>
+                  <Input id="serviceSpecification" value={newClient.serviceSpecification || ''} onChange={e => setNewClient({...newClient, serviceSpecification: e.target.value})} placeholder="Ex: Manutenção mensal de 16 câmeras" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+              <Button onClick={handleAddClient} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Cadastrar</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Edit Dialog */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">Editar Cliente</DialogTitle>
+          </DialogHeader>
+          {editingClient && (
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-name" className="text-[#a0a0a0]">Nome Completo</Label>
+                <Input id="edit-name" value={editingClient.name || ''} onChange={e => setEditingClient({...editingClient, name: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-email" className="text-[#a0a0a0]">Email</Label>
+                  <Input id="edit-email" type="email" value={editingClient.email || ''} onChange={e => setEditingClient({...editingClient, email: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-phone" className="text-[#a0a0a0]">Telefone</Label>
+                  <Input id="edit-phone" value={editingClient.phone || ''} onChange={e => setEditingClient({...editingClient, phone: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-document" className="text-[#a0a0a0]">CPF / CNPJ</Label>
+                <Input id="edit-document" value={editingClient.document || ''} onChange={e => setEditingClient({...editingClient, document: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-address" className="text-[#a0a0a0]">Endereço</Label>
+                <Input id="edit-address" value={editingClient.address || ''} onChange={e => setEditingClient({...editingClient, address: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Tipo de Cliente</Label>
+                  <Select value={editingClient.type} onValueChange={(val: any) => setEditingClient({...editingClient, type: val})}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="Avulso">Avulso</SelectItem>
+                      <SelectItem value="Contrato">Contrato Mensal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {editingClient.type === 'Contrato' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-contractValue" className="text-[#a0a0a0]">Valor Mensal (R$)</Label>
+                    <Input id="edit-contractValue" type="number" value={editingClient.contractValue || ''} onChange={e => setEditingClient({...editingClient, contractValue: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                )}
+              </div>
+              {editingClient.type === 'Contrato' && (
+                <div className="space-y-2">
+                  <Label htmlFor="edit-serviceSpecification" className="text-[#a0a0a0]">Especificação do Serviço</Label>
+                  <Input id="edit-serviceSpecification" value={editingClient.serviceSpecification || ''} onChange={e => setEditingClient({...editingClient, serviceSpecification: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+            <Button onClick={handleUpdateClient} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Salvar Alterações</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden">
+        <Table>
+          <TableHeader className="bg-[#25282e]/50">
+            <TableRow className="border-[#2d3139] hover:bg-transparent">
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Nome / Tipo</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Contato</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Contrato / Serviço</TableHead>
+              <TableHead className="text-right text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ações</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {clients.map((client) => (
+              <TableRow key={client.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
+                <TableCell>
+                  <div className="font-medium text-white text-[13px]">{client.name}</div>
+                  <Badge variant="outline" className={cn(
+                    "mt-1 text-[10px] h-5",
+                    client.type === 'Contrato' ? "border-[#10b981] text-[#10b981]" : "border-[#71717a] text-[#71717a]"
+                  )}>
+                    {client.type || 'Avulso'}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <div className="text-[12px] text-[#e0e0e0]">{client.email || 'N/A'}</div>
+                  <div className="text-[11px] text-[#71717a]">{client.phone || 'N/A'}</div>
+                </TableCell>
+                <TableCell>
+                  {client.type === 'Contrato' ? (
+                    <>
+                      <div className="text-[12px] text-[#10b981] font-medium">R$ {(client.contractValue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/mês</div>
+                      <div className="text-[11px] text-[#71717a] max-w-[200px] truncate">{client.serviceSpecification || 'Sem especificação'}</div>
+                    </>
+                  ) : (
+                    <div className="text-[12px] text-[#71717a]">Serviços Avulsos</div>
+                  )}
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
+                      setEditingClient(client);
+                      setIsEditOpen(true);
+                    }}>
+                      <Pencil size={14} />
+                    </Button>
+                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
+                      setClientToDelete(client);
+                      setIsDeleteConfirmOpen(true);
+                    }}>
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+            {clients.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={4} className="text-center py-12 text-[#71717a] text-sm">
+                  Nenhum cliente cadastrado.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </Card>
+
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Confirmar Exclusão</DialogTitle>
+            <DialogDescription className="text-[#71717a]">
+              Deseja realmente excluir este cliente? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+            <Button variant="destructive" onClick={async () => {
+              if (clientToDelete) {
+                try {
+                  await deleteDoc(doc(db, 'clients', clientToDelete.id));
+                  toast.success('Cliente removido.');
+                  setIsDeleteConfirmOpen(false);
+                  setClientToDelete(null);
+                } catch (error) {
+                  handleFirestoreError(error, OperationType.DELETE, `clients/${clientToDelete.id}`);
+                }
+              }
+            }} className="bg-[#ef4444] hover:bg-[#dc2626] text-white">Excluir</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// --- Receipts Manager Component ---
+
+function ReceiptsManager({ receipts, clients, pixSettings }: { receipts: Receipt[], clients: Client[], pixSettings: PixSettings }) {
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingReceipt, setEditingReceipt] = useState<Receipt | null>(null);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [receiptToDelete, setReceiptToDelete] = useState<Receipt | null>(null);
+  const [newReceipt, setNewReceipt] = useState<Partial<Receipt>>({
+    date: new Date(),
+    value: 0,
+    paymentMethod: 'PIX',
+    clientType: 'Avulso',
+    referenceMonth: format(new Date(), 'MMMM/yyyy', { locale: ptBR })
+  });
+
+  const handleAddReceipt = async () => {
+    if (!newReceipt.clientName || !newReceipt.value || !newReceipt.paymentMethod) {
+      toast.error('Preencha os campos obrigatórios.');
+      return;
+    }
+
+    try {
+      const receiptData = {
+        ...newReceipt,
+        date: Timestamp.fromDate(newReceipt.date instanceof Date ? newReceipt.date : new Date()),
+        createdAt: Timestamp.now()
+      };
+      
+      const docRef = await addDoc(collection(db, 'receipts'), receiptData);
+      
+      // Generate PDF automatically
+      const fullReceipt = { id: docRef.id, ...receiptData } as Receipt;
+      generateReceiptPDF(fullReceipt);
+      
+      setIsAddOpen(false);
+      setNewReceipt({ 
+        date: new Date(), 
+        value: 0, 
+        paymentMethod: 'PIX',
+        referenceMonth: format(new Date(), 'MMMM/yyyy', { locale: ptBR })
+      });
+      toast.success('Recibo gerado com sucesso!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'receipts');
+    }
+  };
+
+  const handleUpdateReceipt = async () => {
+    if (!editingReceipt || !editingReceipt.clientName || !editingReceipt.value) {
+      toast.error('Preencha os campos obrigatórios.');
+      return;
+    }
+
+    try {
+      const { id, ...data } = editingReceipt;
+      const receiptData = {
+        ...data,
+        date: editingReceipt.date instanceof Timestamp ? editingReceipt.date : Timestamp.fromDate(new Date(editingReceipt.date))
+      };
+      
+      await updateDoc(doc(db, 'receipts', id), receiptData);
+      setIsEditOpen(false);
+      setEditingReceipt(null);
+      toast.success('Recibo atualizado!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `receipts/${editingReceipt?.id}`);
+    }
+  };
+
+  const generateReceiptPDF = (receipt: Receipt, shouldShare = false) => {
+    const doc = new jsPDF();
+    const dateStr = format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), 'dd/MM/yyyy');
+    const fullDateStr = format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
+    const isContract = receipt.clientType === 'Contrato';
+    
+    // 1. Header
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 0, 0);
+    doc.text('André Fonseca', 20, 20);
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text('AF Sistemas de Segurança e Informática-ME', 190, 20, { align: 'right' });
+    
+    doc.setFontSize(9);
+    doc.text('(91)98722-3092   (91)98995-8066   afsistseg.me@gmail.com', 20, 30);
+    
+    // 2. Title Bar
+    doc.setFillColor(245, 245, 245);
+    doc.rect(20, 40, 170, 10, 'F');
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Recibo', 105, 47, { align: 'center' });
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(dateStr, 185, 47, { align: 'right' });
+    
+    // 3. Declaration
+    doc.setFontSize(11);
+    const declarationY = 65;
+    
+    const valorNumerico = Number(receipt.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+    const valorExtenso = valorPorExtenso(Number(receipt.value));
+    
+    const declarationText = `Declaro que recebi na data de ${fullDateStr}, o valor de R$ ${valorNumerico} (${valorExtenso}), de ${receipt.clientName}, referente aos seguintes serviços:`;
+    
+    const splitDeclaration = doc.splitTextToSize(declarationText, 170);
+    doc.text(splitDeclaration, 20, declarationY);
+    
+    // Calculate dynamic Y position for next sections
+    const declarationHeight = splitDeclaration.length * 6;
+    const servicesY = declarationY + declarationHeight + 10;
+    
+    // 4. Services Section
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Serviços', 105, servicesY, { align: 'center' });
+    
+    // Table Header
+    doc.setFillColor(120, 120, 120);
+    doc.rect(20, servicesY + 5, 170, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(9);
+    
+    if (isContract) {
+      doc.text('Descrição', 25, servicesY + 10);
+      doc.text('Total', 185, servicesY + 10, { align: 'right' });
+    } else {
+      doc.text('Descrição', 25, servicesY + 10);
+      doc.text('Preço', 120, servicesY + 10, { align: 'right' });
+      doc.text('Unidade', 145, servicesY + 10, { align: 'right' });
+      doc.text('Qtd.', 165, servicesY + 10, { align: 'right' });
+      doc.text('Total', 185, servicesY + 10, { align: 'right' });
+    }
+    
+    // Table Row
+    doc.setFillColor(245, 245, 245);
+    doc.rect(20, servicesY + 13, 170, 15, 'F');
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'normal');
+    const serviceText = receipt.serviceSpecification || 'Serviços prestados';
+    const splitService = doc.splitTextToSize(serviceText, isContract ? 130 : 90);
+    doc.text(splitService, 25, servicesY + 18);
+    
+    const formattedVal = `R$ ${Number(receipt.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+    
+    if (isContract) {
+      doc.text(formattedVal, 185, servicesY + 18, { align: 'right' });
+    } else {
+      doc.text(formattedVal, 120, servicesY + 18, { align: 'right' });
+      doc.text('und', 145, servicesY + 18, { align: 'right' });
+      doc.text('1', 165, servicesY + 18, { align: 'right' });
+      doc.text(formattedVal, 185, servicesY + 18, { align: 'right' });
+    }
+    
+    // 5. Totals
+    doc.setFont('helvetica', 'bold');
+    if (!isContract) {
+      doc.text('Subtotal serviços', 20, servicesY + 40);
+      doc.text(formattedVal, 190, servicesY + 40, { align: 'right' });
+    }
+    
+    doc.setFillColor(120, 120, 120);
+    doc.rect(100, servicesY + 50, 90, 10, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(12);
+    doc.text('Total', 105, servicesY + 57);
+    doc.text(formattedVal, 185, servicesY + 57, { align: 'right' });
+    
+    // PIX Info
+    if (pixSettings && pixSettings.key) {
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Dados para Pagamento (PIX):', 20, servicesY + 70);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Chave: ${pixSettings.key} | Banco: ${pixSettings.bank}`, 20, servicesY + 75);
+      doc.text(`Favorecido: ${pixSettings.favored} | CPF: ${pixSettings.document}`, 20, servicesY + 80);
+    }
+
+    // 6. Signature
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(dateStr, 105, servicesY + 100, { align: 'center' });
+    doc.line(70, servicesY + 110, 140, servicesY + 110);
+    doc.text('André Fonseca', 105, servicesY + 115, { align: 'center' });
+    
+    const fileName = `recibo_${receipt.clientName.replace(/\s/g, '_')}.pdf`;
+
+    if (shouldShare && navigator.share) {
+      const pdfBlob = doc.output('blob');
+      const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
+      
+      navigator.share({
+        files: [file],
+        title: 'Recibo de Serviço',
+        text: `Recibo de ${receipt.clientName} - ${receipt.referenceMonth}`
+      }).catch(err => {
+        console.error('Erro ao compartilhar:', err);
+        doc.save(fileName);
+      });
+    } else {
+      doc.save(fileName);
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-white">Gestão de Recibos</h2>
+          <p className="text-[#71717a]">Gere e consulte recibos de pagamentos.</p>
+        </div>
+        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+          <DialogTrigger render={
+            <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+              <Plus size={18} />
+              Novo Recibo
+            </Button>
+          } />
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+            <DialogHeader>
+              <DialogTitle className="text-white">Gerar Novo Recibo</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0]">Selecionar Cliente Existente (Opcional)</Label>
+                <Select onValueChange={(clientId) => {
+                  const client = clients.find(c => c.id === clientId);
+                  if (client) {
+                    setNewReceipt({
+                      ...newReceipt,
+                      clientName: client.name,
+                      clientType: client.type || 'Avulso',
+                      serviceSpecification: client.type === 'Contrato' ? (client.serviceSpecification || '') : '',
+                      value: client.type === 'Contrato' ? (client.contractValue || 0) : 0
+                    });
+                  }
+                }}>
+                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                    <SelectValue placeholder="Escolha um cliente..." />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                    <ScrollArea className="h-[200px]">
+                      {clients.map(c => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))}
+                      {clients.length === 0 && <SelectItem value="none" disabled>Nenhum cliente cadastrado</SelectItem>}
+                    </ScrollArea>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Separator className="bg-[#2d3139]" />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="clientName" className="text-[#a0a0a0]">Nome do Cliente</Label>
+                  <Input id="clientName" value={newReceipt.clientName || ''} onChange={e => setNewReceipt({...newReceipt, clientName: e.target.value})} placeholder="Ex: João Silva" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Tipo de Recibo</Label>
+                  <Select 
+                    value={newReceipt.clientType} 
+                    onValueChange={(val: any) => {
+                      const isContract = val === 'Contrato';
+                      const client = clients.find(c => c.name === newReceipt.clientName);
+                      setNewReceipt({
+                        ...newReceipt, 
+                        clientType: val,
+                        // If switching to contract and we have a client name, try to find their contract info
+                        serviceSpecification: isContract ? (client?.serviceSpecification || newReceipt.serviceSpecification) : newReceipt.serviceSpecification,
+                        value: isContract ? (client?.contractValue || newReceipt.value) : newReceipt.value
+                      });
+                    }}
+                  >
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="Avulso">Serviço Avulso</SelectItem>
+                      <SelectItem value="Contrato">Contrato Mensal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="service" className="text-[#a0a0a0]">
+                  {newReceipt.clientType === 'Contrato' ? 'Serviço do Contrato (Automático)' : 'Especificação do Serviço'}
+                </Label>
+                <Input 
+                  id="service" 
+                  value={newReceipt.serviceSpecification || ''} 
+                  onChange={e => setNewReceipt({...newReceipt, serviceSpecification: e.target.value})} 
+                  placeholder={newReceipt.clientType === 'Contrato' ? "Preenchido pelo contrato" : "Ex: Manutenção de câmeras"} 
+                  className="bg-[#0f1115] border-[#2d3139] text-white"
+                  disabled={newReceipt.clientType === 'Contrato'}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="value" className="text-[#a0a0a0]">Valor (R$)</Label>
+                <Input id="value" type="number" value={newReceipt.value || ''} onChange={e => setNewReceipt({...newReceipt, value: Number(e.target.value)})} placeholder="0,00" className="bg-[#0f1115] border-[#2d3139] text-white" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="receiptDate" className="text-[#a0a0a0]">Data do Recibo</Label>
+                  <Input 
+                    id="receiptDate" 
+                    type="date" 
+                    value={newReceipt.date ? (newReceipt.date instanceof Date ? newReceipt.date.toISOString().split('T')[0] : new Date(newReceipt.date).toISOString().split('T')[0]) : ''} 
+                    onChange={e => setNewReceipt({...newReceipt, date: new Date(e.target.value)})} 
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="refMonth" className="text-[#a0a0a0]">Mês de Referência</Label>
+                  <Input id="refMonth" value={newReceipt.referenceMonth || ''} onChange={e => setNewReceipt({...newReceipt, referenceMonth: e.target.value})} placeholder="Ex: Janeiro/2024" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0]">Forma de Pagamento</Label>
+                <Select value={newReceipt.paymentMethod} onValueChange={(val: any) => setNewReceipt({...newReceipt, paymentMethod: val})}>
+                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                    <SelectItem value="Dinheiro">Dinheiro</SelectItem>
+                    <SelectItem value="PIX">PIX</SelectItem>
+                    <SelectItem value="Cartão">Cartão</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter className="flex flex-row justify-between sm:justify-between">
+              <Button variant="ghost" onClick={() => setIsAddOpen(false)} className="text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]">
+                Voltar
+              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+                <Button onClick={handleAddReceipt} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Gerar e Salvar</Button>
+              </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+            <DialogHeader>
+              <DialogTitle className="text-white">Editar Recibo</DialogTitle>
+            </DialogHeader>
+            {editingReceipt && (
+              <div className="grid gap-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="editClientName" className="text-[#a0a0a0]">Nome do Cliente</Label>
+                  <Input id="editClientName" value={editingReceipt.clientName} onChange={e => setEditingReceipt({...editingReceipt, clientName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Tipo de Recibo</Label>
+                  <Select 
+                    value={editingReceipt.clientType} 
+                    onValueChange={(val: any) => {
+                      const isContract = val === 'Contrato';
+                      const client = clients.find(c => c.name === editingReceipt.clientName);
+                      setEditingReceipt({
+                        ...editingReceipt, 
+                        clientType: val,
+                        serviceSpecification: isContract ? (client?.serviceSpecification || editingReceipt.serviceSpecification) : editingReceipt.serviceSpecification,
+                        value: isContract ? (client?.contractValue || editingReceipt.value) : editingReceipt.value
+                      });
+                    }}
+                  >
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="Avulso">Serviço Avulso</SelectItem>
+                      <SelectItem value="Contrato">Contrato Mensal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editService" className="text-[#a0a0a0]">
+                    {editingReceipt.clientType === 'Contrato' ? 'Serviço do Contrato (Automático)' : 'Especificação do Serviço'}
+                  </Label>
+                  <Input 
+                    id="editService" 
+                    value={editingReceipt.serviceSpecification || ''} 
+                    onChange={e => setEditingReceipt({...editingReceipt, serviceSpecification: e.target.value})} 
+                    className="bg-[#0f1115] border-[#2d3139] text-white"
+                    disabled={editingReceipt.clientType === 'Contrato'}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editValue" className="text-[#a0a0a0]">Valor (R$)</Label>
+                  <Input id="editValue" type="number" value={editingReceipt.value} onChange={e => setEditingReceipt({...editingReceipt, value: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="editReceiptDate" className="text-[#a0a0a0]">Data do Recibo</Label>
+                    <Input 
+                      id="editReceiptDate" 
+                      type="date" 
+                      value={editingReceipt.date ? (editingReceipt.date instanceof Timestamp ? editingReceipt.date.toDate().toISOString().split('T')[0] : new Date(editingReceipt.date).toISOString().split('T')[0]) : ''} 
+                      onChange={e => setEditingReceipt({...editingReceipt, date: new Date(e.target.value)})} 
+                      className="bg-[#0f1115] border-[#2d3139] text-white" 
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="editRefMonth" className="text-[#a0a0a0]">Mês de Referência</Label>
+                    <Input id="editRefMonth" value={editingReceipt.referenceMonth || ''} onChange={e => setEditingReceipt({...editingReceipt, referenceMonth: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Forma de Pagamento</Label>
+                  <Select value={editingReceipt.paymentMethod} onValueChange={(val: any) => setEditingReceipt({...editingReceipt, paymentMethod: val})}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="Dinheiro">Dinheiro</SelectItem>
+                      <SelectItem value="PIX">PIX</SelectItem>
+                      <SelectItem value="Cartão">Cartão</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+            <DialogFooter className="flex flex-row justify-between sm:justify-between">
+              <Button variant="ghost" onClick={() => setIsEditOpen(false)} className="text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]">
+                Voltar
+              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+                <Button onClick={handleUpdateReceipt} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Salvar Alterações</Button>
+              </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden">
+        <Table>
+          <TableHeader className="bg-[#25282e]/50">
+            <TableRow className="border-[#2d3139] hover:bg-transparent">
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Cliente</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Serviço</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Valor</TableHead>
+              <TableHead className="text-right text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ações</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {receipts.map((receipt) => (
+              <TableRow key={receipt.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
+                <TableCell className="text-[12px] text-[#e0e0e0]">
+                  {format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), 'dd/MM/yyyy')}
+                </TableCell>
+                <TableCell className="font-medium text-white text-[13px]">{receipt.clientName}</TableCell>
+                <TableCell className="text-[12px] text-[#71717a] max-w-[200px] truncate">
+                  {receipt.serviceSpecification || 'N/A'}
+                </TableCell>
+                <TableCell className="text-[12px] text-[#10b981] font-medium">
+                  R$ {Number(receipt.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" size="icon" title="Baixar PDF" className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => generateReceiptPDF(receipt)}>
+                      <Download size={14} />
+                    </Button>
+                    <Button variant="outline" size="icon" title="Compartilhar" className="h-8 w-8 border-[#2d3139] text-[#10b981] hover:bg-[#10b981]/10" onClick={() => generateReceiptPDF(receipt, true)}>
+                      <Share2 size={14} />
+                    </Button>
+                    <Button variant="outline" size="icon" title="Editar" className="h-8 w-8 border-[#2d3139] text-[#f59e0b] hover:bg-[#f59e0b]/10" onClick={() => {
+                      setEditingReceipt(receipt);
+                      setIsEditOpen(true);
+                    }}>
+                      <Pencil size={14} />
+                    </Button>
+                    <Button variant="outline" size="icon" title="Excluir" className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
+                      setReceiptToDelete(receipt);
+                      setIsDeleteConfirmOpen(true);
+                    }}>
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+            {receipts.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-12 text-[#71717a] text-sm">
+                  Nenhum recibo gerado.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </Card>
+
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Confirmar Exclusão</DialogTitle>
+            <DialogDescription className="text-[#71717a]">
+              Deseja realmente excluir este recibo? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+            <Button variant="destructive" onClick={async () => {
+              if (receiptToDelete) {
+                try {
+                  await deleteDoc(doc(db, 'receipts', receiptToDelete.id));
+                  toast.success('Recibo removido com sucesso.');
+                  setIsDeleteConfirmOpen(false);
+                  setReceiptToDelete(null);
+                } catch (error) {
+                  handleFirestoreError(error, OperationType.DELETE, `receipts/${receiptToDelete.id}`);
+                }
+              }
+            }} className="bg-[#ef4444] hover:bg-[#dc2626] text-white">Excluir</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// --- Settings Manager Component ---
+
+function SettingsManager({ pixSettings }: { pixSettings: PixSettings }) {
+  const [localPix, setLocalPix] = useState<PixSettings>(pixSettings);
+
+  useEffect(() => {
+    setLocalPix(pixSettings);
+  }, [pixSettings]);
+
+  const handleSavePix = async () => {
+    try {
+      await setDoc(doc(db, 'settings', 'pix'), localPix);
+      toast.success('Configurações de PIX salvas!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'settings/pix');
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight text-white">Configurações do Sistema</h2>
+        <p className="text-[#71717a]">Gerencie os dados globais do sistema.</p>
+      </div>
+
+      <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <DollarSign className="text-[#3b82f6]" size={20} />
+            Dados para Pagamento (PIX)
+          </CardTitle>
+          <CardDescription className="text-[#71717a]">
+            Estes dados aparecerão nos recibos gerados pelo sistema.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <Label htmlFor="pixKey" className="text-[#a0a0a0]">Chave PIX</Label>
+              <Input 
+                id="pixKey" 
+                value={localPix.key} 
+                onChange={e => setLocalPix({...localPix, key: e.target.value})} 
+                placeholder="E-mail, CPF, CNPJ ou Celular"
+                className="bg-[#0f1115] border-[#2d3139] text-white" 
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="pixBank" className="text-[#a0a0a0]">Banco</Label>
+              <Input 
+                id="pixBank" 
+                value={localPix.bank} 
+                onChange={e => setLocalPix({...localPix, bank: e.target.value})} 
+                placeholder="Ex: Nubank, Itaú, etc."
+                className="bg-[#0f1115] border-[#2d3139] text-white" 
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="pixFavored" className="text-[#a0a0a0]">Favorecido</Label>
+              <Input 
+                id="pixFavored" 
+                value={localPix.favored} 
+                onChange={e => setLocalPix({...localPix, favored: e.target.value})} 
+                placeholder="Nome completo do titular"
+                className="bg-[#0f1115] border-[#2d3139] text-white" 
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="pixDoc" className="text-[#a0a0a0]">CPF/CNPJ do Favorecido</Label>
+              <Input 
+                id="pixDoc" 
+                value={localPix.document} 
+                onChange={e => setLocalPix({...localPix, document: e.target.value})} 
+                placeholder="000.000.000-00"
+                className="bg-[#0f1115] border-[#2d3139] text-white" 
+              />
+            </div>
+          </div>
+          <div className="flex justify-end pt-4">
+            <Button onClick={handleSavePix} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+              Salvar Configurações
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// --- Dashboard Component ---
+
+function Dashboard({ visits, financials, budgets, clients, onNavigate }: { visits: TechnicalVisit[], financials: FinancialRecord[], budgets: Budget[], clients: Client[], onNavigate: (tab: string) => void }) {
+  const stats = useMemo(() => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    const monthlyFinancials = financials.filter(f => {
+      const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    });
+
+    const income = monthlyFinancials.filter(f => f.type === 'Receita').reduce((acc, f) => acc + f.value, 0);
+    const expense = monthlyFinancials.filter(f => f.type === 'Despesa').reduce((acc, f) => acc + f.value, 0);
+    const pendingVisits = visits.filter(v => v.status === 'Agendada' || v.status === 'Em Andamento').length;
+    const completedVisits = visits.filter(v => v.status === 'Concluída').length;
+    const pendingBudgets = budgets.filter(b => b.status === 'Pendente').length;
+
+    return { income, expense, balance: income - expense, pendingVisits, completedVisits, pendingBudgets, totalClients: clients.length };
+  }, [visits, financials, budgets, clients]);
+
+  const chartData = useMemo(() => {
+    const last7Days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      return format(d, 'dd/MM');
+    });
+
+    return last7Days.map(day => {
+      const dayFinancials = financials.filter(f => {
+        const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
+        return format(d, 'dd/MM') === day;
+      });
+      return {
+        name: day,
+        receita: dayFinancials.filter(f => f.type === 'Receita').reduce((acc, f) => acc + f.value, 0),
+        despesa: dayFinancials.filter(f => f.type === 'Despesa').reduce((acc, f) => acc + f.value, 0),
+      };
+    });
+  }, [financials]);
+
+  const typeData = useMemo(() => {
+    const types = ['CFTV', 'Alarme', 'Cerca Elétrica', 'Motor de Portão', 'Outros'];
+    return types.map(type => ({
+      name: type,
+      value: visits.filter(v => v.type === type).length
+    })).filter(t => t.value > 0);
+  }, [visits]);
+
+  const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#71717a'];
+
+  return (
+    <div className="space-y-10">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6">
+        <StatCard title="Visitas Agendadas" value={stats.pendingVisits} icon={<CalendarIcon className="text-[#3b82f6]" />} trend={`${stats.completedVisits} concluídas`} isCount />
+        <StatCard title="Orçamentos Pendentes" value={stats.pendingBudgets} icon={<FileText className="text-[#f59e0b]" />} trend="Aguardando aprovação" isCount />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-8">
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden">
+          <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-row items-center justify-between">
+            <CardTitle className="text-[15px] font-semibold text-white">Cronograma de Visitas (Hoje)</CardTitle>
+            <span 
+              className="text-[12px] text-[#3b82f6] cursor-pointer hover:underline"
+              onClick={() => onNavigate('visits')}
+            >
+              Ver Mapa
+            </span>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y divide-[#25282e]">
+              {visits.filter(v => v.status === 'Agendada' || v.status === 'Em Andamento').slice(0, 5).map(visit => (
+                <div key={visit.id} className="flex items-center justify-between px-6 py-4 hover:bg-[#25282e]/30 transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-[13px] font-medium text-white">{visit.clientName}</span>
+                    <span className="text-[11px] text-[#71717a] mt-0.5">{visit.type} • {visit.description || 'Manutenção Geral'}</span>
+                  </div>
+                  <Badge className={cn(
+                    "text-[10px] font-semibold uppercase px-2 py-0.5 rounded",
+                    visit.status === 'Em Andamento' ? "bg-blue-500/10 text-blue-500" : "bg-amber-500/10 text-amber-500"
+                  )}>
+                    {visit.status === 'Em Andamento' ? 'Em Rota' : visit.status}
+                  </Badge>
+                </div>
+              ))}
+              {visits.filter(v => v.status === 'Agendada' || v.status === 'Em Andamento').length === 0 && (
+                <p className="text-center py-12 text-sm text-[#71717a]">Nenhuma visita para hoje.</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="flex flex-col gap-8">
+          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden">
+            <CardHeader className="border-b border-[#2d3139] px-6 py-4">
+              <CardTitle className="text-[15px] font-semibold text-white">Orçamentos Recentes</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="divide-y divide-[#25282e]">
+                {budgets.slice(0, 3).map(budget => (
+                  <div key={budget.id} className="flex items-center justify-between px-6 py-4 hover:bg-[#25282e]/30 transition-colors">
+                    <div className="flex flex-col">
+                      <span className="text-[13px] font-medium text-white">{budget.clientName}</span>
+                      <span className="text-[11px] font-semibold text-white mt-0.5">R$ {budget.total.toFixed(2)}</span>
+                    </div>
+                    <Badge className={cn(
+                      "text-[10px] font-semibold uppercase px-2 py-0.5 rounded",
+                      budget.status === 'Aprovado' ? "bg-emerald-500/10 text-emerald-500" : "bg-blue-500/10 text-blue-500"
+                    )}>
+                      {budget.status === 'Aprovado' ? 'Aprovado' : 'Aguardando'}
+                    </Badge>
+                  </div>
+                ))}
+                {budgets.length === 0 && (
+                  <p className="text-center py-8 text-sm text-[#71717a]">Nenhum orçamento recente.</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="flex gap-4 p-6 bg-[#15181e] rounded-xl border border-dashed border-[#2d3139]">
+            <ActionCard title="Recibo" desc="Gerar PDF rápido" onClick={() => onNavigate('receipts')} />
+            <ActionCard title="Relatório" desc="Fechamento Diário" onClick={() => onNavigate('financial')} />
+            <ActionCard title="Orçamento" desc="Novo Rascunho" onClick={() => onNavigate('budgets')} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ActionCard({ title, desc, onClick }: { title: string, desc: string, onClick?: () => void }) {
+  return (
+    <div 
+      onClick={onClick}
+      className="flex-1 bg-[#1a1d23] p-4 rounded-lg text-center cursor-pointer border border-[#2d3139] hover:border-[#3b82f6] transition-all group"
+    >
+      <strong className="text-xs text-white group-hover:text-[#3b82f6] transition-colors">{title}</strong>
+      <div className="text-[10px] text-[#71717a] mt-1">{desc}</div>
+    </div>
+  );
+}
+
+function StatCard({ title, value, icon, trend, isBalance, isCount }: { title: string, value: number, icon: React.ReactNode, trend?: string, isBalance?: boolean, isCount?: boolean }) {
+  return (
+    <Card className="border-[#2d3139] bg-[#1a1d23] p-6 rounded-xl">
+      <div className="text-[12px] text-[#71717a] mb-2 font-medium">{title}</div>
+      <div className="text-[22px] font-bold text-white tracking-tight">
+        {isCount ? value.toString().padStart(2, '0') : `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
+      </div>
+      {trend && (
+        <div className={cn(
+          "text-[11px] mt-2 font-medium",
+          trend.includes('+') ? "text-[#10b981]" : "text-[#71717a]"
+        )}>
+          {trend}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// --- Visits Manager Component ---
+
+function VisitsManager({ visits, user, clients }: { visits: TechnicalVisit[], user: FirebaseUser, clients: Client[] }) {
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isViewOpen, setIsViewOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [visitToDelete, setVisitToDelete] = useState<TechnicalVisit | null>(null);
+  const [editingVisit, setEditingVisit] = useState<TechnicalVisit | null>(null);
+  const [viewingVisit, setViewingVisit] = useState<TechnicalVisit | null>(null);
+  const [newVisit, setNewVisit] = useState<Partial<TechnicalVisit>>({
+    type: 'CFTV',
+    status: 'Agendada',
+    date: new Date(),
+    scheduledTime: '',
+    technicianName: user.displayName || '',
+    totalValue: 0
+  });
+
+  // Update technician name when user changes
+  useEffect(() => {
+    if (user && !newVisit.technicianName) {
+      setNewVisit(prev => ({ ...prev, technicianName: user.displayName || '' }));
+    }
+  }, [user]);
+
+  const handleAddVisit = async () => {
+    if (!newVisit.clientName || !newVisit.address) {
+      toast.error('Preencha os campos obrigatórios.');
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, 'visits'), {
+        ...newVisit,
+        date: Timestamp.fromDate(newVisit.date instanceof Date ? newVisit.date : new Date()),
+        technicianId: user.uid,
+        technicianName: newVisit.technicianName || user.displayName || 'Técnico',
+        createdAt: Timestamp.now()
+      });
+      setIsAddOpen(false);
+      setNewVisit({ 
+        type: 'CFTV', 
+        status: 'Agendada', 
+        date: new Date(), 
+        scheduledTime: '',
+        technicianName: user.displayName || '',
+        totalValue: 0 
+      });
+      toast.success('Visita agendada com sucesso!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'visits');
+    }
+  };
+
+  const updateStatus = async (id: string, status: TechnicalVisit['status']) => {
+    try {
+      await updateDoc(doc(db, 'visits', id), { status });
+      toast.success(`Status atualizado para ${status}`);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'visits');
+    }
+  };
+
+  const handleUpdateVisit = async () => {
+    if (!editingVisit || !editingVisit.clientName || !editingVisit.address) {
+      toast.error('Preencha os campos obrigatórios.');
+      return;
+    }
+
+    try {
+      const { id, ...data } = editingVisit;
+      await updateDoc(doc(db, 'visits', id), {
+        ...data,
+        date: editingVisit.date instanceof Date ? Timestamp.fromDate(editingVisit.date) : editingVisit.date
+      });
+      setIsEditOpen(false);
+      setEditingVisit(null);
+      toast.success('Visita atualizada com sucesso!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `visits/${editingVisit?.id}`);
+    }
+  };
+
+  const generateReceipt = (visit: TechnicalVisit) => {
+    const doc = new jsPDF();
+    const dateStr = format(visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date), 'dd/MM/yyyy HH:mm');
+    
+    doc.setFontSize(20);
+    doc.text('RECIBO DE SERVIÇO', 105, 20, { align: 'center' });
+    doc.setFontSize(12);
+    doc.text(`SegurPro Gestão - Segurança Eletrônica`, 20, 40);
+    doc.text(`Data: ${dateStr}${visit.scheduledTime ? ` às ${visit.scheduledTime}` : ''}`, 20, 50);
+    doc.line(20, 55, 190, 55);
+    
+    doc.text(`Cliente: ${visit.clientName}`, 20, 70);
+    doc.text(`Endereço: ${visit.address}`, 20, 80);
+    doc.text(`Serviço: ${visit.type}`, 20, 90);
+    doc.text(`Descrição: ${visit.description || 'N/A'}`, 20, 100);
+    doc.text(`Técnico: ${visit.technicianName}`, 20, 110);
+    
+    doc.setFontSize(14);
+    doc.text(`VALOR TOTAL: R$ ${visit.totalValue.toFixed(2)}`, 20, 130);
+    
+    doc.setFontSize(10);
+    doc.text('____________________________________', 105, 160, { align: 'center' });
+    doc.text('Assinatura do Técnico', 105, 165, { align: 'center' });
+    
+    doc.save(`recibo_${visit.clientName.replace(/\s/g, '_')}.pdf`);
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-white">Visitas Técnicas</h2>
+          <p className="text-[#71717a]">Gerencie seus agendamentos e ordens de serviço.</p>
+        </div>
+        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+          <DialogTrigger render={
+            <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+              <Plus size={18} />
+              Nova Visita
+            </Button>
+          } />
+          <DialogContent className="sm:max-w-[500px] bg-[#1a1d23] border-[#2d3139] text-white">
+            <DialogHeader>
+              <DialogTitle className="text-white">Agendar Nova Visita</DialogTitle>
+              <DialogDescription className="text-[#71717a]">Preencha os detalhes do cliente e do serviço.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0]">Selecionar Cliente Existente (Opcional)</Label>
+                <Select onValueChange={(clientId) => {
+                  const client = clients.find(c => c.id === clientId);
+                  if (client) {
+                    setNewVisit({
+                      ...newVisit,
+                      clientName: client.name,
+                      clientPhone: client.phone,
+                      address: client.address
+                    });
+                  }
+                }}>
+                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                    <SelectValue placeholder="Escolha um cliente..." />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                    {clients.map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                    {clients.length === 0 && <SelectItem value="none" disabled>Nenhum cliente cadastrado</SelectItem>}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Separator className="bg-[#2d3139]" />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name" className="text-[#a0a0a0]">Nome do Cliente</Label>
+                  <Input id="name" value={newVisit.clientName || ''} onChange={e => setNewVisit({...newVisit, clientName: e.target.value})} placeholder="Ex: João Silva" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="phone" className="text-[#a0a0a0]">Telefone</Label>
+                  <Input id="phone" value={newVisit.clientPhone || ''} onChange={e => setNewVisit({...newVisit, clientPhone: e.target.value})} placeholder="(11) 99999-9999" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="address" className="text-[#a0a0a0]">Endereço</Label>
+                <Input id="address" value={newVisit.address || ''} onChange={e => setNewVisit({...newVisit, address: e.target.value})} placeholder="Rua, Número, Bairro" className="bg-[#0f1115] border-[#2d3139] text-white" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Tipo de Serviço</Label>
+                  <Select value={newVisit.type} onValueChange={(val: any) => setNewVisit({...newVisit, type: val})}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="CFTV">CFTV</SelectItem>
+                      <SelectItem value="Alarme">Alarme</SelectItem>
+                      <SelectItem value="Cerca Elétrica">Cerca Elétrica</SelectItem>
+                      <SelectItem value="Motor de Portão">Motor de Portão</SelectItem>
+                      <SelectItem value="Outros">Outros</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Data e Hora</Label>
+                  <Popover>
+                    <PopoverTrigger render={
+                      <Button variant="outline" className={cn("w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white", !newVisit.date && "text-muted-foreground")}>
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {newVisit.date ? format(newVisit.date, "PPP", { locale: ptBR }) : <span>Selecione</span>}
+                      </Button>
+                    } />
+                    <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
+                      <Calendar mode="single" selected={newVisit.date} onSelect={(date) => setNewVisit({...newVisit, date})} initialFocus className="bg-[#1a1d23] text-white" />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="desc" className="text-[#a0a0a0]">Descrição do Problema/Serviço</Label>
+                  <Input id="desc" value={newVisit.description || ''} onChange={e => setNewVisit({...newVisit, description: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="scheduledTime" className="text-[#a0a0a0]">Hora Programada</Label>
+                  <Input id="scheduledTime" type="time" value={newVisit.scheduledTime || ''} onChange={e => setNewVisit({...newVisit, scheduledTime: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="techName" className="text-[#a0a0a0]">Nome do Técnico</Label>
+                  <Input id="techName" value={newVisit.technicianName || ''} onChange={e => setNewVisit({...newVisit, technicianName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="val" className="text-[#a0a0a0]">Valor Estimado (R$)</Label>
+                  <Input id="val" type="number" value={newVisit.totalValue || ''} onChange={e => setNewVisit({...newVisit, totalValue: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+              <Button onClick={handleAddVisit} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Agendar</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden">
+        <Table>
+          <TableHeader className="bg-[#25282e]/50">
+            <TableRow className="border-[#2d3139] hover:bg-transparent">
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Cliente</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Serviço</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Status</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Valor</TableHead>
+              <TableHead className="text-right text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ações</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {visits.map((visit) => (
+              <TableRow key={visit.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
+                <TableCell>
+                  <div className="font-medium text-white text-[13px]">{visit.clientName}</div>
+                  <div className="text-[11px] text-[#71717a]">{visit.clientPhone}</div>
+                </TableCell>
+                <TableCell className="text-[12px] text-[#e0e0e0]">
+                  <div>{format(visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date), 'dd/MM/yyyy')}</div>
+                  {visit.scheduledTime && <div className="text-[10px] text-[#71717a]">{visit.scheduledTime}</div>}
+                </TableCell>
+                <TableCell>
+                  <Badge className="bg-[#2d3139] text-[#e0e0e0] font-normal text-[10px] uppercase tracking-wider">{visit.type}</Badge>
+                </TableCell>
+                <TableCell>
+                  <Select 
+                    value={visit.status} 
+                    onValueChange={(val: any) => updateStatus(visit.id, val)}
+                  >
+                    <SelectTrigger className="h-8 w-[140px] text-[11px] bg-[#0f1115] border-[#2d3139] text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="Agendada">Agendada</SelectItem>
+                      <SelectItem value="Em Andamento">Em Andamento</SelectItem>
+                      <SelectItem value="Concluída">Concluída</SelectItem>
+                      <SelectItem value="Cancelada">Cancelada</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </TableCell>
+                <TableCell className="text-[12px] font-semibold text-white">
+                  R$ {visit.totalValue.toFixed(2)}
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
+                      setViewingVisit(visit);
+                      setIsViewOpen(true);
+                    }}>
+                      <Eye size={14} />
+                    </Button>
+                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
+                      setEditingVisit({
+                        ...visit,
+                        date: visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date)
+                      });
+                      setIsEditOpen(true);
+                    }}>
+                      <Pencil size={14} />
+                    </Button>
+                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => generateReceipt(visit)}>
+                      <Share2 size={14} />
+                    </Button>
+                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
+                      setVisitToDelete(visit);
+                      setIsDeleteConfirmOpen(true);
+                    }}>
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+            {visits.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-12 text-[#71717a] text-sm">
+                  Nenhuma visita encontrada.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </Card>
+
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Confirmar Exclusão</DialogTitle>
+            <DialogDescription className="text-[#71717a]">
+              Deseja realmente excluir esta visita? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+            <Button variant="destructive" onClick={async () => {
+              if (visitToDelete) {
+                try {
+                  await deleteDoc(doc(db, 'visits', visitToDelete.id));
+                  toast.success('Visita excluída.');
+                  setIsDeleteConfirmOpen(false);
+                  setVisitToDelete(null);
+                } catch (error) {
+                  handleFirestoreError(error, OperationType.DELETE, `visits/${visitToDelete.id}`);
+                }
+              }
+            }} className="bg-[#ef4444] hover:bg-[#dc2626] text-white">Excluir</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Visit Dialog */}
+      <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
+        <DialogContent className="sm:max-w-[500px] bg-[#1a1d23] border-[#2d3139] text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">Detalhes da Visita</DialogTitle>
+          </DialogHeader>
+          {viewingVisit && (
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-[11px] text-[#71717a] uppercase">Cliente</p>
+                  <p className="text-sm font-medium">{viewingVisit.clientName}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[11px] text-[#71717a] uppercase">Telefone</p>
+                  <p className="text-sm font-medium">{viewingVisit.clientPhone || 'N/A'}</p>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[11px] text-[#71717a] uppercase">Endereço</p>
+                <p className="text-sm font-medium">{viewingVisit.address}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-[11px] text-[#71717a] uppercase">Tipo</p>
+                  <Badge className="bg-[#2d3139] text-[#e0e0e0] font-normal">{viewingVisit.type}</Badge>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[11px] text-[#71717a] uppercase">Status</p>
+                  <Badge className={cn(
+                    "font-normal",
+                    viewingVisit.status === 'Concluída' ? "bg-green-500/10 text-green-500" :
+                    viewingVisit.status === 'Agendada' ? "bg-blue-500/10 text-blue-500" :
+                    viewingVisit.status === 'Em Andamento' ? "bg-yellow-500/10 text-yellow-500" :
+                    "bg-red-500/10 text-red-500"
+                  )}>
+                    {viewingVisit.status}
+                  </Badge>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-[11px] text-[#71717a] uppercase">Data</p>
+                  <p className="text-sm font-medium">
+                    {format(viewingVisit.date instanceof Timestamp ? viewingVisit.date.toDate() : new Date(viewingVisit.date), "PPP", { locale: ptBR })}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[11px] text-[#71717a] uppercase">Hora Programada</p>
+                  <p className="text-sm font-medium">{viewingVisit.scheduledTime || 'Não informada'}</p>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[11px] text-[#71717a] uppercase">Descrição</p>
+                <p className="text-sm text-[#e0e0e0] bg-[#0f1115] p-3 rounded-lg border border-[#2d3139]">
+                  {viewingVisit.description || 'Sem descrição.'}
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-[11px] text-[#71717a] uppercase">Técnico</p>
+                  <p className="text-sm font-medium">{viewingVisit.technicianName}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[11px] text-[#71717a] uppercase">Valor</p>
+                  <p className="text-sm font-bold text-white">R$ {viewingVisit.totalValue.toFixed(2)}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setIsViewOpen(false)} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Visit Dialog */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="sm:max-w-[500px] bg-[#1a1d23] border-[#2d3139] text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">Editar Visita</DialogTitle>
+          </DialogHeader>
+          {editingVisit && (
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="editName" className="text-[#a0a0a0]">Nome do Cliente</Label>
+                  <Input id="editName" value={editingVisit.clientName || ''} onChange={e => setEditingVisit({...editingVisit, clientName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editPhone" className="text-[#a0a0a0]">Telefone</Label>
+                  <Input id="editPhone" value={editingVisit.clientPhone || ''} onChange={e => setEditingVisit({...editingVisit, clientPhone: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editAddress" className="text-[#a0a0a0]">Endereço</Label>
+                <Input id="editAddress" value={editingVisit.address || ''} onChange={e => setEditingVisit({...editingVisit, address: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Tipo de Serviço</Label>
+                  <Select value={editingVisit.type} onValueChange={(val: any) => setEditingVisit({...editingVisit, type: val})}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="CFTV">CFTV</SelectItem>
+                      <SelectItem value="Alarme">Alarme</SelectItem>
+                      <SelectItem value="Cerca Elétrica">Cerca Elétrica</SelectItem>
+                      <SelectItem value="Motor de Portão">Motor de Portão</SelectItem>
+                      <SelectItem value="Outros">Outros</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Data e Hora</Label>
+                  <Popover>
+                    <PopoverTrigger render={
+                      <Button variant="outline" className="w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white">
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {editingVisit.date ? format(editingVisit.date as Date, "PPP", { locale: ptBR }) : <span>Selecione</span>}
+                      </Button>
+                    } />
+                    <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
+                      <Calendar mode="single" selected={editingVisit.date as Date} onSelect={(date) => setEditingVisit({...editingVisit, date})} initialFocus className="bg-[#1a1d23] text-white" />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Status</Label>
+                  <Select value={editingVisit.status} onValueChange={(val: any) => setEditingVisit({...editingVisit, status: val})}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="Agendada">Agendada</SelectItem>
+                      <SelectItem value="Em Andamento">Em Andamento</SelectItem>
+                      <SelectItem value="Concluída">Concluída</SelectItem>
+                      <SelectItem value="Cancelada">Cancelada</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editScheduledTime" className="text-[#a0a0a0]">Hora Programada</Label>
+                  <Input id="editScheduledTime" type="time" value={editingVisit.scheduledTime || ''} onChange={e => setEditingVisit({...editingVisit, scheduledTime: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="editTechName" className="text-[#a0a0a0]">Nome do Técnico</Label>
+                  <Input id="editTechName" value={editingVisit.technicianName || ''} onChange={e => setEditingVisit({...editingVisit, technicianName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editVal" className="text-[#a0a0a0]">Valor (R$)</Label>
+                  <Input id="editVal" type="number" value={editingVisit.totalValue || ''} onChange={e => setEditingVisit({...editingVisit, totalValue: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editDesc" className="text-[#a0a0a0]">Descrição</Label>
+                <Input id="editDesc" value={editingVisit.description || ''} onChange={e => setEditingVisit({...editingVisit, description: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+            <Button onClick={handleUpdateVisit} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Salvar Alterações</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// --- Financial Manager Component ---
+
+function FinancialManager({ financials, visits }: { financials: FinancialRecord[], visits: TechnicalVisit[] }) {
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [newRecord, setNewRecord] = useState<Partial<FinancialRecord>>({
+    type: 'Receita',
+    date: new Date(),
+    value: 0
+  });
+
+  const handleAddRecord = async () => {
+    if (!newRecord.description || !newRecord.value) {
+      toast.error('Preencha os campos obrigatórios.');
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, 'financial'), {
+        ...newRecord,
+        date: Timestamp.fromDate(newRecord.date instanceof Date ? newRecord.date : new Date()),
+        createdAt: Timestamp.now()
+      });
+      setIsAddOpen(false);
+      setNewRecord({ type: 'Receita', date: new Date(), value: 0 });
+      toast.success('Registro financeiro salvo!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'financial');
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-white">Gestão Financeira</h2>
+          <p className="text-[#71717a]">Controle suas entradas e saídas.</p>
+        </div>
+        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+          <DialogTrigger render={
+            <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+              <Plus size={18} />
+              Novo Lançamento
+            </Button>
+          } />
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+            <DialogHeader>
+              <DialogTitle className="text-white">Novo Lançamento Financeiro</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Tipo</Label>
+                  <Select value={newRecord.type} onValueChange={(val: any) => setNewRecord({...newRecord, type: val})}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="Receita">Receita (+)</SelectItem>
+                      <SelectItem value="Despesa">Despesa (-)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="val" className="text-[#a0a0a0]">Valor (R$)</Label>
+                  <Input id="val" type="number" value={newRecord.value || ''} onChange={e => setNewRecord({...newRecord, value: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="desc" className="text-[#a0a0a0]">Descrição</Label>
+                <Input id="desc" value={newRecord.description || ''} onChange={e => setNewRecord({...newRecord, description: e.target.value})} placeholder="Ex: Pagamento Instalação CFTV" className="bg-[#0f1115] border-[#2d3139] text-white" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="cat" className="text-[#a0a0a0]">Categoria</Label>
+                  <Input id="cat" value={newRecord.category || ''} onChange={e => setNewRecord({...newRecord, category: e.target.value})} placeholder="Ex: Serviços, Equipamentos" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Data</Label>
+                  <Popover>
+                    <PopoverTrigger render={
+                      <Button variant="outline" className="w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white">
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {newRecord.date ? format(newRecord.date, "dd/MM/yyyy") : <span>Selecione</span>}
+                      </Button>
+                    } />
+                    <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
+                      <Calendar mode="single" selected={newRecord.date} onSelect={(date) => setNewRecord({...newRecord, date})} initialFocus className="bg-[#1a1d23] text-white" />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+              <Button onClick={handleAddRecord} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Salvar</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card className="bg-[#3b82f6] text-white border-none shadow-lg shadow-blue-900/20">
+          <CardContent className="p-6">
+            <p className="text-xs text-blue-100 uppercase tracking-wider mb-1 font-semibold">Total em Caixa</p>
+            <h3 className="text-3xl font-bold">
+              R$ {financials.reduce((acc, f) => f.type === 'Receita' ? acc + f.value : acc - f.value, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </h3>
+          </CardContent>
+        </Card>
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl">
+          <CardContent className="p-6">
+            <p className="text-xs text-[#71717a] uppercase tracking-wider mb-1 font-semibold">Total Receitas</p>
+            <h3 className="text-2xl font-bold text-[#10b981]">
+              R$ {financials.filter(f => f.type === 'Receita').reduce((acc, f) => acc + f.value, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </h3>
+          </CardContent>
+        </Card>
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl">
+          <CardContent className="p-6">
+            <p className="text-xs text-[#71717a] uppercase tracking-wider mb-1 font-semibold">Total Despesas</p>
+            <h3 className="text-2xl font-bold text-[#ef4444]">
+              R$ {financials.filter(f => f.type === 'Despesa').reduce((acc, f) => acc + f.value, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </h3>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden">
+        <Table>
+          <TableHeader className="bg-[#25282e]/50">
+            <TableRow className="border-[#2d3139] hover:bg-transparent">
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Descrição</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Categoria</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Tipo</TableHead>
+              <TableHead className="text-right text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Valor</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {financials.map((record) => (
+              <TableRow key={record.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
+                <TableCell className="text-[12px] text-[#e0e0e0]">
+                  {format(record.date instanceof Timestamp ? record.date.toDate() : new Date(record.date), 'dd/MM/yyyy')}
+                </TableCell>
+                <TableCell className="font-medium text-white text-[13px]">{record.description}</TableCell>
+                <TableCell>
+                  <Badge className="bg-[#2d3139] text-[#e0e0e0] font-normal text-[10px] uppercase tracking-wider">{record.category}</Badge>
+                </TableCell>
+                <TableCell>
+                  <Badge className={cn(
+                    "text-[10px] font-semibold uppercase px-2 py-0.5 rounded",
+                    record.type === 'Receita' ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"
+                  )}>
+                    {record.type}
+                  </Badge>
+                </TableCell>
+                <TableCell className={cn(
+                  "text-right font-bold text-[13px]",
+                  record.type === 'Receita' ? "text-[#10b981]" : "text-[#ef4444]"
+                )}>
+                  {record.type === 'Receita' ? '+' : '-'} R$ {record.value.toFixed(2)}
+                </TableCell>
+              </TableRow>
+            ))}
+            {financials.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-12 text-[#71717a] text-sm">
+                  Nenhuma transação registrada.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </Card>
+    </div>
+  );
+}
+
+// --- Budgets Manager Component ---
+
+function BudgetsManager({ budgets, clients }: { budgets: Budget[], clients: Client[] }) {
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [newBudget, setNewBudget] = useState<Partial<Budget>>({
+    items: [{ description: '', quantity: 1, price: 0 }],
+    status: 'Pendente'
+  });
+
+  const handleAddItem = () => {
+    setNewBudget({
+      ...newBudget,
+      items: [...(newBudget.items || []), { description: '', quantity: 1, price: 0 }]
+    });
+  };
+
+  const handleSaveBudget = async () => {
+    const total = (newBudget.items || []).reduce((acc, item) => acc + (item.quantity * item.price), 0);
+    try {
+      await addDoc(collection(db, 'budgets'), {
+        ...newBudget,
+        total,
+        createdAt: Timestamp.now()
+      });
+      setIsAddOpen(false);
+      setNewBudget({ items: [{ description: '', quantity: 1, price: 0 }], status: 'Pendente' });
+      toast.success('Orçamento criado!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'budgets');
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-white">Orçamentos</h2>
+          <p className="text-[#71717a]">Gere orçamentos profissionais para seus clientes.</p>
+        </div>
+        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+          <DialogTrigger render={
+            <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+              <Plus size={18} />
+              Novo Orçamento
+            </Button>
+          } />
+          <DialogContent className="sm:max-w-[600px] bg-[#1a1d23] border-[#2d3139] text-white">
+            <DialogHeader>
+              <DialogTitle className="text-white">Novo Orçamento</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0]">Selecionar Cliente Existente (Opcional)</Label>
+                <Select onValueChange={(clientId) => {
+                  const client = clients.find(c => c.id === clientId);
+                  if (client) {
+                    setNewBudget({
+                      ...newBudget,
+                      clientName: client.name,
+                      clientEmail: client.email
+                    });
+                  }
+                }}>
+                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                    <SelectValue placeholder="Escolha um cliente..." />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                    {clients.map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                    {clients.length === 0 && <SelectItem value="none" disabled>Nenhum cliente cadastrado</SelectItem>}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Separator className="bg-[#2d3139]" />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Cliente</Label>
+                  <Input value={newBudget.clientName || ''} onChange={e => setNewBudget({...newBudget, clientName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Email</Label>
+                  <Input value={newBudget.clientEmail || ''} onChange={e => setNewBudget({...newBudget, clientEmail: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+              </div>
+              <Separator className="bg-[#2d3139]" />
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[#a0a0a0]">Itens do Orçamento</Label>
+                  <Button variant="outline" size="sm" onClick={handleAddItem} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Adicionar Item</Button>
+                </div>
+                <ScrollArea className="h-[200px] pr-4">
+                  {(newBudget.items || []).map((item, idx) => (
+                    <div key={idx} className="grid grid-cols-12 gap-2 mb-2 items-end">
+                      <div className="col-span-6">
+                        <Input placeholder="Descrição" value={item.description} onChange={e => {
+                          const items = [...(newBudget.items || [])];
+                          items[idx].description = e.target.value;
+                          setNewBudget({...newBudget, items});
+                        }} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                      </div>
+                      <div className="col-span-2">
+                        <Input type="number" placeholder="Qtd" value={item.quantity} onChange={e => {
+                          const items = [...(newBudget.items || [])];
+                          items[idx].quantity = Number(e.target.value);
+                          setNewBudget({...newBudget, items});
+                        }} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                      </div>
+                      <div className="col-span-3">
+                        <Input type="number" placeholder="Preço" value={item.price} onChange={e => {
+                          const items = [...(newBudget.items || [])];
+                          items[idx].price = Number(e.target.value);
+                          setNewBudget({...newBudget, items});
+                        }} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                      </div>
+                      <div className="col-span-1">
+                        <Button variant="ghost" size="icon" className="text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
+                          const items = (newBudget.items || []).filter((_, i) => i !== idx);
+                          setNewBudget({...newBudget, items});
+                        }}>
+                          <Trash2 size={14} />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </ScrollArea>
+              </div>
+            </div>
+            <DialogFooter className="flex items-center justify-between sm:justify-between border-t border-[#2d3139] pt-4">
+              <div className="text-lg font-bold text-white">
+                Total: R$ {(newBudget.items || []).reduce((acc, item) => acc + (item.quantity * item.price), 0).toFixed(2)}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+                <Button onClick={handleSaveBudget} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Gerar</Button>
+              </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {budgets.map((budget) => (
+          <Card key={budget.id} className="border-[#2d3139] bg-[#1a1d23] rounded-xl hover:border-[#3b82f6]/50 transition-all group">
+            <CardHeader className="pb-2">
+              <div className="flex justify-between items-start">
+                <Badge className={cn(
+                  "text-[10px] font-semibold uppercase px-2 py-0.5 rounded",
+                  budget.status === 'Aprovado' ? "bg-emerald-500/10 text-emerald-500" : "bg-blue-500/10 text-blue-500"
+                )}>
+                  {budget.status}
+                </Badge>
+                <p className="text-[11px] text-[#71717a]">{format(budget.createdAt instanceof Timestamp ? budget.createdAt.toDate() : new Date(budget.createdAt), 'dd/MM/yyyy')}</p>
+              </div>
+              <CardTitle className="mt-3 text-[16px] font-bold text-white">{budget.clientName}</CardTitle>
+              <CardDescription className="text-[#71717a] text-[12px]">{budget.clientEmail}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2 mb-6">
+                {budget.items.slice(0, 2).map((item, i) => (
+                  <div key={i} className="flex justify-between text-[12px]">
+                    <span className="text-[#a0a0a0] truncate mr-2">{item.quantity}x {item.description}</span>
+                    <span className="font-medium text-[#e0e0e0]">R$ {(item.quantity * item.price).toFixed(2)}</span>
+                  </div>
+                ))}
+                {budget.items.length > 2 && <p className="text-[10px] text-[#555]">+{budget.items.length - 2} itens...</p>}
+              </div>
+              <Separator className="my-4 bg-[#2d3139]" />
+              <div className="flex items-center justify-between">
+                <p className="text-lg font-bold text-white">R$ {budget.total.toFixed(2)}</p>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white text-[11px]" onClick={() => {
+                    const doc = new jsPDF();
+                    doc.text('ORÇAMENTO', 105, 20, { align: 'center' });
+                    doc.text(`Cliente: ${budget.clientName}`, 20, 40);
+                    // @ts-ignore
+                    doc.autoTable({
+                      startY: 50,
+                      head: [['Item', 'Qtd', 'Preço Unit.', 'Total']],
+                      body: budget.items.map(i => [i.description, i.quantity, `R$ ${i.price.toFixed(2)}`, `R$ ${(i.quantity * i.price).toFixed(2)}`]),
+                    });
+                    doc.text(`TOTAL: R$ ${budget.total.toFixed(2)}`, 20, (doc as any).lastAutoTable.finalY + 20);
+                    doc.save(`orcamento_${budget.clientName}.pdf`);
+                  }}>
+                    PDF
+                  </Button>
+                  {budget.status === 'Pendente' && (
+                    <Button size="sm" className="h-8 bg-[#3b82f6] hover:bg-[#2563eb] text-white text-[11px]" onClick={async () => {
+                      await updateDoc(doc(db, 'budgets', budget.id), { status: 'Aprovado' });
+                      toast.success('Orçamento aprovado!');
+                    }}>
+                      Aprovar
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+        {budgets.length === 0 && (
+          <div className="col-span-full text-center py-20 bg-[#1a1d23] rounded-xl border border-dashed border-[#2d3139]">
+            <FileText className="mx-auto h-12 w-12 text-[#2d3139] mb-4" />
+            <h3 className="text-lg font-medium text-white">Nenhum orçamento</h3>
+            <p className="text-[#71717a]">Comece criando um novo orçamento para seus clientes.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
