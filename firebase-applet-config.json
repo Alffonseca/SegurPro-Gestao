@@ -1,10 +1,9 @@
 {
-  "projectId": "cfc-para-igrejas",
-  "appId": "1:727657466434:web:b0166d82a0dff45072bbdb",
-  "apiKey": "AIzaSyDGWDgz7RjenqMexaMVVZAKVlCRmaYvWBw",
-  "authDomain": "cfc-para-igrejas.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-e3e9dcb8-f1db-4746-a4d0-76864733ba56",
-  "storageBucket": "cfc-para-igrejas.firebasestorage.app",
-  "messagingSenderId": "727657466434",
-  "measurementId": ""
+  "apiKey": "AIzaSyBF9Z_O77qI3UJigdNuCdG8VP_XfQ1rEQw",
+  "authDomain": "seguranca-tecnica-app.firebaseapp.com",
+  "projectId": "seguranca-tecnica-app",
+  "storageBucket": "seguranca-tecnica-app.firebasestorage.app",
+  "messagingSenderId": "1098318187026",
+  "appId": "1:1098318187026:web:8cc7baa7caf998080aa6cb",
+  "firestoreDatabaseId": "(default)"
 }

@@ -44,6 +44,10 @@ import {
   GoogleAuthProvider, 
   onAuthStateChanged, 
   signOut,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+  updatePassword,
   User as FirebaseUser
 } from 'firebase/auth';
 import { format } from 'date-fns';
@@ -241,6 +245,10 @@ export default function App() {
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [userPhotoError, setUserPhotoError] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [pixSettings, setPixSettings] = useState<PixSettings>({
     key: '',
     bank: '',
@@ -342,7 +350,41 @@ export default function App() {
       toast.success('Login realizado com sucesso!');
     } catch (error) {
       console.error(error);
-      toast.error('Erro ao fazer login.');
+      toast.error('Erro ao fazer login com Google.');
+    }
+  };
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      toast.error('Preencha todos os campos.');
+      return;
+    }
+
+    try {
+      if (authMode === 'login') {
+        await signInWithEmailAndPassword(auth, email, password);
+        toast.success('Login realizado com sucesso!');
+      } else {
+        if (!displayName) {
+          toast.error('Informe seu nome.');
+          return;
+        }
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        await updateProfile(userCredential.user, { displayName });
+        toast.success('Conta criada com sucesso!');
+      }
+    } catch (error: any) {
+      console.error(error);
+      if (error.code === 'auth/email-already-in-use') {
+        toast.error('Este e-mail já está em uso.');
+      } else if (error.code === 'auth/weak-password') {
+        toast.error('A senha deve ter pelo menos 6 caracteres.');
+      } else if (error.code === 'auth/invalid-credential') {
+        toast.error('E-mail ou senha incorretos.');
+      } else {
+        toast.error('Erro na autenticação.');
+      }
     }
   };
 
@@ -368,8 +410,8 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center bg-[#0f1115] p-6">
-        <div className="w-full max-w-md space-y-8 text-center">
+      <div className="flex h-screen flex-col items-center justify-center bg-[#0f1115] p-6 overflow-y-auto">
+        <div className="w-full max-w-md space-y-8 text-center py-8">
           <div className="space-y-2">
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[#3b82f6] text-white shadow-xl shadow-blue-900/20">
               <CheckCircle2 size={32} />
@@ -379,14 +421,77 @@ export default function App() {
           </div>
           <Card className="border-[#2d3139] bg-[#1a1d23]">
             <CardHeader>
-              <CardTitle className="text-white">Bem-vindo</CardTitle>
-              <CardDescription className="text-[#71717a]">Faça login para gerenciar suas visitas e finanças.</CardDescription>
+              <CardTitle className="text-white">{authMode === 'login' ? 'Bem-vindo' : 'Criar Conta'}</CardTitle>
+              <CardDescription className="text-[#71717a]">
+                {authMode === 'login' ? 'Faça login para gerenciar suas visitas e finanças.' : 'Cadastre-se para começar a usar o sistema.'}
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <Button onClick={handleLogin} className="w-full gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none">
-                <UserIcon size={18} />
-                Entrar com Google
+            <CardContent className="space-y-4">
+              <form onSubmit={handleEmailAuth} className="space-y-4 text-left">
+                {authMode === 'register' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="reg-name" className="text-[#a0a0a0]">Nome Completo</Label>
+                    <Input 
+                      id="reg-name" 
+                      type="text" 
+                      value={displayName} 
+                      onChange={e => setDisplayName(e.target.value)} 
+                      placeholder="Seu nome"
+                      className="bg-[#0f1115] border-[#2d3139] text-white" 
+                    />
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="auth-email" className="text-[#a0a0a0]">E-mail</Label>
+                  <Input 
+                    id="auth-email" 
+                    type="email" 
+                    value={email} 
+                    onChange={e => setEmail(e.target.value)} 
+                    placeholder="seu@email.com"
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="auth-pass" className="text-[#a0a0a0]">Senha</Label>
+                  <Input 
+                    id="auth-pass" 
+                    type="password" 
+                    value={password} 
+                    onChange={e => setPassword(e.target.value)} 
+                    placeholder="••••••••"
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  />
+                </div>
+                <Button type="submit" className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none">
+                  {authMode === 'login' ? 'Entrar' : 'Cadastrar'}
+                </Button>
+              </form>
+
+              <div className="relative py-2">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-[#2d3139]"></span>
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-[#1a1d23] px-2 text-[#71717a]">Ou continue com</span>
+                </div>
+              </div>
+
+              <Button onClick={handleLogin} variant="outline" className="w-full gap-2 border-[#2d3139] text-white hover:bg-[#2d3139]">
+                <svg className="h-4 w-4" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
+                  <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
+                </svg>
+                Google
               </Button>
+
+              <div className="pt-4">
+                <button 
+                  onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
+                  className="text-sm text-[#3b82f6] hover:underline"
+                >
+                  {authMode === 'login' ? 'Não tem uma conta? Cadastre-se' : 'Já tem uma conta? Faça login'}
+                </button>
+              </div>
             </CardContent>
           </Card>
           <p className="text-xs text-[#555]">© 2026 SegurPro Gestão. Todos os direitos reservados.</p>
@@ -593,7 +698,7 @@ export default function App() {
           {activeTab === 'budgets' && <BudgetsManager budgets={budgets} clients={clients} />}
           {activeTab === 'clients' && <ClientsManager clients={clients} />}
           {activeTab === 'receipts' && <ReceiptsManager receipts={receipts} clients={clients} pixSettings={pixSettings} />}
-          {activeTab === 'settings' && <SettingsManager pixSettings={pixSettings} />}
+          {activeTab === 'settings' && <SettingsManager pixSettings={pixSettings} user={user} />}
         </div>
       </main>
     </div>
@@ -1436,8 +1541,11 @@ function ReceiptsManager({ receipts, clients, pixSettings }: { receipts: Receipt
 
 // --- Settings Manager Component ---
 
-function SettingsManager({ pixSettings }: { pixSettings: PixSettings }) {
+function SettingsManager({ pixSettings, user }: { pixSettings: PixSettings, user: FirebaseUser }) {
   const [localPix, setLocalPix] = useState<PixSettings>(pixSettings);
+  const [newDisplayName, setNewDisplayName] = useState(user.displayName || '');
+  const [newPassword, setNewPassword] = useState('');
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
 
   useEffect(() => {
     setLocalPix(pixSettings);
@@ -1452,25 +1560,100 @@ function SettingsManager({ pixSettings }: { pixSettings: PixSettings }) {
     }
   };
 
+  const handleUpdateProfile = async () => {
+    setIsUpdatingProfile(true);
+    try {
+      if (newDisplayName !== user.displayName) {
+        await updateProfile(user, { displayName: newDisplayName });
+        toast.success('Nome atualizado com sucesso!');
+      }
+      
+      if (newPassword) {
+        await updatePassword(user, newPassword);
+        toast.success('Senha atualizada com sucesso!');
+        setNewPassword('');
+      }
+    } catch (error: any) {
+      console.error(error);
+      if (error.code === 'auth/requires-recent-login') {
+        toast.error('Para alterar a senha, você precisa ter feito login recentemente.');
+      } else {
+        toast.error('Erro ao atualizar perfil.');
+      }
+    } finally {
+      setIsUpdatingProfile(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
       <div>
         <h2 className="text-2xl font-bold tracking-tight text-white">Configurações do Sistema</h2>
-        <p className="text-[#71717a]">Gerencie os dados globais do sistema.</p>
+        <p className="text-[#71717a]">Gerencie os dados globais do sistema e seu perfil.</p>
       </div>
 
-      <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <DollarSign className="text-[#3b82f6]" size={20} />
-            Dados para Pagamento (PIX)
-          </CardTitle>
-          <CardDescription className="text-[#71717a]">
-            Estes dados aparecerão nos recibos gerados pelo sistema.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <UserIcon className="text-[#3b82f6]" size={20} />
+              Perfil do Usuário
+            </CardTitle>
+            <CardDescription className="text-[#71717a]">
+              Atualize seu nome de exibição e senha de acesso.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="profileName" className="text-[#a0a0a0]">Nome de Exibição</Label>
+              <Input 
+                id="profileName" 
+                value={newDisplayName} 
+                onChange={e => setNewDisplayName(e.target.value)} 
+                className="bg-[#0f1115] border-[#2d3139] text-white" 
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="profileEmail" className="text-[#a0a0a0]">E-mail (Apenas leitura)</Label>
+              <Input 
+                id="profileEmail" 
+                value={user.email || ''} 
+                disabled
+                className="bg-[#0f1115] border-[#2d3139] text-[#71717a] cursor-not-allowed" 
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="profilePass" className="text-[#a0a0a0]">Nova Senha (Deixe em branco para não alterar)</Label>
+              <Input 
+                id="profilePass" 
+                type="password"
+                value={newPassword} 
+                onChange={e => setNewPassword(e.target.value)} 
+                placeholder="Mínimo 6 caracteres"
+                className="bg-[#0f1115] border-[#2d3139] text-white" 
+              />
+            </div>
+            <Button 
+              onClick={handleUpdateProfile} 
+              disabled={isUpdatingProfile}
+              className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white"
+            >
+              {isUpdatingProfile ? 'Atualizando...' : 'Salvar Perfil'}
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <DollarSign className="text-[#3b82f6]" size={20} />
+              Dados para Pagamento (PIX)
+            </CardTitle>
+            <CardDescription className="text-[#71717a]">
+              Estes dados aparecerão nos recibos gerados pelo sistema.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="pixKey" className="text-[#a0a0a0]">Chave PIX</Label>
               <Input 
@@ -1511,14 +1694,12 @@ function SettingsManager({ pixSettings }: { pixSettings: PixSettings }) {
                 className="bg-[#0f1115] border-[#2d3139] text-white" 
               />
             </div>
-          </div>
-          <div className="flex justify-end pt-4">
-            <Button onClick={handleSavePix} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">
-              Salvar Configurações
+            <Button onClick={handleSavePix} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+              Salvar Dados PIX
             </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
