@@ -262,7 +262,7 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
   
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
-  doc.text(appSettings.companyName || 'AF Sistemas de Segurança e Informática-ME', 190, 20, { align: 'right' });
+  // Removed duplicate company name on the right
   
   doc.setFontSize(9);
   doc.text('(91)98722-3092   (91)98995-8066   afsistseg.me@gmail.com', appSettings.logoUrl ? 50 : 20, 30);
