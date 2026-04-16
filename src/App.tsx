@@ -49,8 +49,10 @@ import {
   createUserWithEmailAndPassword,
   updateProfile,
   updatePassword,
-  User as FirebaseUser
+  User as FirebaseUser,
+  getAuth
 } from 'firebase/auth';
+import { initializeApp, deleteApp } from 'firebase/app';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { 
@@ -68,7 +70,7 @@ import {
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 
-import { db, auth, handleFirestoreError, OperationType } from './firebase';
+import { db, auth, handleFirestoreError, OperationType, firebaseConfig } from './firebase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -254,6 +256,8 @@ export default function App() {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const [currentUserData, setCurrentUserData] = useState<any>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [userPhotoError, setUserPhotoError] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
@@ -292,14 +296,20 @@ export default function App() {
         const userRef = doc(db, 'users', currentUser.uid);
         const userSnap = await getDoc(userRef);
         if (!userSnap.exists()) {
-          await setDoc(userRef, {
+          const initialData = {
             uid: currentUser.uid,
             email: currentUser.email,
-            displayName: currentUser.displayName,
-            role: 'admin', // Default to admin for the first user or based on logic
+            displayName: currentUser.displayName || displayName,
+            role: 'admin', // Default to admin for the first user
             createdAt: Timestamp.now()
-          });
+          };
+          await setDoc(userRef, initialData);
+          setCurrentUserData(initialData);
+        } else {
+          setCurrentUserData(userSnap.data());
         }
+      } else {
+        setCurrentUserData(null);
       }
       setLoading(false);
     });
@@ -350,6 +360,14 @@ export default function App() {
       (error) => handleFirestoreError(error, OperationType.LIST, 'receipts')
     );
 
+    const usersUnsubscribe = onSnapshot(
+      query(collection(db, 'users'), orderBy('createdAt', 'desc')),
+      (snapshot) => {
+        setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, 'users')
+    );
+
     const pixUnsubscribe = onSnapshot(
       doc(db, 'settings', 'pix'),
       (snapshot) => {
@@ -376,6 +394,7 @@ export default function App() {
       budgetsUnsubscribe();
       clientsUnsubscribe();
       receiptsUnsubscribe();
+      usersUnsubscribe();
       pixUnsubscribe();
       appSettingsUnsubscribe();
     };
@@ -606,6 +625,14 @@ export default function App() {
               active={activeTab === 'receipts'} 
               onClick={() => setActiveTab('receipts')} 
             />
+            {currentUserData?.role === 'admin' && (
+              <SidebarItem 
+                icon={<UserIcon size={18} />} 
+                label="Usuários" 
+                active={activeTab === 'users'} 
+                onClick={() => setActiveTab('users')} 
+              />
+            )}
             <SidebarItem 
               icon={<Settings size={18} />} 
               label="Configurações" 
@@ -697,6 +724,14 @@ export default function App() {
               active={activeTab === 'receipts'} 
               onClick={() => { setActiveTab('receipts'); setIsMobileMenuOpen(false); }} 
             />
+            {currentUserData?.role === 'admin' && (
+              <SidebarItem 
+                icon={<UserIcon size={20} />} 
+                label="Usuários" 
+                active={activeTab === 'users'} 
+                onClick={() => { setActiveTab('users'); setIsMobileMenuOpen(false); }} 
+              />
+            )}
             <SidebarItem 
               icon={<Settings size={20} />} 
               label="Configurações" 
@@ -748,9 +783,167 @@ export default function App() {
           {activeTab === 'budgets' && <BudgetsManager budgets={budgets} clients={clients} appSettings={appSettings} />}
           {activeTab === 'clients' && <ClientsManager clients={clients} />}
           {activeTab === 'receipts' && <ReceiptsManager receipts={receipts} clients={clients} pixSettings={pixSettings} appSettings={appSettings} />}
+          {activeTab === 'users' && <UsersManager users={users} />}
           {activeTab === 'settings' && <SettingsManager pixSettings={pixSettings} appSettings={appSettings} user={user} />}
         </div>
       </main>
+    </div>
+  );
+}
+
+function UsersManager({ users }: { users: any[] }) {
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'tecnico' });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleAddUser = async () => {
+    if (!newUser.name || !newUser.email || !newUser.password) {
+      toast.error('Preencha todos os campos.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      // Use secondary app to create user without logging out current admin
+      const secondaryApp = initializeApp(firebaseConfig, 'Secondary');
+      const secondaryAuth = getAuth(secondaryApp);
+      
+      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newUser.email, newUser.password);
+      await updateProfile(userCredential.user, { displayName: newUser.name });
+      
+      // Add to Firestore
+      await setDoc(doc(db, 'users', userCredential.user.uid), {
+        uid: userCredential.user.uid,
+        email: newUser.email,
+        displayName: newUser.name,
+        role: newUser.role,
+        createdAt: Timestamp.now()
+      });
+
+      await secondaryAuth.signOut();
+      await deleteApp(secondaryApp);
+
+      setIsAddOpen(false);
+      setNewUser({ name: '', email: '', password: '', role: 'tecnico' });
+      toast.success('Usuário cadastrado com sucesso!');
+    } catch (error: any) {
+      console.error(error);
+      toast.error(`Erro ao cadastrar usuário: ${error.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-white">Gestão de Usuários</h2>
+          <p className="text-[#71717a]">Cadastre e gerencie os acessos ao sistema.</p>
+        </div>
+        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+          <DialogTrigger asChild>
+            <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+              <Plus size={18} />
+              Novo Usuário
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+            <DialogHeader>
+              <DialogTitle className="text-white">Cadastrar Novo Usuário</DialogTitle>
+              <DialogDescription className="text-[#71717a]">
+                Crie um novo acesso para técnico ou administrador.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="user-name" className="text-[#a0a0a0]">Nome Completo</Label>
+                <Input 
+                  id="user-name" 
+                  value={newUser.name} 
+                  onChange={e => setNewUser({...newUser, name: e.target.value})} 
+                  placeholder="Nome do usuário"
+                  className="bg-[#0f1115] border-[#2d3139] text-white" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="user-email" className="text-[#a0a0a0]">E-mail</Label>
+                <Input 
+                  id="user-email" 
+                  type="email"
+                  value={newUser.email} 
+                  onChange={e => setNewUser({...newUser, email: e.target.value})} 
+                  placeholder="email@exemplo.com"
+                  className="bg-[#0f1115] border-[#2d3139] text-white" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="user-pass" className="text-[#a0a0a0]">Senha</Label>
+                <Input 
+                  id="user-pass" 
+                  type="password"
+                  value={newUser.password} 
+                  onChange={e => setNewUser({...newUser, password: e.target.value})} 
+                  placeholder="Mínimo 6 caracteres"
+                  className="bg-[#0f1115] border-[#2d3139] text-white" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0]">Nível de Acesso</Label>
+                <Select value={newUser.role} onValueChange={(val: any) => setNewUser({...newUser, role: val})}>
+                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                    <SelectItem value="admin">Administrador</SelectItem>
+                    <SelectItem value="tecnico">Técnico</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">
+                Cancelar
+              </Button>
+              <Button onClick={handleAddUser} disabled={isSubmitting} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+                {isSubmitting ? 'Cadastrando...' : 'Cadastrar Usuário'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden">
+        <Table>
+          <TableHeader className="bg-[#25282e]/50">
+            <TableRow className="border-[#2d3139] hover:bg-transparent">
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Usuário</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">E-mail</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Nível</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data Cadastro</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {users.map((u) => (
+              <TableRow key={u.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
+                <TableCell className="font-medium text-white text-[13px]">{u.displayName}</TableCell>
+                <TableCell className="text-[12px] text-[#e0e0e0]">{u.email}</TableCell>
+                <TableCell>
+                  <Badge className={cn(
+                    "font-normal text-[10px] uppercase tracking-wider",
+                    u.role === 'admin' ? "bg-purple-500/10 text-purple-500" : "bg-blue-500/10 text-blue-500"
+                  )}>
+                    {u.role === 'admin' ? 'Administrador' : 'Técnico'}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-[12px] text-[#71717a]">
+                  {u.createdAt ? format(u.createdAt instanceof Timestamp ? u.createdAt.toDate() : new Date(u.createdAt), 'dd/MM/yyyy') : '-'}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </Card>
     </div>
   );
 }
