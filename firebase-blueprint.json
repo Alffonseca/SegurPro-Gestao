@@ -2,66 +2,63 @@
   "entities": {
     "User": {
       "title": "User",
-      "description": "User profile information",
+      "description": "System user profile",
       "type": "object",
       "properties": {
         "uid": { "type": "string" },
-        "email": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
         "displayName": { "type": "string" },
-        "role": { "type": "string", "enum": ["admin", "technician"] }
+        "role": { "type": "string", "enum": ["admin", "technician"] },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["uid", "email"]
+      "required": ["uid", "email", "role"]
     },
     "TechnicalVisit": {
       "title": "Technical Visit",
-      "description": "Information about a technical visit for installation or maintenance",
+      "description": "A technical service visit record",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "clientId": { "type": "string" },
         "clientName": { "type": "string" },
-        "clientPhone": { "type": "string" },
-        "address": { "type": "string" },
         "date": { "type": "string", "format": "date-time" },
         "scheduledTime": { "type": "string" },
-        "type": { "type": "string", "enum": ["CFTV", "Alarme", "Cerca Elétrica", "Motor de Portão", "Outros"] },
-        "status": { "type": "string", "enum": ["Agendada", "Em Andamento", "Concluída", "Cancelada"] },
-        "description": { "type": "string" },
-        "observations": { "type": "string" },
+        "expectedDate": { "type": "string", "format": "date-time" },
+        "expectedTime": { "type": "string" },
+        "type": { "type": "string" },
+        "status": { "type": "string" },
         "technicianId": { "type": "string" },
         "technicianName": { "type": "string" },
+        "address": { "type": "string" },
+        "description": { "type": "string" },
+        "observations": { "type": "string" },
         "totalValue": { "type": "number" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["clientName", "date", "type", "status"]
+      "required": ["clientName", "date", "status", "technicianId"]
     },
     "FinancialRecord": {
       "title": "Financial Record",
       "description": "Income or expense record",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
         "type": { "type": "string", "enum": ["Receita", "Despesa"] },
-        "category": { "type": "string" },
-        "description": { "type": "string" },
         "value": { "type": "number" },
+        "description": { "type": "string" },
         "date": { "type": "string", "format": "date-time" },
-        "visitId": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["type", "value", "date"]
     },
     "Budget": {
       "title": "Budget",
-      "description": "Budget for approval",
+      "description": "Service budget for a client",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
         "clientName": { "type": "string" },
         "clientEmail": { "type": "string" },
-        "items": { "type": "array" },
         "total": { "type": "number" },
-        "status": { "type": "string", "enum": ["Pendente", "Aprovado", "Rejeitado"] },
+        "status": { "type": "string" },
+        "items": { "type": "array" },
+        "observations": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["clientName", "total", "status"]
@@ -71,11 +68,11 @@
       "description": "Customer information",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
         "name": { "type": "string" },
         "email": { "type": "string" },
         "phone": { "type": "string" },
         "address": { "type": "string" },
+        "document": { "type": "string" },
         "type": { "type": "string", "enum": ["Avulso", "Contrato"] },
         "contractValue": { "type": "number" },
         "serviceSpecification": { "type": "string" },
@@ -85,61 +82,39 @@
     },
     "Receipt": {
       "title": "Receipt",
-      "description": "Service receipt",
+      "description": "Payment receipt",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
         "clientName": { "type": "string" },
-        "clientType": { "type": "string", "enum": ["Avulso", "Contrato"] },
-        "serviceSpecification": { "type": "string" },
+        "clientType": { "type": "string" },
         "value": { "type": "number" },
+        "paymentMethod": { "type": "string" },
         "referenceMonth": { "type": "string" },
-        "paymentMethod": { "type": "string", "enum": ["Dinheiro", "PIX", "Cartão"] },
+        "serviceSpecification": { "type": "string" },
+        "observations": { "type": "string" },
         "date": { "type": "string", "format": "date-time" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["clientName", "value", "date", "paymentMethod"]
+      "required": ["clientName", "value", "paymentMethod", "date"]
     },
-    "PixSettings": {
-      "title": "PIX Settings",
-      "description": "Global PIX payment information",
+    "GeneralSettings": {
+      "title": "General Settings",
+      "description": "Global application settings",
       "type": "object",
       "properties": {
-        "key": { "type": "string" },
-        "bank": { "type": "string" },
-        "favored": { "type": "string" },
-        "document": { "type": "string" }
+        "companyName": { "type": "string" },
+        "logoUrl": { "type": "string" }
       }
     }
   },
   "firestore": {
-    "/users/{uid}": {
-      "schema": "User",
-      "description": "User profiles"
-    },
-    "/visits/{visitId}": {
-      "schema": "TechnicalVisit",
-      "description": "Technical visits"
-    },
-    "/financial/{recordId}": {
-      "schema": "FinancialRecord",
-      "description": "Financial records"
-    },
-    "/budgets/{budgetId}": {
-      "schema": "Budget",
-      "description": "Client budgets"
-    },
-    "/clients/{clientId}": {
-      "schema": "Client",
-      "description": "Customer database"
-    },
-    "/receipts/{receiptId}": {
-      "schema": "Receipt",
-      "description": "Generated receipts"
-    },
-    "/settings/pix": {
-      "schema": "PixSettings",
-      "description": "Global PIX configuration"
-    }
+    "/users/{userId}": { "schema": "User", "description": "User profiles" },
+    "/visits/{visitId}": { "schema": "TechnicalVisit", "description": "Technical visits" },
+    "/financial/{recordId}": { "schema": "FinancialRecord", "description": "Financial transactions" },
+    "/budgets/{budgetId}": { "schema": "Budget", "description": "Client budgets" },
+    "/clients/{clientId}": { "schema": "Client", "description": "Client database" },
+    "/receipts/{receiptId}": { "schema": "Receipt", "description": "Generated receipts" },
+    "/settings/general": { "schema": "GeneralSettings", "description": "Global company settings" },
+    "/settings/pix": { "schema": "object", "description": "PIX payment settings" }
   }
 }

@@ -37,7 +37,8 @@ import {
   orderBy, 
   Timestamp,
   setDoc,
-  getDoc
+  getDoc,
+  getDocFromServer
 } from 'firebase/firestore';
 import { 
   signInWithPopup, 
@@ -171,9 +172,12 @@ interface TechnicalVisit {
   address: string;
   date: any; // Firestore Timestamp
   scheduledTime?: string;
+  expectedDate?: any; // Data prevista
+  expectedTime?: string; // Hora prevista
   type: 'CFTV' | 'Alarme' | 'Cerca Elétrica' | 'Motor de Portão' | 'Outros';
   status: 'Agendada' | 'Em Andamento' | 'Concluída' | 'Cancelada';
   description: string;
+  observations?: string;
   technicianId: string;
   technicianName: string;
   totalValue: number;
@@ -197,6 +201,7 @@ interface Budget {
   items: { description: string; quantity: number; price: number }[];
   total: number;
   status: 'Pendente' | 'Aprovado' | 'Rejeitado';
+  observations?: string;
   createdAt: any;
 }
 
@@ -221,6 +226,7 @@ interface Receipt {
   value: number;
   referenceMonth?: string;
   paymentMethod: 'Dinheiro' | 'PIX' | 'Cartão';
+  observations?: string;
   date: any;
   createdAt: any;
 }
@@ -230,6 +236,11 @@ interface PixSettings {
   bank: string;
   favored: string;
   document: string;
+}
+
+interface AppSettings {
+  logoUrl: string;
+  companyName: string;
 }
 
 // --- Components ---
@@ -255,9 +266,25 @@ export default function App() {
     favored: '',
     document: ''
   });
+  const [appSettings, setAppSettings] = useState<AppSettings>({
+    logoUrl: '',
+    companyName: 'AF Sistemas de Segurança e Informática'
+  });
 
   // Auth Listener
   useEffect(() => {
+    async function testConnection() {
+      try {
+        await getDocFromServer(doc(db, 'test', 'connection'));
+      } catch (error: any) {
+        if (error.message.includes('the client is offline')) {
+          console.error("Erro de conexão com o Firebase: O cliente está offline ou a configuração está incorreta.");
+          toast.error("Erro de conexão: Verifique se o Firestore foi ativado no Console do Firebase.");
+        }
+      }
+    }
+    testConnection();
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
@@ -333,6 +360,16 @@ export default function App() {
       (error) => handleFirestoreError(error, OperationType.GET, 'settings/pix')
     );
 
+    const appSettingsUnsubscribe = onSnapshot(
+      doc(db, 'settings', 'general'),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          setAppSettings(snapshot.data() as AppSettings);
+        }
+      },
+      (error) => handleFirestoreError(error, OperationType.GET, 'settings/general')
+    );
+
     return () => {
       visitsUnsubscribe();
       financialUnsubscribe();
@@ -340,6 +377,7 @@ export default function App() {
       clientsUnsubscribe();
       receiptsUnsubscribe();
       pixUnsubscribe();
+      appSettingsUnsubscribe();
     };
   }, [user]);
 
@@ -348,9 +386,15 @@ export default function App() {
     try {
       await signInWithPopup(auth, provider);
       toast.success('Login realizado com sucesso!');
-    } catch (error) {
-      console.error(error);
-      toast.error('Erro ao fazer login com Google.');
+    } catch (error: any) {
+      console.error('Erro no login Google:', error);
+      if (error.code === 'auth/unauthorized-domain') {
+        toast.error('Domínio não autorizado no Firebase. Adicione este domínio nas configurações do Firebase.');
+      } else if (error.code === 'auth/operation-not-allowed') {
+        toast.error('O login com Google não está ativado no console do Firebase.');
+      } else {
+        toast.error(`Erro ao fazer login: ${error.message}`);
+      }
     }
   };
 
@@ -413,10 +457,16 @@ export default function App() {
       <div className="flex h-screen flex-col items-center justify-center bg-[#0f1115] p-6 overflow-y-auto">
         <div className="w-full max-w-md space-y-8 text-center py-8">
           <div className="space-y-2">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[#3b82f6] text-white shadow-xl shadow-blue-900/20">
-              <CheckCircle2 size={32} />
-            </div>
-            <h1 className="text-3xl font-bold tracking-tight text-white">SegurPro Gestão</h1>
+            {appSettings.logoUrl ? (
+              <div className="mx-auto flex h-24 w-auto items-center justify-center overflow-hidden mb-4">
+                <img src={appSettings.logoUrl} alt="Logo" className="max-h-full max-w-full object-contain" referrerPolicy="no-referrer" />
+              </div>
+            ) : (
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[#3b82f6] text-white shadow-xl shadow-blue-900/20">
+                <CheckCircle2 size={32} />
+              </div>
+            )}
+            <h1 className="text-3xl font-bold tracking-tight text-white">{appSettings.companyName || 'SegurPro Gestão'}</h1>
             <p className="text-[#71717a]">Controle total para instaladores de segurança eletrônica.</p>
           </div>
           <Card className="border-[#2d3139] bg-[#1a1d23]">
@@ -693,12 +743,12 @@ export default function App() {
               onNavigate={(tab) => setActiveTab(tab)}
             />
           )}
-          {activeTab === 'visits' && <VisitsManager visits={visits} user={user} clients={clients} />}
+          {activeTab === 'visits' && <VisitsManager visits={visits} user={user} clients={clients} appSettings={appSettings} />}
           {activeTab === 'financial' && <FinancialManager financials={financials} visits={visits} />}
-          {activeTab === 'budgets' && <BudgetsManager budgets={budgets} clients={clients} />}
+          {activeTab === 'budgets' && <BudgetsManager budgets={budgets} clients={clients} appSettings={appSettings} />}
           {activeTab === 'clients' && <ClientsManager clients={clients} />}
-          {activeTab === 'receipts' && <ReceiptsManager receipts={receipts} clients={clients} pixSettings={pixSettings} />}
-          {activeTab === 'settings' && <SettingsManager pixSettings={pixSettings} user={user} />}
+          {activeTab === 'receipts' && <ReceiptsManager receipts={receipts} clients={clients} pixSettings={pixSettings} appSettings={appSettings} />}
+          {activeTab === 'settings' && <SettingsManager pixSettings={pixSettings} appSettings={appSettings} user={user} />}
         </div>
       </main>
     </div>
@@ -747,8 +797,8 @@ function ClientsManager({ clients }: { clients: Client[] }) {
         contractValue: newClient.type === 'Contrato' ? Number(newClient.contractValue || 0) : 0,
         createdAt: Timestamp.now()
       });
-      setIsAddOpen(false);
       setNewClient({ type: 'Avulso' });
+      setIsAddOpen(false);
       toast.success('Cliente cadastrado com sucesso!');
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'clients');
@@ -767,8 +817,8 @@ function ClientsManager({ clients }: { clients: Client[] }) {
         ...data,
         contractValue: data.type === 'Contrato' ? Number(data.contractValue || 0) : 0
       });
-      setIsEditOpen(false);
       setEditingClient(null);
+      setIsEditOpen(false);
       toast.success('Cliente atualizado com sucesso!');
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'clients');
@@ -1012,7 +1062,7 @@ function ClientsManager({ clients }: { clients: Client[] }) {
 
 // --- Receipts Manager Component ---
 
-function ReceiptsManager({ receipts, clients, pixSettings }: { receipts: Receipt[], clients: Client[], pixSettings: PixSettings }) {
+function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { receipts: Receipt[], clients: Client[], pixSettings: PixSettings, appSettings: AppSettings }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingReceipt, setEditingReceipt] = useState<Receipt | null>(null);
@@ -1023,7 +1073,8 @@ function ReceiptsManager({ receipts, clients, pixSettings }: { receipts: Receipt
     value: 0,
     paymentMethod: 'PIX',
     clientType: 'Avulso',
-    referenceMonth: format(new Date(), 'MMMM/yyyy', { locale: ptBR })
+    referenceMonth: format(new Date(), 'MMMM/yyyy', { locale: ptBR }),
+    observations: ''
   });
 
   const handleAddReceipt = async () => {
@@ -1045,13 +1096,14 @@ function ReceiptsManager({ receipts, clients, pixSettings }: { receipts: Receipt
       const fullReceipt = { id: docRef.id, ...receiptData } as Receipt;
       generateReceiptPDF(fullReceipt);
       
-      setIsAddOpen(false);
       setNewReceipt({ 
         date: new Date(), 
         value: 0, 
         paymentMethod: 'PIX',
-        referenceMonth: format(new Date(), 'MMMM/yyyy', { locale: ptBR })
+        referenceMonth: format(new Date(), 'MMMM/yyyy', { locale: ptBR }),
+        observations: ''
       });
+      setIsAddOpen(false);
       toast.success('Recibo gerado com sucesso!');
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'receipts');
@@ -1072,8 +1124,8 @@ function ReceiptsManager({ receipts, clients, pixSettings }: { receipts: Receipt
       };
       
       await updateDoc(doc(db, 'receipts', id), receiptData);
-      setIsEditOpen(false);
       setEditingReceipt(null);
+      setIsEditOpen(false);
       toast.success('Recibo atualizado!');
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `receipts/${editingReceipt?.id}`);
@@ -1087,17 +1139,25 @@ function ReceiptsManager({ receipts, clients, pixSettings }: { receipts: Receipt
     const isContract = receipt.clientType === 'Contrato';
     
     // 1. Header
+    if (appSettings.logoUrl) {
+      try {
+        doc.addImage(appSettings.logoUrl, 'PNG', 20, 10, 25, 25);
+      } catch (e) {
+        console.error("Erro ao adicionar logo ao PDF:", e);
+      }
+    }
+
     doc.setFontSize(16);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(0, 0, 0);
-    doc.text('André Fonseca', 20, 20);
+    doc.text(appSettings.companyName || 'André Fonseca', appSettings.logoUrl ? 50 : 20, 20);
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text('AF Sistemas de Segurança e Informática-ME', 190, 20, { align: 'right' });
+    doc.text(appSettings.companyName || 'AF Sistemas de Segurança e Informática-ME', 190, 20, { align: 'right' });
     
     doc.setFontSize(9);
-    doc.text('(91)98722-3092   (91)98995-8066   afsistseg.me@gmail.com', 20, 30);
+    doc.text('(91)98722-3092   (91)98995-8066   afsistseg.me@gmail.com', appSettings.logoUrl ? 50 : 20, 30);
     
     // 2. Title Bar
     doc.setFillColor(245, 245, 245);
@@ -1192,13 +1252,23 @@ function ReceiptsManager({ receipts, clients, pixSettings }: { receipts: Receipt
       doc.text(`Favorecido: ${pixSettings.favored} | CPF: ${pixSettings.document}`, 20, servicesY + 80);
     }
 
+    // Observations
+    if (receipt.observations) {
+      const obsY = servicesY + (pixSettings && pixSettings.key ? 90 : 70);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Observações:', 20, obsY);
+      doc.setFont('helvetica', 'normal');
+      const splitObs = doc.splitTextToSize(receipt.observations, 170);
+      doc.text(splitObs, 20, obsY + 5);
+    }
+
     // 6. Signature
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(dateStr, 105, servicesY + 100, { align: 'center' });
-    doc.line(70, servicesY + 110, 140, servicesY + 110);
-    doc.text('André Fonseca', 105, servicesY + 115, { align: 'center' });
+    doc.text(dateStr, 105, 260, { align: 'center' });
+    doc.line(70, 270, 140, 270);
+    doc.text(appSettings.companyName || 'André Fonseca', 105, 275, { align: 'center' });
     
     const fileName = `recibo_${receipt.clientName.replace(/\s/g, '_')}.pdf`;
 
@@ -1343,6 +1413,10 @@ function ReceiptsManager({ receipts, clients, pixSettings }: { receipts: Receipt
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="receiptObs" className="text-[#a0a0a0]">Observações do Recibo</Label>
+                <Input id="receiptObs" value={newReceipt.observations || ''} onChange={e => setNewReceipt({...newReceipt, observations: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+              </div>
             </div>
             <DialogFooter className="flex flex-row justify-between sm:justify-between">
               <Button variant="ghost" onClick={() => setIsAddOpen(false)} className="text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]">
@@ -1435,6 +1509,10 @@ function ReceiptsManager({ receipts, clients, pixSettings }: { receipts: Receipt
                       <SelectItem value="Cartão">Cartão</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editReceiptObs" className="text-[#a0a0a0]">Observações do Recibo</Label>
+                  <Input id="editReceiptObs" value={editingReceipt.observations || ''} onChange={e => setEditingReceipt({...editingReceipt, observations: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
               </div>
             )}
@@ -1541,8 +1619,9 @@ function ReceiptsManager({ receipts, clients, pixSettings }: { receipts: Receipt
 
 // --- Settings Manager Component ---
 
-function SettingsManager({ pixSettings, user }: { pixSettings: PixSettings, user: FirebaseUser }) {
+function SettingsManager({ pixSettings, appSettings, user }: { pixSettings: PixSettings, appSettings: AppSettings, user: FirebaseUser }) {
   const [localPix, setLocalPix] = useState<PixSettings>(pixSettings);
+  const [localApp, setLocalApp] = useState<AppSettings>(appSettings);
   const [newDisplayName, setNewDisplayName] = useState(user.displayName || '');
   const [newPassword, setNewPassword] = useState('');
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
@@ -1551,12 +1630,36 @@ function SettingsManager({ pixSettings, user }: { pixSettings: PixSettings, user
     setLocalPix(pixSettings);
   }, [pixSettings]);
 
+  useEffect(() => {
+    setLocalApp(appSettings);
+  }, [appSettings]);
+
   const handleSavePix = async () => {
     try {
       await setDoc(doc(db, 'settings', 'pix'), localPix);
       toast.success('Configurações de PIX salvas!');
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'settings/pix');
+    }
+  };
+
+  const handleSaveApp = async () => {
+    try {
+      await setDoc(doc(db, 'settings', 'general'), localApp);
+      toast.success('Configurações gerais salvas!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'settings/general');
+    }
+  };
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setLocalApp({ ...localApp, logoUrl: reader.result as string });
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -1593,6 +1696,49 @@ function SettingsManager({ pixSettings, user }: { pixSettings: PixSettings, user
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Settings className="text-[#3b82f6]" size={20} />
+              Configurações Gerais
+            </CardTitle>
+            <CardDescription className="text-[#71717a]">
+              Personalize o nome da empresa e a logo do sistema.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="companyName" className="text-[#a0a0a0]">Nome da Empresa</Label>
+              <Input 
+                id="companyName" 
+                value={localApp.companyName} 
+                onChange={e => setLocalApp({ ...localApp, companyName: e.target.value })} 
+                className="bg-[#0f1115] border-[#2d3139] text-white" 
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[#a0a0a0]">Logo da Empresa</Label>
+              <div className="flex flex-col gap-4">
+                {localApp.logoUrl && (
+                  <div className="h-20 w-auto flex items-center justify-center bg-[#0f1115] rounded-lg border border-[#2d3139] p-2">
+                    <img src={localApp.logoUrl} alt="Logo Preview" className="max-h-full max-w-full object-contain" referrerPolicy="no-referrer" />
+                  </div>
+                )}
+                <Input 
+                  type="file" 
+                  accept="image/*" 
+                  onChange={handleLogoUpload}
+                  className="bg-[#0f1115] border-[#2d3139] text-white file:bg-[#3b82f6] file:text-white file:border-none file:px-4 file:py-1 file:rounded-md file:mr-4 file:cursor-pointer" 
+                />
+                <p className="text-[10px] text-[#71717a]">Recomendado: PNG ou JPG com fundo transparente.</p>
+              </div>
+            </div>
+            <Button onClick={handleSaveApp} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none mt-4">
+              Salvar Configurações Gerais
+            </Button>
+          </CardContent>
+        </Card>
+
         <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -1869,7 +2015,7 @@ function StatCard({ title, value, icon, trend, isBalance, isCount }: { title: st
 
 // --- Visits Manager Component ---
 
-function VisitsManager({ visits, user, clients }: { visits: TechnicalVisit[], user: FirebaseUser, clients: Client[] }) {
+function VisitsManager({ visits, user, clients, appSettings }: { visits: TechnicalVisit[], user: FirebaseUser, clients: Client[], appSettings: AppSettings }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
@@ -1882,6 +2028,8 @@ function VisitsManager({ visits, user, clients }: { visits: TechnicalVisit[], us
     status: 'Agendada',
     date: new Date(),
     scheduledTime: '',
+    expectedDate: new Date(),
+    expectedTime: '',
     technicianName: user.displayName || '',
     totalValue: 0
   });
@@ -1903,19 +2051,23 @@ function VisitsManager({ visits, user, clients }: { visits: TechnicalVisit[], us
       await addDoc(collection(db, 'visits'), {
         ...newVisit,
         date: Timestamp.fromDate(newVisit.date instanceof Date ? newVisit.date : new Date()),
+        expectedDate: Timestamp.fromDate(newVisit.expectedDate instanceof Date ? newVisit.expectedDate : new Date()),
         technicianId: user.uid,
         technicianName: newVisit.technicianName || user.displayName || 'Técnico',
         createdAt: Timestamp.now()
       });
-      setIsAddOpen(false);
       setNewVisit({ 
         type: 'CFTV', 
         status: 'Agendada', 
         date: new Date(), 
         scheduledTime: '',
+        expectedDate: new Date(),
+        expectedTime: '',
         technicianName: user.displayName || '',
-        totalValue: 0 
+        totalValue: 0,
+        observations: ''
       });
+      setIsAddOpen(false);
       toast.success('Visita agendada com sucesso!');
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'visits');
@@ -1941,41 +2093,101 @@ function VisitsManager({ visits, user, clients }: { visits: TechnicalVisit[], us
       const { id, ...data } = editingVisit;
       await updateDoc(doc(db, 'visits', id), {
         ...data,
-        date: editingVisit.date instanceof Date ? Timestamp.fromDate(editingVisit.date) : editingVisit.date
+        date: editingVisit.date instanceof Date ? Timestamp.fromDate(editingVisit.date) : editingVisit.date,
+        expectedDate: editingVisit.expectedDate instanceof Date ? Timestamp.fromDate(editingVisit.expectedDate) : editingVisit.expectedDate
       });
-      setIsEditOpen(false);
       setEditingVisit(null);
+      setIsEditOpen(false);
       toast.success('Visita atualizada com sucesso!');
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `visits/${editingVisit?.id}`);
     }
   };
 
-  const generateReceipt = (visit: TechnicalVisit) => {
+  const generateVisitPDF = (visit: TechnicalVisit) => {
     const doc = new jsPDF();
     const dateStr = format(visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date), 'dd/MM/yyyy HH:mm');
     
-    doc.setFontSize(20);
-    doc.text('RECIBO DE SERVIÇO', 105, 20, { align: 'center' });
-    doc.setFontSize(12);
-    doc.text(`SegurPro Gestão - Segurança Eletrônica`, 20, 40);
-    doc.text(`Data: ${dateStr}${visit.scheduledTime ? ` às ${visit.scheduledTime}` : ''}`, 20, 50);
-    doc.line(20, 55, 190, 55);
-    
-    doc.text(`Cliente: ${visit.clientName}`, 20, 70);
-    doc.text(`Endereço: ${visit.address}`, 20, 80);
-    doc.text(`Serviço: ${visit.type}`, 20, 90);
-    doc.text(`Descrição: ${visit.description || 'N/A'}`, 20, 100);
-    doc.text(`Técnico: ${visit.technicianName}`, 20, 110);
+    // Header
+    if (appSettings.logoUrl) {
+      try {
+        doc.addImage(appSettings.logoUrl, 'PNG', 20, 10, 30, 30);
+      } catch (e) {
+        console.error("Erro ao adicionar logo ao PDF:", e);
+      }
+    }
+
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text(appSettings.companyName || 'AF Sistemas de Segurança e Informática', 105, 25, { align: 'center' });
     
     doc.setFontSize(14);
-    doc.text(`VALOR TOTAL: R$ ${visit.totalValue.toFixed(2)}`, 20, 130);
+    doc.text('RELATÓRIO DE VISITA TÉCNICA', 105, 35, { align: 'center' });
     
     doc.setFontSize(10);
-    doc.text('____________________________________', 105, 160, { align: 'center' });
-    doc.text('Assinatura do Técnico', 105, 165, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Data/Hora Agendamento: ${dateStr}${visit.scheduledTime ? ` às ${visit.scheduledTime}` : ''}`, 20, 50);
     
-    doc.save(`recibo_${visit.clientName.replace(/\s/g, '_')}.pdf`);
+    if (visit.expectedDate) {
+      const expDateStr = format(visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate), 'dd/MM/yyyy');
+      doc.text(`Data/Hora Prevista: ${expDateStr}${visit.expectedTime ? ` às ${visit.expectedTime}` : ''}`, 20, 57);
+    }
+    
+    doc.text(`Técnico Responsável: ${visit.technicianName}`, 20, 64);
+    
+    doc.line(20, 70, 190, 70);
+    
+    // Client Info
+    doc.setFont('helvetica', 'bold');
+    doc.text('DADOS DO CLIENTE', 20, 80);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Cliente: ${visit.clientName}`, 20, 87);
+    doc.text(`Endereço: ${visit.address}`, 20, 94);
+    doc.text(`Telefone: ${visit.clientPhone || 'N/A'}`, 20, 101);
+    
+    doc.line(20, 107, 190, 107);
+    
+    // Service Info
+    doc.setFont('helvetica', 'bold');
+    doc.text('DETALHES DO SERVIÇO', 20, 110);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Tipo de Sistema: ${visit.type}`, 20, 117);
+    doc.text(`Status: ${visit.status}`, 20, 124);
+    
+    doc.text('Descrição do Serviço/Problema:', 20, 134);
+    const splitDesc = doc.splitTextToSize(visit.description || 'N/A', 170);
+    doc.text(splitDesc, 20, 141);
+    
+    let currentY = 141 + (splitDesc.length * 5) + 10;
+
+    if (visit.observations) {
+      doc.setFont('helvetica', 'bold');
+      doc.text('Observações:', 20, currentY);
+      doc.setFont('helvetica', 'normal');
+      const splitObs = doc.splitTextToSize(visit.observations, 170);
+      doc.text(splitObs, 20, currentY + 7);
+      currentY += (splitObs.length * 5) + 15;
+    }
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text(`VALOR DO SERVIÇO: R$ ${visit.totalValue.toFixed(2)}`, 20, currentY);
+    
+    // Signatures
+    const signatureY = 260;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    
+    // Technician Signature
+    doc.line(25, signatureY, 90, signatureY);
+    doc.text('Assinatura do Técnico', 57.5, signatureY + 5, { align: 'center' });
+    doc.text(visit.technicianName, 57.5, signatureY + 10, { align: 'center' });
+    
+    // Client Signature
+    doc.line(120, signatureY, 185, signatureY);
+    doc.text('Assinatura do Cliente', 152.5, signatureY + 5, { align: 'center' });
+    doc.text(visit.clientName, 152.5, signatureY + 10, { align: 'center' });
+    
+    doc.save(`visita_${visit.clientName.replace(/\s/g, '_')}.pdf`);
   };
 
   return (
@@ -2054,7 +2266,13 @@ function VisitsManager({ visits, user, clients }: { visits: TechnicalVisit[], us
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-[#a0a0a0]">Data e Hora</Label>
+                  <Label htmlFor="desc" className="text-[#a0a0a0]">Descrição do Problema/Serviço</Label>
+                  <Input id="desc" value={newVisit.description || ''} onChange={e => setNewVisit({...newVisit, description: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Data e Hora Agendamento</Label>
                   <Popover>
                     <PopoverTrigger render={
                       <Button variant="outline" className={cn("w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white", !newVisit.date && "text-muted-foreground")}>
@@ -2067,16 +2285,34 @@ function VisitsManager({ visits, user, clients }: { visits: TechnicalVisit[], us
                     </PopoverContent>
                   </Popover>
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="scheduledTime" className="text-[#a0a0a0]">Hora Agendamento</Label>
+                  <Input id="scheduledTime" type="time" value={newVisit.scheduledTime || ''} onChange={e => setNewVisit({...newVisit, scheduledTime: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="desc" className="text-[#a0a0a0]">Descrição do Problema/Serviço</Label>
-                  <Input id="desc" value={newVisit.description || ''} onChange={e => setNewVisit({...newVisit, description: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  <Label className="text-[#a0a0a0]">Data Prevista Visita</Label>
+                  <Popover>
+                    <PopoverTrigger render={
+                      <Button variant="outline" className={cn("w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white", !newVisit.expectedDate && "text-muted-foreground")}>
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {newVisit.expectedDate ? format(newVisit.expectedDate, "PPP", { locale: ptBR }) : <span>Selecione</span>}
+                      </Button>
+                    } />
+                    <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
+                      <Calendar mode="single" selected={newVisit.expectedDate} onSelect={(date) => setNewVisit({...newVisit, expectedDate: date})} initialFocus className="bg-[#1a1d23] text-white" />
+                    </PopoverContent>
+                  </Popover>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="scheduledTime" className="text-[#a0a0a0]">Hora Programada</Label>
-                  <Input id="scheduledTime" type="time" value={newVisit.scheduledTime || ''} onChange={e => setNewVisit({...newVisit, scheduledTime: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  <Label htmlFor="expectedTime" className="text-[#a0a0a0]">Hora Prevista Visita</Label>
+                  <Input id="expectedTime" type="time" value={newVisit.expectedTime || ''} onChange={e => setNewVisit({...newVisit, expectedTime: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="observations" className="text-[#a0a0a0]">Observações Internas / Adicionais</Label>
+                <Input id="observations" value={newVisit.observations || ''} onChange={e => setNewVisit({...newVisit, observations: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -2153,13 +2389,14 @@ function VisitsManager({ visits, user, clients }: { visits: TechnicalVisit[], us
                     <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
                       setEditingVisit({
                         ...visit,
-                        date: visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date)
+                        date: visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date),
+                        expectedDate: visit.expectedDate ? (visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate)) : (visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date))
                       });
                       setIsEditOpen(true);
                     }}>
                       <Pencil size={14} />
                     </Button>
-                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => generateReceipt(visit)}>
+                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => generateVisitPDF(visit)}>
                       <Share2 size={14} />
                     </Button>
                     <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
@@ -2267,6 +2504,14 @@ function VisitsManager({ visits, user, clients }: { visits: TechnicalVisit[], us
                   {viewingVisit.description || 'Sem descrição.'}
                 </p>
               </div>
+              {viewingVisit.observations && (
+                <div className="space-y-1">
+                  <p className="text-[11px] text-[#71717a] uppercase">Observações</p>
+                  <p className="text-sm text-[#e0e0e0] bg-[#0f1115] p-3 rounded-lg border border-[#2d3139]">
+                    {viewingVisit.observations}
+                  </p>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <p className="text-[11px] text-[#71717a] uppercase">Técnico</p>
@@ -2324,7 +2569,13 @@ function VisitsManager({ visits, user, clients }: { visits: TechnicalVisit[], us
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-[#a0a0a0]">Data e Hora</Label>
+                  <Label htmlFor="editDesc" className="text-[#a0a0a0]">Descrição</Label>
+                  <Input id="editDesc" value={editingVisit.description || ''} onChange={e => setEditingVisit({...editingVisit, description: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Data e Hora Agendamento</Label>
                   <Popover>
                     <PopoverTrigger render={
                       <Button variant="outline" className="w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white">
@@ -2336,6 +2587,30 @@ function VisitsManager({ visits, user, clients }: { visits: TechnicalVisit[], us
                       <Calendar mode="single" selected={editingVisit.date as Date} onSelect={(date) => setEditingVisit({...editingVisit, date})} initialFocus className="bg-[#1a1d23] text-white" />
                     </PopoverContent>
                   </Popover>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editScheduledTime" className="text-[#a0a0a0]">Hora Agendamento</Label>
+                  <Input id="editScheduledTime" type="time" value={editingVisit.scheduledTime || ''} onChange={e => setEditingVisit({...editingVisit, scheduledTime: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Data Prevista Visita</Label>
+                  <Popover>
+                    <PopoverTrigger render={
+                      <Button variant="outline" className="w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white">
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {editingVisit.expectedDate ? format(editingVisit.expectedDate as Date, "PPP", { locale: ptBR }) : <span>Selecione</span>}
+                      </Button>
+                    } />
+                    <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
+                      <Calendar mode="single" selected={editingVisit.expectedDate as Date} onSelect={(date) => setEditingVisit({...editingVisit, expectedDate: date})} initialFocus className="bg-[#1a1d23] text-white" />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editExpectedTime" className="text-[#a0a0a0]">Hora Prevista Visita</Label>
+                  <Input id="editExpectedTime" type="time" value={editingVisit.expectedTime || ''} onChange={e => setEditingVisit({...editingVisit, expectedTime: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -2354,23 +2629,17 @@ function VisitsManager({ visits, user, clients }: { visits: TechnicalVisit[], us
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="editScheduledTime" className="text-[#a0a0a0]">Hora Programada</Label>
-                  <Input id="editScheduledTime" type="time" value={editingVisit.scheduledTime || ''} onChange={e => setEditingVisit({...editingVisit, scheduledTime: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="editTechName" className="text-[#a0a0a0]">Nome do Técnico</Label>
-                  <Input id="editTechName" value={editingVisit.technicianName || ''} onChange={e => setEditingVisit({...editingVisit, technicianName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-                <div className="space-y-2">
                   <Label htmlFor="editVal" className="text-[#a0a0a0]">Valor (R$)</Label>
                   <Input id="editVal" type="number" value={editingVisit.totalValue || ''} onChange={e => setEditingVisit({...editingVisit, totalValue: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="editDesc" className="text-[#a0a0a0]">Descrição</Label>
-                <Input id="editDesc" value={editingVisit.description || ''} onChange={e => setEditingVisit({...editingVisit, description: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                <Label htmlFor="editTechName" className="text-[#a0a0a0]">Nome do Técnico</Label>
+                <Input id="editTechName" value={editingVisit.technicianName || ''} onChange={e => setEditingVisit({...editingVisit, technicianName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editObservations" className="text-[#a0a0a0]">Observações Internas / Adicionais</Label>
+                <Input id="editObservations" value={editingVisit.observations || ''} onChange={e => setEditingVisit({...editingVisit, observations: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
               </div>
             </div>
           )}
@@ -2406,8 +2675,8 @@ function FinancialManager({ financials, visits }: { financials: FinancialRecord[
         date: Timestamp.fromDate(newRecord.date instanceof Date ? newRecord.date : new Date()),
         createdAt: Timestamp.now()
       });
-      setIsAddOpen(false);
       setNewRecord({ type: 'Receita', date: new Date(), value: 0 });
+      setIsAddOpen(false);
       toast.success('Registro financeiro salvo!');
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'financial');
@@ -2564,11 +2833,12 @@ function FinancialManager({ financials, visits }: { financials: FinancialRecord[
 
 // --- Budgets Manager Component ---
 
-function BudgetsManager({ budgets, clients }: { budgets: Budget[], clients: Client[] }) {
+function BudgetsManager({ budgets, clients, appSettings }: { budgets: Budget[], clients: Client[], appSettings: AppSettings }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [newBudget, setNewBudget] = useState<Partial<Budget>>({
     items: [{ description: '', quantity: 1, price: 0 }],
-    status: 'Pendente'
+    status: 'Pendente',
+    observations: ''
   });
 
   const handleAddItem = () => {
@@ -2586,12 +2856,76 @@ function BudgetsManager({ budgets, clients }: { budgets: Budget[], clients: Clie
         total,
         createdAt: Timestamp.now()
       });
+      setNewBudget({ items: [{ description: '', quantity: 1, price: 0 }], status: 'Pendente', observations: '' });
       setIsAddOpen(false);
-      setNewBudget({ items: [{ description: '', quantity: 1, price: 0 }], status: 'Pendente' });
       toast.success('Orçamento criado!');
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'budgets');
     }
+  };
+
+  const generateBudgetPDF = (budget: Budget) => {
+    const doc = new jsPDF();
+    const dateStr = format(budget.createdAt instanceof Timestamp ? budget.createdAt.toDate() : new Date(budget.createdAt), 'dd/MM/yyyy');
+    
+    // Logo
+    if (appSettings.logoUrl) {
+      try {
+        doc.addImage(appSettings.logoUrl, 'PNG', 20, 10, 30, 30);
+      } catch (e) {
+        console.error("Erro ao adicionar logo ao PDF:", e);
+      }
+    }
+
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text(appSettings.companyName || 'AF Sistemas de Segurança e Informática', 105, 25, { align: 'center' });
+    
+    doc.setFontSize(14);
+    doc.text('ORÇAMENTO DE SERVIÇOS', 105, 35, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Data: ${dateStr}`, 20, 50);
+    doc.text(`Cliente: ${budget.clientName}`, 20, 57);
+    doc.text(`Email: ${budget.clientEmail || 'N/A'}`, 20, 64);
+    
+    doc.line(20, 70, 190, 70);
+    
+    // Items Table
+    const tableData = budget.items.map(item => [
+      item.description,
+      item.quantity.toString(),
+      `R$ ${item.price.toFixed(2)}`,
+      `R$ ${(item.quantity * item.price).toFixed(2)}`
+    ]);
+
+    (doc as any).autoTable({
+      startY: 75,
+      head: [['Descrição', 'Qtd', 'Preço Unit.', 'Total']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [59, 130, 246] },
+      styles: { fontSize: 9 }
+    });
+
+    let finalY = (doc as any).lastAutoTable.finalY + 10;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.text(`VALOR TOTAL: R$ ${budget.total.toFixed(2)}`, 190, finalY, { align: 'right' });
+    
+    if (budget.observations) {
+      finalY += 15;
+      doc.setFontSize(10);
+      doc.text('Observações:', 20, finalY);
+      doc.setFont('helvetica', 'normal');
+      const splitObs = doc.splitTextToSize(budget.observations, 170);
+      doc.text(splitObs, 20, finalY + 7);
+      finalY += (splitObs.length * 5) + 10;
+    }
+
+    doc.save(`orcamento_${budget.clientName.replace(/\s/g, '_')}.pdf`);
   };
 
   return (
@@ -2689,6 +3023,10 @@ function BudgetsManager({ budgets, clients }: { budgets: Budget[], clients: Clie
                   ))}
                 </ScrollArea>
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="budgetObs" className="text-[#a0a0a0]">Observações do Orçamento</Label>
+                <Input id="budgetObs" value={newBudget.observations || ''} onChange={e => setNewBudget({...newBudget, observations: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+              </div>
             </div>
             <DialogFooter className="flex items-center justify-between sm:justify-between border-t border-[#2d3139] pt-4">
               <div className="text-lg font-bold text-white">
@@ -2733,20 +3071,13 @@ function BudgetsManager({ budgets, clients }: { budgets: Budget[], clients: Clie
               <div className="flex items-center justify-between">
                 <p className="text-lg font-bold text-white">R$ {budget.total.toFixed(2)}</p>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white text-[11px]" onClick={() => {
-                    const doc = new jsPDF();
-                    doc.text('ORÇAMENTO', 105, 20, { align: 'center' });
-                    doc.text(`Cliente: ${budget.clientName}`, 20, 40);
-                    // @ts-ignore
-                    doc.autoTable({
-                      startY: 50,
-                      head: [['Item', 'Qtd', 'Preço Unit.', 'Total']],
-                      body: budget.items.map(i => [i.description, i.quantity, `R$ ${i.price.toFixed(2)}`, `R$ ${(i.quantity * i.price).toFixed(2)}`]),
-                    });
-                    doc.text(`TOTAL: R$ ${budget.total.toFixed(2)}`, 20, (doc as any).lastAutoTable.finalY + 20);
-                    doc.save(`orcamento_${budget.clientName}.pdf`);
-                  }}>
+                  <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white text-[11px]" onClick={() => generateBudgetPDF(budget)}>
                     PDF
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#10b981] hover:bg-[#10b981]/10 text-[11px]" onClick={() => {
+                    generateBudgetPDF(budget);
+                  }}>
+                    <Share2 size={14} />
                   </Button>
                   {budget.status === 'Pendente' && (
                     <Button size="sm" className="h-8 bg-[#3b82f6] hover:bg-[#2563eb] text-white text-[11px]" onClick={async () => {
