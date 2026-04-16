@@ -44,6 +44,8 @@
         "value": { "type": "number" },
         "description": { "type": "string" },
         "date": { "type": "string", "format": "date-time" },
+        "clientId": { "type": "string" },
+        "serviceType": { "type": "string", "enum": ["Contrato", "Serviço Normal"] },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["type", "value", "date"]

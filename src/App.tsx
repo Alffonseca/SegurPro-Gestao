@@ -169,6 +169,7 @@ function valorPorExtenso(valor: number) {
 
 interface TechnicalVisit {
   id: string;
+  clientId?: string;
   clientName: string;
   clientPhone: string;
   address: string;
@@ -194,10 +195,14 @@ interface FinancialRecord {
   value: number;
   date: any;
   visitId?: string;
+  clientId?: string;
+  serviceType?: 'Contrato' | 'Serviço Normal';
+  createdAt?: any;
 }
 
 interface Budget {
   id: string;
+  clientId?: string;
   clientName: string;
   clientEmail: string;
   items: { description: string; quantity: number; price: number }[];
@@ -209,10 +214,10 @@ interface Budget {
 
 interface Client {
   id: string;
-  name: string;
-  email: string;
-  phone: string;
-  address: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
   document?: string; // CPF or CNPJ
   type: 'Avulso' | 'Contrato';
   contractValue?: number;
@@ -222,6 +227,8 @@ interface Client {
 
 interface Receipt {
   id: string;
+  clientId?: string;
+  visitId?: string;
   clientName: string;
   clientType?: 'Avulso' | 'Contrato';
   serviceSpecification: string;
@@ -232,6 +239,163 @@ interface Receipt {
   date: any;
   createdAt: any;
 }
+
+const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSettings: PixSettings, shouldShare = false) => {
+  const doc = new jsPDF();
+  const dateStr = format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), 'dd/MM/yyyy');
+  const fullDateStr = format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
+  const isContract = receipt.clientType === 'Contrato';
+  
+  // 1. Header
+  if (appSettings.logoUrl) {
+    try {
+      doc.addImage(appSettings.logoUrl, 'PNG', 20, 10, 25, 25);
+    } catch (e) {
+      console.error("Erro ao adicionar logo ao PDF:", e);
+    }
+  }
+
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
+  doc.text(appSettings.companyName || 'André Fonseca', appSettings.logoUrl ? 50 : 20, 20);
+  
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.text(appSettings.companyName || 'AF Sistemas de Segurança e Informática-ME', 190, 20, { align: 'right' });
+  
+  doc.setFontSize(9);
+  doc.text('(91)98722-3092   (91)98995-8066   afsistseg.me@gmail.com', appSettings.logoUrl ? 50 : 20, 30);
+  
+  // 2. Title Bar
+  doc.setFillColor(245, 245, 245);
+  doc.rect(20, 40, 170, 10, 'F');
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Recibo', 105, 47, { align: 'center' });
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.text(dateStr, 185, 47, { align: 'right' });
+  
+  // 3. Declaration
+  doc.setFontSize(11);
+  const declarationY = 65;
+  
+  const valorNumerico = Number(receipt.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+  const valorExtenso = valorPorExtenso(Number(receipt.value));
+  
+  const declarationText = `Declaro que recebi na data de ${fullDateStr}, o valor de R$ ${valorNumerico} (${valorExtenso}), de ${receipt.clientName}, referente aos seguintes serviços:`;
+  
+  const splitDeclaration = doc.splitTextToSize(declarationText, 170);
+  doc.text(splitDeclaration, 20, declarationY);
+  
+  // Calculate dynamic Y position for next sections
+  const declarationHeight = splitDeclaration.length * 6;
+  const servicesY = declarationY + declarationHeight + 10;
+  
+  // 4. Services Section
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Serviços', 105, servicesY, { align: 'center' });
+  
+  // Table Header
+  doc.setFillColor(120, 120, 120);
+  doc.rect(20, servicesY + 5, 170, 8, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(9);
+  
+  if (isContract) {
+    doc.text('Descrição', 25, servicesY + 10);
+    doc.text('Total', 185, servicesY + 10, { align: 'right' });
+  } else {
+    doc.text('Descrição', 25, servicesY + 10);
+    doc.text('Preço', 120, servicesY + 10, { align: 'right' });
+    doc.text('Unidade', 145, servicesY + 10, { align: 'right' });
+    doc.text('Qtd.', 165, servicesY + 10, { align: 'right' });
+    doc.text('Total', 185, servicesY + 10, { align: 'right' });
+  }
+  
+  // Table Row
+  doc.setFillColor(245, 245, 245);
+  doc.rect(20, servicesY + 13, 170, 15, 'F');
+  doc.setTextColor(0, 0, 0);
+  doc.setFont('helvetica', 'normal');
+  const serviceText = receipt.serviceSpecification || 'Serviços prestados';
+  const splitService = doc.splitTextToSize(serviceText, isContract ? 130 : 90);
+  doc.text(splitService, 25, servicesY + 18);
+  
+  const formattedVal = `R$ ${Number(receipt.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+  
+  if (isContract) {
+    doc.text(formattedVal, 185, servicesY + 18, { align: 'right' });
+  } else {
+    doc.text(formattedVal, 120, servicesY + 18, { align: 'right' });
+    doc.text('und', 145, servicesY + 18, { align: 'right' });
+    doc.text('1', 165, servicesY + 18, { align: 'right' });
+    doc.text(formattedVal, 185, servicesY + 18, { align: 'right' });
+  }
+  
+  // 5. Totals
+  doc.setFont('helvetica', 'bold');
+  if (!isContract) {
+    doc.text('Subtotal serviços', 20, servicesY + 40);
+    doc.text(formattedVal, 190, servicesY + 40, { align: 'right' });
+  }
+  
+  doc.setFillColor(120, 120, 120);
+  doc.rect(100, servicesY + 50, 90, 10, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(12);
+  doc.text('Total', 105, servicesY + 57);
+  doc.text(formattedVal, 185, servicesY + 57, { align: 'right' });
+  
+  // PIX Info
+  if (pixSettings && pixSettings.key) {
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Dados para Pagamento (PIX):', 20, servicesY + 70);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Chave: ${pixSettings.key} | Banco: ${pixSettings.bank}`, 20, servicesY + 75);
+    doc.text(`Favorecido: ${pixSettings.favored} | CPF: ${pixSettings.document}`, 20, servicesY + 80);
+  }
+
+  // Observations
+  if (receipt.observations) {
+    const obsY = servicesY + (pixSettings && pixSettings.key ? 90 : 70);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Observações:', 20, obsY);
+    doc.setFont('helvetica', 'normal');
+    const splitObs = doc.splitTextToSize(receipt.observations, 170);
+    doc.text(splitObs, 20, obsY + 5);
+  }
+
+  // 6. Signature
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.text(dateStr, 105, 260, { align: 'center' });
+  doc.line(70, 270, 140, 270);
+  doc.text(appSettings.companyName || 'André Fonseca', 105, 275, { align: 'center' });
+  
+  const fileName = `recibo_${receipt.clientName.replace(/\s/g, '_')}.pdf`;
+
+  if (shouldShare && navigator.share) {
+    const pdfBlob = doc.output('blob');
+    const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
+    
+    navigator.share({
+      files: [file],
+      title: 'Recibo de Serviço',
+      text: `Recibo de ${receipt.clientName} - ${receipt.referenceMonth}`
+    }).catch(err => {
+      console.error('Erro ao compartilhar:', err);
+      doc.save(fileName);
+    });
+  } else {
+    doc.save(fileName);
+  }
+};
 
 interface PixSettings {
   key: string;
@@ -778,8 +942,8 @@ export default function App() {
               onNavigate={(tab) => setActiveTab(tab)}
             />
           )}
-          {activeTab === 'visits' && <VisitsManager visits={visits} user={user} clients={clients} appSettings={appSettings} />}
-          {activeTab === 'financial' && <FinancialManager financials={financials} visits={visits} />}
+          {activeTab === 'visits' && <VisitsManager visits={visits} user={user} clients={clients} appSettings={appSettings} pixSettings={pixSettings} />}
+          {activeTab === 'financial' && <FinancialManager financials={financials} visits={visits} clients={clients} />}
           {activeTab === 'budgets' && <BudgetsManager budgets={budgets} clients={clients} appSettings={appSettings} />}
           {activeTab === 'clients' && <ClientsManager clients={clients} />}
           {activeTab === 'receipts' && <ReceiptsManager receipts={receipts} clients={clients} pixSettings={pixSettings} appSettings={appSettings} />}
@@ -970,6 +1134,7 @@ function SidebarItem({ icon, label, active, onClick }: { icon: React.ReactNode, 
 function ClientsManager({ clients }: { clients: Client[] }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   const [newClient, setNewClient] = useState<Partial<Client>>({
     type: 'Avulso'
   });
@@ -977,14 +1142,23 @@ function ClientsManager({ clients }: { clients: Client[] }) {
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [clientToDelete, setClientToDelete] = useState<Client | null>(null);
 
-  const handleAddClient = async () => {
-    if (!newClient.name) {
-      toast.error('O nome do cliente é obrigatório.');
-      return;
-    }
+  const filteredClients = useMemo(() => {
+    return clients.filter(c => 
+      (c.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (c.email && c.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (c.phone && c.phone.includes(searchTerm)) ||
+      (c.document && c.document.includes(searchTerm))
+    );
+  }, [clients, searchTerm]);
 
+  const handleAddClient = async () => {
     try {
       await addDoc(collection(db, 'clients'), {
+        name: newClient.name || '',
+        email: newClient.email || '',
+        phone: newClient.phone || '',
+        address: newClient.address || '',
+        document: newClient.document || '',
         ...newClient,
         type: newClient.type || 'Avulso',
         contractValue: newClient.type === 'Contrato' ? Number(newClient.contractValue || 0) : 0,
@@ -999,15 +1173,17 @@ function ClientsManager({ clients }: { clients: Client[] }) {
   };
 
   const handleUpdateClient = async () => {
-    if (!editingClient || !editingClient.name) {
-      toast.error('O nome do cliente é obrigatório.');
-      return;
-    }
+    if (!editingClient) return;
 
     try {
       const { id, ...data } = editingClient;
       await updateDoc(doc(db, 'clients', id), {
         ...data,
+        name: data.name || '',
+        email: data.email || '',
+        phone: data.phone || '',
+        address: data.address || '',
+        document: data.document || '',
         contractValue: data.type === 'Contrato' ? Number(data.contractValue || 0) : 0
       });
       setEditingClient(null);
@@ -1025,14 +1201,24 @@ function ClientsManager({ clients }: { clients: Client[] }) {
           <h2 className="text-2xl font-bold tracking-tight text-white">Gestão de Clientes</h2>
           <p className="text-[#71717a]">Base de dados de clientes para serviços e orçamentos.</p>
         </div>
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger render={
-            <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
-              <Plus size={18} />
-              Novo Cliente
-            </Button>
-          } />
-          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#71717a]" size={16} />
+            <Input 
+              className="pl-9 w-64 bg-[#0f1115] border-[#2d3139] text-white focus:ring-[#3b82f6] transition-all" 
+              placeholder="Pesquisar clientes..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+            <DialogTrigger render={
+              <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+                <Plus size={18} />
+                Novo Cliente
+              </Button>
+            } />
+            <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
             <DialogHeader>
               <DialogTitle className="text-white">Cadastrar Novo Cliente</DialogTitle>
             </DialogHeader>
@@ -1093,6 +1279,7 @@ function ClientsManager({ clients }: { clients: Client[] }) {
           </DialogContent>
         </Dialog>
       </div>
+    </div>
 
       {/* Edit Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
@@ -1170,10 +1357,10 @@ function ClientsManager({ clients }: { clients: Client[] }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {clients.map((client) => (
+            {filteredClients.map((client) => (
               <TableRow key={client.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
                 <TableCell>
-                  <div className="font-medium text-white text-[13px]">{client.name}</div>
+                  <div className="font-medium text-white text-[13px]">{client.name || 'Cliente Sem Nome'}</div>
                   <Badge variant="outline" className={cn(
                     "mt-1 text-[10px] h-5",
                     client.type === 'Contrato' ? "border-[#10b981] text-[#10b981]" : "border-[#71717a] text-[#71717a]"
@@ -1213,10 +1400,10 @@ function ClientsManager({ clients }: { clients: Client[] }) {
                 </TableCell>
               </TableRow>
             ))}
-            {clients.length === 0 && (
+            {filteredClients.length === 0 && (
               <TableRow>
                 <TableCell colSpan={4} className="text-center py-12 text-[#71717a] text-sm">
-                  Nenhum cliente cadastrado.
+                  {searchTerm ? 'Nenhum cliente encontrado para esta pesquisa.' : 'Nenhum cliente cadastrado.'}
                 </TableCell>
               </TableRow>
             )}
@@ -1257,6 +1444,7 @@ function ClientsManager({ clients }: { clients: Client[] }) {
 
 function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { receipts: Receipt[], clients: Client[], pixSettings: PixSettings, appSettings: AppSettings }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [clientSearch, setClientSearch] = useState('');
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingReceipt, setEditingReceipt] = useState<Receipt | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -1269,6 +1457,10 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
     referenceMonth: format(new Date(), 'MMMM/yyyy', { locale: ptBR }),
     observations: ''
   });
+
+  const filteredClientsForSelect = useMemo(() => {
+    return clients.filter(c => (c.name || '').toLowerCase().includes(clientSearch.toLowerCase()));
+  }, [clients, clientSearch]);
 
   const handleAddReceipt = async () => {
     if (!newReceipt.clientName || !newReceipt.value || !newReceipt.paymentMethod) {
@@ -1287,7 +1479,7 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
       
       // Generate PDF automatically
       const fullReceipt = { id: docRef.id, ...receiptData } as Receipt;
-      generateReceiptPDF(fullReceipt);
+      generateReceiptPDF(fullReceipt, appSettings, pixSettings);
       
       setNewReceipt({ 
         date: new Date(), 
@@ -1325,163 +1517,6 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
     }
   };
 
-  const generateReceiptPDF = (receipt: Receipt, shouldShare = false) => {
-    const doc = new jsPDF();
-    const dateStr = format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), 'dd/MM/yyyy');
-    const fullDateStr = format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
-    const isContract = receipt.clientType === 'Contrato';
-    
-    // 1. Header
-    if (appSettings.logoUrl) {
-      try {
-        doc.addImage(appSettings.logoUrl, 'PNG', 20, 10, 25, 25);
-      } catch (e) {
-        console.error("Erro ao adicionar logo ao PDF:", e);
-      }
-    }
-
-    doc.setFontSize(16);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(0, 0, 0);
-    doc.text(appSettings.companyName || 'André Fonseca', appSettings.logoUrl ? 50 : 20, 20);
-    
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(appSettings.companyName || 'AF Sistemas de Segurança e Informática-ME', 190, 20, { align: 'right' });
-    
-    doc.setFontSize(9);
-    doc.text('(91)98722-3092   (91)98995-8066   afsistseg.me@gmail.com', appSettings.logoUrl ? 50 : 20, 30);
-    
-    // 2. Title Bar
-    doc.setFillColor(245, 245, 245);
-    doc.rect(20, 40, 170, 10, 'F');
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Recibo', 105, 47, { align: 'center' });
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(dateStr, 185, 47, { align: 'right' });
-    
-    // 3. Declaration
-    doc.setFontSize(11);
-    const declarationY = 65;
-    
-    const valorNumerico = Number(receipt.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
-    const valorExtenso = valorPorExtenso(Number(receipt.value));
-    
-    const declarationText = `Declaro que recebi na data de ${fullDateStr}, o valor de R$ ${valorNumerico} (${valorExtenso}), de ${receipt.clientName}, referente aos seguintes serviços:`;
-    
-    const splitDeclaration = doc.splitTextToSize(declarationText, 170);
-    doc.text(splitDeclaration, 20, declarationY);
-    
-    // Calculate dynamic Y position for next sections
-    const declarationHeight = splitDeclaration.length * 6;
-    const servicesY = declarationY + declarationHeight + 10;
-    
-    // 4. Services Section
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Serviços', 105, servicesY, { align: 'center' });
-    
-    // Table Header
-    doc.setFillColor(120, 120, 120);
-    doc.rect(20, servicesY + 5, 170, 8, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(9);
-    
-    if (isContract) {
-      doc.text('Descrição', 25, servicesY + 10);
-      doc.text('Total', 185, servicesY + 10, { align: 'right' });
-    } else {
-      doc.text('Descrição', 25, servicesY + 10);
-      doc.text('Preço', 120, servicesY + 10, { align: 'right' });
-      doc.text('Unidade', 145, servicesY + 10, { align: 'right' });
-      doc.text('Qtd.', 165, servicesY + 10, { align: 'right' });
-      doc.text('Total', 185, servicesY + 10, { align: 'right' });
-    }
-    
-    // Table Row
-    doc.setFillColor(245, 245, 245);
-    doc.rect(20, servicesY + 13, 170, 15, 'F');
-    doc.setTextColor(0, 0, 0);
-    doc.setFont('helvetica', 'normal');
-    const serviceText = receipt.serviceSpecification || 'Serviços prestados';
-    const splitService = doc.splitTextToSize(serviceText, isContract ? 130 : 90);
-    doc.text(splitService, 25, servicesY + 18);
-    
-    const formattedVal = `R$ ${Number(receipt.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-    
-    if (isContract) {
-      doc.text(formattedVal, 185, servicesY + 18, { align: 'right' });
-    } else {
-      doc.text(formattedVal, 120, servicesY + 18, { align: 'right' });
-      doc.text('und', 145, servicesY + 18, { align: 'right' });
-      doc.text('1', 165, servicesY + 18, { align: 'right' });
-      doc.text(formattedVal, 185, servicesY + 18, { align: 'right' });
-    }
-    
-    // 5. Totals
-    doc.setFont('helvetica', 'bold');
-    if (!isContract) {
-      doc.text('Subtotal serviços', 20, servicesY + 40);
-      doc.text(formattedVal, 190, servicesY + 40, { align: 'right' });
-    }
-    
-    doc.setFillColor(120, 120, 120);
-    doc.rect(100, servicesY + 50, 90, 10, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(12);
-    doc.text('Total', 105, servicesY + 57);
-    doc.text(formattedVal, 185, servicesY + 57, { align: 'right' });
-    
-    // PIX Info
-    if (pixSettings && pixSettings.key) {
-      doc.setTextColor(0, 0, 0);
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Dados para Pagamento (PIX):', 20, servicesY + 70);
-      doc.setFont('helvetica', 'normal');
-      doc.text(`Chave: ${pixSettings.key} | Banco: ${pixSettings.bank}`, 20, servicesY + 75);
-      doc.text(`Favorecido: ${pixSettings.favored} | CPF: ${pixSettings.document}`, 20, servicesY + 80);
-    }
-
-    // Observations
-    if (receipt.observations) {
-      const obsY = servicesY + (pixSettings && pixSettings.key ? 90 : 70);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Observações:', 20, obsY);
-      doc.setFont('helvetica', 'normal');
-      const splitObs = doc.splitTextToSize(receipt.observations, 170);
-      doc.text(splitObs, 20, obsY + 5);
-    }
-
-    // 6. Signature
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(dateStr, 105, 260, { align: 'center' });
-    doc.line(70, 270, 140, 270);
-    doc.text(appSettings.companyName || 'André Fonseca', 105, 275, { align: 'center' });
-    
-    const fileName = `recibo_${receipt.clientName.replace(/\s/g, '_')}.pdf`;
-
-    if (shouldShare && navigator.share) {
-      const pdfBlob = doc.output('blob');
-      const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
-      
-      navigator.share({
-        files: [file],
-        title: 'Recibo de Serviço',
-        text: `Recibo de ${receipt.clientName} - ${receipt.referenceMonth}`
-      }).catch(err => {
-        console.error('Erro ao compartilhar:', err);
-        doc.save(fileName);
-      });
-    } else {
-      doc.save(fileName);
-    }
-  };
-
   return (
     <div className="space-y-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1516,14 +1551,27 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
                   }
                 }}>
                   <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                    <SelectValue placeholder="Escolha um cliente..." />
+                    <SelectValue placeholder="Escolha um cliente...">
+                      {clients.find(c => c.name === newReceipt.clientName)?.name || newReceipt.clientName || null}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                    <div className="p-2 sticky top-0 bg-[#1a1d23] z-10 border-b border-[#2d3139]">
+                      <Input 
+                        placeholder="Pesquisar..." 
+                        value={clientSearch}
+                        onChange={(e) => setClientSearch(e.target.value)}
+                        className="h-8 text-xs bg-[#0f1115] border-[#2d3139]"
+                        onKeyDown={(e) => e.stopPropagation()}
+                      />
+                    </div>
                     <ScrollArea className="h-[200px]">
-                      {clients.map(c => (
-                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      {filteredClientsForSelect.map(c => (
+                        <SelectItem key={c.id} value={c.id}>{c.name || 'Cliente Sem Nome'}</SelectItem>
                       ))}
-                      {clients.length === 0 && <SelectItem value="none" disabled>Nenhum cliente cadastrado</SelectItem>}
+                      {filteredClientsForSelect.length === 0 && (
+                        <div className="p-2 text-center text-xs text-[#71717a]">Nenhum cliente encontrado</div>
+                      )}
                     </ScrollArea>
                   </SelectContent>
                 </Select>
@@ -1748,10 +1796,10 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-2">
-                    <Button variant="outline" size="icon" title="Baixar PDF" className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => generateReceiptPDF(receipt)}>
+                    <Button variant="outline" size="icon" title="Baixar PDF" className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => generateReceiptPDF(receipt, appSettings, pixSettings)}>
                       <Download size={14} />
                     </Button>
-                    <Button variant="outline" size="icon" title="Compartilhar" className="h-8 w-8 border-[#2d3139] text-[#10b981] hover:bg-[#10b981]/10" onClick={() => generateReceiptPDF(receipt, true)}>
+                    <Button variant="outline" size="icon" title="Compartilhar" className="h-8 w-8 border-[#2d3139] text-[#10b981] hover:bg-[#10b981]/10" onClick={() => generateReceiptPDF(receipt, appSettings, pixSettings, true)}>
                       <Share2 size={14} />
                     </Button>
                     <Button variant="outline" size="icon" title="Editar" className="h-8 w-8 border-[#2d3139] text-[#f59e0b] hover:bg-[#f59e0b]/10" onClick={() => {
@@ -2061,8 +2109,9 @@ function Dashboard({ visits, financials, budgets, clients, onNavigate }: { visit
     const pendingVisits = visits.filter(v => v.status === 'Agendada' || v.status === 'Em Andamento').length;
     const completedVisits = visits.filter(v => v.status === 'Concluída').length;
     const pendingBudgets = budgets.filter(b => b.status === 'Pendente').length;
+    const totalClients = clients.length;
 
-    return { income, expense, balance: income - expense, pendingVisits, completedVisits, pendingBudgets, totalClients: clients.length };
+    return { income, expense, balance: income - expense, pendingVisits, completedVisits, pendingBudgets, totalClients };
   }, [visits, financials, budgets, clients]);
 
   const chartData = useMemo(() => {
@@ -2118,7 +2167,14 @@ function Dashboard({ visits, financials, budgets, clients, onNavigate }: { visit
               {visits.filter(v => v.status === 'Agendada' || v.status === 'Em Andamento').slice(0, 5).map(visit => (
                 <div key={visit.id} className="flex items-center justify-between px-6 py-4 hover:bg-[#25282e]/30 transition-colors">
                   <div className="flex flex-col">
-                    <span className="text-[13px] font-medium text-white">{visit.clientName}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[13px] font-medium text-white">{visit.clientName}</span>
+                      {visit.scheduledTime && (
+                        <span className="text-[10px] text-[#3b82f6] bg-[#3b82f6]/10 px-1.5 py-0.5 rounded">
+                          {visit.scheduledTime}
+                        </span>
+                      )}
+                    </div>
                     <span className="text-[11px] text-[#71717a] mt-0.5">{visit.type} • {visit.description || 'Manutenção Geral'}</span>
                   </div>
                   <Badge className={cn(
@@ -2208,8 +2264,9 @@ function StatCard({ title, value, icon, trend, isBalance, isCount }: { title: st
 
 // --- Visits Manager Component ---
 
-function VisitsManager({ visits, user, clients, appSettings }: { visits: TechnicalVisit[], user: FirebaseUser, clients: Client[], appSettings: AppSettings }) {
+function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { visits: TechnicalVisit[], user: FirebaseUser, clients: Client[], appSettings: AppSettings, pixSettings: PixSettings }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [clientSearch, setClientSearch] = useState('');
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -2233,6 +2290,10 @@ function VisitsManager({ visits, user, clients, appSettings }: { visits: Technic
       setNewVisit(prev => ({ ...prev, technicianName: user.displayName || '' }));
     }
   }, [user]);
+
+  const filteredClientsForSelect = useMemo(() => {
+    return clients.filter(c => (c.name || '').toLowerCase().includes(clientSearch.toLowerCase()));
+  }, [clients, clientSearch]);
 
   const handleAddVisit = async () => {
     if (!newVisit.clientName || !newVisit.address) {
@@ -2269,7 +2330,50 @@ function VisitsManager({ visits, user, clients, appSettings }: { visits: Technic
 
   const updateStatus = async (id: string, status: TechnicalVisit['status']) => {
     try {
+      const visit = visits.find(v => v.id === id);
+      if (!visit) return;
+      
+      const oldStatus = visit.status;
       await updateDoc(doc(db, 'visits', id), { status });
+      
+      if (status === 'Concluída' && oldStatus !== 'Concluída') {
+        const client = visit.clientId ? clients.find(c => c.id === visit.clientId) : clients.find(c => c.name === visit.clientName);
+        
+        // 1. Create Receipt Data
+        const receiptData = {
+          clientName: visit.clientName,
+          clientType: client?.type || 'Avulso',
+          serviceSpecification: visit.description || visit.type,
+          value: visit.totalValue || 0,
+          paymentMethod: 'PIX' as const, 
+          date: Timestamp.now(),
+          createdAt: Timestamp.now(),
+          visitId: id,
+          clientId: visit.clientId || client?.id || null
+        };
+
+        const receiptRef = await addDoc(collection(db, 'receipts'), receiptData);
+
+        // 2. Automatically generate PDF for the automated receipt
+        const fullReceipt = { id: receiptRef.id, ...receiptData } as Receipt;
+        generateReceiptPDF(fullReceipt, appSettings, pixSettings);
+
+        // 3. Create Financial Record
+        await addDoc(collection(db, 'financial'), {
+          type: 'Receita',
+          category: 'Visita Técnica',
+          description: `Serviço Concluído - ${visit.clientName} (${visit.type})`,
+          value: visit.totalValue || 0,
+          date: Timestamp.now(),
+          serviceType: 'Serviço Normal',
+          visitId: id,
+          clientId: visit.clientId || client?.id || null,
+          createdAt: Timestamp.now()
+        });
+        
+        toast.success('Recibo emitido e financeiro atualizado!');
+      }
+      
       toast.success(`Status atualizado para ${status}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'visits');
@@ -2299,7 +2403,8 @@ function VisitsManager({ visits, user, clients, appSettings }: { visits: Technic
 
   const generateVisitPDF = (visit: TechnicalVisit) => {
     const doc = new jsPDF();
-    const dateStr = format(visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date), 'dd/MM/yyyy HH:mm');
+    const dateStr = format(visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date), 'dd/MM/yyyy');
+    const createdStr = visit.createdAt ? format(visit.createdAt instanceof Timestamp ? visit.createdAt.toDate() : new Date(visit.createdAt), 'dd/MM/yyyy HH:mm') : '';
     
     // Header
     if (appSettings.logoUrl) {
@@ -2319,39 +2424,47 @@ function VisitsManager({ visits, user, clients, appSettings }: { visits: Technic
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Data/Hora Agendamento: ${dateStr}${visit.scheduledTime ? ` às ${visit.scheduledTime}` : ''}`, 20, 50);
-    
-    if (visit.expectedDate) {
-      const expDateStr = format(visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate), 'dd/MM/yyyy');
-      doc.text(`Data/Hora Prevista: ${expDateStr}${visit.expectedTime ? ` às ${visit.expectedTime}` : ''}`, 20, 57);
+    if (createdStr) {
+      doc.text(`Data de Lançamento: ${createdStr}`, 20, 50);
+      doc.text(`Data Agendada: ${dateStr}${visit.scheduledTime ? ` às ${visit.scheduledTime}` : ''}`, 20, 57);
+    } else {
+      doc.text(`Data Agendada: ${dateStr}${visit.scheduledTime ? ` às ${visit.scheduledTime}` : ''}`, 20, 50);
     }
     
-    doc.text(`Técnico Responsável: ${visit.technicianName}`, 20, 64);
+    let currentLineY = createdStr ? 64 : 57;
+
+    if (visit.expectedDate) {
+      const expDateStr = format(visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate), 'dd/MM/yyyy');
+      doc.text(`Data Prevista: ${expDateStr}${visit.expectedTime ? ` às ${visit.expectedTime}` : ''}`, 20, currentLineY);
+      currentLineY += 7;
+    }
     
-    doc.line(20, 70, 190, 70);
+    doc.text(`Técnico Responsável: ${visit.technicianName}`, 20, currentLineY);
+    
+    doc.line(20, currentLineY + 6, 190, currentLineY + 6);
     
     // Client Info
     doc.setFont('helvetica', 'bold');
-    doc.text('DADOS DO CLIENTE', 20, 80);
+    doc.text('DADOS DO CLIENTE', 20, currentLineY + 16);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Cliente: ${visit.clientName}`, 20, 87);
-    doc.text(`Endereço: ${visit.address}`, 20, 94);
-    doc.text(`Telefone: ${visit.clientPhone || 'N/A'}`, 20, 101);
+    doc.text(`Cliente: ${visit.clientName}`, 20, currentLineY + 23);
+    doc.text(`Endereço: ${visit.address}`, 20, currentLineY + 30);
+    doc.text(`Telefone: ${visit.clientPhone || 'N/A'}`, 20, currentLineY + 37);
     
-    doc.line(20, 107, 190, 107);
+    doc.line(20, currentLineY + 43, 190, currentLineY + 43);
     
     // Service Info
     doc.setFont('helvetica', 'bold');
-    doc.text('DETALHES DO SERVIÇO', 20, 110);
+    doc.text('DETALHES DO SERVIÇO', 20, currentLineY + 50);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Tipo de Sistema: ${visit.type}`, 20, 117);
-    doc.text(`Status: ${visit.status}`, 20, 124);
+    doc.text(`Tipo de Sistema: ${visit.type}`, 20, currentLineY + 57);
+    doc.text(`Status: ${visit.status}`, 20, currentLineY + 64);
     
-    doc.text('Descrição do Serviço/Problema:', 20, 134);
+    doc.text('Descrição do Serviço/Problema:', 20, currentLineY + 74);
     const splitDesc = doc.splitTextToSize(visit.description || 'N/A', 170);
-    doc.text(splitDesc, 20, 141);
+    doc.text(splitDesc, 20, currentLineY + 81);
     
-    let currentY = 141 + (splitDesc.length * 5) + 10;
+    let currentY = currentLineY + 81 + (splitDesc.length * 5) + 10;
 
     if (visit.observations) {
       doc.setFont('helvetica', 'bold');
@@ -2410,6 +2523,7 @@ function VisitsManager({ visits, user, clients, appSettings }: { visits: Technic
                   if (client) {
                     setNewVisit({
                       ...newVisit,
+                      clientId: client.id,
                       clientName: client.name,
                       clientPhone: client.phone,
                       address: client.address
@@ -2417,13 +2531,28 @@ function VisitsManager({ visits, user, clients, appSettings }: { visits: Technic
                   }
                 }}>
                   <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                    <SelectValue placeholder="Escolha um cliente..." />
+                    <SelectValue placeholder="Escolha um cliente...">
+                      {clients.find(c => c.name === newVisit.clientName)?.name || newVisit.clientName || null}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                    {clients.map(c => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                    ))}
-                    {clients.length === 0 && <SelectItem value="none" disabled>Nenhum cliente cadastrado</SelectItem>}
+                    <div className="p-2 sticky top-0 bg-[#1a1d23] z-10 border-b border-[#2d3139]">
+                      <Input 
+                        placeholder="Pesquisar..." 
+                        value={clientSearch}
+                        onChange={(e) => setClientSearch(e.target.value)}
+                        className="h-8 text-xs bg-[#0f1115] border-[#2d3139]"
+                        onKeyDown={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                    <ScrollArea className="h-[200px]">
+                      {filteredClientsForSelect.map(c => (
+                        <SelectItem key={c.id} value={c.id}>{c.name || 'Cliente Sem Nome'}</SelectItem>
+                      ))}
+                      {filteredClientsForSelect.length === 0 && (
+                        <div className="p-2 text-center text-xs text-[#71717a]">Nenhum cliente encontrado</div>
+                      )}
+                    </ScrollArea>
                   </SelectContent>
                 </Select>
               </div>
@@ -2531,7 +2660,7 @@ function VisitsManager({ visits, user, clients, appSettings }: { visits: Technic
           <TableHeader className="bg-[#25282e]/50">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Cliente</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Agendamento</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Serviço</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Status</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Valor</TableHead>
@@ -2574,7 +2703,12 @@ function VisitsManager({ visits, user, clients, appSettings }: { visits: Technic
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-2">
                     <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
-                      setViewingVisit(visit);
+                      setViewingVisit({
+                        ...visit,
+                        date: visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date),
+                        expectedDate: visit.expectedDate ? (visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate)) : null,
+                        createdAt: visit.createdAt instanceof Timestamp ? visit.createdAt.toDate() : (visit.createdAt ? new Date(visit.createdAt) : null)
+                      });
                       setIsViewOpen(true);
                     }}>
                       <Eye size={14} />
@@ -2681,14 +2815,26 @@ function VisitsManager({ visits, user, clients, appSettings }: { visits: Technic
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <p className="text-[11px] text-[#71717a] uppercase">Data</p>
+                  <p className="text-[11px] text-[#71717a] uppercase">Data da Visita</p>
                   <p className="text-sm font-medium">
-                    {format(viewingVisit.date instanceof Timestamp ? viewingVisit.date.toDate() : new Date(viewingVisit.date), "PPP", { locale: ptBR })}
+                    {format(viewingVisit.date, "PPP", { locale: ptBR })}
                   </p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-[11px] text-[#71717a] uppercase">Hora Programada</p>
                   <p className="text-sm font-medium">{viewingVisit.scheduledTime || 'Não informada'}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-[11px] text-[#71717a] uppercase">Data Lançamento</p>
+                  <p className="text-[12px] text-[#71717a] italic">
+                    {viewingVisit.createdAt ? format(viewingVisit.createdAt, "PPP 'às' HH:mm", { locale: ptBR }) : 'N/A'}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[11px] text-[#71717a] uppercase">Técnico</p>
+                  <p className="text-sm font-medium">{viewingVisit.technicianName}</p>
                 </div>
               </div>
               <div className="space-y-1">
@@ -2705,13 +2851,9 @@ function VisitsManager({ visits, user, clients, appSettings }: { visits: Technic
                   </p>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <div className="space-y-1">
-                  <p className="text-[11px] text-[#71717a] uppercase">Técnico</p>
-                  <p className="text-sm font-medium">{viewingVisit.technicianName}</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[11px] text-[#71717a] uppercase">Valor</p>
+                  <p className="text-[11px] text-[#71717a] uppercase">Valor do Serviço</p>
                   <p className="text-sm font-bold text-white">R$ {viewingVisit.totalValue.toFixed(2)}</p>
                 </div>
               </div>
@@ -2848,13 +2990,19 @@ function VisitsManager({ visits, user, clients, appSettings }: { visits: Technic
 
 // --- Financial Manager Component ---
 
-function FinancialManager({ financials, visits }: { financials: FinancialRecord[], visits: TechnicalVisit[] }) {
+function FinancialManager({ financials, visits, clients }: { financials: FinancialRecord[], visits: TechnicalVisit[], clients: Client[] }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [clientSearch, setClientSearch] = useState('');
   const [newRecord, setNewRecord] = useState<Partial<FinancialRecord>>({
     type: 'Receita',
     date: new Date(),
-    value: 0
+    value: 0,
+    serviceType: 'Serviço Normal'
   });
+
+  const filteredClientsForSelect = useMemo(() => {
+    return clients.filter(c => (c.name || '').toLowerCase().includes(clientSearch.toLowerCase()));
+  }, [clients, clientSearch]);
 
   const handleAddRecord = async () => {
     if (!newRecord.description || !newRecord.value) {
@@ -2868,11 +3016,24 @@ function FinancialManager({ financials, visits }: { financials: FinancialRecord[
         date: Timestamp.fromDate(newRecord.date instanceof Date ? newRecord.date : new Date()),
         createdAt: Timestamp.now()
       });
-      setNewRecord({ type: 'Receita', date: new Date(), value: 0 });
+      setNewRecord({ type: 'Receita', date: new Date(), value: 0, serviceType: 'Serviço Normal' });
       setIsAddOpen(false);
       toast.success('Registro financeiro salvo!');
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'financial');
+    }
+  };
+
+  const handleClientChange = (clientId: string) => {
+    const client = clients.find(c => c.id === clientId);
+    if (client) {
+      setNewRecord({
+        ...newRecord,
+        clientId: client.id,
+        description: client.type === 'Contrato' ? (client.serviceSpecification || 'Serviço de Contrato') : `Serviço - ${client.name}`,
+        serviceType: client.type === 'Contrato' ? 'Contrato' : 'Serviço Normal',
+        value: client.type === 'Contrato' ? (client.contractValue || 0) : newRecord.value
+      });
     }
   };
 
@@ -2913,6 +3074,53 @@ function FinancialManager({ financials, visits }: { financials: FinancialRecord[
                   <Input id="val" type="number" value={newRecord.value || ''} onChange={e => setNewRecord({...newRecord, value: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
               </div>
+
+              {newRecord.type === 'Receita' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Cliente (Opcional)</Label>
+                    <Select value={newRecord.clientId} onValueChange={handleClientChange}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue placeholder="Selecione um cliente">
+                          {clients.find(c => c.id === newRecord.clientId)?.name || 'Cliente Sem Nome'}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <div className="p-2 sticky top-0 bg-[#1a1d23] z-10 border-b border-[#2d3139]">
+                          <Input 
+                            placeholder="Pesquisar..." 
+                            value={clientSearch}
+                            onChange={(e) => setClientSearch(e.target.value)}
+                            className="h-8 text-xs bg-[#0f1115] border-[#2d3139]"
+                            onKeyDown={(e) => e.stopPropagation()}
+                          />
+                        </div>
+                        <ScrollArea className="h-[200px]">
+                          {filteredClientsForSelect.map(c => (
+                            <SelectItem key={c.id} value={c.id}>{c.name || 'Cliente Sem Nome'}</SelectItem>
+                          ))}
+                          {filteredClientsForSelect.length === 0 && (
+                            <div className="p-2 text-center text-xs text-[#71717a]">Nenhum cliente encontrado</div>
+                          )}
+                        </ScrollArea>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Origem da Receita</Label>
+                    <Select value={newRecord.serviceType} onValueChange={(val: any) => setNewRecord({...newRecord, serviceType: val})}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="Serviço Normal">Serviço Normal</SelectItem>
+                        <SelectItem value="Contrato">Contrato</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label htmlFor="desc" className="text-[#a0a0a0]">Descrição</Label>
                 <Input id="desc" value={newRecord.description || ''} onChange={e => setNewRecord({...newRecord, description: e.target.value})} placeholder="Ex: Pagamento Instalação CFTV" className="bg-[#0f1115] border-[#2d3139] text-white" />
@@ -2979,6 +3187,7 @@ function FinancialManager({ financials, visits }: { financials: FinancialRecord[
             <TableRow className="border-[#2d3139] hover:bg-transparent">
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Descrição</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Origem</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Categoria</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Tipo</TableHead>
               <TableHead className="text-right text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Valor</TableHead>
@@ -2991,6 +3200,16 @@ function FinancialManager({ financials, visits }: { financials: FinancialRecord[
                   {format(record.date instanceof Timestamp ? record.date.toDate() : new Date(record.date), 'dd/MM/yyyy')}
                 </TableCell>
                 <TableCell className="font-medium text-white text-[13px]">{record.description}</TableCell>
+                <TableCell>
+                  {record.serviceType && (
+                    <Badge className={cn(
+                      "font-normal text-[10px] uppercase tracking-wider",
+                      record.serviceType === 'Contrato' ? "bg-amber-500/10 text-amber-500" : "bg-blue-500/10 text-blue-500"
+                    )}>
+                      {record.serviceType}
+                    </Badge>
+                  )}
+                </TableCell>
                 <TableCell>
                   <Badge className="bg-[#2d3139] text-[#e0e0e0] font-normal text-[10px] uppercase tracking-wider">{record.category}</Badge>
                 </TableCell>
@@ -3028,11 +3247,16 @@ function FinancialManager({ financials, visits }: { financials: FinancialRecord[
 
 function BudgetsManager({ budgets, clients, appSettings }: { budgets: Budget[], clients: Client[], appSettings: AppSettings }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [clientSearch, setClientSearch] = useState('');
   const [newBudget, setNewBudget] = useState<Partial<Budget>>({
     items: [{ description: '', quantity: 1, price: 0 }],
     status: 'Pendente',
     observations: ''
   });
+
+  const filteredClientsForSelect = useMemo(() => {
+    return clients.filter(c => (c.name || '').toLowerCase().includes(clientSearch.toLowerCase()));
+  }, [clients, clientSearch]);
 
   const handleAddItem = () => {
     setNewBudget({
@@ -3080,7 +3304,7 @@ function BudgetsManager({ budgets, clients, appSettings }: { budgets: Budget[], 
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
     doc.text(`Data: ${dateStr}`, 20, 50);
-    doc.text(`Cliente: ${budget.clientName}`, 20, 57);
+    doc.text(`Cliente: ${budget.clientName || 'Cliente Sem Nome'}`, 20, 57);
     doc.text(`Email: ${budget.clientEmail || 'N/A'}`, 20, 64);
     
     doc.line(20, 70, 190, 70);
@@ -3118,7 +3342,8 @@ function BudgetsManager({ budgets, clients, appSettings }: { budgets: Budget[], 
       finalY += (splitObs.length * 5) + 10;
     }
 
-    doc.save(`orcamento_${budget.clientName.replace(/\s/g, '_')}.pdf`);
+    const nameForFilename = (budget.clientName || 'Cliente_Sem_Nome').replace(/\s/g, '_');
+    doc.save(`orcamento_${nameForFilename}.pdf`);
   };
 
   return (
@@ -3153,13 +3378,28 @@ function BudgetsManager({ budgets, clients, appSettings }: { budgets: Budget[], 
                   }
                 }}>
                   <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                    <SelectValue placeholder="Escolha um cliente..." />
+                    <SelectValue placeholder="Escolha um cliente...">
+                      {clients.find(c => c.name === newBudget.clientName)?.name || newBudget.clientName || null}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                    {clients.map(c => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                    ))}
-                    {clients.length === 0 && <SelectItem value="none" disabled>Nenhum cliente cadastrado</SelectItem>}
+                    <div className="p-2 sticky top-0 bg-[#1a1d23] z-10 border-b border-[#2d3139]">
+                      <Input 
+                        placeholder="Pesquisar..." 
+                        value={clientSearch}
+                        onChange={(e) => setClientSearch(e.target.value)}
+                        className="h-8 text-xs bg-[#0f1115] border-[#2d3139]"
+                        onKeyDown={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                    <ScrollArea className="h-[200px]">
+                      {filteredClientsForSelect.map(c => (
+                        <SelectItem key={c.id} value={c.id}>{c.name || 'Cliente Sem Nome'}</SelectItem>
+                      ))}
+                      {filteredClientsForSelect.length === 0 && (
+                        <div className="p-2 text-center text-xs text-[#71717a]">Nenhum cliente encontrado</div>
+                      )}
+                    </ScrollArea>
                   </SelectContent>
                 </Select>
               </div>
