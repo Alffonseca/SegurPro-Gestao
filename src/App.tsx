@@ -2106,12 +2106,24 @@ function Dashboard({ visits, financials, budgets, clients, onNavigate }: { visit
 
     const income = monthlyFinancials.filter(f => f.type === 'Receita').reduce((acc, f) => acc + f.value, 0);
     const expense = monthlyFinancials.filter(f => f.type === 'Despesa').reduce((acc, f) => acc + f.value, 0);
+    
+    // Day Stats
+    const todayStr = format(now, 'yyyy-MM-dd');
+    const todayFinancials = financials.filter(f => {
+      const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
+      return format(d, 'yyyy-MM-dd') === todayStr;
+    });
+    
+    const todayIncome = todayFinancials.filter(f => f.type === 'Receita').reduce((acc, f) => acc + f.value, 0);
+    const todayExpense = todayFinancials.filter(f => f.type === 'Despesa').reduce((acc, f) => acc + f.value, 0);
+    const todayBalance = todayIncome - todayExpense;
+
     const pendingVisits = visits.filter(v => v.status === 'Agendada' || v.status === 'Em Andamento').length;
     const completedVisits = visits.filter(v => v.status === 'Concluída').length;
     const pendingBudgets = budgets.filter(b => b.status === 'Pendente').length;
     const totalClients = clients.length;
 
-    return { income, expense, balance: income - expense, pendingVisits, completedVisits, pendingBudgets, totalClients };
+    return { income, expense, balance: income - expense, todayBalance, pendingVisits, completedVisits, pendingBudgets, totalClients };
   }, [visits, financials, budgets, clients]);
 
   const chartData = useMemo(() => {
@@ -2146,9 +2158,24 @@ function Dashboard({ visits, financials, budgets, clients, onNavigate }: { visit
 
   return (
     <div className="space-y-10">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         <StatCard title="Visitas Agendadas" value={stats.pendingVisits} icon={<CalendarIcon className="text-[#3b82f6]" />} trend={`${stats.completedVisits} concluídas`} isCount />
         <StatCard title="Orçamentos Pendentes" value={stats.pendingBudgets} icon={<FileText className="text-[#f59e0b]" />} trend="Aguardando aprovação" isCount />
+        <Card className={cn(
+          "border-[#2d3139] p-6 rounded-xl",
+          stats.todayBalance >= 0 ? "bg-emerald-500/10 border-emerald-500/20" : "bg-red-500/10 border-red-500/20"
+        )}>
+          <div className="text-[12px] text-[#71717a] mb-2 font-medium">Saldo do Dia</div>
+          <div className={cn(
+            "text-[22px] font-bold tracking-tight",
+            stats.todayBalance >= 0 ? "text-emerald-500" : "text-red-500"
+          )}>
+            R$ {stats.todayBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          </div>
+          <div className="text-[11px] mt-2 text-[#71717a]">
+            Fluxo de caixa hoje
+          </div>
+        </Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-8">
@@ -2992,6 +3019,10 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
 
 function FinancialManager({ financials, visits, clients }: { financials: FinancialRecord[], visits: TechnicalVisit[], clients: Client[] }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<FinancialRecord | null>(null);
+  const [recordToDelete, setRecordToDelete] = useState<FinancialRecord | null>(null);
   const [clientSearch, setClientSearch] = useState('');
   const [newRecord, setNewRecord] = useState<Partial<FinancialRecord>>({
     type: 'Receita',
@@ -3021,6 +3052,39 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
       toast.success('Registro financeiro salvo!');
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'financial');
+    }
+  };
+
+  const handleUpdateRecord = async () => {
+    if (!editingRecord || !editingRecord.description || !editingRecord.value) {
+      toast.error('Preencha os campos obrigatórios.');
+      return;
+    }
+
+    try {
+      const { id, ...data } = editingRecord;
+      await updateDoc(doc(db, 'financial', id), {
+        ...data,
+        date: editingRecord.date instanceof Date ? Timestamp.fromDate(editingRecord.date) : editingRecord.date
+      });
+      setEditingRecord(null);
+      setIsEditOpen(false);
+      toast.success('Registro financeiro atualizado!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `financial/${editingRecord?.id}`);
+    }
+  };
+
+  const handleDeleteRecord = async () => {
+    if (!recordToDelete) return;
+
+    try {
+      await deleteDoc(doc(db, 'financial', recordToDelete.id));
+      setRecordToDelete(null);
+      setIsDeleteConfirmOpen(false);
+      toast.success('Registro financeiro excluído!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `financial/${recordToDelete.id}`);
     }
   };
 
@@ -3191,6 +3255,7 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Categoria</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Tipo</TableHead>
               <TableHead className="text-right text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Valor</TableHead>
+              <TableHead className="text-right text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -3227,11 +3292,30 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
                 )}>
                   {record.type === 'Receita' ? '+' : '-'} R$ {record.value.toFixed(2)}
                 </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" size="icon" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
+                      setEditingRecord({
+                        ...record,
+                        date: record.date instanceof Timestamp ? record.date.toDate() : new Date(record.date)
+                      });
+                      setIsEditOpen(true);
+                    }}>
+                      <Pencil size={12} />
+                    </Button>
+                    <Button variant="outline" size="icon" className="h-7 w-7 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
+                      setRecordToDelete(record);
+                      setIsDeleteConfirmOpen(true);
+                    }}>
+                      <Trash2 size={12} />
+                    </Button>
+                  </div>
+                </TableCell>
               </TableRow>
             ))}
             {financials.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-12 text-[#71717a] text-sm">
+                <TableCell colSpan={7} className="text-center py-12 text-[#71717a] text-sm">
                   Nenhuma transação registrada.
                 </TableCell>
               </TableRow>
@@ -3239,6 +3323,83 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
           </TableBody>
         </Table>
       </Card>
+
+      {/* Edit Record Dialog */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">Editar Lançamento</DialogTitle>
+          </DialogHeader>
+          {editingRecord && (
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Tipo</Label>
+                  <Select value={editingRecord.type} onValueChange={(val: any) => setEditingRecord({...editingRecord, type: val})}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="Receita">Receita (+)</SelectItem>
+                      <SelectItem value="Despesa">Despesa (-)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-val" className="text-[#a0a0a0]">Valor (R$)</Label>
+                  <Input id="edit-val" type="number" value={editingRecord.value || ''} onChange={e => setEditingRecord({...editingRecord, value: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="edit-desc" className="text-[#a0a0a0]">Descrição</Label>
+                <Input id="edit-desc" value={editingRecord.description || ''} onChange={e => setEditingRecord({...editingRecord, description: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-cat" className="text-[#a0a0a0]">Categoria</Label>
+                  <Input id="edit-cat" value={editingRecord.category || ''} onChange={e => setEditingRecord({...editingRecord, category: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Data</Label>
+                  <Popover>
+                    <PopoverTrigger render={
+                      <Button variant="outline" className="w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white">
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {editingRecord.date ? format(editingRecord.date as Date, "dd/MM/yyyy") : <span>Selecione</span>}
+                      </Button>
+                    } />
+                    <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
+                      <Calendar mode="single" selected={editingRecord.date as Date} onSelect={(date) => setEditingRecord({...editingRecord, date})} initialFocus className="bg-[#1a1d23] text-white" />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+            <Button onClick={handleUpdateRecord} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Salvar Alterações</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Confirmar Exclusão</DialogTitle>
+            <DialogDescription className="text-[#71717a]">
+              Deseja realmente excluir este lançamento financeiro? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+            <Button variant="destructive" onClick={handleDeleteRecord} className="bg-[#ef4444] hover:bg-[#dc2626] text-white">Excluir</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
