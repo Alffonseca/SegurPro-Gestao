@@ -336,12 +336,6 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
   }
   
   // 5. Totals
-  doc.setFont('helvetica', 'bold');
-  if (!isContract) {
-    doc.text('Subtotal serviços', 20, servicesY + 40);
-    doc.text(formattedVal, 190, servicesY + 40, { align: 'right' });
-  }
-  
   doc.setFillColor(120, 120, 120);
   doc.rect(100, servicesY + 50, 90, 10, 'F');
   doc.setTextColor(255, 255, 255);
@@ -356,13 +350,15 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
     doc.setFont('helvetica', 'bold');
     doc.text('Dados para Pagamento (PIX):', 20, servicesY + 70);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Chave: ${pixSettings.key} | Banco: ${pixSettings.bank}`, 20, servicesY + 75);
-    doc.text(`Favorecido: ${pixSettings.favored} | CPF: ${pixSettings.document}`, 20, servicesY + 80);
+    doc.text(`Chave: ${pixSettings.key}`, 20, servicesY + 75);
+    doc.text(`Banco: ${pixSettings.bank}`, 20, servicesY + 80);
+    doc.text(`Favorecido: ${pixSettings.favored}`, 20, servicesY + 85);
+    doc.text(`CPF/CNPJ: ${pixSettings.document}`, 20, servicesY + 90);
   }
 
   // Observations
   if (receipt.observations) {
-    const obsY = servicesY + (pixSettings && pixSettings.key ? 90 : 70);
+    const obsY = servicesY + (pixSettings && pixSettings.key ? 100 : 70);
     doc.setFont('helvetica', 'bold');
     doc.text('Observações:', 20, obsY);
     doc.setFont('helvetica', 'normal');
@@ -2451,14 +2447,9 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    if (createdStr) {
-      doc.text(`Data de Lançamento: ${createdStr}`, 20, 50);
-      doc.text(`Data Agendada: ${dateStr}${visit.scheduledTime ? ` às ${visit.scheduledTime}` : ''}`, 20, 57);
-    } else {
-      doc.text(`Data Agendada: ${dateStr}${visit.scheduledTime ? ` às ${visit.scheduledTime}` : ''}`, 20, 50);
-    }
+    doc.text(`Data Agendada: ${dateStr}${visit.scheduledTime ? ` às ${visit.scheduledTime}` : ''}`, 20, 50);
     
-    let currentLineY = createdStr ? 64 : 57;
+    let currentLineY = 57;
 
     if (visit.expectedDate) {
       const expDateStr = format(visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate), 'dd/MM/yyyy');
@@ -2732,8 +2723,8 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
                     <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
                       setViewingVisit({
                         ...visit,
-                        date: visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date),
-                        expectedDate: visit.expectedDate ? (visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate)) : null,
+                        date: visit.date instanceof Timestamp ? visit.date.toDate() : (visit.date ? new Date(visit.date) : new Date()),
+                        expectedDate: visit.expectedDate ? (visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate)) : (visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date)),
                         createdAt: visit.createdAt instanceof Timestamp ? visit.createdAt.toDate() : (visit.createdAt ? new Date(visit.createdAt) : null)
                       });
                       setIsViewOpen(true);
@@ -2842,27 +2833,21 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <p className="text-[11px] text-[#71717a] uppercase">Data da Visita</p>
-                  <p className="text-sm font-medium">
-                    {format(viewingVisit.date, "PPP", { locale: ptBR })}
+                  <p className="text-[11px] text-[#71717a] uppercase">Agendamento</p>
+                  <p className="text-sm font-medium text-[#3b82f6]">
+                    {format(viewingVisit.date, "dd/MM/yyyy", { locale: ptBR })} {viewingVisit.scheduledTime ? `às ${viewingVisit.scheduledTime}` : ''}
                   </p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[11px] text-[#71717a] uppercase">Hora Programada</p>
-                  <p className="text-sm font-medium">{viewingVisit.scheduledTime || 'Não informada'}</p>
+                  <p className="text-[11px] text-[#71717a] uppercase">Data Prevista</p>
+                  <p className="text-sm font-medium">
+                    {viewingVisit.expectedDate ? format(viewingVisit.expectedDate, "dd/MM/yyyy", { locale: ptBR }) : 'N/A'} {viewingVisit.expectedTime ? `às ${viewingVisit.expectedTime}` : ''}
+                  </p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <p className="text-[11px] text-[#71717a] uppercase">Data Lançamento</p>
-                  <p className="text-[12px] text-[#71717a] italic">
-                    {viewingVisit.createdAt ? format(viewingVisit.createdAt, "PPP 'às' HH:mm", { locale: ptBR }) : 'N/A'}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[11px] text-[#71717a] uppercase">Técnico</p>
-                  <p className="text-sm font-medium">{viewingVisit.technicianName}</p>
-                </div>
+              <div className="space-y-1">
+                <p className="text-[11px] text-[#71717a] uppercase">Técnico Responsável</p>
+                <p className="text-sm font-medium">{viewingVisit.technicianName}</p>
               </div>
               <div className="space-y-1">
                 <p className="text-[11px] text-[#71717a] uppercase">Descrição</p>
