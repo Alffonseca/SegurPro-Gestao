@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Plus, 
   LayoutDashboard, 
@@ -49,6 +49,7 @@ import {
   createUserWithEmailAndPassword,
   updateProfile,
   updatePassword,
+  sendPasswordResetEmail,
   User as FirebaseUser,
   getAuth
 } from 'firebase/auth';
@@ -167,6 +168,143 @@ function valorPorExtenso(valor: number) {
 
 // --- Types ---
 
+const formatRecordNumber = (number?: number, date?: any) => {
+  if (!number) return '---';
+  const d = date instanceof Timestamp ? date.toDate() : (date ? new Date(date) : new Date());
+  const year = format(d, 'yyyy');
+  return `${number.toString().padStart(4, '0')}/${year}`;
+};
+
+const generateContractPDF = (client: Client, appSettings: AppSettings) => {
+  const doc = new jsPDF();
+  const dateStr = format(new Date(), "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
+  
+  // Header
+  if (appSettings.logoUrl) {
+    try {
+      doc.addImage(appSettings.logoUrl, 'PNG', 20, 10, 25, 25);
+    } catch (e) {
+      console.error("Erro ao adicionar logo ao PDF:", e);
+    }
+  }
+
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
+  doc.text(appSettings.companyName || 'AF Sistemas', appSettings.logoUrl ? 50 : 20, 20);
+  
+  doc.setFontSize(14);
+  doc.text('CONTRATO DE PRESTAÇÃO DE SERVIÇOS TÉCNICOS', 105, 45, { align: 'center' });
+  
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.text('1. PARTES', 20, 60);
+  
+  doc.setFont('helvetica', 'normal');
+  const contratanteText = `CONTRATANTE: ${client.name || '[Nome]'}, inscrito no CPF/CNPJ sob nº ${client.document || '[nº]'}, residente ou sediado em ${client.address || '[Endereço Completo]'}${client.city ? `, ${client.city}` : ''}${client.cep ? `, CEP: ${client.cep}` : ''}${client.responsible ? `, Responsável: ${client.responsible}` : ''}.`;
+  const contratadoText = `CONTRATADO: ${appSettings.companyName || '[Sua Empresa]'}, inscrito no CPF/CNPJ sob nº ${appSettings.document || '[nº]'}, residente ou sediado em ${appSettings.address || '[Endereço Completo]'}, ${appSettings.city || '[Cidade]'}, CEP: ${appSettings.cep || '[CEP]'}, Responsável: ${appSettings.responsible || '[Responsável]'}.`;
+  
+  let currentY = 67;
+  const splitContratante = doc.splitTextToSize(contratanteText, 170);
+  doc.text(splitContratante, 20, currentY);
+  currentY += (splitContratante.length * 6) + 2;
+  
+  const splitContratado = doc.splitTextToSize(contratadoText, 170);
+  doc.text(splitContratado, 20, currentY);
+  currentY += (splitContratado.length * 6) + 5;
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('2. OBJETO', 20, currentY);
+  currentY += 7;
+  doc.setFont('helvetica', 'normal');
+  const objetoText = 'O presente contrato tem por objeto a prestação de serviços técnicos de:\n1 - Instalação / Manutenção de sistema de CFTV (Câmeras).\n2 - Configuração de Redes Wifi Local.\n3 - Instalação/Configuração de Sistemas de Alarme e Sensores.\n4 - Automação Residencial/Comercial de Portões.';
+  doc.text(objetoText, 20, currentY);
+  currentY += 32;
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('3. LOCAL DA PRESTAÇÃO', 20, currentY);
+  currentY += 7;
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Os serviços serão realizados no endereço: ${client.address || '[Endereço do Cliente]'}.`, 20, currentY);
+  currentY += 12;
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('4. VALOR E FORMA DE PAGAMENTO', 20, currentY);
+  currentY += 7;
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Pelo serviço descrito, o CONTRATANTE pagará ao CONTRATADO a quantia total de R$ ${(client.contractValue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} mensais.`, 20, currentY);
+  currentY += 6;
+  doc.text('Forma de pagamento: PIX ou Espécie em moeda corrente no país.', 20, currentY);
+  currentY += 6;
+  doc.text('Data do pagamento: Conforme acordado mensalmente.', 20, currentY);
+  currentY += 12;
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('5. MATERIAIS', 20, currentY);
+  currentY += 7;
+  doc.setFont('helvetica', 'normal');
+  doc.text('O valor acima refere-se apenas à mão de obra. Todo o material necessário será fornecido pelo CONTRATANTE ou cobrado à parte.', 20, currentY);
+  currentY += 12;
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('6. PRAZO', 20, currentY);
+  currentY += 7;
+  doc.setFont('helvetica', 'normal');
+  doc.text('O contrato terá início na data de assinatura do mesmo e terá previsão de 1 ano (12 meses). Sendo renovado automaticamente se nenhuma das partes se manifestarem por escrito o desejo de encerrar.', 20, currentY);
+  currentY += 17;
+
+  if (currentY > 250) {
+    doc.addPage();
+    currentY = 20;
+  }
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('7. OBRIGAÇÕES DO CONTRATADO', 20, currentY);
+  currentY += 7;
+  doc.setFont('helvetica', 'normal');
+  doc.text('Executar o serviço com zelo e técnica adequada; Fornecer garantia sobre a mão de obra prestada; Instruir o CONTRATANTE sobre o uso básico dos equipamentos.', 20, currentY);
+  currentY += 12;
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('8. OBRIGAÇÕES DO CONTRATANTE', 20, currentY);
+  currentY += 7;
+  doc.setFont('helvetica', 'normal');
+  doc.text('Garantir o livre acesso do técnico ao local e infraestrutura necessária; Efetuar o pagamento nos prazos acordados.', 20, currentY);
+  currentY += 12;
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('9. RESCISÃO', 20, currentY);
+  currentY += 7;
+  doc.setFont('helvetica', 'normal');
+  doc.text('Em caso de desistência após o início dos trabalhos, a parte que der causa pagará multa de 20% sobre o valor restante do contrato.', 20, currentY);
+  currentY += 12;
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('10. FORO', 20, currentY);
+  currentY += 7;
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Fica eleito o foro da comarca de ${appSettings.city || '[Sua Cidade]'} para dirimir quaisquer dúvidas oriundas deste contrato.`, 20, currentY);
+  currentY += 15;
+
+  doc.text(`${appSettings.city || 'Cidade-UF'}, ${dateStr}.`, 20, currentY);
+  currentY += 30;
+
+  if (appSettings.signatureUrl) {
+    try {
+      doc.addImage(appSettings.signatureUrl, 'PNG', 125, currentY - 25, 40, 15);
+    } catch (e) {
+      console.error("Erro ao adicionar assinatura ao contrato:", e);
+    }
+  }
+
+  doc.line(40, currentY, 90, currentY);
+  doc.line(120, currentY, 170, currentY);
+  doc.text('CONTRATANTE', 65, currentY + 5, { align: 'center' });
+  doc.text('CONTRATADO', 145, currentY + 5, { align: 'center' });
+
+  doc.save(`contrato_${(client.name || 'cliente').replace(/\s/g, '_')}.pdf`);
+};
+
 interface TechnicalVisit {
   id: string;
   clientId?: string;
@@ -185,6 +323,7 @@ interface TechnicalVisit {
   technicianName: string;
   totalValue: number;
   createdAt: any;
+  number?: number;
 }
 
 interface FinancialRecord {
@@ -204,12 +343,14 @@ interface Budget {
   id: string;
   clientId?: string;
   clientName: string;
-  clientEmail: string;
+  clientPhone: string;
+  address: string;
   items: { description: string; quantity: number; price: number }[];
   total: number;
   status: 'Pendente' | 'Aprovado' | 'Rejeitado';
   observations?: string;
   createdAt: any;
+  number?: number;
 }
 
 interface Client {
@@ -218,6 +359,9 @@ interface Client {
   email?: string;
   phone?: string;
   address?: string;
+  city?: string;
+  cep?: string;
+  responsible?: string;
   document?: string; // CPF or CNPJ
   type: 'Avulso' | 'Contrato';
   contractValue?: number;
@@ -367,6 +511,14 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
   }
 
   // 6. Signature
+  if (appSettings.signatureUrl) {
+    try {
+      doc.addImage(appSettings.signatureUrl, 'PNG', 80, 250, 50, 20);
+    } catch (e) {
+      console.error("Erro ao adicionar assinatura ao recibo:", e);
+    }
+  }
+
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
@@ -403,9 +555,126 @@ interface PixSettings {
 interface AppSettings {
   logoUrl: string;
   companyName: string;
+  address: string;
+  responsible: string;
+  city: string;
+  cep: string;
+  document: string;
+  signatureUrl?: string;
 }
 
 // --- Components ---
+
+function SignaturePad({ value, onChange }: { value?: string, onChange: (val: string) => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+
+  const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+    setIsDrawing(true);
+    draw(e);
+  };
+
+  const stopDrawing = () => {
+    setIsDrawing(false);
+    if (canvasRef.current) {
+      onChange(canvasRef.current.toDataURL());
+    }
+  };
+
+  const draw = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!isDrawing || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const rect = canvas.getBoundingClientRect();
+    let x, y;
+
+    if ('touches' in e) {
+      x = e.touches[0].clientX - rect.left;
+      y = e.touches[0].clientY - rect.top;
+    } else {
+      x = e.clientX - rect.left;
+      y = e.clientY - rect.top;
+    }
+
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#000';
+
+    if (!isDrawing) {
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    }
+  };
+
+  const clear = () => {
+    if (canvasRef.current) {
+      const ctx = canvasRef.current.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+        onChange('');
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (value && canvasRef.current) {
+      const img = new Image();
+      img.onload = () => {
+        const ctx = canvasRef.current?.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, canvasRef.current!.width, canvasRef.current!.height);
+          ctx.drawImage(img, 0, 0);
+        }
+      };
+      img.src = value;
+    }
+  }, []);
+
+  return (
+    <div className="space-y-2">
+      <div className="relative bg-white rounded-lg border border-[#2d3139] overflow-hidden cursor-crosshair">
+        <canvas
+          ref={canvasRef}
+          width={400}
+          height={150}
+          onMouseDown={startDrawing}
+          onMouseUp={stopDrawing}
+          onMouseOut={stopDrawing}
+          onMouseMove={draw}
+          onTouchStart={startDrawing}
+          onTouchEnd={stopDrawing}
+          onTouchMove={draw}
+          className="w-full h-[150px] touch-none"
+        />
+        {(!isDrawing && !value) && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-gray-300 pointer-events-none">
+            Assine aqui
+          </div>
+        )}
+      </div>
+      <Button 
+        type="button" 
+        variant="outline" 
+        size="sm" 
+        onClick={clear}
+        className="w-full border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]"
+      >
+        Limpar Assinatura
+      </Button>
+    </div>
+  );
+}
+
+const getFinalEmail = (input: string) => {
+  const clean = input.trim();
+  if (!clean) return '';
+  return clean.includes('@') ? clean : `${clean.toLowerCase()}@segurpro.local`;
+};
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -432,7 +701,13 @@ export default function App() {
   });
   const [appSettings, setAppSettings] = useState<AppSettings>({
     logoUrl: '',
-    companyName: 'AF Sistemas de Segurança e Informática'
+    companyName: 'AF Sistemas de Segurança e Informática',
+    address: '',
+    responsible: '',
+    city: '',
+    cep: '',
+    document: '',
+    signatureUrl: ''
   });
 
   // Auth Listener
@@ -584,29 +859,33 @@ export default function App() {
       return;
     }
 
+    const finalEmail = getFinalEmail(email);
+
     try {
       if (authMode === 'login') {
-        await signInWithEmailAndPassword(auth, email, password);
-        toast.success('Login realizado com sucesso!');
+        await signInWithEmailAndPassword(auth, finalEmail, password);
+        toast.success('Entrando no sistema...');
       } else {
         if (!displayName) {
-          toast.error('Informe seu nome.');
+          toast.error('Por favor, informe seu nome para o cadastro.');
           return;
         }
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const userCredential = await createUserWithEmailAndPassword(auth, finalEmail, password);
         await updateProfile(userCredential.user, { displayName });
-        toast.success('Conta criada com sucesso!');
+        toast.success('Sua conta foi criada! Bem-vindo.');
       }
     } catch (error: any) {
       console.error(error);
       if (error.code === 'auth/email-already-in-use') {
-        toast.error('Este e-mail já está em uso.');
+        toast.error('Este usuário já está em uso.');
       } else if (error.code === 'auth/weak-password') {
         toast.error('A senha deve ter pelo menos 6 caracteres.');
-      } else if (error.code === 'auth/invalid-credential') {
-        toast.error('E-mail ou senha incorretos.');
+      } else if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+        toast.error('Usuário ou senha incorretos. Verifique suas credenciais.');
+      } else if (error.code === 'auth/invalid-email') {
+        toast.error('O formato do usuário ou e-mail é inválido.');
       } else {
-        toast.error('Erro na autenticação.');
+        toast.error('Erro na autenticação: ' + (error.message || 'Desconhecido'));
       }
     }
   };
@@ -671,13 +950,13 @@ export default function App() {
                   </div>
                 )}
                 <div className="space-y-2">
-                  <Label htmlFor="auth-email" className="text-[#a0a0a0]">E-mail</Label>
+                  <Label htmlFor="auth-username" className="text-[#a0a0a0]">Usuário</Label>
                   <Input 
-                    id="auth-email" 
-                    type="email" 
+                    id="auth-username" 
+                    type="text" 
                     value={email} 
                     onChange={e => setEmail(e.target.value)} 
-                    placeholder="seu@email.com"
+                    placeholder="Seu usuário"
                     className="bg-[#0f1115] border-[#2d3139] text-white" 
                   />
                 </div>
@@ -788,7 +1067,7 @@ export default function App() {
             {currentUserData?.role === 'admin' && (
               <SidebarItem 
                 icon={<UserIcon size={18} />} 
-                label="Usuários" 
+                label="Gerenciar Equipe" 
                 active={activeTab === 'users'} 
                 onClick={() => setActiveTab('users')} 
               />
@@ -941,7 +1220,7 @@ export default function App() {
           {activeTab === 'visits' && <VisitsManager visits={visits} user={user} clients={clients} appSettings={appSettings} pixSettings={pixSettings} />}
           {activeTab === 'financial' && <FinancialManager financials={financials} visits={visits} clients={clients} />}
           {activeTab === 'budgets' && <BudgetsManager budgets={budgets} clients={clients} appSettings={appSettings} />}
-          {activeTab === 'clients' && <ClientsManager clients={clients} />}
+          {activeTab === 'clients' && <ClientsManager clients={clients} appSettings={appSettings} />}
           {activeTab === 'receipts' && <ReceiptsManager receipts={receipts} clients={clients} pixSettings={pixSettings} appSettings={appSettings} />}
           {activeTab === 'users' && <UsersManager users={users} />}
           {activeTab === 'settings' && <SettingsManager pixSettings={pixSettings} appSettings={appSettings} user={user} />}
@@ -956,6 +1235,12 @@ function UsersManager({ users }: { users: any[] }) {
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'tecnico' });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<any>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<any>(null);
+
   const handleAddUser = async () => {
     if (!newUser.name || !newUser.email || !newUser.password) {
       toast.error('Preencha todos os campos.');
@@ -968,13 +1253,14 @@ function UsersManager({ users }: { users: any[] }) {
       const secondaryApp = initializeApp(firebaseConfig, 'Secondary');
       const secondaryAuth = getAuth(secondaryApp);
       
-      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newUser.email, newUser.password);
+      const finalEmail = getFinalEmail(newUser.email);
+      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, finalEmail, newUser.password);
       await updateProfile(userCredential.user, { displayName: newUser.name });
       
       // Add to Firestore
       await setDoc(doc(db, 'users', userCredential.user.uid), {
         uid: userCredential.user.uid,
-        email: newUser.email,
+        email: finalEmail,
         displayName: newUser.name,
         role: newUser.role,
         createdAt: Timestamp.now()
@@ -994,6 +1280,74 @@ function UsersManager({ users }: { users: any[] }) {
     }
   };
 
+  const handleUpdateUser = async () => {
+    if (!editingUser) return;
+    setIsSubmitting(true);
+    try {
+      await updateDoc(doc(db, 'users', editingUser.id), {
+        displayName: editingUser.displayName,
+        role: editingUser.role
+      });
+
+      if (newPassword) {
+        if (newPassword.length < 6) {
+          toast.error('A senha deve ter pelo menos 6 caracteres.');
+          setIsSubmitting(false);
+          return;
+        }
+
+        try {
+          const response = await fetch('/api/admin/update-user-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uid: editingUser.id, newPassword })
+          });
+          
+          if (!response.ok) {
+            const data = await response.json();
+            if (data.error && (data.error.includes("Identity Toolkit API") || data.error.includes("identitytoolkit.googleapis.com"))) {
+              toast.error('API do Google desativada no seu projeto Cloud. O admin não conseguirá mudar a senha diretamente até que ela seja ativada.', {
+                duration: 10000,
+              });
+              // Still succeed the metadata update
+            } else {
+              throw new Error(data.error || 'Erro ao atualizar senha no servidor.');
+            }
+          } else {
+            toast.success('Senha atualizada pelo administrador!');
+          }
+        } catch (srvError: any) {
+          console.error("Server password update failed:", srvError);
+          toast.error('Erro ao conectar ao servidor para alterar senha.');
+          // Don't throw here, the role/name update already worked
+        }
+      }
+
+      setIsEditOpen(false);
+      setEditingUser(null);
+      setNewPassword('');
+      toast.success('Usuário atualizado com sucesso!');
+    } catch (error: any) {
+      console.error(error);
+      toast.error('Erro ao atualizar usuário.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+    try {
+      await deleteDoc(doc(db, 'users', userToDelete.id));
+      setIsDeleteConfirmOpen(false);
+      setUserToDelete(null);
+      toast.success('Usuário removido com sucesso!');
+    } catch (error) {
+      console.error(error);
+      toast.error('Erro ao remover usuário.');
+    }
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1002,12 +1356,14 @@ function UsersManager({ users }: { users: any[] }) {
           <p className="text-[#71717a]">Cadastre e gerencie os acessos ao sistema.</p>
         </div>
         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
-              <Plus size={18} />
-              Novo Usuário
-            </Button>
-          </DialogTrigger>
+          <DialogTrigger 
+            render={
+              <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+                <Plus size={18} />
+                Novo Usuário
+              </Button>
+            }
+          />
           <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
             <DialogHeader>
               <DialogTitle className="text-white">Cadastrar Novo Usuário</DialogTitle>
@@ -1027,13 +1383,13 @@ function UsersManager({ users }: { users: any[] }) {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="user-email" className="text-[#a0a0a0]">E-mail</Label>
+                <Label htmlFor="user-email" className="text-[#a0a0a0]">E-mail / Usuário</Label>
                 <Input 
                   id="user-email" 
-                  type="email"
+                  type="text"
                   value={newUser.email} 
                   onChange={e => setNewUser({...newUser, email: e.target.value})} 
-                  placeholder="email@exemplo.com"
+                  placeholder="ex: joao ou email@exemplo.com"
                   className="bg-[#0f1115] border-[#2d3139] text-white" 
                 />
               </div>
@@ -1081,6 +1437,7 @@ function UsersManager({ users }: { users: any[] }) {
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">E-mail</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Nível</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data Cadastro</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -1099,11 +1456,115 @@ function UsersManager({ users }: { users: any[] }) {
                 <TableCell className="text-[12px] text-[#71717a]">
                   {u.createdAt ? format(u.createdAt instanceof Timestamp ? u.createdAt.toDate() : new Date(u.createdAt), 'dd/MM/yyyy') : '-'}
                 </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="icon" 
+                      className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10"
+                      onClick={() => {
+                        setEditingUser(u);
+                        setIsEditOpen(true);
+                      }}
+                    >
+                      <Pencil size={14} />
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="icon" 
+                      className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10"
+                      onClick={() => {
+                        setUserToDelete(u);
+                        setIsDeleteConfirmOpen(true);
+                      }}
+                    >
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </Card>
+
+      {/* Edit User Dialog */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+          <DialogHeader>
+            <DialogTitle>Editar Usuário</DialogTitle>
+            <DialogDescription className="text-[#71717a]">
+              Atualize as informações do usuário.
+            </DialogDescription>
+          </DialogHeader>
+          {editingUser && (
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0]">Nome Completo</Label>
+                <Input 
+                  value={editingUser.displayName} 
+                  onChange={e => setEditingUser({...editingUser, displayName: e.target.value})} 
+                  className="bg-[#0f1115] border-[#2d3139] text-white" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0]">Nível de Acesso</Label>
+                <Select value={editingUser.role} onValueChange={(val: any) => setEditingUser({...editingUser, role: val})}>
+                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                    <SelectItem value="admin">Administrador</SelectItem>
+                    <SelectItem value="tecnico">Técnico</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0]">Nova Senha (opcional)</Label>
+                <Input 
+                  type="password"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  placeholder="Deixe em branco para manter a atual"
+                  className="bg-[#0f1115] border-[#2d3139] text-white" 
+                />
+                <p className="text-[10px] text-[#71717a]">Ao preencher, o sistema enviará um link de alteração para o usuário.</p>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139] text-[#a0a0a0]">
+              Cancelar
+            </Button>
+            <Button onClick={handleUpdateUser} disabled={isSubmitting} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+              {isSubmitting ? 'Salvando...' : 'Salvar Alterações'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete User Confirm */}
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+          <DialogHeader>
+            <DialogTitle>Excluir Usuário</DialogTitle>
+            <DialogDescription className="text-[#71717a]">
+              Tem certeza que deseja remover este usuário? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm">Usuário: <span className="font-bold">{userToDelete?.displayName}</span></p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)} className="border-[#2d3139]">
+              Cancelar
+            </Button>
+            <Button onClick={handleDeleteUser} className="bg-[#ef4444] hover:bg-[#dc2626] text-white">
+              Confirmar Exclusão
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1127,7 +1588,7 @@ function SidebarItem({ icon, label, active, onClick }: { icon: React.ReactNode, 
 
 // --- Clients Manager Component ---
 
-function ClientsManager({ clients }: { clients: Client[] }) {
+function ClientsManager({ clients, appSettings }: { clients: Client[], appSettings: AppSettings }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -1137,6 +1598,8 @@ function ClientsManager({ clients }: { clients: Client[] }) {
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [clientToDelete, setClientToDelete] = useState<Client | null>(null);
+  const [pendingContractClient, setPendingContractClient] = useState<Client | null>(null);
+  const [isContractConfirmOpen, setIsContractConfirmOpen] = useState(false);
 
   const filteredClients = useMemo(() => {
     return clients.filter(c => 
@@ -1149,20 +1612,30 @@ function ClientsManager({ clients }: { clients: Client[] }) {
 
   const handleAddClient = async () => {
     try {
-      await addDoc(collection(db, 'clients'), {
+      const clientData = {
         name: newClient.name || '',
         email: newClient.email || '',
         phone: newClient.phone || '',
         address: newClient.address || '',
+        city: newClient.city || '',
+        cep: newClient.cep || '',
+        responsible: newClient.responsible || '',
         document: newClient.document || '',
         ...newClient,
         type: newClient.type || 'Avulso',
         contractValue: newClient.type === 'Contrato' ? Number(newClient.contractValue || 0) : 0,
         createdAt: Timestamp.now()
-      });
+      };
+      const docRef = await addDoc(collection(db, 'clients'), clientData);
+      
       setNewClient({ type: 'Avulso' });
       setIsAddOpen(false);
       toast.success('Cliente cadastrado com sucesso!');
+
+      if (clientData.type === 'Contrato') {
+        setPendingContractClient({ id: docRef.id, ...clientData } as Client);
+        setIsContractConfirmOpen(true);
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'clients');
     }
@@ -1173,18 +1646,28 @@ function ClientsManager({ clients }: { clients: Client[] }) {
 
     try {
       const { id, ...data } = editingClient;
-      await updateDoc(doc(db, 'clients', id), {
+      const updatedData = {
         ...data,
         name: data.name || '',
         email: data.email || '',
         phone: data.phone || '',
         address: data.address || '',
+        city: data.city || '',
+        cep: data.cep || '',
+        responsible: data.responsible || '',
         document: data.document || '',
         contractValue: data.type === 'Contrato' ? Number(data.contractValue || 0) : 0
-      });
+      };
+      await updateDoc(doc(db, 'clients', id), updatedData);
+      
       setEditingClient(null);
       setIsEditOpen(false);
       toast.success('Cliente atualizado com sucesso!');
+
+      if (updatedData.type === 'Contrato') {
+        setPendingContractClient({ id, ...updatedData } as Client);
+        setIsContractConfirmOpen(true);
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'clients');
     }
@@ -1233,13 +1716,29 @@ function ClientsManager({ clients }: { clients: Client[] }) {
                   <Input id="phone" value={newClient.phone || ''} onChange={e => setNewClient({...newClient, phone: e.target.value})} placeholder="(11) 99999-9999" className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="document" className="text-[#a0a0a0]">CPF / CNPJ</Label>
-                <Input id="document" value={newClient.document || ''} onChange={e => setNewClient({...newClient, document: e.target.value})} placeholder="000.000.000-00" className="bg-[#0f1115] border-[#2d3139] text-white" />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="document" className="text-[#a0a0a0]">CPF / CNPJ</Label>
+                  <Input id="document" value={newClient.document || ''} onChange={e => setNewClient({...newClient, document: e.target.value})} placeholder="000.000.000-00" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="responsible" className="text-[#a0a0a0]">Responsável</Label>
+                  <Input id="responsible" value={newClient.responsible || ''} onChange={e => setNewClient({...newClient, responsible: e.target.value})} placeholder="Nome do responsável" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="address" className="text-[#a0a0a0]">Endereço</Label>
-                <Input id="address" value={newClient.address || ''} onChange={e => setNewClient({...newClient, address: e.target.value})} placeholder="Rua, Número, Bairro, Cidade" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                <Input id="address" value={newClient.address || ''} onChange={e => setNewClient({...newClient, address: e.target.value})} placeholder="Rua, Número, Bairro" className="bg-[#0f1115] border-[#2d3139] text-white" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="city" className="text-[#a0a0a0]">Cidade - UF</Label>
+                  <Input id="city" value={newClient.city || ''} onChange={e => setNewClient({...newClient, city: e.target.value})} placeholder="Cidade - UF" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="cep" className="text-[#a0a0a0]">CEP</Label>
+                  <Input id="cep" value={newClient.cep || ''} onChange={e => setNewClient({...newClient, cep: e.target.value})} placeholder="00000-000" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -1299,13 +1798,29 @@ function ClientsManager({ clients }: { clients: Client[] }) {
                   <Input id="edit-phone" value={editingClient.phone || ''} onChange={e => setEditingClient({...editingClient, phone: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-document" className="text-[#a0a0a0]">CPF / CNPJ</Label>
-                <Input id="edit-document" value={editingClient.document || ''} onChange={e => setEditingClient({...editingClient, document: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-document" className="text-[#a0a0a0]">CPF / CNPJ</Label>
+                  <Input id="edit-document" value={editingClient.document || ''} onChange={e => setEditingClient({...editingClient, document: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-responsible" className="text-[#a0a0a0]">Responsável</Label>
+                  <Input id="edit-responsible" value={editingClient.responsible || ''} onChange={e => setEditingClient({...editingClient, responsible: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-address" className="text-[#a0a0a0]">Endereço</Label>
                 <Input id="edit-address" value={editingClient.address || ''} onChange={e => setEditingClient({...editingClient, address: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-city" className="text-[#a0a0a0]">Cidade - UF</Label>
+                  <Input id="edit-city" value={editingClient.city || ''} onChange={e => setEditingClient({...editingClient, city: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-cep" className="text-[#a0a0a0]">CEP</Label>
+                  <Input id="edit-cep" value={editingClient.cep || ''} onChange={e => setEditingClient({...editingClient, cep: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -1406,6 +1921,26 @@ function ClientsManager({ clients }: { clients: Client[] }) {
           </TableBody>
         </Table>
       </Card>
+
+      <Dialog open={isContractConfirmOpen} onOpenChange={setIsContractConfirmOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Gerar Contrato?</DialogTitle>
+            <DialogDescription className="text-[#71717a]">
+              O cliente foi definido como tipo <b>CONTRATO</b>. Deseja gerar o PDF do contrato agora?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0 mt-4">
+            <Button variant="outline" onClick={() => setIsContractConfirmOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Não, já tenho assinado</Button>
+            <Button onClick={() => {
+              if (pendingContractClient) {
+                generateContractPDF(pendingContractClient, appSettings);
+              }
+              setIsContractConfirmOpen(false);
+            }} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Sim, Gerar PDF</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
         <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[400px]">
@@ -1953,6 +2488,56 @@ function SettingsManager({ pixSettings, appSettings, user }: { pixSettings: PixS
                 className="bg-[#0f1115] border-[#2d3139] text-white" 
               />
             </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="companyDoc" className="text-[#a0a0a0]">CPF/CNPJ da Empresa</Label>
+                <Input 
+                  id="companyDoc" 
+                  value={localApp.document} 
+                  onChange={e => setLocalApp({ ...localApp, document: e.target.value })} 
+                  className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  placeholder="00.000.000/0001-00"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="companyResp" className="text-[#a0a0a0]">Responsável</Label>
+                <Input 
+                  id="companyResp" 
+                  value={localApp.responsible} 
+                  onChange={e => setLocalApp({ ...localApp, responsible: e.target.value })} 
+                  className="bg-[#0f1115] border-[#2d3139] text-white" 
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="companyAddress" className="text-[#a0a0a0]">Endereço Completo</Label>
+              <Input 
+                id="companyAddress" 
+                value={localApp.address} 
+                onChange={e => setLocalApp({ ...localApp, address: e.target.value })} 
+                className="bg-[#0f1115] border-[#2d3139] text-white" 
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="companyCity" className="text-[#a0a0a0]">Cidade - UF</Label>
+                <Input 
+                  id="companyCity" 
+                  value={localApp.city} 
+                  onChange={e => setLocalApp({ ...localApp, city: e.target.value })} 
+                  className="bg-[#0f1115] border-[#2d3139] text-white" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="companyCep" className="text-[#a0a0a0]">CEP</Label>
+                <Input 
+                  id="companyCep" 
+                  value={localApp.cep} 
+                  onChange={e => setLocalApp({ ...localApp, cep: e.target.value })} 
+                  className="bg-[#0f1115] border-[#2d3139] text-white" 
+                />
+              </div>
+            </div>
             <div className="space-y-2">
               <Label className="text-[#a0a0a0]">Logo da Empresa</Label>
               <div className="flex flex-col gap-4">
@@ -1969,6 +2554,14 @@ function SettingsManager({ pixSettings, appSettings, user }: { pixSettings: PixS
                 />
                 <p className="text-[10px] text-[#71717a]">Recomendado: PNG ou JPG com fundo transparente.</p>
               </div>
+            </div>
+            <div className="space-y-4 pt-4 border-t border-[#2d3139]">
+              <Label className="text-[#a0a0a0]">Assinatura Digital (Recibos e Contratos)</Label>
+              <SignaturePad 
+                value={localApp.signatureUrl} 
+                onChange={(val) => setLocalApp({ ...localApp, signatureUrl: val })} 
+              />
+              <p className="text-[10px] text-[#71717a]">Use o mouse ou tela touch para assinar acima. Ela será usada em todos os documentos.</p>
             </div>
             <Button onClick={handleSaveApp} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none mt-4">
               Salvar Configurações Gerais
@@ -2119,7 +2712,12 @@ function Dashboard({ visits, financials, budgets, clients, onNavigate }: { visit
     const pendingBudgets = budgets.filter(b => b.status === 'Pendente').length;
     const totalClients = clients.length;
 
-    return { income, expense, balance: income - expense, todayBalance, pendingVisits, completedVisits, pendingBudgets, totalClients };
+    const todayVisits = visits.filter(v => {
+      const d = v.date instanceof Timestamp ? v.date.toDate() : new Date(v.date);
+      return format(d, 'yyyy-MM-dd') === todayStr && (v.status === 'Agendada' || v.status === 'Em Andamento');
+    });
+
+    return { income, expense, balance: income - expense, todayBalance, pendingVisits, completedVisits, pendingBudgets, totalClients, todayVisits };
   }, [visits, financials, budgets, clients]);
 
   const chartData = useMemo(() => {
@@ -2187,10 +2785,11 @@ function Dashboard({ visits, financials, budgets, clients, onNavigate }: { visit
           </CardHeader>
           <CardContent className="p-0">
             <div className="divide-y divide-[#25282e]">
-              {visits.filter(v => v.status === 'Agendada' || v.status === 'Em Andamento').slice(0, 5).map(visit => (
+              {stats.todayVisits.slice(0, 5).map(visit => (
                 <div key={visit.id} className="flex items-center justify-between px-6 py-4 hover:bg-[#25282e]/30 transition-colors">
                   <div className="flex flex-col">
                     <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono text-[#3b82f6]">{formatRecordNumber(visit.number, visit.date)}</span>
                       <span className="text-[13px] font-medium text-white">{visit.clientName}</span>
                       {visit.scheduledTime && (
                         <span className="text-[10px] text-[#3b82f6] bg-[#3b82f6]/10 px-1.5 py-0.5 rounded">
@@ -2208,7 +2807,7 @@ function Dashboard({ visits, financials, budgets, clients, onNavigate }: { visit
                   </Badge>
                 </div>
               ))}
-              {visits.filter(v => v.status === 'Agendada' || v.status === 'Em Andamento').length === 0 && (
+              {stats.todayVisits.length === 0 && (
                 <p className="text-center py-12 text-sm text-[#71717a]">Nenhuma visita para hoje.</p>
               )}
             </div>
@@ -2325,8 +2924,11 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
     }
 
     try {
+      const nextNumber = visits.length > 0 ? Math.max(...visits.map(v => v.number || 0)) + 1 : 1;
+      
       await addDoc(collection(db, 'visits'), {
         ...newVisit,
+        number: nextNumber,
         date: Timestamp.fromDate(newVisit.date instanceof Date ? newVisit.date : new Date()),
         expectedDate: Timestamp.fromDate(newVisit.expectedDate instanceof Date ? newVisit.expectedDate : new Date()),
         technicianId: user.uid,
@@ -2385,7 +2987,7 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
         await addDoc(collection(db, 'financial'), {
           type: 'Receita',
           category: 'Visita Técnica',
-          description: `Serviço Concluído - ${visit.clientName} (${visit.type})`,
+          description: `Serviço Concluído ${formatRecordNumber(visit.number, visit.date)} - ${visit.clientName} (${visit.type})`,
           value: visit.totalValue || 0,
           date: Timestamp.now(),
           serviceType: 'Serviço Normal',
@@ -2443,7 +3045,7 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
     doc.text(appSettings.companyName || 'AF Sistemas de Segurança e Informática', 105, 25, { align: 'center' });
     
     doc.setFontSize(14);
-    doc.text('RELATÓRIO DE VISITA TÉCNICA', 105, 35, { align: 'center' });
+    doc.text(`RELATÓRIO DE VISITA TÉCNICA ${formatRecordNumber(visit.number, visit.date)}`, 105, 35, { align: 'center' });
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
@@ -2502,6 +3104,13 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
     doc.setFontSize(9);
     
     // Technician Signature
+    if (appSettings.signatureUrl) {
+      try {
+        doc.addImage(appSettings.signatureUrl, 'PNG', 35, signatureY - 20, 40, 15);
+      } catch (e) {
+        console.error("Erro ao adicionar assinatura à visita:", e);
+      }
+    }
     doc.line(25, signatureY, 90, signatureY);
     doc.text('Assinatura do Técnico', 57.5, signatureY + 5, { align: 'center' });
     doc.text(visit.technicianName, 57.5, signatureY + 10, { align: 'center' });
@@ -2677,6 +3286,7 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
         <Table>
           <TableHeader className="bg-[#25282e]/50">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[60px]">Nº</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Cliente</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Agendamento</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Serviço</TableHead>
@@ -2688,6 +3298,9 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
           <TableBody>
             {visits.map((visit) => (
               <TableRow key={visit.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
+                <TableCell className="text-[12px] font-mono text-[#3b82f6] whitespace-nowrap">
+                  {formatRecordNumber(visit.number, visit.date)}
+                </TableCell>
                 <TableCell>
                   <div className="font-medium text-white text-[13px]">{visit.clientName}</div>
                   <div className="text-[11px] text-[#71717a]">{visit.clientPhone}</div>
@@ -3041,21 +3654,26 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
   };
 
   const handleUpdateRecord = async () => {
-    if (!editingRecord || !editingRecord.description || !editingRecord.value) {
-      toast.error('Preencha os campos obrigatórios.');
+    if (!editingRecord || !editingRecord.description || typeof editingRecord.value !== 'number') {
+      toast.error('Preencha os campos obrigatórios corretamente.');
       return;
     }
 
     try {
-      const { id, ...data } = editingRecord;
+      const { id } = editingRecord;
       await updateDoc(doc(db, 'financial', id), {
-        ...data,
-        date: editingRecord.date instanceof Date ? Timestamp.fromDate(editingRecord.date) : editingRecord.date
+        description: editingRecord.description,
+        value: Number(editingRecord.value),
+        type: editingRecord.type,
+        category: editingRecord.category || '',
+        date: editingRecord.date instanceof Date ? Timestamp.fromDate(editingRecord.date) : editingRecord.date,
+        serviceType: editingRecord.serviceType || ''
       });
       setEditingRecord(null);
       setIsEditOpen(false);
-      toast.success('Registro financeiro atualizado!');
+      toast.success('Registro financeiro atualizado com sucesso!');
     } catch (error) {
+      console.error(error);
       handleFirestoreError(error, OperationType.UPDATE, `financial/${editingRecord?.id}`);
     }
   };
@@ -3414,16 +4032,41 @@ function BudgetsManager({ budgets, clients, appSettings }: { budgets: Budget[], 
   const handleSaveBudget = async () => {
     const total = (newBudget.items || []).reduce((acc, item) => acc + (item.quantity * item.price), 0);
     try {
+      const nextNumber = budgets.length > 0 ? Math.max(...budgets.map(b => b.number || 0)) + 1 : 1;
+      
       await addDoc(collection(db, 'budgets'), {
         ...newBudget,
+        number: nextNumber,
         total,
         createdAt: Timestamp.now()
       });
-      setNewBudget({ items: [{ description: '', quantity: 1, price: 0 }], status: 'Pendente', observations: '' });
+      setNewBudget({ items: [{ description: '', quantity: 1, price: 0 }], status: 'Pendente', observations: '', clientName: '', clientPhone: '', address: '' });
       setIsAddOpen(false);
       toast.success('Orçamento criado!');
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'budgets');
+    }
+  };
+
+  const handleApproveBudget = async (budget: Budget) => {
+    try {
+      await updateDoc(doc(db, 'budgets', budget.id), { status: 'Aprovado' });
+      
+      // Create Financial Record
+      await addDoc(collection(db, 'financial'), {
+        type: 'Receita',
+        category: 'Orçamento',
+        description: `Orçamento Aprovado ${formatRecordNumber(budget.number, budget.createdAt)} - ${budget.clientName}`,
+        value: budget.total,
+        date: Timestamp.now(),
+        serviceType: 'Serviço Normal',
+        clientId: budget.clientId || null,
+        createdAt: Timestamp.now()
+      });
+      
+      toast.success('Orçamento aprovado e financeiro atualizado!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'budgets');
     }
   };
 
@@ -3445,15 +4088,16 @@ function BudgetsManager({ budgets, clients, appSettings }: { budgets: Budget[], 
     doc.text(appSettings.companyName || 'AF Sistemas de Segurança e Informática', 105, 25, { align: 'center' });
     
     doc.setFontSize(14);
-    doc.text('ORÇAMENTO DE SERVIÇOS', 105, 35, { align: 'center' });
+    doc.text(`ORÇAMENTO DE SERVIÇOS ${formatRecordNumber(budget.number, budget.createdAt)}`, 105, 35, { align: 'center' });
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
     doc.text(`Data: ${dateStr}`, 20, 50);
     doc.text(`Cliente: ${budget.clientName || 'Cliente Sem Nome'}`, 20, 57);
-    doc.text(`Email: ${budget.clientEmail || 'N/A'}`, 20, 64);
+    doc.text(`WhatsApp: ${budget.clientPhone || 'N/A'}`, 20, 64);
+    doc.text(`Endereço: ${budget.address || 'N/A'}`, 20, 71);
     
-    doc.line(20, 70, 190, 70);
+    doc.line(20, 77, 190, 77);
     
     // Items Table
     const tableData = budget.items.map(item => [
@@ -3464,7 +4108,7 @@ function BudgetsManager({ budgets, clients, appSettings }: { budgets: Budget[], 
     ]);
 
     (doc as any).autoTable({
-      startY: 75,
+      startY: 82,
       head: [['Descrição', 'Qtd', 'Preço Unit.', 'Total']],
       body: tableData,
       theme: 'grid',
@@ -3487,6 +4131,23 @@ function BudgetsManager({ budgets, clients, appSettings }: { budgets: Budget[], 
       doc.text(splitObs, 20, finalY + 7);
       finalY += (splitObs.length * 5) + 10;
     }
+
+    if (finalY > 250) {
+      doc.addPage();
+      finalY = 20;
+    }
+
+    if (appSettings.signatureUrl) {
+      try {
+        doc.addImage(appSettings.signatureUrl, 'PNG', 80, finalY + 10, 50, 20);
+      } catch (e) {
+        console.error("Erro ao adicionar assinatura ao orçamento:", e);
+      }
+    }
+    doc.line(70, finalY + 30, 140, finalY + 30);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(appSettings.responsible || appSettings.companyName, 105, finalY + 35, { align: 'center' });
 
     const nameForFilename = (budget.clientName || 'Cliente_Sem_Nome').replace(/\s/g, '_');
     doc.save(`orcamento_${nameForFilename}.pdf`);
@@ -3518,8 +4179,10 @@ function BudgetsManager({ budgets, clients, appSettings }: { budgets: Budget[], 
                   if (client) {
                     setNewBudget({
                       ...newBudget,
-                      clientName: client.name,
-                      clientEmail: client.email
+                      clientId: client.id,
+                      clientName: client.name || '',
+                      clientPhone: client.phone || '',
+                      address: client.address || ''
                     });
                   }
                 }}>
@@ -3556,9 +4219,13 @@ function BudgetsManager({ budgets, clients, appSettings }: { budgets: Budget[], 
                   <Input value={newBudget.clientName || ''} onChange={e => setNewBudget({...newBudget, clientName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-[#a0a0a0]">Email</Label>
-                  <Input value={newBudget.clientEmail || ''} onChange={e => setNewBudget({...newBudget, clientEmail: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  <Label className="text-[#a0a0a0]">WhatsApp/Celular</Label>
+                  <Input value={newBudget.clientPhone || ''} onChange={e => setNewBudget({...newBudget, clientPhone: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0]">Endereço</Label>
+                <Input value={newBudget.address || ''} onChange={e => setNewBudget({...newBudget, address: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
               </div>
               <Separator className="bg-[#2d3139]" />
               <div className="space-y-4">
@@ -3625,16 +4292,19 @@ function BudgetsManager({ budgets, clients, appSettings }: { budgets: Budget[], 
           <Card key={budget.id} className="border-[#2d3139] bg-[#1a1d23] rounded-xl hover:border-[#3b82f6]/50 transition-all group">
             <CardHeader className="pb-2">
               <div className="flex justify-between items-start">
-                <Badge className={cn(
-                  "text-[10px] font-semibold uppercase px-2 py-0.5 rounded",
-                  budget.status === 'Aprovado' ? "bg-emerald-500/10 text-emerald-500" : "bg-blue-500/10 text-blue-500"
-                )}>
-                  {budget.status}
-                </Badge>
+                <div className="flex flex-col gap-1">
+                  <Badge className={cn(
+                    "text-[10px] font-semibold uppercase px-2 py-0.5 rounded w-fit",
+                    budget.status === 'Aprovado' ? "bg-emerald-500/10 text-emerald-500" : "bg-blue-500/10 text-blue-500"
+                  )}>
+                    {budget.status}
+                  </Badge>
+                  <span className="text-[10px] font-mono text-[#3b82f6]">{formatRecordNumber(budget.number, budget.createdAt)}</span>
+                </div>
                 <p className="text-[11px] text-[#71717a]">{format(budget.createdAt instanceof Timestamp ? budget.createdAt.toDate() : new Date(budget.createdAt), 'dd/MM/yyyy')}</p>
               </div>
               <CardTitle className="mt-3 text-[16px] font-bold text-white">{budget.clientName}</CardTitle>
-              <CardDescription className="text-[#71717a] text-[12px]">{budget.clientEmail}</CardDescription>
+              <CardDescription className="text-[#71717a] text-[12px]">{budget.clientPhone || 'Sem telefone'}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-2 mb-6">
@@ -3659,10 +4329,7 @@ function BudgetsManager({ budgets, clients, appSettings }: { budgets: Budget[], 
                     <Share2 size={14} />
                   </Button>
                   {budget.status === 'Pendente' && (
-                    <Button size="sm" className="h-8 bg-[#3b82f6] hover:bg-[#2563eb] text-white text-[11px]" onClick={async () => {
-                      await updateDoc(doc(db, 'budgets', budget.id), { status: 'Aprovado' });
-                      toast.success('Orçamento aprovado!');
-                    }}>
+                    <Button size="sm" className="h-8 bg-[#3b82f6] hover:bg-[#2563eb] text-white text-[11px]" onClick={() => handleApproveBudget(budget)}>
                       Aprovar
                     </Button>
                   )}
