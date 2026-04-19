@@ -571,10 +571,19 @@ function SignaturePad({ value, onChange }: { value?: string, onChange: (val: str
 
   const getCoordinates = (e: React.MouseEvent | React.TouchEvent) => {
     if (!canvasRef.current) return { x: 0, y: 0 };
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = ('touches' in e ? e.touches[0].clientX : e.clientX) - rect.left;
-    const y = ('touches' in e ? e.touches[0].clientY : e.clientY) - rect.top;
-    return { x, y };
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    return { 
+      x: (clientX - rect.left) * scaleX, 
+      y: (clientY - rect.top) * scaleY 
+    };
   };
 
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
