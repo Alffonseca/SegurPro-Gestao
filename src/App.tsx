@@ -569,12 +569,28 @@ function SignaturePad({ value, onChange }: { value?: string, onChange: (val: str
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
 
+  const getCoordinates = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!canvasRef.current) return { x: 0, y: 0 };
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = ('touches' in e ? e.touches[0].clientX : e.clientX) - rect.left;
+    const y = ('touches' in e ? e.touches[0].clientY : e.clientY) - rect.top;
+    return { x, y };
+  };
+
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const { x, y } = getCoordinates(e);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
     setIsDrawing(true);
-    draw(e);
   };
 
   const stopDrawing = () => {
+    if (!isDrawing) return;
     setIsDrawing(false);
     if (canvasRef.current) {
       onChange(canvasRef.current.toDataURL());
@@ -587,28 +603,12 @@ function SignaturePad({ value, onChange }: { value?: string, onChange: (val: str
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const rect = canvas.getBoundingClientRect();
-    let x, y;
-
-    if ('touches' in e) {
-      x = e.touches[0].clientX - rect.left;
-      y = e.touches[0].clientY - rect.top;
-    } else {
-      x = e.clientX - rect.left;
-      y = e.clientY - rect.top;
-    }
-
+    const { x, y } = getCoordinates(e);
     ctx.lineWidth = 2;
     ctx.lineCap = 'round';
     ctx.strokeStyle = '#000';
-
-    if (!isDrawing) {
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-    } else {
-      ctx.lineTo(x, y);
-      ctx.stroke();
-    }
+    ctx.lineTo(x, y);
+    ctx.stroke();
   };
 
   const clear = () => {
@@ -616,24 +616,29 @@ function SignaturePad({ value, onChange }: { value?: string, onChange: (val: str
       const ctx = canvasRef.current.getContext('2d');
       if (ctx) {
         ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+        ctx.beginPath(); // Reset current path
         onChange('');
       }
     }
   };
 
   useEffect(() => {
-    if (value && canvasRef.current) {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    if (value) {
       const img = new Image();
       img.onload = () => {
-        const ctx = canvasRef.current?.getContext('2d');
-        if (ctx) {
-          ctx.clearRect(0, 0, canvasRef.current!.width, canvasRef.current!.height);
-          ctx.drawImage(img, 0, 0);
-        }
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
       };
       img.src = value;
+    } else {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
-  }, []);
+  }, [value]);
 
   return (
     <div className="space-y-2">
@@ -652,7 +657,7 @@ function SignaturePad({ value, onChange }: { value?: string, onChange: (val: str
           className="w-full h-[150px] touch-none"
         />
         {(!isDrawing && !value) && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-gray-300 pointer-events-none">
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-gray-300">
             Assine aqui
           </div>
         )}
