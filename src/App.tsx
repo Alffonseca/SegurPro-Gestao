@@ -77,6 +77,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Checkbox } from '@/components/ui/checkbox';
 import { 
   Table, 
   TableBody, 
@@ -174,15 +175,34 @@ const formatRecordNumber = (number?: number, date?: any) => {
   const year = format(d, 'yyyy');
   return `${number.toString().padStart(4, '0')}/${year}`;
 };
-
-const generateContractPDF = (client: Client, appSettings: AppSettings) => {
-  const doc = new jsPDF();
-  const dateStr = format(new Date(), "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
+const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettings: PixSettings) => {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4'
+  });
   
+  const dateStr = format(new Date(), "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 20;
+  const contentWidth = pageWidth - (margin * 2);
+
+  // Helper to manage Y position and page breaks
+  let currentY = margin;
+  const checkPageBreak = (neededHeight: number) => {
+    if (currentY + neededHeight > pageHeight - margin) {
+      doc.addPage();
+      currentY = margin;
+      return true;
+    }
+    return false;
+  };
+
   // Header
   if (appSettings.logoUrl) {
     try {
-      doc.addImage(appSettings.logoUrl, 'PNG', 20, 10, 25, 25);
+      doc.addImage(appSettings.logoUrl, 'PNG', margin, currentY, 25, 25);
     } catch (e) {
       console.error("Erro ao adicionar logo ao PDF:", e);
     }
@@ -191,116 +211,212 @@ const generateContractPDF = (client: Client, appSettings: AppSettings) => {
   doc.setFontSize(16);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(0, 0, 0);
-  doc.text(appSettings.companyName || 'AF Sistemas', appSettings.logoUrl ? 50 : 20, 20);
+  doc.text(appSettings.companyName || 'Sua Empresa', appSettings.logoUrl ? margin + 30 : margin, currentY + 10);
   
-  doc.setFontSize(14);
-  doc.text('CONTRATO DE PRESTAÇÃO DE SERVIÇOS TÉCNICOS', 105, 45, { align: 'center' });
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 100, 100);
+  const companyInfo = `${appSettings.address || ''}${appSettings.neighborhood ? `, ${appSettings.neighborhood}` : ''}, ${appSettings.city || ''} - CEP: ${appSettings.cep || ''}`;
+  doc.text(companyInfo, appSettings.logoUrl ? margin + 30 : margin, currentY + 17);
   
-  doc.setFontSize(11);
-  doc.setFont('helvetica', 'bold');
-  doc.text('1. PARTES', 20, 60);
-  
-  doc.setFont('helvetica', 'normal');
-  const contratanteText = `CONTRATANTE: ${client.name || '[Nome]'}, inscrito no CPF/CNPJ sob nº ${client.document || '[nº]'}, residente ou sediado em ${client.address || '[Endereço Completo]'}${client.city ? `, ${client.city}` : ''}${client.cep ? `, CEP: ${client.cep}` : ''}${client.responsible ? `, Responsável: ${client.responsible}` : ''}.`;
-  const contratadoText = `CONTRATADO: ${appSettings.companyName || '[Sua Empresa]'}, inscrito no CPF/CNPJ sob nº ${appSettings.document || '[nº]'}, residente ou sediado em ${appSettings.address || '[Endereço Completo]'}, ${appSettings.city || '[Cidade]'}, CEP: ${appSettings.cep || '[CEP]'}, Responsável: ${appSettings.responsible || '[Responsável]'}.`;
-  
-  let currentY = 67;
-  const splitContratante = doc.splitTextToSize(contratanteText, 170);
-  doc.text(splitContratante, 20, currentY);
-  currentY += (splitContratante.length * 6) + 2;
-  
-  const splitContratado = doc.splitTextToSize(contratadoText, 170);
-  doc.text(splitContratado, 20, currentY);
-  currentY += (splitContratado.length * 6) + 5;
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('2. OBJETO', 20, currentY);
-  currentY += 7;
-  doc.setFont('helvetica', 'normal');
-  const objetoText = 'O presente contrato tem por objeto a prestação de serviços técnicos de:\n1 - Instalação / Manutenção de sistema de CFTV (Câmeras).\n2 - Configuração de Redes Wifi Local.\n3 - Instalação/Configuração de Sistemas de Alarme e Sensores.\n4 - Automação Residencial/Comercial de Portões.';
-  doc.text(objetoText, 20, currentY);
-  currentY += 32;
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('3. LOCAL DA PRESTAÇÃO', 20, currentY);
-  currentY += 7;
-  doc.setFont('helvetica', 'normal');
-  doc.text(`Os serviços serão realizados no endereço: ${client.address || '[Endereço do Cliente]'}.`, 20, currentY);
-  currentY += 12;
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('4. VALOR E FORMA DE PAGAMENTO', 20, currentY);
-  currentY += 7;
-  doc.setFont('helvetica', 'normal');
-  doc.text(`Pelo serviço descrito, o CONTRATANTE pagará ao CONTRATADO a quantia total de R$ ${(client.contractValue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} mensais.`, 20, currentY);
-  currentY += 6;
-  doc.text('Forma de pagamento: PIX ou Espécie em moeda corrente no país.', 20, currentY);
-  currentY += 6;
-  doc.text('Data do pagamento: Conforme acordado mensalmente.', 20, currentY);
-  currentY += 12;
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('5. MATERIAIS', 20, currentY);
-  currentY += 7;
-  doc.setFont('helvetica', 'normal');
-  doc.text('O valor acima refere-se apenas à mão de obra. Todo o material necessário será fornecido pelo CONTRATANTE ou cobrado à parte.', 20, currentY);
-  currentY += 12;
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('6. PRAZO', 20, currentY);
-  currentY += 7;
-  doc.setFont('helvetica', 'normal');
-  doc.text('O contrato terá início na data de assinatura do mesmo e terá previsão de 1 ano (12 meses). Sendo renovado automaticamente se nenhuma das partes se manifestarem por escrito o desejo de encerrar.', 20, currentY);
-  currentY += 17;
-
-  if (currentY > 250) {
-    doc.addPage();
-    currentY = 20;
-  }
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('7. OBRIGAÇÕES DO CONTRATADO', 20, currentY);
-  currentY += 7;
-  doc.setFont('helvetica', 'normal');
-  doc.text('Executar o serviço com zelo e técnica adequada; Fornecer garantia sobre a mão de obra prestada; Instruir o CONTRATANTE sobre o uso básico dos equipamentos.', 20, currentY);
-  currentY += 12;
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('8. OBRIGAÇÕES DO CONTRATANTE', 20, currentY);
-  currentY += 7;
-  doc.setFont('helvetica', 'normal');
-  doc.text('Garantir o livre acesso do técnico ao local e infraestrutura necessária; Efetuar o pagamento nos prazos acordados.', 20, currentY);
-  currentY += 12;
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('9. RESCISÃO', 20, currentY);
-  currentY += 7;
-  doc.setFont('helvetica', 'normal');
-  doc.text('Em caso de desistência após o início dos trabalhos, a parte que der causa pagará multa de 20% sobre o valor restante do contrato.', 20, currentY);
-  currentY += 12;
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('10. FORO', 20, currentY);
-  currentY += 7;
-  doc.setFont('helvetica', 'normal');
-  doc.text(`Fica eleito o foro da comarca de ${appSettings.city || '[Sua Cidade]'} para dirimir quaisquer dúvidas oriundas deste contrato.`, 20, currentY);
+  currentY += 35;
+  doc.setDrawColor(200, 200, 200);
+  doc.line(margin, currentY, pageWidth - margin, currentY);
   currentY += 15;
 
-  doc.text(`${appSettings.city || 'Cidade-UF'}, ${dateStr}.`, 20, currentY);
-  currentY += 30;
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
+  doc.text('CONTRATO DE PRESTAÇÃO DE SERVIÇOS TÉCNICOS', pageWidth / 2, currentY, { align: 'center' });
+  currentY += 15;
+  
+  // 1. PARTES
+  doc.setFontSize(11);
+  doc.text('1. PARTES', margin, currentY);
+  currentY += 7;
+  
+  doc.setFont('helvetica', 'normal');
+  const contratanteText = `CONTRATANTE: ${client.name || '[Nome]'}, inscrito no CPF/CNPJ sob nº ${client.document || '[nº]'}, residente ou sediado em ${client.address || '[Endereço]'}${client.neighborhood ? `, ${client.neighborhood}` : ''}${client.city ? `, ${client.city}` : ''}${client.cep ? `, CEP: ${client.cep}` : ''}${client.responsible ? `, Representante Legal: ${client.responsible}` : ''}.`;
+  const contratadoText = `CONTRATADO: ${appSettings.companyName || '[Sua Empresa]'}, inscrito no CPF/CNPJ sob nº ${appSettings.document || '[nº]'}, residente ou sediado em ${appSettings.address || '[Endereço]'}${appSettings.neighborhood ? `, ${appSettings.neighborhood}` : ''}, ${appSettings.city || '[Cidade]'}, CEP: ${appSettings.cep || '[CEP]'}, Representante Legal: ${appSettings.responsible || '[Responsável]'}.`;
+  
+  const splitContratante = doc.splitTextToSize(contratanteText, contentWidth);
+  doc.text(splitContratante, margin, currentY);
+  currentY += (splitContratante.length * 6) + 4;
+  
+  const splitContratado = doc.splitTextToSize(contratadoText, contentWidth);
+  doc.text(splitContratado, margin, currentY);
+  currentY += (splitContratado.length * 6) + 10;
+
+  // 2. OBJETO
+  checkPageBreak(30);
+  doc.setFont('helvetica', 'bold');
+  doc.text('2. OBJETO', margin, currentY);
+  currentY += 7;
+  doc.setFont('helvetica', 'normal');
+  
+  let objectItems = [];
+  if (client.serviceObjects && client.serviceObjects.length > 0) {
+    objectItems = client.serviceObjects;
+  } else {
+    objectItems = [
+      'Instalação/Configuração/Manutenção de sistema de CFTV (Câmeras)',
+      'Instalação/Configuração/Manutenção de Redes Wifi Local',
+      'Instalação/Configuração/Manutenção de Sistemas de Alarmes',
+      'Instalação/Configuração/Manutenção de Cerca Elétrica',
+      'Instalação/Configuração/Manutenção de motores de Portão e Fechaduras Elétricas'
+    ];
+  }
+
+  const objetoIntro = 'O presente contrato tem por objeto a prestação de serviços técnicos de:';
+  doc.text(objetoIntro, margin, currentY);
+  currentY += 6;
+
+  objectItems.forEach((item, index) => {
+    checkPageBreak(6);
+    doc.text(`${index + 1} - ${item}`, margin + 5, currentY);
+    currentY += 6;
+  });
+  currentY += 6;
+
+  // 3. LOCAL
+  checkPageBreak(25);
+  doc.setFont('helvetica', 'bold');
+  doc.text('3. LOCAL DA PRESTAÇÃO', margin, currentY);
+  currentY += 7;
+  doc.setFont('helvetica', 'normal');
+  const localText = `Os serviços serão realizados no endereço: ${client.address || '[Endereço]'}${client.neighborhood ? `, ${client.neighborhood}` : ''}${client.city ? `, ${client.city}` : ''}${client.cep ? `, CEP: ${client.cep}` : ''}.`;
+  const splitLocal = doc.splitTextToSize(localText, contentWidth);
+  doc.text(splitLocal, margin, currentY);
+  currentY += (splitLocal.length * 6) + 10;
+
+  // 4. VALOR
+  checkPageBreak(50);
+  doc.setFont('helvetica', 'bold');
+  doc.text('4. VALOR E FORMA DE PAGAMENTO', margin, currentY);
+  currentY += 7;
+  doc.setFont('helvetica', 'normal');
+  const valorText = `Pelo serviço descrito, o CONTRATANTE pagará ao CONTRATADO a quantia total de R$ ${(client.contractValue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} mensais.`;
+  const splitValor = doc.splitTextToSize(valorText, contentWidth);
+  doc.text(splitValor, margin, currentY);
+  currentY += (splitValor.length * 6) + 2;
+
+  let pagamentoInfo = 'Forma de pagamento: ';
+  if (client.paymentMethods && client.paymentMethods.length > 0) {
+    const methods = client.paymentMethods.map(m => {
+      if (m === 'PIX') {
+        const selectedPix = pixSettings.accounts.find(a => a.id === client.pixAccountId) || pixSettings.accounts[0];
+        if (selectedPix) {
+          return `PIX (Chave: ${selectedPix.key || 'N/A'}, Banco: ${selectedPix.bank || 'N/A'}, Favorecido: ${selectedPix.favored || 'N/A'})`;
+        }
+        return 'PIX';
+      }
+      if (m === 'Espécie') {
+        return 'Espécie em moeda corrente no país.';
+      }
+      return m;
+    });
+    pagamentoInfo += methods.join(' / ');
+  } else {
+    pagamentoInfo += 'A combinar.';
+  }
+  
+  const splitPagamento = doc.splitTextToSize(pagamentoInfo, contentWidth);
+  doc.text(splitPagamento, margin, currentY);
+  currentY += (splitPagamento.length * 6) + 2;
+
+  const dataPagamento = `Data do pagamento: ${client.paymentDay || 'Conforme acordado mensalmente'}.`;
+  doc.text(dataPagamento, margin, currentY);
+  currentY += 12;
+
+  // 5. MATERIAIS
+  checkPageBreak(25);
+  doc.setFont('helvetica', 'bold');
+  doc.text('5. MATERIAIS', margin, currentY);
+  currentY += 7;
+  doc.setFont('helvetica', 'normal');
+  const materiaisText = 'O valor acima refere-se apenas à mão de obra. Todo o material necessário será fornecido pelo CONTRATANTE ou cobrado à parte.';
+  const splitMateriais = doc.splitTextToSize(materiaisText, contentWidth);
+  doc.text(splitMateriais, margin, currentY);
+  currentY += (splitMateriais.length * 6) + 10;
+
+  // 6. PRAZO
+  checkPageBreak(30);
+  doc.setFont('helvetica', 'bold');
+  doc.text('6. PRAZO', margin, currentY);
+  currentY += 7;
+  doc.setFont('helvetica', 'normal');
+  const prazoText = 'O contrato terá início na data de assinatura do mesmo e terá previsão de 1 ano (12 meses). Sendo renovado automaticamente se nenhuma das partes se manifestarem por escrito o desejo de encerrar.';
+  const splitPrazo = doc.splitTextToSize(prazoText, contentWidth);
+  doc.text(splitPrazo, margin, currentY);
+  currentY += (splitPrazo.length * 6) + 10;
+
+  // 7. OBRIGAÇÕES CONTRATADO
+  checkPageBreak(35);
+  doc.setFont('helvetica', 'bold');
+  doc.text('7. OBRIGAÇÕES DO CONTRATADO', margin, currentY);
+  currentY += 7;
+  doc.setFont('helvetica', 'normal');
+  const obrContratado = 'Executar os serviços contratado sempre que for solicitado pelo contratante seja por Email/mensagem/WhatsApp ou telefone. O qual será agendado um dia e horário para execução do serviço solicitado quando não houver disponibilidade na hora da solicitação.';
+  const splitObrC = doc.splitTextToSize(obrContratado, contentWidth);
+  doc.text(splitObrC, margin, currentY);
+  currentY += (splitObrC.length * 6) + 10;
+
+  // 8. OBRIGAÇÕES CONTRATANTE
+  checkPageBreak(35);
+  doc.setFont('helvetica', 'bold');
+  doc.text('8. OBRIGAÇÕES DO CONTRATANTE', margin, currentY);
+  currentY += 7;
+  doc.setFont('helvetica', 'normal');
+  const obrContratante = 'Garantir o livre acesso do técnico ao local, bem como designar um representante local para acompanhar a execução dos serviços e assinar os comprovantes de atendimento.';
+  const splitObrK = doc.splitTextToSize(obrContratante, contentWidth);
+  doc.text(splitObrK, margin, currentY);
+  currentY += (splitObrK.length * 6) + 10;
+
+  // 9. RESCISÃO
+  checkPageBreak(30);
+  doc.setFont('helvetica', 'bold');
+  doc.text('9. RESCISÃO', margin, currentY);
+  currentY += 7;
+  doc.setFont('helvetica', 'normal');
+  const rescisaoText = 'Em caso de desistência após o início dos trabalhos, a parte que der causa pagará multa de 20% sobre o valor restante do contrato.';
+  const splitRescisao = doc.splitTextToSize(rescisaoText, contentWidth);
+  doc.text(splitRescisao, margin, currentY);
+  currentY += (splitRescisao.length * 6) + 10;
+
+  // 10. FORO
+  checkPageBreak(25);
+  doc.setFont('helvetica', 'bold');
+  doc.text('10. FORO', margin, currentY);
+  currentY += 7;
+  doc.setFont('helvetica', 'normal');
+  const foroText = `Fica eleito o foro da comarca de ${appSettings.city || '[Sua Cidade]'} para dirimir quaisquer dúvidas oriundas deste contrato.`;
+  const splitForo = doc.splitTextToSize(foroText, contentWidth);
+  doc.text(splitForo, margin, currentY);
+  currentY += (splitForo.length * 6) + 15;
+
+  // Signature Section
+  checkPageBreak(60);
+  doc.text(`${appSettings.city || 'Cidade-UF'}, ${dateStr}.`, margin, currentY);
+  currentY += 35;
 
   if (appSettings.signatureUrl) {
     try {
-      doc.addImage(appSettings.signatureUrl, 'PNG', 125, currentY - 25, 40, 15);
+      doc.addImage(appSettings.signatureUrl, 'PNG', margin + 110, currentY - 20, 40, 15);
     } catch (e) {
-      console.error("Erro ao adicionar assinatura ao contrato:", e);
+      console.error("Erro ao adicionar assinatura:", e);
     }
   }
 
-  doc.line(40, currentY, 90, currentY);
-  doc.line(120, currentY, 170, currentY);
-  doc.text('CONTRATANTE', 65, currentY + 5, { align: 'center' });
-  doc.text('CONTRATADO', 145, currentY + 5, { align: 'center' });
+  doc.setLineWidth(0.5);
+  doc.line(margin + 10, currentY, margin + 70, currentY);
+  doc.line(margin + 100, currentY, margin + 160, currentY);
+  
+  doc.setFontSize(9);
+  doc.text('CONTRATANTE', margin + 40, currentY + 5, { align: 'center' });
+  doc.text(client.name || '', margin + 40, currentY + 10, { align: 'center' });
+  
+  doc.text('CONTRATADO', margin + 130, currentY + 5, { align: 'center' });
+  doc.text(appSettings.companyName || '', margin + 130, currentY + 10, { align: 'center' });
 
   doc.save(`contrato_${(client.name || 'cliente').replace(/\s/g, '_')}.pdf`);
 };
@@ -348,6 +464,7 @@ interface Budget {
   items: { description: string; quantity: number; price: number }[];
   total: number;
   status: 'Pendente' | 'Aprovado' | 'Rejeitado';
+  pixAccountId?: string;
   observations?: string;
   createdAt: any;
   number?: number;
@@ -359,6 +476,7 @@ interface Client {
   email?: string;
   phone?: string;
   address?: string;
+  neighborhood?: string;
   city?: string;
   cep?: string;
   responsible?: string;
@@ -366,6 +484,10 @@ interface Client {
   type: 'Avulso' | 'Contrato';
   contractValue?: number;
   serviceSpecification?: string;
+  serviceObjects?: string[];
+  paymentMethods?: string[];
+  paymentDay?: string;
+  pixAccountId?: string;
   createdAt: any;
 }
 
@@ -379,6 +501,7 @@ interface Receipt {
   value: number;
   referenceMonth?: string;
   paymentMethod: 'Dinheiro' | 'PIX' | 'Cartão';
+  pixAccountId?: string;
   observations?: string;
   date: any;
   createdAt: any;
@@ -488,21 +611,22 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
   doc.text(formattedVal, 185, servicesY + 57, { align: 'right' });
   
   // PIX Info
-  if (pixSettings && pixSettings.key) {
+  const selectedPix = pixSettings.accounts.find(a => a.id === receipt.pixAccountId) || pixSettings.accounts[0];
+  if (selectedPix && selectedPix.key) {
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(9);
     doc.setFont('helvetica', 'bold');
     doc.text('Dados para Pagamento (PIX):', 20, servicesY + 70);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Chave: ${pixSettings.key}`, 20, servicesY + 75);
-    doc.text(`Banco: ${pixSettings.bank}`, 20, servicesY + 80);
-    doc.text(`Favorecido: ${pixSettings.favored}`, 20, servicesY + 85);
-    doc.text(`CPF/CNPJ: ${pixSettings.document}`, 20, servicesY + 90);
+    doc.text(`Chave: ${selectedPix.key}`, 20, servicesY + 75);
+    doc.text(`Banco: ${selectedPix.bank}`, 20, servicesY + 80);
+    doc.text(`Favorecido: ${selectedPix.favored}`, 20, servicesY + 85);
+    doc.text(`CPF/CNPJ: ${selectedPix.document}`, 20, servicesY + 90);
   }
 
   // Observations
   if (receipt.observations) {
-    const obsY = servicesY + (pixSettings && pixSettings.key ? 100 : 70);
+    const obsY = servicesY + (selectedPix && selectedPix.key ? 100 : 70);
     doc.setFont('helvetica', 'bold');
     doc.text('Observações:', 20, obsY);
     doc.setFont('helvetica', 'normal');
@@ -545,17 +669,24 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
   }
 };
 
-interface PixSettings {
-  key: string;
+interface PixAccount {
+  id: string;
   bank: string;
+  key: string;
   favored: string;
   document: string;
+  label: string;
+}
+
+interface PixSettings {
+  accounts: PixAccount[];
 }
 
 interface AppSettings {
   logoUrl: string;
   companyName: string;
   address: string;
+  neighborhood: string;
   responsible: string;
   city: string;
   cep: string;
@@ -708,15 +839,13 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [pixSettings, setPixSettings] = useState<PixSettings>({
-    key: '',
-    bank: '',
-    favored: '',
-    document: ''
+    accounts: []
   });
   const [appSettings, setAppSettings] = useState<AppSettings>({
     logoUrl: '',
     companyName: 'AF Sistemas de Segurança e Informática',
     address: '',
+    neighborhood: '',
     responsible: '',
     city: '',
     cep: '',
@@ -821,7 +950,23 @@ export default function App() {
       doc(db, 'settings', 'pix'),
       (snapshot) => {
         if (snapshot.exists()) {
-          setPixSettings(snapshot.data() as PixSettings);
+          const data = snapshot.data();
+          if (data.accounts) {
+            setPixSettings(data as PixSettings);
+          } else if (data.key) {
+            // Migration for old single account format
+            const migratedAccount: PixAccount = {
+              id: 'default',
+              label: 'Principal',
+              key: data.key,
+              bank: data.bank,
+              favored: data.favored,
+              document: data.document
+            };
+            setPixSettings({ accounts: [migratedAccount] });
+          } else {
+            setPixSettings({ accounts: [] });
+          }
         }
       },
       (error) => handleFirestoreError(error, OperationType.GET, 'settings/pix')
@@ -1233,8 +1378,8 @@ export default function App() {
           )}
           {activeTab === 'visits' && <VisitsManager visits={visits} user={user} clients={clients} appSettings={appSettings} pixSettings={pixSettings} />}
           {activeTab === 'financial' && <FinancialManager financials={financials} visits={visits} clients={clients} />}
-          {activeTab === 'budgets' && <BudgetsManager budgets={budgets} clients={clients} appSettings={appSettings} />}
-          {activeTab === 'clients' && <ClientsManager clients={clients} appSettings={appSettings} />}
+          {activeTab === 'budgets' && <BudgetsManager budgets={budgets} clients={clients} appSettings={appSettings} pixSettings={pixSettings} />}
+          {activeTab === 'clients' && <ClientsManager clients={clients} appSettings={appSettings} pixSettings={pixSettings} />}
           {activeTab === 'receipts' && <ReceiptsManager receipts={receipts} clients={clients} pixSettings={pixSettings} appSettings={appSettings} />}
           {activeTab === 'users' && <UsersManager users={users} />}
           {activeTab === 'settings' && <SettingsManager pixSettings={pixSettings} appSettings={appSettings} user={user} />}
@@ -1378,60 +1523,62 @@ function UsersManager({ users }: { users: any[] }) {
               </Button>
             }
           />
-          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-            <DialogHeader>
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[500px]">
+            <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Cadastrar Novo Usuário</DialogTitle>
-              <DialogDescription className="text-[#71717a]">
+              <DialogDescription className="text-[#a0a0a0] text-xs">
                 Crie um novo acesso para técnico ou administrador.
               </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="user-name" className="text-[#a0a0a0]">Nome Completo</Label>
-                <Input 
-                  id="user-name" 
-                  value={newUser.name} 
-                  onChange={e => setNewUser({...newUser, name: e.target.value})} 
-                  placeholder="Nome do usuário"
-                  className="bg-[#0f1115] border-[#2d3139] text-white" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="user-email" className="text-[#a0a0a0]">E-mail / Usuário</Label>
-                <Input 
-                  id="user-email" 
-                  type="text"
-                  value={newUser.email} 
-                  onChange={e => setNewUser({...newUser, email: e.target.value})} 
-                  placeholder="ex: joao ou email@exemplo.com"
-                  className="bg-[#0f1115] border-[#2d3139] text-white" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="user-pass" className="text-[#a0a0a0]">Senha</Label>
-                <Input 
-                  id="user-pass" 
-                  type="password"
-                  value={newUser.password} 
-                  onChange={e => setNewUser({...newUser, password: e.target.value})} 
-                  placeholder="Mínimo 6 caracteres"
-                  className="bg-[#0f1115] border-[#2d3139] text-white" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0]">Nível de Acesso</Label>
-                <Select value={newUser.role} onValueChange={(val: any) => setNewUser({...newUser, role: val})}>
-                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                    <SelectItem value="admin">Administrador</SelectItem>
-                    <SelectItem value="tecnico">Técnico</SelectItem>
-                  </SelectContent>
-                </Select>
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2">
+              <div className="grid gap-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="user-name" className="text-[#a0a0a0]">Nome Completo</Label>
+                  <Input 
+                    id="user-name" 
+                    value={newUser.name} 
+                    onChange={e => setNewUser({...newUser, name: e.target.value})} 
+                    placeholder="Nome do usuário"
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="user-email" className="text-[#a0a0a0]">E-mail / Usuário</Label>
+                  <Input 
+                    id="user-email" 
+                    type="text"
+                    value={newUser.email} 
+                    onChange={e => setNewUser({...newUser, email: e.target.value})} 
+                    placeholder="ex: joao ou email@exemplo.com"
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="user-pass" className="text-[#a0a0a0]">Senha</Label>
+                  <Input 
+                    id="user-pass" 
+                    type="password"
+                    value={newUser.password} 
+                    onChange={e => setNewUser({...newUser, password: e.target.value})} 
+                    placeholder="Mínimo 6 caracteres"
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Nível de Acesso</Label>
+                  <Select value={newUser.role} onValueChange={(val: any) => setNewUser({...newUser, role: val})}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="admin">Administrador</SelectItem>
+                      <SelectItem value="tecnico">Técnico</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
-            <DialogFooter>
+            <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23]">
               <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">
                 Cancelar
               </Button>
@@ -1504,49 +1651,51 @@ function UsersManager({ users }: { users: any[] }) {
 
       {/* Edit User Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-          <DialogHeader>
-            <DialogTitle>Editar Usuário</DialogTitle>
-            <DialogDescription className="text-[#71717a]">
-              Atualize as informações do usuário.
-            </DialogDescription>
-          </DialogHeader>
-          {editingUser && (
-            <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0]">Nome Completo</Label>
-                <Input 
-                  value={editingUser.displayName} 
-                  onChange={e => setEditingUser({...editingUser, displayName: e.target.value})} 
-                  className="bg-[#0f1115] border-[#2d3139] text-white" 
-                />
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[500px]">
+            <DialogHeader className="p-6 pb-2 flex-shrink-0">
+              <DialogTitle className="text-white">Editar Usuário</DialogTitle>
+              <DialogDescription className="text-[#a0a0a0] text-xs">
+                Atualize as informações do usuário.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2">
+              {editingUser && (
+                <div className="grid gap-4 py-4">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Nome Completo</Label>
+                  <Input 
+                    value={editingUser.displayName} 
+                    onChange={e => setEditingUser({...editingUser, displayName: e.target.value})} 
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Nível de Acesso</Label>
+                  <Select value={editingUser.role} onValueChange={(val: any) => setEditingUser({...editingUser, role: val})}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="admin">Administrador</SelectItem>
+                      <SelectItem value="tecnico">Técnico</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Nova Senha (opcional)</Label>
+                  <Input 
+                    type="password"
+                    value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)}
+                    placeholder="Deixe em branco para manter a atual"
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  />
+                  <p className="text-[10px] text-[#71717a]">Ao preencher, o sistema enviará um link de alteração para o usuário.</p>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0]">Nível de Acesso</Label>
-                <Select value={editingUser.role} onValueChange={(val: any) => setEditingUser({...editingUser, role: val})}>
-                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                    <SelectItem value="admin">Administrador</SelectItem>
-                    <SelectItem value="tecnico">Técnico</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0]">Nova Senha (opcional)</Label>
-                <Input 
-                  type="password"
-                  value={newPassword}
-                  onChange={e => setNewPassword(e.target.value)}
-                  placeholder="Deixe em branco para manter a atual"
-                  className="bg-[#0f1115] border-[#2d3139] text-white" 
-                />
-                <p className="text-[10px] text-[#71717a]">Ao preencher, o sistema enviará um link de alteração para o usuário.</p>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
+            )}
+          </div>
+          <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23]">
             <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139] text-[#a0a0a0]">
               Cancelar
             </Button>
@@ -1602,18 +1751,71 @@ function SidebarItem({ icon, label, active, onClick }: { icon: React.ReactNode, 
 
 // --- Clients Manager Component ---
 
-function ClientsManager({ clients, appSettings }: { clients: Client[], appSettings: AppSettings }) {
+const SERVICE_OBJECTS = [
+  "Instalação/Configuração/Manutenção de sistema de CFTV ( Cameras )",
+  "Instalação/Configuração/Manutenção de Redes Wifi Local.",
+  "Instalação/Configuração/Manutenção de Sistemas de Alarmes.",
+  "Instalação/Configuração/Manutenção de Cerca Eletrica.",
+  "Instalação/Configuração/Manutenção de motores de Portão e Fechaduras Eletricas."
+];
+
+const PAYMENT_METHODS = [
+  "PIX",
+  "Espécie",
+  "Boleto"
+];
+
+function ClientsManager({ clients, appSettings, pixSettings }: { clients: Client[], appSettings: AppSettings, pixSettings: PixSettings }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [newClient, setNewClient] = useState<Partial<Client>>({
-    type: 'Avulso'
+    type: 'Avulso',
+    serviceObjects: [],
+    paymentMethods: [],
+    paymentDay: ''
   });
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [clientToDelete, setClientToDelete] = useState<Client | null>(null);
   const [pendingContractClient, setPendingContractClient] = useState<Client | null>(null);
   const [isContractConfirmOpen, setIsContractConfirmOpen] = useState(false);
+
+  const handleToggleObject = (obj: string, isNew: boolean) => {
+    if (isNew) {
+      const current = newClient.serviceObjects || [];
+      if (current.includes(obj)) {
+        setNewClient({ ...newClient, serviceObjects: current.filter(o => o !== obj) });
+      } else {
+        setNewClient({ ...newClient, serviceObjects: [...current, obj] });
+      }
+    } else if (editingClient) {
+      const current = editingClient.serviceObjects || [];
+      if (current.includes(obj)) {
+        setEditingClient({ ...editingClient, serviceObjects: current.filter(o => o !== obj) });
+      } else {
+        setEditingClient({ ...editingClient, serviceObjects: [...current, obj] });
+      }
+    }
+  };
+
+  const handleTogglePaymentMethod = (method: string, isNew: boolean) => {
+    if (isNew) {
+      const current = newClient.paymentMethods || [];
+      if (current.includes(method)) {
+        setNewClient({ ...newClient, paymentMethods: current.filter(o => o !== method) });
+      } else {
+        setNewClient({ ...newClient, paymentMethods: [...current, method] });
+      }
+    } else if (editingClient) {
+      const current = editingClient.paymentMethods || [];
+      if (current.includes(method)) {
+        setEditingClient({ ...editingClient, paymentMethods: current.filter(o => o !== method) });
+      } else {
+        setEditingClient({ ...editingClient, paymentMethods: [...current, method] });
+      }
+    }
+  };
 
   const filteredClients = useMemo(() => {
     return clients.filter(c => 
@@ -1631,6 +1833,7 @@ function ClientsManager({ clients, appSettings }: { clients: Client[], appSettin
         email: newClient.email || '',
         phone: newClient.phone || '',
         address: newClient.address || '',
+        neighborhood: newClient.neighborhood || '',
         city: newClient.city || '',
         cep: newClient.cep || '',
         responsible: newClient.responsible || '',
@@ -1666,6 +1869,7 @@ function ClientsManager({ clients, appSettings }: { clients: Client[], appSettin
         email: data.email || '',
         phone: data.phone || '',
         address: data.address || '',
+        neighborhood: data.neighborhood || '',
         city: data.city || '',
         cep: data.cep || '',
         responsible: data.responsible || '',
@@ -1711,77 +1915,153 @@ function ClientsManager({ clients, appSettings }: { clients: Client[], appSettin
                 Novo Cliente
               </Button>
             } />
-            <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-            <DialogHeader>
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[700px]">
+            <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Cadastrar Novo Cliente</DialogTitle>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="name" className="text-[#a0a0a0]">Nome Completo</Label>
-                <Input id="name" value={newClient.name || ''} onChange={e => setNewClient({...newClient, name: e.target.value})} placeholder="Ex: João Silva" className="bg-[#0f1115] border-[#2d3139] text-white" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2">
+              <div className="grid gap-4 py-4">
                 <div className="space-y-2">
-                  <Label htmlFor="email" className="text-[#a0a0a0]">Email</Label>
-                  <Input id="email" type="email" value={newClient.email || ''} onChange={e => setNewClient({...newClient, email: e.target.value})} placeholder="joao@email.com" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  <Label htmlFor="name" className="text-[#a0a0a0]">Nome Completo</Label>
+                  <Input id="name" value={newClient.name || ''} onChange={e => setNewClient({...newClient, name: e.target.value})} placeholder="Ex: João Silva" className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phone" className="text-[#a0a0a0]">Telefone</Label>
-                  <Input id="phone" value={newClient.phone || ''} onChange={e => setNewClient({...newClient, phone: e.target.value})} placeholder="(11) 99999-9999" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="email" className="text-[#a0a0a0]">Email</Label>
+                    <Input id="email" type="email" value={newClient.email || ''} onChange={e => setNewClient({...newClient, email: e.target.value})} placeholder="joao@email.com" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="phone" className="text-[#a0a0a0]">Telefone</Label>
+                    <Input id="phone" value={newClient.phone || ''} onChange={e => setNewClient({...newClient, phone: e.target.value})} placeholder="(11) 99999-9999" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="document" className="text-[#a0a0a0]">CPF / CNPJ</Label>
-                  <Input id="document" value={newClient.document || ''} onChange={e => setNewClient({...newClient, document: e.target.value})} placeholder="000.000.000-00" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="document" className="text-[#a0a0a0]">CPF / CNPJ</Label>
+                    <Input id="document" value={newClient.document || ''} onChange={e => setNewClient({...newClient, document: e.target.value})} placeholder="000.000.000-00" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="responsible" className="text-[#a0a0a0]">Responsável</Label>
+                    <Input id="responsible" value={newClient.responsible || ''} onChange={e => setNewClient({...newClient, responsible: e.target.value})} placeholder="Nome do responsável" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="responsible" className="text-[#a0a0a0]">Responsável</Label>
-                  <Input id="responsible" value={newClient.responsible || ''} onChange={e => setNewClient({...newClient, responsible: e.target.value})} placeholder="Nome do responsável" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="address" className="text-[#a0a0a0]">Endereço</Label>
+                    <Input id="address" value={newClient.address || ''} onChange={e => setNewClient({...newClient, address: e.target.value})} placeholder="Rua, Número" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="neighborhood" className="text-[#a0a0a0]">Bairro</Label>
+                    <Input id="neighborhood" value={newClient.neighborhood || ''} onChange={e => setNewClient({...newClient, neighborhood: e.target.value})} placeholder="Bairro" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
                 </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="address" className="text-[#a0a0a0]">Endereço</Label>
-                <Input id="address" value={newClient.address || ''} onChange={e => setNewClient({...newClient, address: e.target.value})} placeholder="Rua, Número, Bairro" className="bg-[#0f1115] border-[#2d3139] text-white" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="city" className="text-[#a0a0a0]">Cidade - UF</Label>
-                  <Input id="city" value={newClient.city || ''} onChange={e => setNewClient({...newClient, city: e.target.value})} placeholder="Cidade - UF" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="city" className="text-[#a0a0a0]">Cidade - UF</Label>
+                    <Input id="city" value={newClient.city || ''} onChange={e => setNewClient({...newClient, city: e.target.value})} placeholder="Cidade - UF" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="cep" className="text-[#a0a0a0]">CEP</Label>
+                    <Input id="cep" value={newClient.cep || ''} onChange={e => setNewClient({...newClient, cep: e.target.value})} placeholder="00000-000" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="cep" className="text-[#a0a0a0]">CEP</Label>
-                  <Input id="cep" value={newClient.cep || ''} onChange={e => setNewClient({...newClient, cep: e.target.value})} placeholder="00000-000" className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-[#a0a0a0]">Tipo de Cliente</Label>
-                  <Select value={newClient.type} onValueChange={(val: any) => setNewClient({...newClient, type: val})}>
-                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      <SelectItem value="Avulso">Avulso</SelectItem>
-                      <SelectItem value="Contrato">Contrato Mensal</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Tipo de Cliente</Label>
+                    <Select value={newClient.type} onValueChange={(val: any) => setNewClient({...newClient, type: val})}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue placeholder="Selecione" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="Avulso">Avulso</SelectItem>
+                        <SelectItem value="Contrato">Contrato Mensal</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {newClient.type === 'Contrato' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="contractValue" className="text-[#a0a0a0]">Valor Mensal (R$)</Label>
+                      <Input id="contractValue" type="number" value={newClient.contractValue || ''} onChange={e => setNewClient({...newClient, contractValue: Number(e.target.value)})} placeholder="0,00" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    </div>
+                  )}
                 </div>
                 {newClient.type === 'Contrato' && (
-                  <div className="space-y-2">
-                    <Label htmlFor="contractValue" className="text-[#a0a0a0]">Valor Mensal (R$)</Label>
-                    <Input id="contractValue" type="number" value={newClient.contractValue || ''} onChange={e => setNewClient({...newClient, contractValue: Number(e.target.value)})} placeholder="0,00" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  <div className="space-y-4 pt-2 border-t border-[#2d3139]">
+                    <Label className="text-white font-semibold">Itens do Objeto do Contrato</Label>
+                    <div className="grid grid-cols-1 gap-3">
+                      {SERVICE_OBJECTS.map((obj) => (
+                        <div key={obj} className="flex items-center space-x-3 bg-[#0f1115] p-2 rounded-md border border-[#2d3139]">
+                          <Checkbox 
+                            id={`new-${obj}`} 
+                            checked={(newClient.serviceObjects || []).includes(obj)}
+                            onCheckedChange={() => handleToggleObject(obj, true)}
+                            className="border-[#3b82f6] data-[state=checked]:bg-[#3b82f6]"
+                          />
+                          <Label 
+                            htmlFor={`new-${obj}`}
+                            className="text-xs text-[#a0a0a0] leading-tight cursor-pointer flex-1"
+                          >
+                            {obj}
+                          </Label>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    <div className="space-y-4 pt-2 border-t border-[#2d3139]">
+                      <Label className="text-white font-semibold">Forma de Pagamento</Label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {PAYMENT_METHODS.map((method) => (
+                          <div key={method} className="flex items-center space-x-3 bg-[#0f1115] p-2 rounded-md border border-[#2d3139]">
+                            <Checkbox 
+                              id={`payment-new-${method}`} 
+                              checked={newClient.paymentMethods?.includes(method)}
+                              onCheckedChange={() => handleTogglePaymentMethod(method, true)}
+                              className="border-[#3b82f6] data-[state=checked]:bg-[#3b82f6]"
+                            />
+                            <Label 
+                              htmlFor={`payment-new-${method}`}
+                              className="text-xs text-[#a0a0a0] leading-tight cursor-pointer flex-1"
+                            >
+                              {method}
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+  
+                    <div className="space-y-2">
+                      <Label htmlFor="paymentDay" className="text-[#a0a0a0]">Dia do Pagamento</Label>
+                      <Input id="paymentDay" value={newClient.paymentDay || ''} onChange={e => setNewClient({...newClient, paymentDay: e.target.value})} placeholder="Ex: Todo dia 10" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    </div>
+  
+                    <div className="space-y-2">
+                      <Label htmlFor="serviceSpecification" className="text-[#a0a0a0]">Observações Adicionais do Serviço</Label>
+                      <Input id="serviceSpecification" value={newClient.serviceSpecification || ''} onChange={e => setNewClient({...newClient, serviceSpecification: e.target.value})} placeholder="Ex: Manutenção mensal de 16 câmeras" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    </div>
+  
+                    {newClient.paymentMethods?.includes('PIX') && (
+                      <div className="space-y-2">
+                        <Label className="text-[#a0a0a0]">Conta PIX Preferencial</Label>
+                        <Select value={newClient.pixAccountId} onValueChange={(val) => setNewClient({...newClient, pixAccountId: val})}>
+                          <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                            <SelectValue placeholder="Selecione a conta PIX" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                            {pixSettings.accounts?.map(acc => (
+                              <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank})</SelectItem>
+                            ))}
+                            {(!pixSettings.accounts || pixSettings.accounts.length === 0) && (
+                              <SelectItem value="none" disabled>Nenhuma conta cadastrada</SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-              {newClient.type === 'Contrato' && (
-                <div className="space-y-2">
-                  <Label htmlFor="serviceSpecification" className="text-[#a0a0a0]">Especificação do Serviço</Label>
-                  <Input id="serviceSpecification" value={newClient.serviceSpecification || ''} onChange={e => setNewClient({...newClient, serviceSpecification: e.target.value})} placeholder="Ex: Manutenção mensal de 16 câmeras" className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-              )}
             </div>
-            <DialogFooter>
+            <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23]">
               <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
               <Button onClick={handleAddClient} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Cadastrar</Button>
             </DialogFooter>
@@ -1792,79 +2072,155 @@ function ClientsManager({ clients, appSettings }: { clients: Client[], appSettin
 
       {/* Edit Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-          <DialogHeader>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[700px]">
+          <DialogHeader className="p-6 pb-2 flex-shrink-0">
             <DialogTitle className="text-white">Editar Cliente</DialogTitle>
           </DialogHeader>
-          {editingClient && (
-            <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-name" className="text-[#a0a0a0]">Nome Completo</Label>
-                <Input id="edit-name" value={editingClient.name || ''} onChange={e => setEditingClient({...editingClient, name: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2">
+            {editingClient && (
+              <div className="grid gap-4 py-4">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-email" className="text-[#a0a0a0]">Email</Label>
-                  <Input id="edit-email" type="email" value={editingClient.email || ''} onChange={e => setEditingClient({...editingClient, email: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  <Label htmlFor="edit-name" className="text-[#a0a0a0]">Nome Completo</Label>
+                  <Input id="edit-name" value={editingClient.name || ''} onChange={e => setEditingClient({...editingClient, name: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-phone" className="text-[#a0a0a0]">Telefone</Label>
-                  <Input id="edit-phone" value={editingClient.phone || ''} onChange={e => setEditingClient({...editingClient, phone: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-document" className="text-[#a0a0a0]">CPF / CNPJ</Label>
-                  <Input id="edit-document" value={editingClient.document || ''} onChange={e => setEditingClient({...editingClient, document: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-responsible" className="text-[#a0a0a0]">Responsável</Label>
-                  <Input id="edit-responsible" value={editingClient.responsible || ''} onChange={e => setEditingClient({...editingClient, responsible: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-address" className="text-[#a0a0a0]">Endereço</Label>
-                <Input id="edit-address" value={editingClient.address || ''} onChange={e => setEditingClient({...editingClient, address: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-city" className="text-[#a0a0a0]">Cidade - UF</Label>
-                  <Input id="edit-city" value={editingClient.city || ''} onChange={e => setEditingClient({...editingClient, city: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-cep" className="text-[#a0a0a0]">CEP</Label>
-                  <Input id="edit-cep" value={editingClient.cep || ''} onChange={e => setEditingClient({...editingClient, cep: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-[#a0a0a0]">Tipo de Cliente</Label>
-                  <Select value={editingClient.type} onValueChange={(val: any) => setEditingClient({...editingClient, type: val})}>
-                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      <SelectItem value="Avulso">Avulso</SelectItem>
-                      <SelectItem value="Contrato">Contrato Mensal</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {editingClient.type === 'Contrato' && (
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="edit-contractValue" className="text-[#a0a0a0]">Valor Mensal (R$)</Label>
-                    <Input id="edit-contractValue" type="number" value={editingClient.contractValue || ''} onChange={e => setEditingClient({...editingClient, contractValue: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    <Label htmlFor="edit-email" className="text-[#a0a0a0]">Email</Label>
+                    <Input id="edit-email" type="email" value={editingClient.email || ''} onChange={e => setEditingClient({...editingClient, email: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-phone" className="text-[#a0a0a0]">Telefone</Label>
+                    <Input id="edit-phone" value={editingClient.phone || ''} onChange={e => setEditingClient({...editingClient, phone: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-document" className="text-[#a0a0a0]">CPF / CNPJ</Label>
+                    <Input id="edit-document" value={editingClient.document || ''} onChange={e => setEditingClient({...editingClient, document: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-responsible" className="text-[#a0a0a0]">Responsável</Label>
+                    <Input id="edit-responsible" value={editingClient.responsible || ''} onChange={e => setEditingClient({...editingClient, responsible: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-address" className="text-[#a0a0a0]">Endereço</Label>
+                    <Input id="edit-address" value={editingClient.address || ''} onChange={e => setEditingClient({...editingClient, address: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-neighborhood" className="text-[#a0a0a0]">Bairro</Label>
+                    <Input id="edit-neighborhood" value={editingClient.neighborhood || ''} onChange={e => setEditingClient({...editingClient, neighborhood: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-city" className="text-[#a0a0a0]">Cidade - UF</Label>
+                    <Input id="edit-city" value={editingClient.city || ''} onChange={e => setEditingClient({...editingClient, city: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-cep" className="text-[#a0a0a0]">CEP</Label>
+                    <Input id="edit-cep" value={editingClient.cep || ''} onChange={e => setEditingClient({...editingClient, cep: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Tipo de Cliente</Label>
+                    <Select value={editingClient.type} onValueChange={(val: any) => setEditingClient({...editingClient, type: val})}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue placeholder="Selecione" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="Avulso">Avulso</SelectItem>
+                        <SelectItem value="Contrato">Contrato Mensal</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {editingClient.type === 'Contrato' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-contractValue" className="text-[#a0a0a0]">Valor Mensal (R$)</Label>
+                      <Input id="edit-contractValue" type="number" value={editingClient.contractValue || ''} onChange={e => setEditingClient({...editingClient, contractValue: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    </div>
+                  )}
+                </div>
+  
+                {editingClient.paymentMethods?.includes('PIX') && (
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Conta PIX Preferencial</Label>
+                    <Select value={editingClient.pixAccountId} onValueChange={(val) => setEditingClient({...editingClient, pixAccountId: val})}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue placeholder="Selecione a conta PIX" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        {pixSettings.accounts?.map(acc => (
+                          <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank})</SelectItem>
+                        ))}
+                        {(!pixSettings.accounts || pixSettings.accounts.length === 0) && (
+                          <SelectItem value="none" disabled>Nenhuma conta cadastrada</SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {editingClient.type === 'Contrato' && (
+                  <div className="space-y-4 pt-2 border-t border-[#2d3139]">
+                    <Label className="text-white font-semibold">Itens do Objeto do Contrato</Label>
+                    <div className="grid grid-cols-1 gap-3">
+                      {SERVICE_OBJECTS.map((obj) => (
+                        <div key={obj} className="flex items-center space-x-3 bg-[#0f1115] p-2 rounded-md border border-[#2d3139]">
+                          <Checkbox 
+                            id={`edit-${obj}`} 
+                            checked={(editingClient.serviceObjects || []).includes(obj)}
+                            onCheckedChange={() => handleToggleObject(obj, false)}
+                            className="border-[#3b82f6] data-[state=checked]:bg-[#3b82f6]"
+                          />
+                          <Label 
+                            htmlFor={`edit-${obj}`}
+                            className="text-xs text-[#a0a0a0] leading-tight cursor-pointer flex-1"
+                          >
+                            {obj}
+                          </Label>
+                        </div>
+                      ))}
+                    </div>
+  
+                    <div className="space-y-4 pt-2 border-t border-[#2d3139]">
+                      <Label className="text-white font-semibold">Forma de Pagamento</Label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {PAYMENT_METHODS.map((method) => (
+                          <div key={method} className="flex items-center space-x-3 bg-[#0f1115] p-2 rounded-md border border-[#2d3139]">
+                            <Checkbox 
+                              id={`payment-edit-${method}`} 
+                              checked={editingClient.paymentMethods?.includes(method)}
+                              onCheckedChange={() => handleTogglePaymentMethod(method, false)}
+                              className="border-[#3b82f6] data-[state=checked]:bg-[#3b82f6]"
+                            />
+                            <Label 
+                              htmlFor={`payment-edit-${method}`}
+                              className="text-xs text-[#a0a0a0] leading-tight cursor-pointer flex-1"
+                            >
+                              {method}
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+  
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-paymentDay" className="text-[#a0a0a0]">Dia do Pagamento</Label>
+                      <Input id="edit-paymentDay" value={editingClient.paymentDay || ''} onChange={e => setEditingClient({...editingClient, paymentDay: e.target.value})} placeholder="Ex: Todo dia 10" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    </div>
+  
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-serviceSpecification" className="text-[#a0a0a0]">Observações Adicionais do Serviço</Label>
+                      <Input id="edit-serviceSpecification" value={editingClient.serviceSpecification || ''} onChange={e => setEditingClient({...editingClient, serviceSpecification: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    </div>
                   </div>
                 )}
               </div>
-              {editingClient.type === 'Contrato' && (
-                <div className="space-y-2">
-                  <Label htmlFor="edit-serviceSpecification" className="text-[#a0a0a0]">Especificação do Serviço</Label>
-                  <Input id="edit-serviceSpecification" value={editingClient.serviceSpecification || ''} onChange={e => setEditingClient({...editingClient, serviceSpecification: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-              )}
-            </div>
-          )}
-          <DialogFooter>
+            )}
+          </div>
+          <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23]">
             <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
             <Button onClick={handleUpdateClient} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Salvar Alterações</Button>
           </DialogFooter>
@@ -1909,6 +2265,17 @@ function ClientsManager({ clients, appSettings }: { clients: Client[], appSettin
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-2">
+                    {client.type === 'Contrato' && (
+                      <Button 
+                        variant="outline" 
+                        size="icon" 
+                        className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" 
+                        title="Gerar Contrato PDF"
+                        onClick={() => generateContractPDF(client, appSettings, pixSettings)}
+                      >
+                        <FileText size={14} />
+                      </Button>
+                    )}
                     <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
                       setEditingClient(client);
                       setIsEditOpen(true);
@@ -1948,7 +2315,7 @@ function ClientsManager({ clients, appSettings }: { clients: Client[], appSettin
             <Button variant="outline" onClick={() => setIsContractConfirmOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Não, já tenho assinado</Button>
             <Button onClick={() => {
               if (pendingContractClient) {
-                generateContractPDF(pendingContractClient, appSettings);
+                generateContractPDF(pendingContractClient, appSettings, pixSettings);
               }
               setIsContractConfirmOpen(false);
             }} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Sim, Gerar PDF</Button>
@@ -2076,135 +2443,158 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
               Novo Recibo
             </Button>
           } />
-          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-            <DialogHeader>
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[600px]">
+            <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Gerar Novo Recibo</DialogTitle>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0]">Selecionar Cliente Existente (Opcional)</Label>
-                <Select onValueChange={(clientId) => {
-                  const client = clients.find(c => c.id === clientId);
-                  if (client) {
-                    setNewReceipt({
-                      ...newReceipt,
-                      clientName: client.name,
-                      clientType: client.type || 'Avulso',
-                      serviceSpecification: client.type === 'Contrato' ? (client.serviceSpecification || '') : '',
-                      value: client.type === 'Contrato' ? (client.contractValue || 0) : 0
-                    });
-                  }
-                }}>
-                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                    <SelectValue placeholder="Escolha um cliente...">
-                      {clients.find(c => c.name === newReceipt.clientName)?.name || newReceipt.clientName || null}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                    <div className="p-2 sticky top-0 bg-[#1a1d23] z-10 border-b border-[#2d3139]">
-                      <Input 
-                        placeholder="Pesquisar..." 
-                        value={clientSearch}
-                        onChange={(e) => setClientSearch(e.target.value)}
-                        className="h-8 text-xs bg-[#0f1115] border-[#2d3139]"
-                        onKeyDown={(e) => e.stopPropagation()}
-                      />
-                    </div>
-                    <ScrollArea className="h-[200px]">
-                      {filteredClientsForSelect.map(c => (
-                        <SelectItem key={c.id} value={c.id}>{c.name || 'Cliente Sem Nome'}</SelectItem>
-                      ))}
-                      {filteredClientsForSelect.length === 0 && (
-                        <div className="p-2 text-center text-xs text-[#71717a]">Nenhum cliente encontrado</div>
-                      )}
-                    </ScrollArea>
-                  </SelectContent>
-                </Select>
-              </div>
-              <Separator className="bg-[#2d3139]" />
-              <div className="grid grid-cols-2 gap-4">
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2">
+              <div className="grid gap-4 py-4">
                 <div className="space-y-2">
-                  <Label htmlFor="clientName" className="text-[#a0a0a0]">Nome do Cliente</Label>
-                  <Input id="clientName" value={newReceipt.clientName || ''} onChange={e => setNewReceipt({...newReceipt, clientName: e.target.value})} placeholder="Ex: João Silva" className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-[#a0a0a0]">Tipo de Recibo</Label>
-                  <Select 
-                    value={newReceipt.clientType} 
-                    onValueChange={(val: any) => {
-                      const isContract = val === 'Contrato';
-                      const client = clients.find(c => c.name === newReceipt.clientName);
+                  <Label className="text-[#a0a0a0]">Selecionar Cliente Existente (Opcional)</Label>
+                  <Select onValueChange={(clientId) => {
+                    const client = clients.find(c => c.id === clientId);
+                    if (client) {
                       setNewReceipt({
-                        ...newReceipt, 
-                        clientType: val,
-                        // If switching to contract and we have a client name, try to find their contract info
-                        serviceSpecification: isContract ? (client?.serviceSpecification || newReceipt.serviceSpecification) : newReceipt.serviceSpecification,
-                        value: isContract ? (client?.contractValue || newReceipt.value) : newReceipt.value
+                        ...newReceipt,
+                        clientId: client.id,
+                        clientName: client.name,
+                        clientType: client.type || 'Avulso',
+                        serviceSpecification: client.type === 'Contrato' ? (client.serviceSpecification || '') : '',
+                        value: client.type === 'Contrato' ? (client.contractValue || 0) : 0,
+                        pixAccountId: client.pixAccountId
                       });
-                    }}
-                  >
+                    }
+                  }}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue />
+                      <SelectValue placeholder="Escolha um cliente...">
+                        {clients.find(c => c.name === newReceipt.clientName)?.name || newReceipt.clientName || null}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      <SelectItem value="Avulso">Serviço Avulso</SelectItem>
-                      <SelectItem value="Contrato">Contrato Mensal</SelectItem>
+                      <div className="p-2 sticky top-0 bg-[#1a1d23] z-10 border-b border-[#2d3139]">
+                        <Input 
+                          placeholder="Pesquisar..." 
+                          value={clientSearch}
+                          onChange={(e) => setClientSearch(e.target.value)}
+                          className="h-8 text-xs bg-[#0f1115] border-[#2d3139]"
+                          onKeyDown={(e) => e.stopPropagation()}
+                        />
+                      </div>
+                      <ScrollArea className="h-[200px]">
+                        {filteredClientsForSelect.map(c => (
+                          <SelectItem key={c.id} value={c.id}>{c.name || 'Cliente Sem Nome'}</SelectItem>
+                        ))}
+                        {filteredClientsForSelect.length === 0 && (
+                          <div className="p-2 text-center text-xs text-[#71717a]">Nenhum cliente encontrado</div>
+                        )}
+                      </ScrollArea>
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="service" className="text-[#a0a0a0]">
-                  {newReceipt.clientType === 'Contrato' ? 'Serviço do Contrato (Automático)' : 'Especificação do Serviço'}
-                </Label>
-                <Input 
-                  id="service" 
-                  value={newReceipt.serviceSpecification || ''} 
-                  onChange={e => setNewReceipt({...newReceipt, serviceSpecification: e.target.value})} 
-                  placeholder={newReceipt.clientType === 'Contrato' ? "Preenchido pelo contrato" : "Ex: Manutenção de câmeras"} 
-                  className="bg-[#0f1115] border-[#2d3139] text-white"
-                  disabled={newReceipt.clientType === 'Contrato'}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="value" className="text-[#a0a0a0]">Valor (R$)</Label>
-                <Input id="value" type="number" value={newReceipt.value || ''} onChange={e => setNewReceipt({...newReceipt, value: Number(e.target.value)})} placeholder="0,00" className="bg-[#0f1115] border-[#2d3139] text-white" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
+                <Separator className="bg-[#2d3139]" />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="clientName" className="text-[#a0a0a0]">Nome do Cliente</Label>
+                    <Input id="clientName" value={newReceipt.clientName || ''} onChange={e => setNewReceipt({...newReceipt, clientName: e.target.value})} placeholder="Ex: João Silva" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Tipo de Recibo</Label>
+                    <Select 
+                      value={newReceipt.clientType} 
+                      onValueChange={(val: any) => {
+                        const isContract = val === 'Contrato';
+                        const client = clients.find(c => c.name === newReceipt.clientName);
+                        setNewReceipt({
+                          ...newReceipt, 
+                          clientType: val,
+                          // If switching to contract and we have a client name, try to find their contract info
+                          serviceSpecification: isContract ? (client?.serviceSpecification || newReceipt.serviceSpecification) : newReceipt.serviceSpecification,
+                          value: isContract ? (client?.contractValue || newReceipt.value) : newReceipt.value
+                        });
+                      }}
+                    >
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="Avulso">Serviço Avulso</SelectItem>
+                        <SelectItem value="Contrato">Contrato Mensal</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
                 <div className="space-y-2">
-                  <Label htmlFor="receiptDate" className="text-[#a0a0a0]">Data do Recibo</Label>
+                  <Label htmlFor="service" className="text-[#a0a0a0]">
+                    {newReceipt.clientType === 'Contrato' ? 'Serviço do Contrato (Automático)' : 'Especificação do Serviço'}
+                  </Label>
                   <Input 
-                    id="receiptDate" 
-                    type="date" 
-                    value={newReceipt.date ? (newReceipt.date instanceof Date ? newReceipt.date.toISOString().split('T')[0] : new Date(newReceipt.date).toISOString().split('T')[0]) : ''} 
-                    onChange={e => setNewReceipt({...newReceipt, date: new Date(e.target.value)})} 
-                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                    id="service" 
+                    value={newReceipt.serviceSpecification || ''} 
+                    onChange={e => setNewReceipt({...newReceipt, serviceSpecification: e.target.value})} 
+                    placeholder={newReceipt.clientType === 'Contrato' ? "Preenchido pelo contrato" : "Ex: Manutenção de câmeras"} 
+                    className="bg-[#0f1115] border-[#2d3139] text-white"
+                    disabled={newReceipt.clientType === 'Contrato'}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="refMonth" className="text-[#a0a0a0]">Mês de Referência</Label>
-                  <Input id="refMonth" value={newReceipt.referenceMonth || ''} onChange={e => setNewReceipt({...newReceipt, referenceMonth: e.target.value})} placeholder="Ex: Janeiro/2024" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  <Label htmlFor="value" className="text-[#a0a0a0]">Valor (R$)</Label>
+                  <Input id="value" type="number" value={newReceipt.value || ''} onChange={e => setNewReceipt({...newReceipt, value: Number(e.target.value)})} placeholder="0,00" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="receiptDate" className="text-[#a0a0a0]">Data do Recibo</Label>
+                    <Input 
+                      id="receiptDate" 
+                      type="date" 
+                      value={newReceipt.date ? (newReceipt.date instanceof Date ? newReceipt.date.toISOString().split('T')[0] : new Date(newReceipt.date).toISOString().split('T')[0]) : ''} 
+                      onChange={e => setNewReceipt({...newReceipt, date: new Date(e.target.value)})} 
+                      className="bg-[#0f1115] border-[#2d3139] text-white" 
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="refMonth" className="text-[#a0a0a0]">Mês de Referência</Label>
+                    <Input id="refMonth" value={newReceipt.referenceMonth || ''} onChange={e => setNewReceipt({...newReceipt, referenceMonth: e.target.value})} placeholder="Ex: Janeiro/2024" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Forma de Pagamento</Label>
+                  <Select value={newReceipt.paymentMethod} onValueChange={(val: any) => setNewReceipt({...newReceipt, paymentMethod: val})}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="Dinheiro">Dinheiro</SelectItem>
+                      <SelectItem value="PIX">PIX</SelectItem>
+                      <SelectItem value="Cartão">Cartão</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+  
+                {newReceipt.paymentMethod === 'PIX' && (
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Conta PIX para Recebimento</Label>
+                    <Select value={newReceipt.pixAccountId} onValueChange={(val) => setNewReceipt({...newReceipt, pixAccountId: val})}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue placeholder="Selecione a conta PIX" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        {pixSettings.accounts?.map(acc => (
+                          <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank})</SelectItem>
+                        ))}
+                        {(!pixSettings.accounts || pixSettings.accounts.length === 0) && (
+                          <SelectItem value="none" disabled>Nenhuma conta cadastrada</SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="receiptObs" className="text-[#a0a0a0]">Observações do Recibo</Label>
+                  <Input id="receiptObs" value={newReceipt.observations || ''} onChange={e => setNewReceipt({...newReceipt, observations: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0]">Forma de Pagamento</Label>
-                <Select value={newReceipt.paymentMethod} onValueChange={(val: any) => setNewReceipt({...newReceipt, paymentMethod: val})}>
-                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                    <SelectValue placeholder="Selecione" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                    <SelectItem value="Dinheiro">Dinheiro</SelectItem>
-                    <SelectItem value="PIX">PIX</SelectItem>
-                    <SelectItem value="Cartão">Cartão</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="receiptObs" className="text-[#a0a0a0]">Observações do Recibo</Label>
-                <Input id="receiptObs" value={newReceipt.observations || ''} onChange={e => setNewReceipt({...newReceipt, observations: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-              </div>
             </div>
-            <DialogFooter className="flex flex-row justify-between sm:justify-between">
+            <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23]">
               <Button variant="ghost" onClick={() => setIsAddOpen(false)} className="text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]">
                 Voltar
               </Button>
@@ -2217,92 +2607,113 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
         </Dialog>
 
         <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-            <DialogHeader>
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[600px]">
+            <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Editar Recibo</DialogTitle>
             </DialogHeader>
-            {editingReceipt && (
-              <div className="grid gap-4 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="editClientName" className="text-[#a0a0a0]">Nome do Cliente</Label>
-                  <Input id="editClientName" value={editingReceipt.clientName} onChange={e => setEditingReceipt({...editingReceipt, clientName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-[#a0a0a0]">Tipo de Recibo</Label>
-                  <Select 
-                    value={editingReceipt.clientType} 
-                    onValueChange={(val: any) => {
-                      const isContract = val === 'Contrato';
-                      const client = clients.find(c => c.name === editingReceipt.clientName);
-                      setEditingReceipt({
-                        ...editingReceipt, 
-                        clientType: val,
-                        serviceSpecification: isContract ? (client?.serviceSpecification || editingReceipt.serviceSpecification) : editingReceipt.serviceSpecification,
-                        value: isContract ? (client?.contractValue || editingReceipt.value) : editingReceipt.value
-                      });
-                    }}
-                  >
-                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      <SelectItem value="Avulso">Serviço Avulso</SelectItem>
-                      <SelectItem value="Contrato">Contrato Mensal</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="editService" className="text-[#a0a0a0]">
-                    {editingReceipt.clientType === 'Contrato' ? 'Serviço do Contrato (Automático)' : 'Especificação do Serviço'}
-                  </Label>
-                  <Input 
-                    id="editService" 
-                    value={editingReceipt.serviceSpecification || ''} 
-                    onChange={e => setEditingReceipt({...editingReceipt, serviceSpecification: e.target.value})} 
-                    className="bg-[#0f1115] border-[#2d3139] text-white"
-                    disabled={editingReceipt.clientType === 'Contrato'}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="editValue" className="text-[#a0a0a0]">Valor (R$)</Label>
-                  <Input id="editValue" type="number" value={editingReceipt.value} onChange={e => setEditingReceipt({...editingReceipt, value: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2">
+              {editingReceipt && (
+                <div className="grid gap-4 py-4">
                   <div className="space-y-2">
-                    <Label htmlFor="editReceiptDate" className="text-[#a0a0a0]">Data do Recibo</Label>
+                    <Label htmlFor="editClientName" className="text-[#a0a0a0]">Nome do Cliente</Label>
+                    <Input id="editClientName" value={editingReceipt.clientName} onChange={e => setEditingReceipt({...editingReceipt, clientName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Tipo de Recibo</Label>
+                    <Select 
+                      value={editingReceipt.clientType} 
+                      onValueChange={(val: any) => {
+                        const isContract = val === 'Contrato';
+                        const client = clients.find(c => c.name === editingReceipt.clientName);
+                        setEditingReceipt({
+                          ...editingReceipt, 
+                          clientType: val,
+                          serviceSpecification: isContract ? (client?.serviceSpecification || editingReceipt.serviceSpecification) : editingReceipt.serviceSpecification,
+                          value: isContract ? (client?.contractValue || editingReceipt.value) : editingReceipt.value
+                        });
+                      }}
+                    >
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="Avulso">Serviço Avulso</SelectItem>
+                        <SelectItem value="Contrato">Contrato Mensal</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="editService" className="text-[#a0a0a0]">
+                      {editingReceipt.clientType === 'Contrato' ? 'Serviço do Contrato (Automático)' : 'Especificação do Serviço'}
+                    </Label>
                     <Input 
-                      id="editReceiptDate" 
-                      type="date" 
-                      value={editingReceipt.date ? (editingReceipt.date instanceof Timestamp ? editingReceipt.date.toDate().toISOString().split('T')[0] : new Date(editingReceipt.date).toISOString().split('T')[0]) : ''} 
-                      onChange={e => setEditingReceipt({...editingReceipt, date: new Date(e.target.value)})} 
-                      className="bg-[#0f1115] border-[#2d3139] text-white" 
+                      id="editService" 
+                      value={editingReceipt.serviceSpecification || ''} 
+                      onChange={e => setEditingReceipt({...editingReceipt, serviceSpecification: e.target.value})} 
+                      className="bg-[#0f1115] border-[#2d3139] text-white"
+                      disabled={editingReceipt.clientType === 'Contrato'}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="editRefMonth" className="text-[#a0a0a0]">Mês de Referência</Label>
-                    <Input id="editRefMonth" value={editingReceipt.referenceMonth || ''} onChange={e => setEditingReceipt({...editingReceipt, referenceMonth: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    <Label htmlFor="editValue" className="text-[#a0a0a0]">Valor (R$)</Label>
+                    <Input id="editValue" type="number" value={editingReceipt.value} onChange={e => setEditingReceipt({...editingReceipt, value: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="editReceiptDate" className="text-[#a0a0a0]">Data do Recibo</Label>
+                      <Input 
+                        id="editReceiptDate" 
+                        type="date" 
+                        value={editingReceipt.date ? (editingReceipt.date instanceof Timestamp ? editingReceipt.date.toDate().toISOString().split('T')[0] : new Date(editingReceipt.date).toISOString().split('T')[0]) : ''} 
+                        onChange={e => setEditingReceipt({...editingReceipt, date: new Date(e.target.value)})} 
+                        className="bg-[#0f1115] border-[#2d3139] text-white" 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="editRefMonth" className="text-[#a0a0a0]">Mês de Referência</Label>
+                      <Input id="editRefMonth" value={editingReceipt.referenceMonth || ''} onChange={e => setEditingReceipt({...editingReceipt, referenceMonth: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Forma de Pagamento</Label>
+                    <Select value={editingReceipt.paymentMethod} onValueChange={(val: any) => setEditingReceipt({...editingReceipt, paymentMethod: val})}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="Dinheiro">Dinheiro</SelectItem>
+                        <SelectItem value="PIX">PIX</SelectItem>
+                        <SelectItem value="Cartão">Cartão</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+  
+                  {editingReceipt.paymentMethod === 'PIX' && (
+                    <div className="space-y-2">
+                      <Label className="text-[#a0a0a0]">Conta PIX para Recebimento</Label>
+                      <Select value={editingReceipt.pixAccountId} onValueChange={(val) => setEditingReceipt({...editingReceipt, pixAccountId: val})}>
+                        <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                          <SelectValue placeholder="Selecione a conta PIX" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                          {pixSettings.accounts?.map(acc => (
+                            <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank})</SelectItem>
+                          ))}
+                          {(!pixSettings.accounts || pixSettings.accounts.length === 0) && (
+                            <SelectItem value="none" disabled>Nenhuma conta cadastrada</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="editReceiptObs" className="text-[#a0a0a0]">Observações do Recibo</Label>
+                    <Input id="editReceiptObs" value={editingReceipt.observations || ''} onChange={e => setEditingReceipt({...editingReceipt, observations: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-[#a0a0a0]">Forma de Pagamento</Label>
-                  <Select value={editingReceipt.paymentMethod} onValueChange={(val: any) => setEditingReceipt({...editingReceipt, paymentMethod: val})}>
-                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      <SelectItem value="Dinheiro">Dinheiro</SelectItem>
-                      <SelectItem value="PIX">PIX</SelectItem>
-                      <SelectItem value="Cartão">Cartão</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="editReceiptObs" className="text-[#a0a0a0]">Observações do Recibo</Label>
-                  <Input id="editReceiptObs" value={editingReceipt.observations || ''} onChange={e => setEditingReceipt({...editingReceipt, observations: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-              </div>
-            )}
-            <DialogFooter className="flex flex-row justify-between sm:justify-between">
+              )}
+            </div>
+            <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23] flex flex-row justify-between sm:justify-between">
               <Button variant="ghost" onClick={() => setIsEditOpen(false)} className="text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]">
                 Voltar
               </Button>
@@ -2406,28 +2817,19 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
 // --- Settings Manager Component ---
 
 function SettingsManager({ pixSettings, appSettings, user }: { pixSettings: PixSettings, appSettings: AppSettings, user: FirebaseUser }) {
-  const [localPix, setLocalPix] = useState<PixSettings>(pixSettings);
   const [localApp, setLocalApp] = useState<AppSettings>(appSettings);
   const [newDisplayName, setNewDisplayName] = useState(user.displayName || '');
   const [newPassword, setNewPassword] = useState('');
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
 
-  useEffect(() => {
-    setLocalPix(pixSettings);
-  }, [pixSettings]);
+  // Multi-PIX states
+  const [isPixDialogOpen, setIsPixDialogOpen] = useState(false);
+  const [currentPix, setCurrentPix] = useState<Partial<PixAccount>>({});
+  const [editingPixId, setEditingPixId] = useState<string | null>(null);
 
   useEffect(() => {
     setLocalApp(appSettings);
   }, [appSettings]);
-
-  const handleSavePix = async () => {
-    try {
-      await setDoc(doc(db, 'settings', 'pix'), localPix);
-      toast.success('Configurações de PIX salvas!');
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, 'settings/pix');
-    }
-  };
 
   const handleSaveApp = async () => {
     try {
@@ -2446,6 +2848,40 @@ function SettingsManager({ pixSettings, appSettings, user }: { pixSettings: PixS
         setLocalApp({ ...localApp, logoUrl: reader.result as string });
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSavePixAccount = async () => {
+    if (!currentPix.label || !currentPix.key) {
+      toast.error('Preencha ao menos o Identificador e a Chave PIX.');
+      return;
+    }
+
+    let updatedAccounts = [...(pixSettings.accounts || [])];
+    if (editingPixId) {
+      updatedAccounts = updatedAccounts.map(acc => acc.id === editingPixId ? { ...acc, ...currentPix } as PixAccount : acc);
+    } else {
+      updatedAccounts.push({ ...currentPix, id: Date.now().toString() } as PixAccount);
+    }
+
+    try {
+      await setDoc(doc(db, 'settings', 'pix'), { accounts: updatedAccounts });
+      toast.success(editingPixId ? 'Conta PIX atualizada!' : 'Nova conta PIX adicionada!');
+      setIsPixDialogOpen(false);
+      setCurrentPix({});
+      setEditingPixId(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'settings/pix');
+    }
+  };
+
+  const handleDeletePixAccount = async (id: string) => {
+    const updatedAccounts = (pixSettings.accounts || []).filter(acc => acc.id !== id);
+    try {
+      await setDoc(doc(db, 'settings', 'pix'), { accounts: updatedAccounts });
+      toast.success('Conta PIX removida!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'settings/pix');
     }
   };
 
@@ -2523,14 +2959,25 @@ function SettingsManager({ pixSettings, appSettings, user }: { pixSettings: PixS
                 />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="companyAddress" className="text-[#a0a0a0]">Endereço Completo</Label>
-              <Input 
-                id="companyAddress" 
-                value={localApp.address} 
-                onChange={e => setLocalApp({ ...localApp, address: e.target.value })} 
-                className="bg-[#0f1115] border-[#2d3139] text-white" 
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="companyAddress" className="text-[#a0a0a0]">Endereço</Label>
+                <Input 
+                  id="companyAddress" 
+                  value={localApp.address} 
+                  onChange={e => setLocalApp({ ...localApp, address: e.target.value })} 
+                  className="bg-[#0f1115] border-[#2d3139] text-white" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="companyNeighborhood" className="text-[#a0a0a0]">Bairro</Label>
+                <Input 
+                  id="companyNeighborhood" 
+                  value={localApp.neighborhood || ''} 
+                  onChange={e => setLocalApp({ ...localApp, neighborhood: e.target.value })} 
+                  className="bg-[#0f1115] border-[#2d3139] text-white" 
+                />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -2633,60 +3080,123 @@ function SettingsManager({ pixSettings, appSettings, user }: { pixSettings: PixS
           </CardContent>
         </Card>
 
-        <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <DollarSign className="text-[#3b82f6]" size={20} />
-              Dados para Pagamento (PIX)
-            </CardTitle>
-            <CardDescription className="text-[#71717a]">
-              Estes dados aparecerão nos recibos gerados pelo sistema.
-            </CardDescription>
+        <Card className="bg-[#1a1d23] border-[#2d3139] text-white lg:col-span-2">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <DollarSign className="text-[#3b82f6]" size={20} />
+                Contas PIX para Pagamento
+              </CardTitle>
+              <CardDescription className="text-[#71717a]">
+                Cadastre várias chaves PIX para especificar em cada cliente.
+              </CardDescription>
+            </div>
+            <Dialog open={isPixDialogOpen} onOpenChange={setIsPixDialogOpen}>
+              <DialogTrigger render={
+                <Button className="bg-[#3b82f6] hover:bg-[#2563eb] text-white gap-2" onClick={() => {
+                  setCurrentPix({});
+                  setEditingPixId(null);
+                }}>
+                  <Plus size={16} />
+                  Nova Conta
+                </Button>
+              } />
+              <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[500px]">
+                <DialogHeader className="p-6 pb-2 flex-shrink-0">
+                  <DialogTitle className="text-white">{editingPixId ? 'Editar Conta PIX' : 'Nova Conta PIX'}</DialogTitle>
+                </DialogHeader>
+                <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2">
+                  <div className="grid gap-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="pixLabel" className="text-[#a0a0a0]">Identificador (Ex: Itaú, Nubank Principal)</Label>
+                      <Input 
+                        id="pixLabel" 
+                        value={currentPix.label || ''} 
+                        onChange={e => setCurrentPix({...currentPix, label: e.target.value})} 
+                        placeholder="Identificador da conta"
+                        className="bg-[#0f1115] border-[#2d3139] text-white" 
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="pixKey" className="text-[#a0a0a0]">Chave PIX</Label>
+                        <Input 
+                          id="pixKey" 
+                          value={currentPix.key || ''} 
+                          onChange={e => setCurrentPix({...currentPix, key: e.target.value})} 
+                          placeholder="E-mail, CPF, etc."
+                          className="bg-[#0f1115] border-[#2d3139] text-white" 
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="pixBank" className="text-[#a0a0a0]">Banco</Label>
+                        <Input 
+                          id="pixBank" 
+                          value={currentPix.bank || ''} 
+                          onChange={e => setCurrentPix({...currentPix, bank: e.target.value})} 
+                          placeholder="Ex: Nubank"
+                          className="bg-[#0f1115] border-[#2d3139] text-white" 
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="pixFavored" className="text-[#a0a0a0]">Favorecido</Label>
+                        <Input 
+                          id="pixFavored" 
+                          value={currentPix.favored || ''} 
+                          onChange={e => setCurrentPix({...currentPix, favored: e.target.value})} 
+                          className="bg-[#0f1115] border-[#2d3139] text-white" 
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="pixDoc" className="text-[#a0a0a0]">Documento (CPF/CNPJ)</Label>
+                        <Input 
+                          id="pixDoc" 
+                          value={currentPix.document || ''} 
+                          onChange={e => setCurrentPix({...currentPix, document: e.target.value})} 
+                          className="bg-[#0f1115] border-[#2d3139] text-white" 
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23]">
+                  <Button variant="outline" onClick={() => setIsPixDialogOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+                  <Button onClick={handleSavePixAccount} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Salvar</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="pixKey" className="text-[#a0a0a0]">Chave PIX</Label>
-              <Input 
-                id="pixKey" 
-                value={localPix.key} 
-                onChange={e => setLocalPix({...localPix, key: e.target.value})} 
-                placeholder="E-mail, CPF, CNPJ ou Celular"
-                className="bg-[#0f1115] border-[#2d3139] text-white" 
-              />
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {(pixSettings.accounts || []).map(acc => (
+                <div key={acc.id} className="p-4 rounded-lg bg-[#0f1115] border border-[#2d3139] flex justify-between items-start">
+                  <div>
+                    <h4 className="font-bold text-white mb-1">{acc.label}</h4>
+                    <p className="text-xs text-[#71717a]">{acc.bank} • {acc.favored}</p>
+                    <p className="text-sm text-[#3b82f6] mt-1 font-mono break-all">{acc.key}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={() => {
+                      setCurrentPix(acc);
+                      setEditingPixId(acc.id);
+                      setIsPixDialogOpen(true);
+                    }}>
+                      <Pencil size={14} />
+                    </Button>
+                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-red-500 hover:bg-red-500/10" onClick={() => handleDeletePixAccount(acc.id)}>
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              {(!pixSettings.accounts || pixSettings.accounts.length === 0) && (
+                <div className="col-span-full py-8 text-center text-[#71717a] border border-dashed border-[#2d3139] rounded-lg">
+                  Nenhuma conta PIX cadastrada.
+                </div>
+              )}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="pixBank" className="text-[#a0a0a0]">Banco</Label>
-              <Input 
-                id="pixBank" 
-                value={localPix.bank} 
-                onChange={e => setLocalPix({...localPix, bank: e.target.value})} 
-                placeholder="Ex: Nubank, Itaú, etc."
-                className="bg-[#0f1115] border-[#2d3139] text-white" 
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="pixFavored" className="text-[#a0a0a0]">Favorecido</Label>
-              <Input 
-                id="pixFavored" 
-                value={localPix.favored} 
-                onChange={e => setLocalPix({...localPix, favored: e.target.value})} 
-                placeholder="Nome completo do titular"
-                className="bg-[#0f1115] border-[#2d3139] text-white" 
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="pixDoc" className="text-[#a0a0a0]">CPF/CNPJ do Favorecido</Label>
-              <Input 
-                id="pixDoc" 
-                value={localPix.document} 
-                onChange={e => setLocalPix({...localPix, document: e.target.value})} 
-                placeholder="000.000.000-00"
-                className="bg-[#0f1115] border-[#2d3139] text-white" 
-              />
-            </div>
-            <Button onClick={handleSavePix} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white">
-              Salvar Dados PIX
-            </Button>
           </CardContent>
         </Card>
       </div>
@@ -3151,144 +3661,146 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
               Nova Visita
             </Button>
           } />
-          <DialogContent className="sm:max-w-[500px] bg-[#1a1d23] border-[#2d3139] text-white">
-            <DialogHeader>
+          <DialogContent className="sm:max-w-[600px] bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0">
+            <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Agendar Nova Visita</DialogTitle>
-              <DialogDescription className="text-[#71717a]">Preencha os detalhes do cliente e do serviço.</DialogDescription>
+              <DialogDescription className="text-[#a0a0a0] text-xs">Preencha os detalhes do cliente e do serviço.</DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0]">Selecionar Cliente Existente (Opcional)</Label>
-                <Select onValueChange={(clientId) => {
-                  const client = clients.find(c => c.id === clientId);
-                  if (client) {
-                    setNewVisit({
-                      ...newVisit,
-                      clientId: client.id,
-                      clientName: client.name,
-                      clientPhone: client.phone,
-                      address: client.address
-                    });
-                  }
-                }}>
-                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                    <SelectValue placeholder="Escolha um cliente...">
-                      {clients.find(c => c.name === newVisit.clientName)?.name || newVisit.clientName || null}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                    <div className="p-2 sticky top-0 bg-[#1a1d23] z-10 border-b border-[#2d3139]">
-                      <Input 
-                        placeholder="Pesquisar..." 
-                        value={clientSearch}
-                        onChange={(e) => setClientSearch(e.target.value)}
-                        className="h-8 text-xs bg-[#0f1115] border-[#2d3139]"
-                        onKeyDown={(e) => e.stopPropagation()}
-                      />
-                    </div>
-                    <ScrollArea className="h-[200px]">
-                      {filteredClientsForSelect.map(c => (
-                        <SelectItem key={c.id} value={c.id}>{c.name || 'Cliente Sem Nome'}</SelectItem>
-                      ))}
-                      {filteredClientsForSelect.length === 0 && (
-                        <div className="p-2 text-center text-xs text-[#71717a]">Nenhum cliente encontrado</div>
-                      )}
-                    </ScrollArea>
-                  </SelectContent>
-                </Select>
-              </div>
-              <Separator className="bg-[#2d3139]" />
-              <div className="grid grid-cols-2 gap-4">
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2">
+              <div className="grid gap-4 py-4">
                 <div className="space-y-2">
-                  <Label htmlFor="name" className="text-[#a0a0a0]">Nome do Cliente</Label>
-                  <Input id="name" value={newVisit.clientName || ''} onChange={e => setNewVisit({...newVisit, clientName: e.target.value})} placeholder="Ex: João Silva" className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phone" className="text-[#a0a0a0]">Telefone</Label>
-                  <Input id="phone" value={newVisit.clientPhone || ''} onChange={e => setNewVisit({...newVisit, clientPhone: e.target.value})} placeholder="(11) 99999-9999" className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="address" className="text-[#a0a0a0]">Endereço</Label>
-                <Input id="address" value={newVisit.address || ''} onChange={e => setNewVisit({...newVisit, address: e.target.value})} placeholder="Rua, Número, Bairro" className="bg-[#0f1115] border-[#2d3139] text-white" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-[#a0a0a0]">Tipo de Serviço</Label>
-                  <Select value={newVisit.type} onValueChange={(val: any) => setNewVisit({...newVisit, type: val})}>
+                  <Label className="text-[#a0a0a0]">Selecionar Cliente Existente (Opcional)</Label>
+                  <Select onValueChange={(clientId) => {
+                    const client = clients.find(c => c.id === clientId);
+                    if (client) {
+                      setNewVisit({
+                        ...newVisit,
+                        clientId: client.id,
+                        clientName: client.name,
+                        clientPhone: client.phone,
+                        address: client.address
+                      });
+                    }
+                  }}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue placeholder="Selecione" />
+                      <SelectValue placeholder="Escolha um cliente...">
+                        {clients.find(c => c.name === newVisit.clientName)?.name || newVisit.clientName || null}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      <SelectItem value="CFTV">CFTV</SelectItem>
-                      <SelectItem value="Alarme">Alarme</SelectItem>
-                      <SelectItem value="Cerca Elétrica">Cerca Elétrica</SelectItem>
-                      <SelectItem value="Motor de Portão">Motor de Portão</SelectItem>
-                      <SelectItem value="Outros">Outros</SelectItem>
+                      <div className="p-2 sticky top-0 bg-[#1a1d23] z-10 border-b border-[#2d3139]">
+                        <Input 
+                          placeholder="Pesquisar..." 
+                          value={clientSearch}
+                          onChange={(e) => setClientSearch(e.target.value)}
+                          className="h-8 text-xs bg-[#0f1115] border-[#2d3139]"
+                          onKeyDown={(e) => e.stopPropagation()}
+                        />
+                      </div>
+                      <ScrollArea className="h-[200px]">
+                        {filteredClientsForSelect.map(c => (
+                          <SelectItem key={c.id} value={c.id}>{c.name || 'Cliente Sem Nome'}</SelectItem>
+                        ))}
+                        {filteredClientsForSelect.length === 0 && (
+                          <div className="p-2 text-center text-xs text-[#71717a]">Nenhum cliente encontrado</div>
+                        )}
+                      </ScrollArea>
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="desc" className="text-[#a0a0a0]">Descrição do Problema/Serviço</Label>
-                  <Input id="desc" value={newVisit.description || ''} onChange={e => setNewVisit({...newVisit, description: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-[#a0a0a0]">Data e Hora Agendamento</Label>
-                  <Popover>
-                    <PopoverTrigger render={
-                      <Button variant="outline" className={cn("w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white", !newVisit.date && "text-muted-foreground")}>
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {newVisit.date ? format(newVisit.date, "PPP", { locale: ptBR }) : <span>Selecione</span>}
-                      </Button>
-                    } />
-                    <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
-                      <Calendar mode="single" selected={newVisit.date} onSelect={(date) => setNewVisit({...newVisit, date})} initialFocus className="bg-[#1a1d23] text-white" />
-                    </PopoverContent>
-                  </Popover>
+                <Separator className="bg-[#2d3139]" />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="name" className="text-[#a0a0a0]">Nome do Cliente</Label>
+                    <Input id="name" value={newVisit.clientName || ''} onChange={e => setNewVisit({...newVisit, clientName: e.target.value})} placeholder="Ex: João Silva" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="phone" className="text-[#a0a0a0]">Telefone</Label>
+                    <Input id="phone" value={newVisit.clientPhone || ''} onChange={e => setNewVisit({...newVisit, clientPhone: e.target.value})} placeholder="(11) 99999-9999" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="scheduledTime" className="text-[#a0a0a0]">Hora Agendamento</Label>
-                  <Input id="scheduledTime" type="time" value={newVisit.scheduledTime || ''} onChange={e => setNewVisit({...newVisit, scheduledTime: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  <Label htmlFor="address" className="text-[#a0a0a0]">Endereço</Label>
+                  <Input id="address" value={newVisit.address || ''} onChange={e => setNewVisit({...newVisit, address: e.target.value})} placeholder="Rua, Número, Bairro" className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-[#a0a0a0]">Data Prevista Visita</Label>
-                  <Popover>
-                    <PopoverTrigger render={
-                      <Button variant="outline" className={cn("w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white", !newVisit.expectedDate && "text-muted-foreground")}>
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {newVisit.expectedDate ? format(newVisit.expectedDate, "PPP", { locale: ptBR }) : <span>Selecione</span>}
-                      </Button>
-                    } />
-                    <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
-                      <Calendar mode="single" selected={newVisit.expectedDate} onSelect={(date) => setNewVisit({...newVisit, expectedDate: date})} initialFocus className="bg-[#1a1d23] text-white" />
-                    </PopoverContent>
-                  </Popover>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Tipo de Serviço</Label>
+                    <Select value={newVisit.type} onValueChange={(val: any) => setNewVisit({...newVisit, type: val})}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue placeholder="Selecione" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="CFTV">CFTV</SelectItem>
+                        <SelectItem value="Alarme">Alarme</SelectItem>
+                        <SelectItem value="Cerca Elétrica">Cerca Elétrica</SelectItem>
+                        <SelectItem value="Motor de Portão">Motor de Portão</SelectItem>
+                        <SelectItem value="Outros">Outros</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="desc" className="text-[#a0a0a0]">Descrição do Problema/Serviço</Label>
+                    <Input id="desc" value={newVisit.description || ''} onChange={e => setNewVisit({...newVisit, description: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Data e Hora Agendamento</Label>
+                    <Popover>
+                      <PopoverTrigger render={
+                        <Button variant="outline" className={cn("w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white", !newVisit.date && "text-muted-foreground")}>
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {newVisit.date ? format(newVisit.date, "PPP", { locale: ptBR }) : <span>Selecione</span>}
+                        </Button>
+                      } />
+                      <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
+                        <Calendar mode="single" selected={newVisit.date} onSelect={(date) => setNewVisit({...newVisit, date})} initialFocus className="bg-[#1a1d23] text-white" />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="scheduledTime" className="text-[#a0a0a0]">Hora Agendamento</Label>
+                    <Input id="scheduledTime" type="time" value={newVisit.scheduledTime || ''} onChange={e => setNewVisit({...newVisit, scheduledTime: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Data Prevista Visita</Label>
+                    <Popover>
+                      <PopoverTrigger render={
+                        <Button variant="outline" className={cn("w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white", !newVisit.expectedDate && "text-muted-foreground")}>
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {newVisit.expectedDate ? format(newVisit.expectedDate, "PPP", { locale: ptBR }) : <span>Selecione</span>}
+                        </Button>
+                      } />
+                      <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
+                        <Calendar mode="single" selected={newVisit.expectedDate} onSelect={(date) => setNewVisit({...newVisit, expectedDate: date})} initialFocus className="bg-[#1a1d23] text-white" />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="expectedTime" className="text-[#a0a0a0]">Hora Prevista Visita</Label>
+                    <Input id="expectedTime" type="time" value={newVisit.expectedTime || ''} onChange={e => setNewVisit({...newVisit, expectedTime: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="expectedTime" className="text-[#a0a0a0]">Hora Prevista Visita</Label>
-                  <Input id="expectedTime" type="time" value={newVisit.expectedTime || ''} onChange={e => setNewVisit({...newVisit, expectedTime: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  <Label htmlFor="observations" className="text-[#a0a0a0]">Observações Internas / Adicionais</Label>
+                  <Input id="observations" value={newVisit.observations || ''} onChange={e => setNewVisit({...newVisit, observations: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="observations" className="text-[#a0a0a0]">Observações Internas / Adicionais</Label>
-                <Input id="observations" value={newVisit.observations || ''} onChange={e => setNewVisit({...newVisit, observations: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="techName" className="text-[#a0a0a0]">Nome do Técnico</Label>
-                  <Input id="techName" value={newVisit.technicianName || ''} onChange={e => setNewVisit({...newVisit, technicianName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="val" className="text-[#a0a0a0]">Valor Estimado (R$)</Label>
-                  <Input id="val" type="number" value={newVisit.totalValue || ''} onChange={e => setNewVisit({...newVisit, totalValue: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="techName" className="text-[#a0a0a0]">Nome do Técnico</Label>
+                    <Input id="techName" value={newVisit.technicianName || ''} onChange={e => setNewVisit({...newVisit, technicianName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="val" className="text-[#a0a0a0]">Valor Estimado (R$)</Label>
+                    <Input id="val" type="number" value={newVisit.totalValue || ''} onChange={e => setNewVisit({...newVisit, totalValue: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
                 </div>
               </div>
             </div>
-            <DialogFooter>
+            <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23]">
               <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
               <Button onClick={handleAddVisit} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Agendar</Button>
             </DialogFooter>
@@ -3506,118 +4018,120 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
 
       {/* Edit Visit Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="sm:max-w-[500px] bg-[#1a1d23] border-[#2d3139] text-white">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-[500px] bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0">
+          <DialogHeader className="p-6 pb-2 flex-shrink-0">
             <DialogTitle className="text-white">Editar Visita</DialogTitle>
           </DialogHeader>
-          {editingVisit && (
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="editName" className="text-[#a0a0a0]">Nome do Cliente</Label>
-                  <Input id="editName" value={editingVisit.clientName || ''} onChange={e => setEditingVisit({...editingVisit, clientName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2">
+            {editingVisit && (
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="editName" className="text-[#a0a0a0]">Nome do Cliente</Label>
+                    <Input id="editName" value={editingVisit.clientName || ''} onChange={e => setEditingVisit({...editingVisit, clientName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="editPhone" className="text-[#a0a0a0]">Telefone</Label>
+                    <Input id="editPhone" value={editingVisit.clientPhone || ''} onChange={e => setEditingVisit({...editingVisit, clientPhone: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="editPhone" className="text-[#a0a0a0]">Telefone</Label>
-                  <Input id="editPhone" value={editingVisit.clientPhone || ''} onChange={e => setEditingVisit({...editingVisit, clientPhone: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  <Label htmlFor="editAddress" className="text-[#a0a0a0]">Endereço</Label>
+                  <Input id="editAddress" value={editingVisit.address || ''} onChange={e => setEditingVisit({...editingVisit, address: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Tipo de Serviço</Label>
+                    <Select value={editingVisit.type} onValueChange={(val: any) => setEditingVisit({...editingVisit, type: val})}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="CFTV">CFTV</SelectItem>
+                        <SelectItem value="Alarme">Alarme</SelectItem>
+                        <SelectItem value="Cerca Elétrica">Cerca Elétrica</SelectItem>
+                        <SelectItem value="Motor de Portão">Motor de Portão</SelectItem>
+                        <SelectItem value="Outros">Outros</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="editDesc" className="text-[#a0a0a0]">Descrição</Label>
+                    <Input id="editDesc" value={editingVisit.description || ''} onChange={e => setEditingVisit({...editingVisit, description: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Data e Hora Agendamento</Label>
+                    <Popover>
+                      <PopoverTrigger render={
+                        <Button variant="outline" className="w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white">
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {editingVisit.date ? format(editingVisit.date as Date, "PPP", { locale: ptBR }) : <span>Selecione</span>}
+                        </Button>
+                      } />
+                      <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
+                        <Calendar mode="single" selected={editingVisit.date as Date} onSelect={(date) => setEditingVisit({...editingVisit, date})} initialFocus className="bg-[#1a1d23] text-white" />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="editScheduledTime" className="text-[#a0a0a0]">Hora Agendamento</Label>
+                    <Input id="editScheduledTime" type="time" value={editingVisit.scheduledTime || ''} onChange={e => setEditingVisit({...editingVisit, scheduledTime: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Data Prevista Visita</Label>
+                    <Popover>
+                      <PopoverTrigger render={
+                        <Button variant="outline" className="w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white">
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {editingVisit.expectedDate ? format(editingVisit.expectedDate as Date, "PPP", { locale: ptBR }) : <span>Selecione</span>}
+                        </Button>
+                      } />
+                      <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
+                        <Calendar mode="single" selected={editingVisit.expectedDate as Date} onSelect={(date) => setEditingVisit({...editingVisit, expectedDate: date})} initialFocus className="bg-[#1a1d23] text-white" />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="editExpectedTime" className="text-[#a0a0a0]">Hora Prevista Visita</Label>
+                    <Input id="editExpectedTime" type="time" value={editingVisit.expectedTime || ''} onChange={e => setEditingVisit({...editingVisit, expectedTime: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Status</Label>
+                    <Select value={editingVisit.status} onValueChange={(val: any) => setEditingVisit({...editingVisit, status: val})}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="Agendada">Agendada</SelectItem>
+                        <SelectItem value="Em Andamento">Em Andamento</SelectItem>
+                        <SelectItem value="Concluída">Concluída</SelectItem>
+                        <SelectItem value="Cancelada">Cancelada</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="editVal" className="text-[#a0a0a0]">Valor (R$)</Label>
+                    <Input id="editVal" type="number" value={editingVisit.totalValue || ''} onChange={e => setEditingVisit({...editingVisit, totalValue: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editTechName" className="text-[#a0a0a0]">Nome do Técnico</Label>
+                  <Input id="editTechName" value={editingVisit.technicianName || ''} onChange={e => setEditingVisit({...editingVisit, technicianName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editObservations" className="text-[#a0a0a0]">Observações Internas / Adicionais</Label>
+                  <Input id="editObservations" value={editingVisit.observations || ''} onChange={e => setEditingVisit({...editingVisit, observations: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="editAddress" className="text-[#a0a0a0]">Endereço</Label>
-                <Input id="editAddress" value={editingVisit.address || ''} onChange={e => setEditingVisit({...editingVisit, address: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-[#a0a0a0]">Tipo de Serviço</Label>
-                  <Select value={editingVisit.type} onValueChange={(val: any) => setEditingVisit({...editingVisit, type: val})}>
-                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      <SelectItem value="CFTV">CFTV</SelectItem>
-                      <SelectItem value="Alarme">Alarme</SelectItem>
-                      <SelectItem value="Cerca Elétrica">Cerca Elétrica</SelectItem>
-                      <SelectItem value="Motor de Portão">Motor de Portão</SelectItem>
-                      <SelectItem value="Outros">Outros</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="editDesc" className="text-[#a0a0a0]">Descrição</Label>
-                  <Input id="editDesc" value={editingVisit.description || ''} onChange={e => setEditingVisit({...editingVisit, description: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-[#a0a0a0]">Data e Hora Agendamento</Label>
-                  <Popover>
-                    <PopoverTrigger render={
-                      <Button variant="outline" className="w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white">
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {editingVisit.date ? format(editingVisit.date as Date, "PPP", { locale: ptBR }) : <span>Selecione</span>}
-                      </Button>
-                    } />
-                    <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
-                      <Calendar mode="single" selected={editingVisit.date as Date} onSelect={(date) => setEditingVisit({...editingVisit, date})} initialFocus className="bg-[#1a1d23] text-white" />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="editScheduledTime" className="text-[#a0a0a0]">Hora Agendamento</Label>
-                  <Input id="editScheduledTime" type="time" value={editingVisit.scheduledTime || ''} onChange={e => setEditingVisit({...editingVisit, scheduledTime: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-[#a0a0a0]">Data Prevista Visita</Label>
-                  <Popover>
-                    <PopoverTrigger render={
-                      <Button variant="outline" className="w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white">
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {editingVisit.expectedDate ? format(editingVisit.expectedDate as Date, "PPP", { locale: ptBR }) : <span>Selecione</span>}
-                      </Button>
-                    } />
-                    <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
-                      <Calendar mode="single" selected={editingVisit.expectedDate as Date} onSelect={(date) => setEditingVisit({...editingVisit, expectedDate: date})} initialFocus className="bg-[#1a1d23] text-white" />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="editExpectedTime" className="text-[#a0a0a0]">Hora Prevista Visita</Label>
-                  <Input id="editExpectedTime" type="time" value={editingVisit.expectedTime || ''} onChange={e => setEditingVisit({...editingVisit, expectedTime: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-[#a0a0a0]">Status</Label>
-                  <Select value={editingVisit.status} onValueChange={(val: any) => setEditingVisit({...editingVisit, status: val})}>
-                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      <SelectItem value="Agendada">Agendada</SelectItem>
-                      <SelectItem value="Em Andamento">Em Andamento</SelectItem>
-                      <SelectItem value="Concluída">Concluída</SelectItem>
-                      <SelectItem value="Cancelada">Cancelada</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="editVal" className="text-[#a0a0a0]">Valor (R$)</Label>
-                  <Input id="editVal" type="number" value={editingVisit.totalValue || ''} onChange={e => setEditingVisit({...editingVisit, totalValue: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="editTechName" className="text-[#a0a0a0]">Nome do Técnico</Label>
-                <Input id="editTechName" value={editingVisit.technicianName || ''} onChange={e => setEditingVisit({...editingVisit, technicianName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="editObservations" className="text-[#a0a0a0]">Observações Internas / Adicionais</Label>
-                <Input id="editObservations" value={editingVisit.observations || ''} onChange={e => setEditingVisit({...editingVisit, observations: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-              </div>
-            </div>
-          )}
-          <DialogFooter>
+            )}
+          </div>
+          <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23]">
             <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
             <Button onClick={handleUpdateVisit} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Salvar Alterações</Button>
           </DialogFooter>
@@ -3732,104 +4246,106 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
               Novo Lançamento
             </Button>
           } />
-          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-            <DialogHeader>
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[500px]">
+            <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Novo Lançamento Financeiro</DialogTitle>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-[#a0a0a0]">Tipo</Label>
-                  <Select value={newRecord.type} onValueChange={(val: any) => setNewRecord({...newRecord, type: val})}>
-                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      <SelectItem value="Receita">Receita (+)</SelectItem>
-                      <SelectItem value="Despesa">Despesa (-)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="val" className="text-[#a0a0a0]">Valor (R$)</Label>
-                  <Input id="val" type="number" value={newRecord.value || ''} onChange={e => setNewRecord({...newRecord, value: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-              </div>
-
-              {newRecord.type === 'Receita' && (
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2">
+              <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label className="text-[#a0a0a0]">Cliente (Opcional)</Label>
-                    <Select value={newRecord.clientId} onValueChange={handleClientChange}>
-                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                        <SelectValue placeholder="Selecione um cliente">
-                          {clients.find(c => c.id === newRecord.clientId)?.name || 'Cliente Sem Nome'}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                        <div className="p-2 sticky top-0 bg-[#1a1d23] z-10 border-b border-[#2d3139]">
-                          <Input 
-                            placeholder="Pesquisar..." 
-                            value={clientSearch}
-                            onChange={(e) => setClientSearch(e.target.value)}
-                            className="h-8 text-xs bg-[#0f1115] border-[#2d3139]"
-                            onKeyDown={(e) => e.stopPropagation()}
-                          />
-                        </div>
-                        <ScrollArea className="h-[200px]">
-                          {filteredClientsForSelect.map(c => (
-                            <SelectItem key={c.id} value={c.id}>{c.name || 'Cliente Sem Nome'}</SelectItem>
-                          ))}
-                          {filteredClientsForSelect.length === 0 && (
-                            <div className="p-2 text-center text-xs text-[#71717a]">Nenhum cliente encontrado</div>
-                          )}
-                        </ScrollArea>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-[#a0a0a0]">Origem da Receita</Label>
-                    <Select value={newRecord.serviceType} onValueChange={(val: any) => setNewRecord({...newRecord, serviceType: val})}>
+                    <Label className="text-[#a0a0a0]">Tipo</Label>
+                    <Select value={newRecord.type} onValueChange={(val: any) => setNewRecord({...newRecord, type: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                        <SelectItem value="Serviço Normal">Serviço Normal</SelectItem>
-                        <SelectItem value="Contrato">Contrato</SelectItem>
+                        <SelectItem value="Receita">Receita (+)</SelectItem>
+                        <SelectItem value="Despesa">Despesa (-)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="val" className="text-[#a0a0a0]">Valor (R$)</Label>
+                    <Input id="val" type="number" value={newRecord.value || ''} onChange={e => setNewRecord({...newRecord, value: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
                 </div>
-              )}
 
-              <div className="space-y-2">
-                <Label htmlFor="desc" className="text-[#a0a0a0]">Descrição</Label>
-                <Input id="desc" value={newRecord.description || ''} onChange={e => setNewRecord({...newRecord, description: e.target.value})} placeholder="Ex: Pagamento Instalação CFTV" className="bg-[#0f1115] border-[#2d3139] text-white" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
+                {newRecord.type === 'Receita' && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-[#a0a0a0]">Cliente (Opcional)</Label>
+                      <Select value={newRecord.clientId} onValueChange={handleClientChange}>
+                        <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                          <SelectValue placeholder="Selecione um cliente">
+                            {clients.find(c => c.id === newRecord.clientId)?.name || 'Cliente Sem Nome'}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                          <div className="p-2 sticky top-0 bg-[#1a1d23] z-10 border-b border-[#2d3139]">
+                            <Input 
+                              placeholder="Pesquisar..." 
+                              value={clientSearch}
+                              onChange={(e) => setClientSearch(e.target.value)}
+                              className="h-8 text-xs bg-[#0f1115] border-[#2d3139]"
+                              onKeyDown={(e) => e.stopPropagation()}
+                            />
+                          </div>
+                          <ScrollArea className="h-[200px]">
+                            {filteredClientsForSelect.map(c => (
+                              <SelectItem key={c.id} value={c.id}>{c.name || 'Cliente Sem Nome'}</SelectItem>
+                            ))}
+                            {filteredClientsForSelect.length === 0 && (
+                              <div className="p-2 text-center text-xs text-[#71717a]">Nenhum cliente encontrado</div>
+                            )}
+                          </ScrollArea>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[#a0a0a0]">Origem da Receita</Label>
+                      <Select value={newRecord.serviceType} onValueChange={(val: any) => setNewRecord({...newRecord, serviceType: val})}>
+                        <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                          <SelectItem value="Serviço Normal">Serviço Normal</SelectItem>
+                          <SelectItem value="Contrato">Contrato</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-2">
-                  <Label htmlFor="cat" className="text-[#a0a0a0]">Categoria</Label>
-                  <Input id="cat" value={newRecord.category || ''} onChange={e => setNewRecord({...newRecord, category: e.target.value})} placeholder="Ex: Serviços, Equipamentos" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  <Label htmlFor="desc" className="text-[#a0a0a0]">Descrição</Label>
+                  <Input id="desc" value={newRecord.description || ''} onChange={e => setNewRecord({...newRecord, description: e.target.value})} placeholder="Ex: Pagamento Instalação CFTV" className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-[#a0a0a0]">Data</Label>
-                  <Popover>
-                    <PopoverTrigger render={
-                      <Button variant="outline" className="w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white">
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {newRecord.date ? format(newRecord.date, "dd/MM/yyyy") : <span>Selecione</span>}
-                      </Button>
-                    } />
-                    <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
-                      <Calendar mode="single" selected={newRecord.date} onSelect={(date) => setNewRecord({...newRecord, date})} initialFocus className="bg-[#1a1d23] text-white" />
-                    </PopoverContent>
-                  </Popover>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="cat" className="text-[#a0a0a0]">Categoria</Label>
+                    <Input id="cat" value={newRecord.category || ''} onChange={e => setNewRecord({...newRecord, category: e.target.value})} placeholder="Ex: Serviços, Equipamentos" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Data</Label>
+                    <Popover>
+                      <PopoverTrigger render={
+                        <Button variant="outline" className="w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white">
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {newRecord.date ? format(newRecord.date, "dd/MM/yyyy") : <span>Selecione</span>}
+                        </Button>
+                      } />
+                      <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
+                        <Calendar mode="single" selected={newRecord.date} onSelect={(date) => setNewRecord({...newRecord, date})} initialFocus className="bg-[#1a1d23] text-white" />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
                 </div>
               </div>
             </div>
-            <DialogFooter>
+            <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23]">
               <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
-              <Button onClick={handleAddRecord} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Salvar</Button>
+              <Button onClick={handleAddRecord} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Salvar Lançamento</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -3943,59 +4459,61 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
 
       {/* Edit Record Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-          <DialogHeader>
-            <DialogTitle className="text-white">Editar Lançamento</DialogTitle>
-          </DialogHeader>
-          {editingRecord && (
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-[#a0a0a0]">Tipo</Label>
-                  <Select value={editingRecord.type} onValueChange={(val: any) => setEditingRecord({...editingRecord, type: val})}>
-                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      <SelectItem value="Receita">Receita (+)</SelectItem>
-                      <SelectItem value="Despesa">Despesa (-)</SelectItem>
-                    </SelectContent>
-                  </Select>
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[500px]">
+            <DialogHeader className="p-6 pb-2 flex-shrink-0">
+              <DialogTitle className="text-white">Editar Lançamento</DialogTitle>
+            </DialogHeader>
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2">
+              {editingRecord && (
+                <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Tipo</Label>
+                    <Select value={editingRecord.type} onValueChange={(val: any) => setEditingRecord({...editingRecord, type: val})}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="Receita">Receita (+)</SelectItem>
+                        <SelectItem value="Despesa">Despesa (-)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-val" className="text-[#a0a0a0]">Valor (R$)</Label>
+                    <Input id="edit-val" type="number" value={editingRecord.value || ''} onChange={e => setEditingRecord({...editingRecord, value: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
                 </div>
+                
                 <div className="space-y-2">
-                  <Label htmlFor="edit-val" className="text-[#a0a0a0]">Valor (R$)</Label>
-                  <Input id="edit-val" type="number" value={editingRecord.value || ''} onChange={e => setEditingRecord({...editingRecord, value: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  <Label htmlFor="edit-desc" className="text-[#a0a0a0]">Descrição</Label>
+                  <Input id="edit-desc" value={editingRecord.description || ''} onChange={e => setEditingRecord({...editingRecord, description: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-cat" className="text-[#a0a0a0]">Categoria</Label>
+                    <Input id="edit-cat" value={editingRecord.category || ''} onChange={e => setEditingRecord({...editingRecord, category: e.target.value})} placeholder="Ex: Serviços, Equipamentos" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Data</Label>
+                    <Popover>
+                      <PopoverTrigger render={
+                        <Button variant="outline" className="w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white">
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {editingRecord.date ? format(editingRecord.date as Date, "dd/MM/yyyy") : <span>Selecione</span>}
+                        </Button>
+                      } />
+                      <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
+                        <Calendar mode="single" selected={editingRecord.date as Date} onSelect={(date) => setEditingRecord({...editingRecord, date})} initialFocus className="bg-[#1a1d23] text-white" />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
                 </div>
               </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="edit-desc" className="text-[#a0a0a0]">Descrição</Label>
-                <Input id="edit-desc" value={editingRecord.description || ''} onChange={e => setEditingRecord({...editingRecord, description: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-cat" className="text-[#a0a0a0]">Categoria</Label>
-                  <Input id="edit-cat" value={editingRecord.category || ''} onChange={e => setEditingRecord({...editingRecord, category: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-[#a0a0a0]">Data</Label>
-                  <Popover>
-                    <PopoverTrigger render={
-                      <Button variant="outline" className="w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white">
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {editingRecord.date ? format(editingRecord.date as Date, "dd/MM/yyyy") : <span>Selecione</span>}
-                      </Button>
-                    } />
-                    <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
-                      <Calendar mode="single" selected={editingRecord.date as Date} onSelect={(date) => setEditingRecord({...editingRecord, date})} initialFocus className="bg-[#1a1d23] text-white" />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
+            )}
+          </div>
+          <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23]">
             <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
             <Button onClick={handleUpdateRecord} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Salvar Alterações</Button>
           </DialogFooter>
@@ -4023,7 +4541,7 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
 
 // --- Budgets Manager Component ---
 
-function BudgetsManager({ budgets, clients, appSettings }: { budgets: Budget[], clients: Client[], appSettings: AppSettings }) {
+function BudgetsManager({ budgets, clients, appSettings, pixSettings }: { budgets: Budget[], clients: Client[], appSettings: AppSettings, pixSettings: PixSettings }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
   const [newBudget, setNewBudget] = useState<Partial<Budget>>({
@@ -4135,6 +4653,20 @@ function BudgetsManager({ budgets, clients, appSettings }: { budgets: Budget[], 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
     doc.text(`VALOR TOTAL: R$ ${budget.total.toFixed(2)}`, 190, finalY, { align: 'right' });
+
+    if (budget.pixAccountId) {
+      const selectedPix = pixSettings.accounts.find(a => a.id === budget.pixAccountId);
+      if (selectedPix) {
+        finalY += 10;
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Dados para Pagamento (PIX):', 20, finalY);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Chave: ${selectedPix.key} - Banco: ${selectedPix.bank}`, 20, finalY + 7);
+        doc.text(`Favorecido: ${selectedPix.favored}`, 20, finalY + 12);
+        finalY += 15;
+      }
+    }
     
     if (budget.observations) {
       finalY += 15;
@@ -4181,114 +4713,135 @@ function BudgetsManager({ budgets, clients, appSettings }: { budgets: Budget[], 
               Novo Orçamento
             </Button>
           } />
-          <DialogContent className="sm:max-w-[600px] bg-[#1a1d23] border-[#2d3139] text-white">
-            <DialogHeader>
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[700px]">
+            <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Novo Orçamento</DialogTitle>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0]">Selecionar Cliente Existente (Opcional)</Label>
-                <Select onValueChange={(clientId) => {
-                  const client = clients.find(c => c.id === clientId);
-                  if (client) {
-                    setNewBudget({
-                      ...newBudget,
-                      clientId: client.id,
-                      clientName: client.name || '',
-                      clientPhone: client.phone || '',
-                      address: client.address || ''
-                    });
-                  }
-                }}>
-                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                    <SelectValue placeholder="Escolha um cliente...">
-                      {clients.find(c => c.name === newBudget.clientName)?.name || newBudget.clientName || null}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                    <div className="p-2 sticky top-0 bg-[#1a1d23] z-10 border-b border-[#2d3139]">
-                      <Input 
-                        placeholder="Pesquisar..." 
-                        value={clientSearch}
-                        onChange={(e) => setClientSearch(e.target.value)}
-                        className="h-8 text-xs bg-[#0f1115] border-[#2d3139]"
-                        onKeyDown={(e) => e.stopPropagation()}
-                      />
-                    </div>
-                    <ScrollArea className="h-[200px]">
-                      {filteredClientsForSelect.map(c => (
-                        <SelectItem key={c.id} value={c.id}>{c.name || 'Cliente Sem Nome'}</SelectItem>
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2">
+              <div className="grid gap-4 py-4">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Selecionar Cliente Existente (Opcional)</Label>
+                  <Select onValueChange={(clientId) => {
+                    const client = clients.find(c => c.id === clientId);
+                    if (client) {
+                      setNewBudget({
+                        ...newBudget,
+                        clientId: client.id,
+                        clientName: client.name || '',
+                        clientPhone: client.phone || '',
+                        address: client.address || '',
+                        pixAccountId: client.pixAccountId
+                      });
+                    }
+                  }}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                      <SelectValue placeholder="Escolha um cliente...">
+                        {clients.find(c => c.name === newBudget.clientName)?.name || newBudget.clientName || null}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <div className="p-2 sticky top-0 bg-[#1a1d23] z-10 border-b border-[#2d3139]">
+                        <Input 
+                          placeholder="Pesquisar..." 
+                          value={clientSearch}
+                          onChange={(e) => setClientSearch(e.target.value)}
+                          className="h-8 text-xs bg-[#0f1115] border-[#2d3139]"
+                          onKeyDown={(e) => e.stopPropagation()}
+                        />
+                      </div>
+                      <ScrollArea className="h-[200px]">
+                        {filteredClientsForSelect.map(c => (
+                          <SelectItem key={c.id} value={c.id}>{c.name || 'Cliente Sem Nome'}</SelectItem>
+                        ))}
+                        {filteredClientsForSelect.length === 0 && (
+                          <div className="p-2 text-center text-xs text-[#71717a]">Nenhum cliente encontrado</div>
+                        )}
+                      </ScrollArea>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Separator className="bg-[#2d3139]" />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Cliente</Label>
+                    <Input value={newBudget.clientName || ''} onChange={e => setNewBudget({...newBudget, clientName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">WhatsApp/Celular</Label>
+                    <Input value={newBudget.clientPhone || ''} onChange={e => setNewBudget({...newBudget, clientPhone: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Endereço</Label>
+                  <Input value={newBudget.address || ''} onChange={e => setNewBudget({...newBudget, address: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Conta PIX (Para exibir no orçamento)</Label>
+                  <Select value={newBudget.pixAccountId} onValueChange={(val) => setNewBudget({...newBudget, pixAccountId: val})}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                      <SelectValue placeholder="Selecione a conta PIX" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      {pixSettings.accounts?.map(acc => (
+                        <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank})</SelectItem>
                       ))}
-                      {filteredClientsForSelect.length === 0 && (
-                        <div className="p-2 text-center text-xs text-[#71717a]">Nenhum cliente encontrado</div>
+                      {(!pixSettings.accounts || pixSettings.accounts.length === 0) && (
+                        <SelectItem value="none" disabled>Nenhuma conta cadastrada</SelectItem>
                       )}
-                    </ScrollArea>
-                  </SelectContent>
-                </Select>
-              </div>
-              <Separator className="bg-[#2d3139]" />
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-[#a0a0a0]">Cliente</Label>
-                  <Input value={newBudget.clientName || ''} onChange={e => setNewBudget({...newBudget, clientName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Separator className="bg-[#2d3139]" />
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-[#a0a0a0]">Itens do Orçamento</Label>
+                    <Button variant="outline" size="sm" onClick={handleAddItem} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Adicionar Item</Button>
+                  </div>
+                  <ScrollArea className="h-[200px] pr-4 border border-[#2d3139] rounded-md p-2 bg-[#0f1115]">
+                    {(newBudget.items || []).map((item, idx) => (
+                      <div key={idx} className="grid grid-cols-12 gap-2 mb-2 items-end">
+                        <div className="col-span-6">
+                          <Input placeholder="Descrição" value={item.description} onChange={e => {
+                            const items = [...(newBudget.items || [])];
+                            items[idx].description = e.target.value;
+                            setNewBudget({...newBudget, items});
+                          }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9" />
+                        </div>
+                        <div className="col-span-2">
+                          <Input type="number" placeholder="Qtd" value={item.quantity} onChange={e => {
+                            const items = [...(newBudget.items || [])];
+                            items[idx].quantity = Number(e.target.value);
+                            setNewBudget({...newBudget, items});
+                          }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9" />
+                        </div>
+                        <div className="col-span-3">
+                          <Input type="number" placeholder="Preço" value={item.price} onChange={e => {
+                            const items = [...(newBudget.items || [])];
+                            items[idx].price = Number(e.target.value);
+                            setNewBudget({...newBudget, items});
+                          }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9" />
+                        </div>
+                        <div className="col-span-1">
+                          <Button variant="ghost" size="icon" className="text-[#ef4444] hover:bg-[#ef4444]/10 h-9" onClick={() => {
+                            const items = (newBudget.items || []).filter((_, i) => i !== idx);
+                            setNewBudget({...newBudget, items});
+                          }}>
+                            <Trash2 size={14} />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </ScrollArea>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-[#a0a0a0]">WhatsApp/Celular</Label>
-                  <Input value={newBudget.clientPhone || ''} onChange={e => setNewBudget({...newBudget, clientPhone: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  <Label htmlFor="budgetObs" className="text-[#a0a0a0]">Observações do Orçamento</Label>
+                  <Input id="budgetObs" value={newBudget.observations || ''} onChange={e => setNewBudget({...newBudget, observations: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0]">Endereço</Label>
-                <Input value={newBudget.address || ''} onChange={e => setNewBudget({...newBudget, address: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
-              </div>
-              <Separator className="bg-[#2d3139]" />
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label className="text-[#a0a0a0]">Itens do Orçamento</Label>
-                  <Button variant="outline" size="sm" onClick={handleAddItem} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Adicionar Item</Button>
-                </div>
-                <ScrollArea className="h-[200px] pr-4">
-                  {(newBudget.items || []).map((item, idx) => (
-                    <div key={idx} className="grid grid-cols-12 gap-2 mb-2 items-end">
-                      <div className="col-span-6">
-                        <Input placeholder="Descrição" value={item.description} onChange={e => {
-                          const items = [...(newBudget.items || [])];
-                          items[idx].description = e.target.value;
-                          setNewBudget({...newBudget, items});
-                        }} className="bg-[#0f1115] border-[#2d3139] text-white" />
-                      </div>
-                      <div className="col-span-2">
-                        <Input type="number" placeholder="Qtd" value={item.quantity} onChange={e => {
-                          const items = [...(newBudget.items || [])];
-                          items[idx].quantity = Number(e.target.value);
-                          setNewBudget({...newBudget, items});
-                        }} className="bg-[#0f1115] border-[#2d3139] text-white" />
-                      </div>
-                      <div className="col-span-3">
-                        <Input type="number" placeholder="Preço" value={item.price} onChange={e => {
-                          const items = [...(newBudget.items || [])];
-                          items[idx].price = Number(e.target.value);
-                          setNewBudget({...newBudget, items});
-                        }} className="bg-[#0f1115] border-[#2d3139] text-white" />
-                      </div>
-                      <div className="col-span-1">
-                        <Button variant="ghost" size="icon" className="text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
-                          const items = (newBudget.items || []).filter((_, i) => i !== idx);
-                          setNewBudget({...newBudget, items});
-                        }}>
-                          <Trash2 size={14} />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </ScrollArea>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="budgetObs" className="text-[#a0a0a0]">Observações do Orçamento</Label>
-                <Input id="budgetObs" value={newBudget.observations || ''} onChange={e => setNewBudget({...newBudget, observations: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
               </div>
             </div>
-            <DialogFooter className="flex items-center justify-between sm:justify-between border-t border-[#2d3139] pt-4">
+            <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23] flex items-center justify-between sm:justify-between">
               <div className="text-lg font-bold text-white">
                 Total: R$ {(newBudget.items || []).reduce((acc, item) => acc + (item.quantity * item.price), 0).toFixed(2)}
               </div>
