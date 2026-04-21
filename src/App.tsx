@@ -427,8 +427,11 @@ const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettin
   doc.setFont('helvetica', 'bold');
   doc.text(appSettings.companyName || '', margin + 130, currentY + 10, { align: 'center' });
   doc.setFont('helvetica', 'normal');
-  if (appSettings.document) {
-    doc.text(appSettings.document, margin + 130, currentY + 15, { align: 'center' });
+  let companyDetails = [];
+  if (appSettings.document) companyDetails.push(appSettings.document);
+  if (appSettings.responsible) companyDetails.push(`Rep: ${appSettings.responsible}`);
+  if (companyDetails.length > 0) {
+    doc.text(companyDetails.join(' - '), margin + 130, currentY + 15, { align: 'center' });
   }
 
   doc.save(`contrato_${(client.name || 'cliente').replace(/\s/g, '_')}.pdf`);
