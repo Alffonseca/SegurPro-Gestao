@@ -306,7 +306,7 @@ const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettin
       if (m === 'PIX') {
         const selectedPix = pixSettings.accounts.find(a => a.id === client.pixAccountId) || pixSettings.accounts[0];
         if (selectedPix) {
-          return `PIX (Chave: ${selectedPix.key || 'N/A'}, Banco: ${selectedPix.bank || 'N/A'}, Favorecido: ${selectedPix.favored || 'N/A'})`;
+          return `PIX (Chave: ${selectedPix.key || 'N/A'}, Banco: ${selectedPix.bank || 'N/A'}, Favorecido: ${selectedPix.favored || 'N/A'}, CPF/CNPJ: ${selectedPix.document || 'N/A'})`;
         }
         return 'PIX';
       }
@@ -324,7 +324,7 @@ const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettin
   doc.text(splitPagamento, margin, currentY);
   currentY += (splitPagamento.length * 6) + 2;
 
-  const dataPagamento = `Data do pagamento: ${client.paymentDay || 'Conforme acordado mensalmente'}.`;
+  const dataPagamento = `Data do pagamento: todo dia ${client.paymentDay || '[dia]'} de cada mês.`;
   doc.text(dataPagamento, margin, currentY);
   currentY += 12;
 
@@ -367,7 +367,7 @@ const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettin
   doc.text('8. OBRIGAÇÕES DO CONTRATANTE', margin, currentY);
   currentY += 7;
   doc.setFont('helvetica', 'normal');
-  const obrContratante = 'Garantir o livre acesso do técnico ao local, bem como designar um representante local para acompanhar a execução dos serviços e assinar os comprovantes de atendimento.';
+  const obrContratante = 'Garantir livre acesso ao tecnico ao local e estrutura necessaria, assim como se possivel fornecer um responsavel no local para acompanhar os serviços e ter conhecimento do que foi realizado o qual o tecnico ira se reportar e dará finalização do chamado.';
   const splitObrK = doc.splitTextToSize(obrContratante, contentWidth);
   doc.text(splitObrK, margin, currentY);
   currentY += (splitObrK.length * 6) + 10;
@@ -378,7 +378,7 @@ const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettin
   doc.text('9. RESCISÃO', margin, currentY);
   currentY += 7;
   doc.setFont('helvetica', 'normal');
-  const rescisaoText = 'Em caso de desistência após o início dos trabalhos, a parte que der causa pagará multa de 20% sobre o valor restante do contrato.';
+  const rescisaoText = 'Em caso de desistência após o início dos trabalhos antes de 90 dias corridos o contratante pagará multa de 20% sobre o valor restante do contrato.';
   const splitRescisao = doc.splitTextToSize(rescisaoText, contentWidth);
   doc.text(splitRescisao, margin, currentY);
   currentY += (splitRescisao.length * 6) + 10;
@@ -413,10 +413,23 @@ const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettin
   
   doc.setFontSize(9);
   doc.text('CONTRATANTE', margin + 40, currentY + 5, { align: 'center' });
+  doc.setFont('helvetica', 'bold');
   doc.text(client.name || '', margin + 40, currentY + 10, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  let clientDetails = [];
+  if (client.document) clientDetails.push(client.document);
+  if (client.responsible) clientDetails.push(`Rep: ${client.responsible}`);
+  if (clientDetails.length > 0) {
+    doc.text(clientDetails.join(' - '), margin + 40, currentY + 15, { align: 'center' });
+  }
   
   doc.text('CONTRATADO', margin + 130, currentY + 5, { align: 'center' });
+  doc.setFont('helvetica', 'bold');
   doc.text(appSettings.companyName || '', margin + 130, currentY + 10, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  if (appSettings.document) {
+    doc.text(appSettings.document, margin + 130, currentY + 15, { align: 'center' });
+  }
 
   doc.save(`contrato_${(client.name || 'cliente').replace(/\s/g, '_')}.pdf`);
 };
@@ -437,6 +450,7 @@ interface TechnicalVisit {
   observations?: string;
   technicianId: string;
   technicianName: string;
+  responsibleName?: string;
   totalValue: number;
   createdAt: any;
   number?: number;
@@ -1594,31 +1608,18 @@ function UsersManager({ users }: { users: any[] }) {
         <Table>
           <TableHeader className="bg-[#25282e]/50">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">Ações</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Usuário</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">E-mail</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Nível</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data Cadastro</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {users.map((u) => (
               <TableRow key={u.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
-                <TableCell className="font-medium text-white text-[13px]">{u.displayName}</TableCell>
-                <TableCell className="text-[12px] text-[#e0e0e0]">{u.email}</TableCell>
                 <TableCell>
-                  <Badge className={cn(
-                    "font-normal text-[10px] uppercase tracking-wider",
-                    u.role === 'admin' ? "bg-purple-500/10 text-purple-500" : "bg-blue-500/10 text-blue-500"
-                  )}>
-                    {u.role === 'admin' ? 'Administrador' : 'Técnico'}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-[12px] text-[#71717a]">
-                  {u.createdAt ? format(u.createdAt instanceof Timestamp ? u.createdAt.toDate() : new Date(u.createdAt), 'dd/MM/yyyy') : '-'}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
+                  <div className="flex gap-2">
                     <Button 
                       variant="outline" 
                       size="icon" 
@@ -1642,6 +1643,19 @@ function UsersManager({ users }: { users: any[] }) {
                       <Trash2 size={14} />
                     </Button>
                   </div>
+                </TableCell>
+                <TableCell className="font-medium text-white text-[13px]">{u.displayName}</TableCell>
+                <TableCell className="text-[12px] text-[#e0e0e0]">{u.email}</TableCell>
+                <TableCell>
+                  <Badge className={cn(
+                    "font-normal text-[10px] uppercase tracking-wider",
+                    u.role === 'admin' ? "bg-purple-500/10 text-purple-500" : "bg-blue-500/10 text-blue-500"
+                  )}>
+                    {u.role === 'admin' ? 'Administrador' : 'Técnico'}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-[12px] text-[#71717a]">
+                  {u.createdAt ? format(u.createdAt instanceof Timestamp ? u.createdAt.toDate() : new Date(u.createdAt), 'dd/MM/yyyy') : '-'}
                 </TableCell>
               </TableRow>
             ))}
@@ -1756,7 +1770,9 @@ const SERVICE_OBJECTS = [
   "Instalação/Configuração/Manutenção de Redes Wifi Local.",
   "Instalação/Configuração/Manutenção de Sistemas de Alarmes.",
   "Instalação/Configuração/Manutenção de Cerca Eletrica.",
-  "Instalação/Configuração/Manutenção de motores de Portão e Fechaduras Eletricas."
+  "Instalação/Configuração/Manutenção de motores de Portão e Fechaduras Eletricas.",
+  "Instalação/Configuração/Manutenção de Portaria GSM",
+  "Instalação/Configuração/Manutenção de Centrais Telefonicas."
 ];
 
 const PAYMENT_METHODS = [
@@ -1987,24 +2003,51 @@ function ClientsManager({ clients, appSettings, pixSettings }: { clients: Client
                 </div>
                 {newClient.type === 'Contrato' && (
                   <div className="space-y-4 pt-2 border-t border-[#2d3139]">
-                    <Label className="text-white font-semibold">Itens do Objeto do Contrato</Label>
-                    <div className="grid grid-cols-1 gap-3">
-                      {SERVICE_OBJECTS.map((obj) => (
-                        <div key={obj} className="flex items-center space-x-3 bg-[#0f1115] p-2 rounded-md border border-[#2d3139]">
-                          <Checkbox 
-                            id={`new-${obj}`} 
-                            checked={(newClient.serviceObjects || []).includes(obj)}
-                            onCheckedChange={() => handleToggleObject(obj, true)}
-                            className="border-[#3b82f6] data-[state=checked]:bg-[#3b82f6]"
-                          />
-                          <Label 
-                            htmlFor={`new-${obj}`}
-                            className="text-xs text-[#a0a0a0] leading-tight cursor-pointer flex-1"
-                          >
+                    <div className="flex items-center justify-between">
+                      <Label className="text-white font-semibold">Itens do Objeto do Contrato</Label>
+                      <Popover>
+                      <PopoverTrigger render={
+                        <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#a0a0a0] hover:text-white">
+                          Selecionar Objetos ({newClient.serviceObjects?.length || 0})
+                        </Button>
+                      } />
+                        <PopoverContent className="w-[300px] bg-[#1a1d23] border-[#2d3139] p-3 text-white shadow-xl" align="end">
+                          <div className="space-y-3">
+                            <p className="text-[11px] text-[#71717a] font-medium uppercase tracking-wider">Itens Disponíveis</p>
+                            <div className="grid grid-cols-1 gap-2 max-h-[250px] overflow-y-auto pr-1">
+                              {SERVICE_OBJECTS.map((obj) => (
+                                <div key={obj} className="flex items-center space-x-3 bg-[#0f1115] p-2 rounded-md border border-[#2d3139] hover:border-[#3b82f6]/50 transition-colors">
+                                  <Checkbox 
+                                    id={`new-${obj}`} 
+                                    checked={(newClient.serviceObjects || []).includes(obj)}
+                                    onCheckedChange={() => handleToggleObject(obj, true)}
+                                    className="border-[#3b82f6] data-[state=checked]:bg-[#3b82f6]"
+                                  />
+                                  <Label 
+                                    htmlFor={`new-${obj}`}
+                                    className="text-xs text-[#a0a0a0] leading-tight cursor-pointer flex-1"
+                                  >
+                                    {obj}
+                                  </Label>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+
+                    {/* Resumo dos itens selecionados */}
+                    <div className="flex flex-wrap gap-1.5 min-h-[32px] p-2 bg-[#0f1115] rounded-md border border-[#2d3139] border-dashed">
+                      {(newClient.serviceObjects || []).length > 0 ? (
+                        (newClient.serviceObjects || []).map(obj => (
+                          <Badge key={obj} variant="outline" className="text-[10px] bg-[#3b82f6]/10 text-[#3b82f6] border-[#3b82f6]/20 py-0 h-5 max-w-[200px] truncate">
                             {obj}
-                          </Label>
-                        </div>
-                      ))}
+                          </Badge>
+                        ))
+                      ) : (
+                        <span className="text-[11px] text-[#71717a]">Nenhum objeto selecionado</span>
+                      )}
                     </div>
                     
                     <div className="space-y-4 pt-2 border-t border-[#2d3139]">
@@ -2164,24 +2207,51 @@ function ClientsManager({ clients, appSettings, pixSettings }: { clients: Client
                 )}
                 {editingClient.type === 'Contrato' && (
                   <div className="space-y-4 pt-2 border-t border-[#2d3139]">
-                    <Label className="text-white font-semibold">Itens do Objeto do Contrato</Label>
-                    <div className="grid grid-cols-1 gap-3">
-                      {SERVICE_OBJECTS.map((obj) => (
-                        <div key={obj} className="flex items-center space-x-3 bg-[#0f1115] p-2 rounded-md border border-[#2d3139]">
-                          <Checkbox 
-                            id={`edit-${obj}`} 
-                            checked={(editingClient.serviceObjects || []).includes(obj)}
-                            onCheckedChange={() => handleToggleObject(obj, false)}
-                            className="border-[#3b82f6] data-[state=checked]:bg-[#3b82f6]"
-                          />
-                          <Label 
-                            htmlFor={`edit-${obj}`}
-                            className="text-xs text-[#a0a0a0] leading-tight cursor-pointer flex-1"
-                          >
+                    <div className="flex items-center justify-between">
+                      <Label className="text-white font-semibold">Itens do Objeto do Contrato</Label>
+                      <Popover>
+                      <PopoverTrigger render={
+                        <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#a0a0a0] hover:text-white">
+                          Selecionar Objetos ({editingClient.serviceObjects?.length || 0})
+                        </Button>
+                      } />
+                        <PopoverContent className="w-[300px] bg-[#1a1d23] border-[#2d3139] p-3 text-white shadow-xl" align="end">
+                          <div className="space-y-3">
+                            <p className="text-[11px] text-[#71717a] font-medium uppercase tracking-wider">Itens Disponíveis</p>
+                            <div className="grid grid-cols-1 gap-2 max-h-[250px] overflow-y-auto pr-1">
+                              {SERVICE_OBJECTS.map((obj) => (
+                                <div key={obj} className="flex items-center space-x-3 bg-[#0f1115] p-2 rounded-md border border-[#2d3139] hover:border-[#3b82f6]/50 transition-colors">
+                                  <Checkbox 
+                                    id={`edit-${obj}`} 
+                                    checked={(editingClient.serviceObjects || []).includes(obj)}
+                                    onCheckedChange={() => handleToggleObject(obj, false)}
+                                    className="border-[#3b82f6] data-[state=checked]:bg-[#3b82f6]"
+                                  />
+                                  <Label 
+                                    htmlFor={`edit-${obj}`}
+                                    className="text-xs text-[#a0a0a0] leading-tight cursor-pointer flex-1"
+                                  >
+                                    {obj}
+                                  </Label>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+
+                    {/* Resumo dos itens selecionados */}
+                    <div className="flex flex-wrap gap-1.5 min-h-[32px] p-2 bg-[#0f1115] rounded-md border border-[#2d3139] border-dashed">
+                      {(editingClient.serviceObjects || []).length > 0 ? (
+                        (editingClient.serviceObjects || []).map(obj => (
+                          <Badge key={obj} variant="outline" className="text-[10px] bg-[#3b82f6]/10 text-[#3b82f6] border-[#3b82f6]/20 py-0 h-5 max-w-[200px] truncate">
                             {obj}
-                          </Label>
-                        </div>
-                      ))}
+                          </Badge>
+                        ))
+                      ) : (
+                        <span className="text-[11px] text-[#71717a]">Nenhum objeto selecionado</span>
+                      )}
                     </div>
   
                     <div className="space-y-4 pt-2 border-t border-[#2d3139]">
@@ -2231,40 +2301,17 @@ function ClientsManager({ clients, appSettings, pixSettings }: { clients: Client
         <Table>
           <TableHeader className="bg-[#25282e]/50">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">Ações</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Nome / Tipo</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Contato</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Contrato / Serviço</TableHead>
-              <TableHead className="text-right text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredClients.map((client) => (
               <TableRow key={client.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
                 <TableCell>
-                  <div className="font-medium text-white text-[13px]">{client.name || 'Cliente Sem Nome'}</div>
-                  <Badge variant="outline" className={cn(
-                    "mt-1 text-[10px] h-5",
-                    client.type === 'Contrato' ? "border-[#10b981] text-[#10b981]" : "border-[#71717a] text-[#71717a]"
-                  )}>
-                    {client.type || 'Avulso'}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <div className="text-[12px] text-[#e0e0e0]">{client.email || 'N/A'}</div>
-                  <div className="text-[11px] text-[#71717a]">{client.phone || 'N/A'}</div>
-                </TableCell>
-                <TableCell>
-                  {client.type === 'Contrato' ? (
-                    <>
-                      <div className="text-[12px] text-[#10b981] font-medium">R$ {(client.contractValue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/mês</div>
-                      <div className="text-[11px] text-[#71717a] max-w-[200px] truncate">{client.serviceSpecification || 'Sem especificação'}</div>
-                    </>
-                  ) : (
-                    <div className="text-[12px] text-[#71717a]">Serviços Avulsos</div>
-                  )}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
+                  <div className="flex gap-2">
                     {client.type === 'Contrato' && (
                       <Button 
                         variant="outline" 
@@ -2289,6 +2336,35 @@ function ClientsManager({ clients, appSettings, pixSettings }: { clients: Client
                       <Trash2 size={14} />
                     </Button>
                   </div>
+                </TableCell>
+                <TableCell>
+                  <div className="font-medium text-white text-[13px]">{client.name || 'Cliente Sem Nome'}</div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Badge variant="outline" className={cn(
+                      "text-[10px] h-5",
+                      client.type === 'Contrato' ? "border-[#10b981] text-[#10b981]" : "border-[#71717a] text-[#71717a]"
+                    )}>
+                      {client.type || 'Avulso'}
+                    </Badge>
+                    {client.type === 'Contrato' && client.contractValue && (
+                      <span className="text-[11px] text-[#10b981] font-medium">R$ {client.contractValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="text-[12px] text-white font-medium">{client.responsible || 'Sem Resp'}</div>
+                  <div className="text-[11px] text-[#e0e0e0]">{client.phone || 'N/A'}</div>
+                  <div className="text-[10px] text-[#71717a]">{client.email || 'N/A'}</div>
+                </TableCell>
+                <TableCell>
+                  {client.type === 'Contrato' ? (
+                    <>
+                      <div className="text-[12px] text-[#10b981] font-medium">R$ {(client.contractValue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/mês</div>
+                      <div className="text-[11px] text-[#71717a] max-w-[200px] truncate">{client.serviceSpecification || 'Sem especificação'}</div>
+                    </>
+                  ) : (
+                    <div className="text-[12px] text-[#71717a]">Serviços Avulsos</div>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -2730,28 +2806,18 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
         <Table>
           <TableHeader className="bg-[#25282e]/50">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[140px]">Ações</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Cliente</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Serviço</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Valor</TableHead>
-              <TableHead className="text-right text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {receipts.map((receipt) => (
               <TableRow key={receipt.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
-                <TableCell className="text-[12px] text-[#e0e0e0]">
-                  {format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), 'dd/MM/yyyy')}
-                </TableCell>
-                <TableCell className="font-medium text-white text-[13px]">{receipt.clientName}</TableCell>
-                <TableCell className="text-[12px] text-[#71717a] max-w-[200px] truncate">
-                  {receipt.serviceSpecification || 'N/A'}
-                </TableCell>
-                <TableCell className="text-[12px] text-[#10b981] font-medium">
-                  R$ {Number(receipt.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
+                <TableCell>
+                  <div className="flex gap-2">
                     <Button variant="outline" size="icon" title="Baixar PDF" className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => generateReceiptPDF(receipt, appSettings, pixSettings)}>
                       <Download size={14} />
                     </Button>
@@ -2771,6 +2837,16 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
                       <Trash2 size={14} />
                     </Button>
                   </div>
+                </TableCell>
+                <TableCell className="text-[12px] text-[#e0e0e0]">
+                  {format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), 'dd/MM/yyyy')}
+                </TableCell>
+                <TableCell className="font-medium text-white text-[13px]">{receipt.clientName}</TableCell>
+                <TableCell className="text-[12px] text-[#71717a] max-w-[200px] truncate">
+                  {receipt.serviceSpecification || 'N/A'}
+                </TableCell>
+                <TableCell className="text-[12px] text-[#10b981] font-medium">
+                  R$ {Number(receipt.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                 </TableCell>
               </TableRow>
             ))}
@@ -3427,6 +3503,7 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
     expectedDate: new Date(),
     expectedTime: '',
     technicianName: user.displayName || '',
+    responsibleName: '',
     totalValue: 0
   });
 
@@ -3594,17 +3671,18 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
     doc.text(`Cliente: ${visit.clientName}`, 20, currentLineY + 23);
     doc.text(`Endereço: ${visit.address}`, 20, currentLineY + 30);
     doc.text(`Telefone: ${visit.clientPhone || 'N/A'}`, 20, currentLineY + 37);
+    doc.text(`Responsável no Local: ${visit.responsibleName || 'N/A'}`, 20, currentLineY + 44);
     
-    doc.line(20, currentLineY + 43, 190, currentLineY + 43);
+    doc.line(20, currentLineY + 50, 190, currentLineY + 50);
     
     // Service Info
     doc.setFont('helvetica', 'bold');
-    doc.text('DETALHES DO SERVIÇO', 20, currentLineY + 50);
+    doc.text('DETALHES DO SERVIÇO', 20, currentLineY + 57);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Tipo de Sistema: ${visit.type}`, 20, currentLineY + 57);
-    doc.text(`Status: ${visit.status}`, 20, currentLineY + 64);
+    doc.text(`Tipo de Sistema: ${visit.type}`, 20, currentLineY + 64);
+    doc.text(`Status: ${visit.status}`, 20, currentLineY + 71);
     
-    doc.text('Descrição do Serviço/Problema:', 20, currentLineY + 74);
+    doc.text('Descrição do Serviço/Problema:', 20, currentLineY + 81);
     const splitDesc = doc.splitTextToSize(visit.description || 'N/A', 170);
     doc.text(splitDesc, 20, currentLineY + 81);
     
@@ -3642,7 +3720,7 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
     // Client Signature
     doc.line(120, signatureY, 185, signatureY);
     doc.text('Assinatura do Cliente', 152.5, signatureY + 5, { align: 'center' });
-    doc.text(visit.clientName, 152.5, signatureY + 10, { align: 'center' });
+    doc.text(visit.responsibleName || visit.clientName, 152.5, signatureY + 10, { align: 'center' });
     
     doc.save(`visita_${visit.clientName.replace(/\s/g, '_')}.pdf`);
   };
@@ -3678,7 +3756,8 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
                         clientId: client.id,
                         clientName: client.name,
                         clientPhone: client.phone,
-                        address: client.address
+                        address: client.address,
+                        responsibleName: client.responsible || ''
                       });
                     }
                   }}>
@@ -3794,9 +3873,13 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
                     <Input id="techName" value={newVisit.technicianName || ''} onChange={e => setNewVisit({...newVisit, technicianName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="val" className="text-[#a0a0a0]">Valor Estimado (R$)</Label>
-                    <Input id="val" type="number" value={newVisit.totalValue || ''} onChange={e => setNewVisit({...newVisit, totalValue: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    <Label htmlFor="responsibleName" className="text-[#a0a0a0]">Responsável no Local</Label>
+                    <Input id="responsibleName" value={newVisit.responsibleName || ''} onChange={e => setNewVisit({...newVisit, responsibleName: e.target.value})} placeholder="Nome de quem acompanhará" className="bg-[#0f1115] border-[#2d3139] text-white" />
                   </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="val" className="text-[#a0a0a0]">Valor Estimado (R$)</Label>
+                  <Input id="val" type="number" value={newVisit.totalValue || ''} onChange={e => setNewVisit({...newVisit, totalValue: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
               </div>
             </div>
@@ -3812,31 +3895,58 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
         <Table>
           <TableHeader className="bg-[#25282e]/50">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[140px]">Ações</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[60px]">Nº</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Cliente</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Agendamento</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Serviço</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Status</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Serviço</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Agendamento</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Valor</TableHead>
-              <TableHead className="text-right text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {visits.map((visit) => (
               <TableRow key={visit.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
+                <TableCell>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="icon" title="Ver Detalhes" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
+                      setViewingVisit({
+                        ...visit,
+                        date: visit.date instanceof Timestamp ? visit.date.toDate() : (visit.date ? new Date(visit.date) : new Date()),
+                        expectedDate: visit.expectedDate ? (visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate)) : (visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date)),
+                        createdAt: visit.createdAt instanceof Timestamp ? visit.createdAt.toDate() : (visit.createdAt ? new Date(visit.createdAt) : null)
+                      });
+                      setIsViewOpen(true);
+                    }}>
+                      <Eye size={14} />
+                    </Button>
+                    <Button variant="outline" size="icon" title="Editar" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
+                      setEditingVisit({
+                        ...visit,
+                        date: visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date),
+                        expectedDate: visit.expectedDate ? (visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate)) : (visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date))
+                      });
+                      setIsEditOpen(true);
+                    }}>
+                      <Pencil size={14} />
+                    </Button>
+                    <Button variant="outline" size="icon" title="Gerar PDF" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => generateVisitPDF(visit)}>
+                      <Share2 size={14} />
+                    </Button>
+                    <Button variant="outline" size="icon" title="Excluir" className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
+                      setVisitToDelete(visit);
+                      setIsDeleteConfirmOpen(true);
+                    }}>
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
+                </TableCell>
                 <TableCell className="text-[12px] font-mono text-[#3b82f6] whitespace-nowrap">
                   {formatRecordNumber(visit.number, visit.date)}
                 </TableCell>
                 <TableCell>
                   <div className="font-medium text-white text-[13px]">{visit.clientName}</div>
                   <div className="text-[11px] text-[#71717a]">{visit.clientPhone}</div>
-                </TableCell>
-                <TableCell className="text-[12px] text-[#e0e0e0]">
-                  <div>{format(visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date), 'dd/MM/yyyy')}</div>
-                  {visit.scheduledTime && <div className="text-[10px] text-[#71717a]">{visit.scheduledTime}</div>}
-                </TableCell>
-                <TableCell>
-                  <Badge className="bg-[#2d3139] text-[#e0e0e0] font-normal text-[10px] uppercase tracking-wider">{visit.type}</Badge>
                 </TableCell>
                 <TableCell>
                   <Select 
@@ -3854,42 +3964,15 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
                     </SelectContent>
                   </Select>
                 </TableCell>
+                <TableCell>
+                  <Badge className="bg-[#2d3139] text-[#e0e0e0] font-normal text-[10px] uppercase tracking-wider">{visit.type}</Badge>
+                </TableCell>
+                <TableCell className="text-[12px] text-[#e0e0e0]">
+                  <div>{format(visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date), 'dd/MM/yyyy')}</div>
+                  {visit.scheduledTime && <div className="text-[10px] text-[#71717a]">{visit.scheduledTime}</div>}
+                </TableCell>
                 <TableCell className="text-[12px] font-semibold text-white">
                   R$ {visit.totalValue.toFixed(2)}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
-                      setViewingVisit({
-                        ...visit,
-                        date: visit.date instanceof Timestamp ? visit.date.toDate() : (visit.date ? new Date(visit.date) : new Date()),
-                        expectedDate: visit.expectedDate ? (visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate)) : (visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date)),
-                        createdAt: visit.createdAt instanceof Timestamp ? visit.createdAt.toDate() : (visit.createdAt ? new Date(visit.createdAt) : null)
-                      });
-                      setIsViewOpen(true);
-                    }}>
-                      <Eye size={14} />
-                    </Button>
-                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
-                      setEditingVisit({
-                        ...visit,
-                        date: visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date),
-                        expectedDate: visit.expectedDate ? (visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate)) : (visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date))
-                      });
-                      setIsEditOpen(true);
-                    }}>
-                      <Pencil size={14} />
-                    </Button>
-                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => generateVisitPDF(visit)}>
-                      <Share2 size={14} />
-                    </Button>
-                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
-                      setVisitToDelete(visit);
-                      setIsDeleteConfirmOpen(true);
-                    }}>
-                      <Trash2 size={14} />
-                    </Button>
-                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -4120,9 +4203,15 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
                     <Input id="editVal" type="number" value={editingVisit.totalValue || ''} onChange={e => setEditingVisit({...editingVisit, totalValue: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="editTechName" className="text-[#a0a0a0]">Nome do Técnico</Label>
-                  <Input id="editTechName" value={editingVisit.technicianName || ''} onChange={e => setEditingVisit({...editingVisit, technicianName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="editTechName" className="text-[#a0a0a0]">Nome do Técnico</Label>
+                    <Input id="editTechName" value={editingVisit.technicianName || ''} onChange={e => setEditingVisit({...editingVisit, technicianName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="editResponsibleName" className="text-[#a0a0a0]">Responsável no Local</Label>
+                    <Input id="editResponsibleName" value={editingVisit.responsibleName || ''} onChange={e => setEditingVisit({...editingVisit, responsibleName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="editObservations" className="text-[#a0a0a0]">Observações Internas / Adicionais</Label>
@@ -4382,18 +4471,37 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
         <Table>
           <TableHeader className="bg-[#25282e]/50">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">Ações</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Descrição</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Origem</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Categoria</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Tipo</TableHead>
               <TableHead className="text-right text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Valor</TableHead>
-              <TableHead className="text-right text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {financials.map((record) => (
               <TableRow key={record.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
+                <TableCell>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="icon" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
+                      setEditingRecord({
+                        ...record,
+                        date: record.date instanceof Timestamp ? record.date.toDate() : new Date(record.date)
+                      });
+                      setIsEditOpen(true);
+                    }}>
+                      <Pencil size={12} />
+                    </Button>
+                    <Button variant="outline" size="icon" className="h-7 w-7 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
+                      setRecordToDelete(record);
+                      setIsDeleteConfirmOpen(true);
+                    }}>
+                      <Trash2 size={12} />
+                    </Button>
+                  </div>
+                </TableCell>
                 <TableCell className="text-[12px] text-[#e0e0e0]">
                   {format(record.date instanceof Timestamp ? record.date.toDate() : new Date(record.date), 'dd/MM/yyyy')}
                 </TableCell>
@@ -4424,25 +4532,6 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
                   record.type === 'Receita' ? "text-[#10b981]" : "text-[#ef4444]"
                 )}>
                   {record.type === 'Receita' ? '+' : '-'} R$ {record.value.toFixed(2)}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" size="icon" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
-                      setEditingRecord({
-                        ...record,
-                        date: record.date instanceof Timestamp ? record.date.toDate() : new Date(record.date)
-                      });
-                      setIsEditOpen(true);
-                    }}>
-                      <Pencil size={12} />
-                    </Button>
-                    <Button variant="outline" size="icon" className="h-7 w-7 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
-                      setRecordToDelete(record);
-                      setIsDeleteConfirmOpen(true);
-                    }}>
-                      <Trash2 size={12} />
-                    </Button>
-                  </div>
                 </TableCell>
               </TableRow>
             ))}
