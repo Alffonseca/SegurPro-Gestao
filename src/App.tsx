@@ -1196,11 +1196,15 @@ export default function App() {
       
       {/* Sidebar - Desktop */}
       <aside className="hidden md:flex w-[240px] flex-col border-r border-[#2d3139] bg-[#1a1d23]">
-        <div className="flex h-20 items-center px-8">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#3b82f6] text-white">
-              <CheckCircle2 size={18} />
-            </div>
+        <div className="flex h-20 items-center px-8 border-b border-[#2d3139]/30">
+          <div className="flex items-center gap-3">
+            {appSettings.logoUrl ? (
+              <img src={appSettings.logoUrl} alt="Logo" className="h-10 w-auto object-contain max-w-[40px]" referrerPolicy="no-referrer" />
+            ) : (
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#3b82f6] text-white">
+                <CheckCircle2 size={18} />
+              </div>
+            )}
             <span className="font-bold tracking-wider text-white text-lg uppercase">SegurPro</span>
           </div>
         </div>
@@ -1294,10 +1298,14 @@ export default function App() {
 
       {/* Mobile Header */}
       <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-[#1a1d23] border-b border-[#2d3139] flex items-center justify-between px-4 z-50">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#3b82f6] text-white">
-            <CheckCircle2 size={18} />
-          </div>
+        <div className="flex items-center gap-3">
+          {appSettings.logoUrl ? (
+            <img src={appSettings.logoUrl} alt="Logo" className="h-8 w-auto object-contain max-w-[32px]" referrerPolicy="no-referrer" />
+          ) : (
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#3b82f6] text-white">
+              <CheckCircle2 size={18} />
+            </div>
+          )}
           <span className="font-bold tracking-tight text-white">SegurPro</span>
         </div>
         <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="text-white">
