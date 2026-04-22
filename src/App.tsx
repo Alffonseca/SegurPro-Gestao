@@ -35,6 +35,8 @@ import {
   deleteDoc, 
   query, 
   orderBy, 
+  where,
+  getDocs,
   Timestamp,
   setDoc,
   getDoc,
@@ -464,10 +466,12 @@ interface FinancialRecord {
   type: 'Receita' | 'Despesa';
   category: string;
   description: string;
+  origin?: string;
   value: number;
   date: any;
   visitId?: string;
   clientId?: string;
+  receiptId?: string;
   serviceType?: 'Contrato' | 'Serviço Normal';
   createdAt?: any;
 }
@@ -510,10 +514,12 @@ interface Client {
 
 interface Receipt {
   id: string;
+  number?: number;
   clientId?: string;
   visitId?: string;
   clientName: string;
   clientType?: 'Avulso' | 'Contrato';
+  status: 'Aguardando Pagamento' | 'Recebido';
   serviceSpecification: string;
   value: number;
   referenceMonth?: string;
@@ -1287,16 +1293,16 @@ export default function App() {
       </aside>
 
       {/* Mobile Header */}
-      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-[#1a1d23] border-b border-[#2d3139] flex items-center justify-between px-4 z-50">
+      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-[#1a1d23] border-b border-[#2d3139] flex items-center justify-center px-4 z-50">
+        <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="text-white absolute left-4">
+          {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+        </Button>
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#3b82f6] text-white">
             <CheckCircle2 size={18} />
           </div>
           <span className="font-bold tracking-tight text-white">SegurPro</span>
         </div>
-        <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="text-white">
-          {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-        </Button>
       </div>
 
       {/* Mobile Menu Overlay */}
@@ -1365,21 +1371,12 @@ export default function App() {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col pt-16 md:pt-0 overflow-hidden">
-        <header className="hidden md:flex h-20 items-center justify-between px-10 border-b border-[#2d3139] bg-[#1a1d23]">
-          <div>
+        <header className="hidden md:flex h-20 items-center justify-center px-10 border-b border-[#2d3139] bg-[#1a1d23]">
+          <div className="text-center">
             <p className="text-[11px] text-[#71717a] uppercase tracking-widest mb-1">
               {format(new Date(), "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })}
             </p>
             <h2 className="text-2xl font-medium text-white capitalize">{activeTab === 'dashboard' ? 'Resumo Operacional' : activeTab.replace('-', ' ')}</h2>
-          </div>
-          <div className="flex items-center gap-6">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#71717a]" size={16} />
-              <Input className="pl-9 w-64 bg-[#0f1115] border-[#2d3139] text-white focus:ring-[#3b82f6] transition-all" placeholder="Pesquisar..." />
-            </div>
-            <Button className="bg-[#3b82f6] hover:bg-[#2563eb] text-white h-9 px-4 text-xs font-semibold">
-              <Plus size={16} className="mr-1" /> Nova Visita
-            </Button>
           </div>
         </header>
 
@@ -2090,7 +2087,11 @@ function ClientsManager({ clients, appSettings, pixSettings }: { clients: Client
                         <Label className="text-[#a0a0a0]">Conta PIX Preferencial</Label>
                         <Select value={newClient.pixAccountId} onValueChange={(val) => setNewClient({...newClient, pixAccountId: val})}>
                           <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                            <SelectValue placeholder="Selecione a conta PIX" />
+                            <SelectValue placeholder="Selecione a conta PIX">
+                              {pixSettings.accounts?.find(a => a.id === newClient.pixAccountId) 
+                                ? `${pixSettings.accounts.find(a => a.id === newClient.pixAccountId)?.label} (${pixSettings.accounts.find(a => a.id === newClient.pixAccountId)?.bank})`
+                                : null}
+                            </SelectValue>
                           </SelectTrigger>
                           <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                             {pixSettings.accounts?.map(acc => (
@@ -2195,7 +2196,11 @@ function ClientsManager({ clients, appSettings, pixSettings }: { clients: Client
                     <Label className="text-[#a0a0a0]">Conta PIX Preferencial</Label>
                     <Select value={editingClient.pixAccountId} onValueChange={(val) => setEditingClient({...editingClient, pixAccountId: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                        <SelectValue placeholder="Selecione a conta PIX" />
+                        <SelectValue placeholder="Selecione a conta PIX">
+                          {pixSettings.accounts?.find(a => a.id === editingClient.pixAccountId) 
+                            ? `${pixSettings.accounts.find(a => a.id === editingClient.pixAccountId)?.label} (${pixSettings.accounts.find(a => a.id === editingClient.pixAccountId)?.bank})`
+                            : null}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         {pixSettings.accounts?.map(acc => (
@@ -2440,11 +2445,14 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
   const [editingReceipt, setEditingReceipt] = useState<Receipt | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [receiptToDelete, setReceiptToDelete] = useState<Receipt | null>(null);
+  const [isReceiptConfirmOpen, setIsReceiptConfirmOpen] = useState(false);
+  const [pendingReceiptForPdf, setPendingReceiptForPdf] = useState<Receipt | null>(null);
   const [newReceipt, setNewReceipt] = useState<Partial<Receipt>>({
     date: new Date(),
     value: 0,
     paymentMethod: 'PIX',
     clientType: 'Avulso',
+    status: 'Aguardando Pagamento',
     referenceMonth: format(new Date(), 'MMMM/yyyy', { locale: ptBR }),
     observations: ''
   });
@@ -2453,6 +2461,46 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
     return clients.filter(c => (c.name || '').toLowerCase().includes(clientSearch.toLowerCase()));
   }, [clients, clientSearch]);
 
+  const syncReceiptToFinancial = async (receiptId: string, receiptData: any) => {
+    if (receiptData.status !== 'Recebido') return;
+
+    try {
+      // Check if financial record already exists for this receipt
+      const q = query(collection(db, 'financial'), where('receiptId', '==', receiptId));
+      const snapshot = await getDocs(q);
+      
+      if (snapshot.empty) {
+        await addDoc(collection(db, 'financial'), {
+          type: 'Receita',
+          category: receiptData.clientType === 'Contrato' ? 'Mensalidade Contrato' : 'Serviço Avulso',
+          description: `Recebimento Recibo: ${receiptData.clientName} - ${receiptData.referenceMonth || format(new Date(), 'MMMM/yyyy', { locale: ptBR })}`,
+          origin: receiptData.number ? `Recibo Nº ${receiptData.number}` : 'Recibo',
+          value: Number(receiptData.value),
+          date: receiptData.date || Timestamp.now(),
+          serviceType: receiptData.clientType === 'Contrato' ? 'Contrato' : 'Serviço Normal',
+          clientId: receiptData.clientId || null,
+          receiptId: receiptId,
+          createdAt: Timestamp.now()
+        });
+        toast.info('Lançamento financeiro realizado automaticamente!');
+      }
+    } catch (error) {
+      console.error("Erro ao sincronizar recibo com financeiro:", error);
+    }
+  };
+
+  const updateReceiptStatus = async (id: string, status: 'Aguardando Pagamento' | 'Recebido', receipt: Receipt) => {
+    try {
+      await updateDoc(doc(db, 'receipts', id), { status });
+      if (status === 'Recebido') {
+        await syncReceiptToFinancial(id, { ...receipt, status });
+      }
+      toast.success(`Status do recibo atualizado para ${status}`);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `receipts/${id}`);
+    }
+  };
+
   const handleAddReceipt = async () => {
     if (!newReceipt.clientName || !newReceipt.value || !newReceipt.paymentMethod) {
       toast.error('Preencha os campos obrigatórios.');
@@ -2460,22 +2508,33 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
     }
 
     try {
+      const nextNumber = receipts.length > 0 ? Math.max(...receipts.map(r => r.number || 0)) + 1 : 1;
+
       const receiptData = {
         ...newReceipt,
+        number: nextNumber,
+        status: newReceipt.status || 'Aguardando Pagamento',
         date: Timestamp.fromDate(newReceipt.date instanceof Date ? newReceipt.date : new Date()),
         createdAt: Timestamp.now()
       };
       
       const docRef = await addDoc(collection(db, 'receipts'), receiptData);
       
-      // Generate PDF automatically
+      // Perform finance sync if status is 'Recebido'
+      if (receiptData.status === 'Recebido') {
+        await syncReceiptToFinancial(docRef.id, receiptData);
+      }
+
+      // Prepare for PDF confirmation
       const fullReceipt = { id: docRef.id, ...receiptData } as Receipt;
-      generateReceiptPDF(fullReceipt, appSettings, pixSettings);
+      setPendingReceiptForPdf(fullReceipt);
+      setIsReceiptConfirmOpen(true);
       
       setNewReceipt({ 
         date: new Date(), 
         value: 0, 
         paymentMethod: 'PIX',
+        status: 'Aguardando Pagamento',
         referenceMonth: format(new Date(), 'MMMM/yyyy', { locale: ptBR }),
         observations: ''
       });
@@ -2500,6 +2559,12 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
       };
       
       await updateDoc(doc(db, 'receipts', id), receiptData);
+      
+      // Perform finance sync if status changed to 'Recebido'
+      if (receiptData.status === 'Recebido') {
+        await syncReceiptToFinancial(id, receiptData);
+      }
+
       setEditingReceipt(null);
       setIsEditOpen(false);
       toast.success('Recibo atualizado!');
@@ -2648,13 +2713,29 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Status do Pagamento</Label>
+                  <Select value={newReceipt.status} onValueChange={(val: any) => setNewReceipt({...newReceipt, status: val})}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="Aguardando Pagamento">Aguardando Pagamento</SelectItem>
+                      <SelectItem value="Recebido">Recebido</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
   
                 {newReceipt.paymentMethod === 'PIX' && (
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Conta PIX para Recebimento</Label>
                     <Select value={newReceipt.pixAccountId} onValueChange={(val) => setNewReceipt({...newReceipt, pixAccountId: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                        <SelectValue placeholder="Selecione a conta PIX" />
+                        <SelectValue placeholder="Selecione a conta PIX">
+                          {pixSettings.accounts?.find(a => a.id === newReceipt.pixAccountId) 
+                            ? `${pixSettings.accounts.find(a => a.id === newReceipt.pixAccountId)?.label} (${pixSettings.accounts.find(a => a.id === newReceipt.pixAccountId)?.bank})`
+                            : null}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         {pixSettings.accounts?.map(acc => (
@@ -2681,6 +2762,26 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
                 <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
                 <Button onClick={handleAddReceipt} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Gerar e Salvar</Button>
               </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={isReceiptConfirmOpen} onOpenChange={setIsReceiptConfirmOpen}>
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[400px]">
+            <DialogHeader>
+              <DialogTitle>Gerar PDF do Recibo?</DialogTitle>
+              <DialogDescription className="text-[#71717a]">
+                O recibo foi gerado com sucesso. Deseja baixar o arquivo PDF agora?
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2 sm:gap-0 mt-4">
+              <Button variant="outline" onClick={() => setIsReceiptConfirmOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Não, apenas salvar</Button>
+              <Button onClick={() => {
+                if (pendingReceiptForPdf) {
+                  generateReceiptPDF(pendingReceiptForPdf, appSettings, pixSettings);
+                }
+                setIsReceiptConfirmOpen(false);
+              }} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Sim, Gerar PDF</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -2766,13 +2867,29 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
                       </SelectContent>
                     </Select>
                   </div>
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Status do Pagamento</Label>
+                    <Select value={editingReceipt.status} onValueChange={(val: any) => setEditingReceipt({...editingReceipt, status: val})}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="Aguardando Pagamento">Aguardando Pagamento</SelectItem>
+                        <SelectItem value="Recebido">Recebido</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
   
                   {editingReceipt.paymentMethod === 'PIX' && (
                     <div className="space-y-2">
                       <Label className="text-[#a0a0a0]">Conta PIX para Recebimento</Label>
                       <Select value={editingReceipt.pixAccountId} onValueChange={(val) => setEditingReceipt({...editingReceipt, pixAccountId: val})}>
                         <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                          <SelectValue placeholder="Selecione a conta PIX" />
+                          <SelectValue placeholder="Selecione a conta PIX">
+                            {pixSettings.accounts?.find(a => a.id === editingReceipt.pixAccountId) 
+                              ? `${pixSettings.accounts.find(a => a.id === editingReceipt.pixAccountId)?.label} (${pixSettings.accounts.find(a => a.id === editingReceipt.pixAccountId)?.bank})`
+                              : null}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                           {pixSettings.accounts?.map(acc => (
@@ -2810,6 +2927,8 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
           <TableHeader className="bg-[#25282e]/50">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[140px]">Ações</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[80px]">Nº</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Status</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Cliente</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Serviço</TableHead>
@@ -2841,6 +2960,23 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
                     </Button>
                   </div>
                 </TableCell>
+                <TableCell className="text-[12px] text-[#e0e0e0] font-mono">
+                  {receipt.number ? `#${receipt.number}` : '-'}
+                </TableCell>
+                <TableCell>
+                  <Select 
+                    value={receipt.status || 'Aguardando Pagamento'} 
+                    onValueChange={(val: any) => updateReceiptStatus(receipt.id, val, receipt)}
+                  >
+                    <SelectTrigger className="h-8 w-[170px] text-[11px] bg-[#0f1115] border-[#2d3139] text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="Aguardando Pagamento">Aguardando Pagamento</SelectItem>
+                      <SelectItem value="Recebido">Recebido</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </TableCell>
                 <TableCell className="text-[12px] text-[#e0e0e0]">
                   {format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), 'dd/MM/yyyy')}
                 </TableCell>
@@ -2855,7 +2991,7 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
             ))}
             {receipts.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-12 text-[#71717a] text-sm">
+                <TableCell colSpan={7} className="text-center py-12 text-[#71717a] text-sm">
                   Nenhum recibo gerado.
                 </TableCell>
               </TableRow>
@@ -4242,6 +4378,13 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
   const [editingRecord, setEditingRecord] = useState<FinancialRecord | null>(null);
   const [recordToDelete, setRecordToDelete] = useState<FinancialRecord | null>(null);
   const [clientSearch, setClientSearch] = useState('');
+  const [financialTypeFilter, setFinancialTypeFilter] = useState<'todos' | 'Receita' | 'Despesa'>('todos');
+
+  const filteredFinancials = useMemo(() => {
+    if (financialTypeFilter === 'todos') return financials;
+    return financials.filter(f => f.type === financialTypeFilter);
+  }, [financials, financialTypeFilter]);
+
   const [newRecord, setNewRecord] = useState<Partial<FinancialRecord>>({
     type: 'Receita',
     date: new Date(),
@@ -4317,7 +4460,7 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
       setNewRecord({
         ...newRecord,
         clientId: client.id,
-        description: client.type === 'Contrato' ? (client.serviceSpecification || 'Serviço de Contrato') : `Serviço - ${client.name}`,
+        description: client.type === 'Contrato' ? `${client.serviceSpecification || 'Serviço de Contrato'} - ${client.name}` : `Serviço - ${client.name}`,
         serviceType: client.type === 'Contrato' ? 'Contrato' : 'Serviço Normal',
         value: client.type === 'Contrato' ? (client.contractValue || 0) : newRecord.value
       });
@@ -4331,13 +4474,24 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
           <h2 className="text-2xl font-bold tracking-tight text-white">Gestão Financeira</h2>
           <p className="text-[#71717a]">Controle suas entradas e saídas.</p>
         </div>
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger render={
-            <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
-              <Plus size={18} />
-              Novo Lançamento
-            </Button>
-          } />
+        <div className="flex items-center gap-4">
+          <Select value={financialTypeFilter} onValueChange={(val: any) => setFinancialTypeFilter(val)}>
+            <SelectTrigger className="w-[180px] bg-[#1a1d23] border-[#2d3139] text-white">
+              <SelectValue placeholder="Filtrar por tipo" />
+            </SelectTrigger>
+            <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+              <SelectItem value="todos">Todos os Lançamentos</SelectItem>
+              <SelectItem value="Receita">Apenas Receitas</SelectItem>
+              <SelectItem value="Despesa">Apenas Despesas</SelectItem>
+            </SelectContent>
+          </Select>
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+            <DialogTrigger render={
+              <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+                <Plus size={18} />
+                Novo Lançamento
+              </Button>
+            } />
           <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[500px]">
             <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Novo Lançamento Financeiro</DialogTitle>
@@ -4364,7 +4518,7 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
                 </div>
 
                 {newRecord.type === 'Receita' && (
-                  <div className="grid grid-cols-2 gap-4">
+                  <>
                     <div className="space-y-2">
                       <Label className="text-[#a0a0a0]">Cliente (Opcional)</Label>
                       <Select value={newRecord.clientId} onValueChange={handleClientChange}>
@@ -4406,12 +4560,16 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
                         </SelectContent>
                       </Select>
                     </div>
-                  </div>
+                  </>
                 )}
 
                 <div className="space-y-2">
                   <Label htmlFor="desc" className="text-[#a0a0a0]">Descrição</Label>
                   <Input id="desc" value={newRecord.description || ''} onChange={e => setNewRecord({...newRecord, description: e.target.value})} placeholder="Ex: Pagamento Instalação CFTV" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="origin" className="text-[#a0a0a0]">Origem (Opcional)</Label>
+                  <Input id="origin" value={newRecord.origin || ''} onChange={e => setNewRecord({...newRecord, origin: e.target.value})} placeholder="Ex: Venda Direta, Marketplace" className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -4442,6 +4600,91 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
           </DialogContent>
         </Dialog>
       </div>
+    </div>
+
+      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden">
+        <Table>
+          <TableHeader className="bg-[#25282e]/50">
+            <TableRow className="border-[#2d3139] hover:bg-transparent">
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">Ações</TableHead>
+              <TableHead className="text-left text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Valor</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Descrição</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Origem</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Tipo</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Categoria</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredFinancials.map((record) => (
+              <TableRow key={record.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
+                <TableCell>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="icon" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
+                      setEditingRecord({
+                        ...record,
+                        date: record.date instanceof Timestamp ? record.date.toDate() : new Date(record.date)
+                      });
+                      setIsEditOpen(true);
+                    }}>
+                      <Pencil size={12} />
+                    </Button>
+                    <Button variant="outline" size="icon" className="h-7 w-7 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
+                      setRecordToDelete(record);
+                      setIsDeleteConfirmOpen(true);
+                    }}>
+                      <Trash2 size={12} />
+                    </Button>
+                  </div>
+                </TableCell>
+                <TableCell className={cn(
+                  "text-left font-bold text-[13px]",
+                  record.type === 'Receita' ? "text-[#10b981]" : "text-[#ef4444]"
+                )}>
+                  {record.type === 'Receita' ? '+' : '-'} R$ {record.value.toFixed(2)}
+                </TableCell>
+                <TableCell className="font-medium text-white text-[13px]">{record.description}</TableCell>
+                <TableCell>
+                  <div className="flex flex-col gap-1">
+                    {record.origin && (
+                      <span className="text-[11px] text-blue-400 font-medium">{record.origin}</span>
+                    )}
+                    {record.serviceType && (
+                      <Badge className={cn(
+                        "font-normal text-[10px] uppercase tracking-wider w-fit",
+                        record.serviceType === 'Contrato' ? "bg-amber-500/10 text-amber-500" : "bg-blue-500/10 text-blue-500"
+                      )}>
+                        {record.serviceType}
+                      </Badge>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <Badge className={cn(
+                    "text-[10px] font-semibold uppercase px-2 py-0.5 rounded",
+                    record.type === 'Receita' ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"
+                  )}>
+                    {record.type}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <Badge className="bg-[#2d3139] text-[#e0e0e0] font-normal text-[10px] uppercase tracking-wider">{record.category}</Badge>
+                </TableCell>
+                <TableCell className="text-[12px] text-[#e0e0e0]">
+                  {format(record.date instanceof Timestamp ? record.date.toDate() : new Date(record.date), 'dd/MM/yyyy')}
+                </TableCell>
+              </TableRow>
+            ))}
+            {filteredFinancials.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-12 text-[#71717a] text-sm">
+                  Nenhuma transação registrada.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="bg-[#3b82f6] text-white border-none shadow-lg shadow-blue-900/20">
@@ -4469,85 +4712,6 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
           </CardContent>
         </Card>
       </div>
-
-      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden">
-        <Table>
-          <TableHeader className="bg-[#25282e]/50">
-            <TableRow className="border-[#2d3139] hover:bg-transparent">
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">Ações</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Descrição</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Origem</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Categoria</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Tipo</TableHead>
-              <TableHead className="text-right text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Valor</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {financials.map((record) => (
-              <TableRow key={record.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
-                <TableCell>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="icon" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
-                      setEditingRecord({
-                        ...record,
-                        date: record.date instanceof Timestamp ? record.date.toDate() : new Date(record.date)
-                      });
-                      setIsEditOpen(true);
-                    }}>
-                      <Pencil size={12} />
-                    </Button>
-                    <Button variant="outline" size="icon" className="h-7 w-7 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
-                      setRecordToDelete(record);
-                      setIsDeleteConfirmOpen(true);
-                    }}>
-                      <Trash2 size={12} />
-                    </Button>
-                  </div>
-                </TableCell>
-                <TableCell className="text-[12px] text-[#e0e0e0]">
-                  {format(record.date instanceof Timestamp ? record.date.toDate() : new Date(record.date), 'dd/MM/yyyy')}
-                </TableCell>
-                <TableCell className="font-medium text-white text-[13px]">{record.description}</TableCell>
-                <TableCell>
-                  {record.serviceType && (
-                    <Badge className={cn(
-                      "font-normal text-[10px] uppercase tracking-wider",
-                      record.serviceType === 'Contrato' ? "bg-amber-500/10 text-amber-500" : "bg-blue-500/10 text-blue-500"
-                    )}>
-                      {record.serviceType}
-                    </Badge>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Badge className="bg-[#2d3139] text-[#e0e0e0] font-normal text-[10px] uppercase tracking-wider">{record.category}</Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge className={cn(
-                    "text-[10px] font-semibold uppercase px-2 py-0.5 rounded",
-                    record.type === 'Receita' ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"
-                  )}>
-                    {record.type}
-                  </Badge>
-                </TableCell>
-                <TableCell className={cn(
-                  "text-right font-bold text-[13px]",
-                  record.type === 'Receita' ? "text-[#10b981]" : "text-[#ef4444]"
-                )}>
-                  {record.type === 'Receita' ? '+' : '-'} R$ {record.value.toFixed(2)}
-                </TableCell>
-              </TableRow>
-            ))}
-            {financials.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center py-12 text-[#71717a] text-sm">
-                  Nenhuma transação registrada.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </Card>
 
       {/* Edit Record Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
@@ -4872,7 +5036,11 @@ function BudgetsManager({ budgets, clients, appSettings, pixSettings }: { budget
                   <Label className="text-[#a0a0a0]">Conta PIX (Para exibir no orçamento)</Label>
                   <Select value={newBudget.pixAccountId} onValueChange={(val) => setNewBudget({...newBudget, pixAccountId: val})}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue placeholder="Selecione a conta PIX" />
+                      <SelectValue placeholder="Selecione a conta PIX">
+                        {pixSettings.accounts?.find(a => a.id === newBudget.pixAccountId) 
+                          ? `${pixSettings.accounts.find(a => a.id === newBudget.pixAccountId)?.label} (${pixSettings.accounts.find(a => a.id === newBudget.pixAccountId)?.bank})`
+                          : null}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       {pixSettings.accounts?.map(acc => (
