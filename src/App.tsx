@@ -174,8 +174,8 @@ function valorPorExtenso(valor: number) {
 const formatRecordNumber = (number?: number, date?: any) => {
   if (!number) return '---';
   const d = date instanceof Timestamp ? date.toDate() : (date ? new Date(date) : new Date());
-  const year = format(d, 'yyyy');
-  return `${number.toString().padStart(4, '0')}/${year}`;
+  const year = format(d, 'yy');
+  return `${number.toString().padStart(5, '0')}/${year}`;
 };
 const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettings: PixSettings) => {
   const doc = new jsPDF({
@@ -562,7 +562,7 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
   doc.rect(20, 40, 170, 10, 'F');
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
-  doc.text('Recibo', 105, 47, { align: 'center' });
+  doc.text(`Recibo Nº ${formatRecordNumber(receipt.number, receipt.date)}`, 105, 47, { align: 'center' });
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
   doc.text(dateStr, 185, 47, { align: 'right' });
@@ -2498,7 +2498,7 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
           type: 'Receita',
           category: receiptData.clientType === 'Contrato' ? 'Mensalidade Contrato' : 'Serviço Avulso',
           description: `Recebimento Recibo: ${receiptData.clientName} - ${receiptData.referenceMonth || format(new Date(), 'MMMM/yyyy', { locale: ptBR })}`,
-          origin: receiptData.number ? `Recibo Nº ${receiptData.number}` : 'Recibo',
+          origin: receiptData.number ? `Recibo Nº ${formatRecordNumber(receiptData.number, receiptData.date)}` : 'Recibo',
           value: Number(receiptData.value),
           date: receiptData.date || Timestamp.now(),
           serviceType: receiptData.clientType === 'Contrato' ? 'Contrato' : 'Serviço Normal',
@@ -2985,7 +2985,7 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
                   </div>
                 </TableCell>
                 <TableCell className="text-[12px] text-[#e0e0e0] font-mono">
-                  {receipt.number ? `#${receipt.number}` : '-'}
+                  {receipt.number ? `Recibo Nº ${formatRecordNumber(receipt.number, receipt.date)}` : '-'}
                 </TableCell>
                 <TableCell>
                   <Select 
@@ -3491,11 +3491,13 @@ function ReportsManager({ visits, financials, budgets, clients, receipts, appSet
       ]);
     } else if (category === 'Financeiro') {
       filteredData = financials.filter(f => isMatch(f.date));
-      tableHeaders = ['Data', 'Descrição', 'Valor', 'Tipo', 'Categoria'];
+      tableHeaders = ['Data', 'Cliente', 'Descrição', 'Valor', 'Tipo', 'Categoria'];
       tableRows = filteredData.map(f => {
         const d = f.date instanceof Timestamp ? f.date.toDate() : (f.date instanceof Date ? f.date : new Date(f.date));
+        const client = clients.find(c => c.id === f.clientId);
         return [
           format(d, 'dd/MM/yyyy'),
+          client ? client.name : 'N/A',
           f.description,
           `R$ ${f.value.toFixed(2)}`,
           f.type,
@@ -4877,7 +4879,14 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
                 )}>
                   {record.type === 'Receita' ? '+' : '-'} R$ {record.value.toFixed(2)}
                 </TableCell>
-                <TableCell className="font-medium text-white text-[13px]">{record.description}</TableCell>
+                <TableCell className="font-medium text-white text-[13px]">
+                  {record.description}
+                  {record.clientId && (
+                    <div className="text-[11px] text-[#71717a] mt-0.5">
+                      Cliente: {clients.find(c => c.id === record.clientId)?.name || 'N/A'}
+                    </div>
+                  )}
+                </TableCell>
                 <TableCell>
                   <div className="flex flex-col gap-1">
                     {record.origin && (
