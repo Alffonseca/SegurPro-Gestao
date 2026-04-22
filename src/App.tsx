@@ -71,7 +71,7 @@ import {
   Pie
 } from 'recharts';
 import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 import { db, auth, handleFirestoreError, OperationType, firebaseConfig } from './firebase';
 import { Button } from '@/components/ui/button';
@@ -1262,9 +1262,9 @@ export default function App() {
             />
             <SidebarItem 
               icon={<FileText size={18} />} 
-              label="Relatórios Diários" 
-              active={false} 
-              onClick={() => {}} 
+              label="Relatórios" 
+              active={activeTab === 'reports'} 
+              onClick={() => setActiveTab('reports')} 
             />
           </nav>
         </ScrollArea>
@@ -1293,16 +1293,16 @@ export default function App() {
       </aside>
 
       {/* Mobile Header */}
-      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-[#1a1d23] border-b border-[#2d3139] flex items-center justify-center px-4 z-50">
-        <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="text-white absolute left-4">
-          {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-        </Button>
+      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-[#1a1d23] border-b border-[#2d3139] flex items-center justify-between px-4 z-50">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#3b82f6] text-white">
             <CheckCircle2 size={18} />
           </div>
           <span className="font-bold tracking-tight text-white">SegurPro</span>
         </div>
+        <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="text-white">
+          {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+        </Button>
       </div>
 
       {/* Mobile Menu Overlay */}
@@ -1332,6 +1332,12 @@ export default function App() {
               label="Orçamentos" 
               active={activeTab === 'budgets'} 
               onClick={() => { setActiveTab('budgets'); setIsMobileMenuOpen(false); }} 
+            />
+            <SidebarItem 
+              icon={<FileText size={20} />} 
+              label="Relatórios" 
+              active={activeTab === 'reports'} 
+              onClick={() => { setActiveTab('reports'); setIsMobileMenuOpen(false); }} 
             />
             <SidebarItem 
               icon={<UserIcon size={20} />} 
@@ -1395,6 +1401,16 @@ export default function App() {
           {activeTab === 'budgets' && <BudgetsManager budgets={budgets} clients={clients} appSettings={appSettings} pixSettings={pixSettings} />}
           {activeTab === 'clients' && <ClientsManager clients={clients} appSettings={appSettings} pixSettings={pixSettings} />}
           {activeTab === 'receipts' && <ReceiptsManager receipts={receipts} clients={clients} pixSettings={pixSettings} appSettings={appSettings} />}
+          {activeTab === 'reports' && (
+            <ReportsManager 
+              visits={visits} 
+              financials={financials} 
+              budgets={budgets} 
+              clients={clients} 
+              receipts={receipts} 
+              appSettings={appSettings} 
+            />
+          )}
           {activeTab === 'users' && <UsersManager users={users} />}
           {activeTab === 'settings' && <SettingsManager pixSettings={pixSettings} appSettings={appSettings} user={user} />}
         </div>
@@ -3419,6 +3435,216 @@ function SettingsManager({ pixSettings, appSettings, user }: { pixSettings: PixS
   );
 }
 
+function ReportsManager({ visits, financials, budgets, clients, receipts, appSettings }: { visits: TechnicalVisit[], financials: FinancialRecord[], budgets: Budget[], clients: Client[], receipts: Receipt[], appSettings: AppSettings }) {
+  const [date, setDate] = useState<Date>(new Date());
+  const [month, setMonth] = useState<number>(new Date().getMonth());
+  const [year, setYear] = useState<number>(new Date().getFullYear());
+  const [reportType, setReportType] = useState<'daily' | 'monthly'>('daily');
+
+  const generateReport = (category: string) => {
+    const doc = new jsPDF();
+    const title = category.toUpperCase();
+    const period = reportType === 'daily' 
+      ? format(date, 'dd/MM/yyyy') 
+      : `${format(new Date(year, month), 'MMMM', { locale: ptBR })}/${year}`;
+    
+    // Header
+    doc.setFontSize(20);
+    doc.setTextColor(59, 130, 246);
+    doc.text(`RELATÓRIO DE ${title}`, 105, 20, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setTextColor(113, 113, 122);
+    doc.text(`Período: ${period}`, 105, 28, { align: 'center' });
+    doc.text(`Empresa: ${appSettings.companyName}`, 105, 34, { align: 'center' });
+    
+    let filteredData: any[] = [];
+    let tableHeaders: string[] = [];
+    let tableRows: any[][] = [];
+
+    const isMatch = (itemDate: any) => {
+      const d = itemDate instanceof Timestamp ? itemDate.toDate() : (itemDate instanceof Date ? itemDate : new Date(itemDate));
+      if (reportType === 'daily') {
+        return format(d, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd');
+      } else {
+        return d.getMonth() === month && d.getFullYear() === year;
+      }
+    };
+
+    if (category === 'Visitas') {
+      filteredData = visits.filter(v => isMatch(v.date));
+      tableHeaders = ['Número', 'Cliente', 'Tipo', 'Preço', 'Status'];
+      tableRows = filteredData.map(v => [
+        formatRecordNumber(v.number, v.date),
+        v.clientName,
+        v.type,
+        `R$ ${v.totalValue.toFixed(2)}`,
+        v.status
+      ]);
+    } else if (category === 'Financeiro') {
+      filteredData = financials.filter(f => isMatch(f.date));
+      tableHeaders = ['Data', 'Descrição', 'Valor', 'Tipo', 'Categoria'];
+      tableRows = filteredData.map(f => {
+        const d = f.date instanceof Timestamp ? f.date.toDate() : (f.date instanceof Date ? f.date : new Date(f.date));
+        return [
+          format(d, 'dd/MM/yyyy'),
+          f.description,
+          `R$ ${f.value.toFixed(2)}`,
+          f.type,
+          f.category || 'N/A'
+        ];
+      });
+    } else if (category === 'Recibos') {
+      filteredData = receipts.filter(r => isMatch(r.createdAt));
+      tableHeaders = ['Número', 'Cliente', 'Data', 'Valor'];
+      tableRows = filteredData.map(r => [
+        formatRecordNumber(r.number, r.createdAt),
+        r.clientName,
+        format(r.createdAt instanceof Timestamp ? r.createdAt.toDate() : (r.createdAt instanceof Date ? r.createdAt : new Date(r.createdAt)), 'dd/MM/yyyy'),
+        `R$ ${r.value.toFixed(2)}`
+      ]);
+    } else if (category === 'Orçamentos') {
+      filteredData = budgets.filter(b => isMatch(b.createdAt));
+      tableHeaders = ['Número', 'Cliente', 'Valor', 'Status'];
+      tableRows = filteredData.map(b => [
+        formatRecordNumber(b.number, b.createdAt),
+        b.clientName,
+        `R$ ${b.total.toFixed(2)}`,
+        b.status
+      ]);
+    } else if (category === 'Clientes') {
+      filteredData = clients;
+      tableHeaders = ['Nome', 'Tipo', 'Telefone', 'Endereço'];
+      tableRows = filteredData.map(c => [
+        c.name,
+        c.type,
+        c.phone,
+        c.address
+      ]);
+    }
+
+    if (tableRows.length === 0) {
+      toast.error(`Nenhum registro de ${category} encontrado para este período.`);
+      return;
+    }
+
+    autoTable(doc, {
+      startY: 45,
+      head: [tableHeaders],
+      body: tableRows,
+      headStyles: { fillColor: [59, 130, 246] },
+      theme: 'grid'
+    });
+
+    doc.save(`Relatorio_${category}_${period.replace(/\//g, '_')}.pdf`);
+    toast.success('Relatório gerado com sucesso!');
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight text-white">Centro de Relatórios</h2>
+        <p className="text-[#71717a]">Gere listagens em PDF das suas atividades por período.</p>
+      </div>
+
+      <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
+        <CardHeader>
+          <CardTitle className="text-[17px] flex items-center gap-2">
+            <FileText size={18} className="text-[#3b82f6]" />
+            Configuração do Relatório
+          </CardTitle>
+          <CardDescription className="text-[#71717a] text-[13px]">Selecione o filtro de tempo para a listagem.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-8">
+          <div className="flex flex-col md:flex-row gap-6">
+            <div className="flex-1 space-y-3">
+              <Label className="text-[#a0a0a0]">Tipo de Período</Label>
+              <Select value={reportType} onValueChange={(v: any) => setReportType(v)}>
+                <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white h-11">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                  <SelectItem value="daily">Diário (Listagem por Dia)</SelectItem>
+                  <SelectItem value="monthly">Mensal (Listagem por Mês)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {reportType === 'daily' ? (
+              <div className="flex-1 space-y-3">
+                <Label className="text-[#a0a0a0]">Data da Listagem</Label>
+                <Popover>
+                  <PopoverTrigger render={
+                    <Button variant="outline" className={cn("w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white h-11", !date && "text-muted-foreground")}>
+                      <CalendarIcon className="mr-2 h-4 w-4 text-[#3b82f6]" />
+                      {date ? format(date, "PPP", { locale: ptBR }) : <span>Selecione</span>}
+                    </Button>
+                  } />
+                  <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
+                    <Calendar mode="single" selected={date} onSelect={(d) => d && setDate(d)} initialFocus className="bg-[#1a1d23] text-white" />
+                  </PopoverContent>
+                </Popover>
+              </div>
+            ) : (
+              <div className="flex-1 grid grid-cols-2 gap-4">
+                <div className="space-y-3">
+                  <Label className="text-[#a0a0a0]">Mês</Label>
+                  <Select value={month.toString()} onValueChange={(v) => setMonth(parseInt(v))}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white h-11">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      {Array.from({ length: 12 }, (_, i) => (
+                        <SelectItem key={i} value={i.toString()}>{format(new Date(2022, i, 1), 'MMMM', { locale: ptBR }).toUpperCase()}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-3">
+                  <Label className="text-[#a0a0a0]">Ano</Label>
+                  <Input 
+                    type="number" 
+                    value={year} 
+                    onChange={e => setYear(parseInt(e.target.value))} 
+                    className="bg-[#0f1115] border-[#2d3139] text-white h-11" 
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <Separator className="bg-[#2d3139]" />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[
+              { label: 'Visitas Técnicas', icon: <CalendarIcon size={24} />, cat: 'Visitas', color: '#3b82f6' },
+              { label: 'Livro Financeiro', icon: <DollarSign size={24} />, cat: 'Financeiro', color: '#10b981' },
+              { label: 'Recibos Emitidos', icon: <ReceiptIcon size={24} />, cat: 'Recibos', color: '#f59e0b' },
+              { label: 'Orçamentos', icon: <FileText size={24} />, cat: 'Orçamentos', color: '#8b5cf6' },
+              { label: 'Base de Clientes', icon: <UserIcon size={24} />, cat: 'Clientes', color: '#ec4899' },
+            ].map(item => (
+              <button 
+                key={item.cat}
+                onClick={() => generateReport(item.cat)}
+                className="flex flex-col items-center justify-center p-8 rounded-2xl bg-[#0f1115] border border-[#2d3139] hover:border-[#3b82f6]/50 hover:bg-[#3b82f6]/5 transition-all text-center group active:scale-95"
+              >
+                <div 
+                  className="mb-4 p-4 rounded-2xl bg-[#1a1d23] border border-[#2d3139] group-hover:scale-110 transition-transform"
+                  style={{ color: item.color }}
+                >
+                  {item.icon}
+                </div>
+                <h3 className="text-white font-bold text-sm mb-1">{item.label}</h3>
+                <p className="text-[10px] text-[#71717a]">Gerar relatório PDF agora</p>
+              </button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // --- Dashboard Component ---
 
 function Dashboard({ visits, financials, budgets, clients, onNavigate }: { visits: TechnicalVisit[], financials: FinancialRecord[], budgets: Budget[], clients: Client[], onNavigate: (tab: string) => void }) {
@@ -4895,7 +5121,7 @@ function BudgetsManager({ budgets, clients, appSettings, pixSettings }: { budget
       `R$ ${(item.quantity * item.price).toFixed(2)}`
     ]);
 
-    (doc as any).autoTable({
+    autoTable(doc, {
       startY: 82,
       head: [['Descrição', 'Qtd', 'Preço Unit.', 'Total']],
       body: tableData,
