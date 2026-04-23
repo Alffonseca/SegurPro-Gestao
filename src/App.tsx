@@ -24,7 +24,11 @@ import {
   Share2,
   Settings,
   Menu,
-  X
+  X,
+  Shield,
+  Database,
+  RefreshCw,
+  Upload
 } from 'lucide-react';
 import { 
   collection, 
@@ -37,6 +41,7 @@ import {
   orderBy, 
   where,
   getDocs,
+  limit,
   Timestamp,
   setDoc,
   getDoc,
@@ -70,6 +75,7 @@ import {
   PieChart,
   Pie
 } from 'recharts';
+import { motion } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -719,6 +725,104 @@ interface AppSettings {
 
 // --- Components ---
 
+function CompanyWizard({ onCreate, onJoin }: { onCreate: (name: string) => void, onJoin: (code: string) => void }) {
+  const [name, setName] = useState('');
+  const [code, setCode] = useState('');
+  const [mode, setMode] = useState<'selection' | 'create' | 'join'>('selection');
+
+  if (mode === 'create') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0f1115] p-6">
+        <Card className="w-full max-w-md border-[#2d3139] bg-[#1a1d23]">
+          <CardHeader>
+            <CardTitle className="text-white">Criar Nova Empresa</CardTitle>
+            <CardDescription className="text-[#71717a]">Comece a gerenciar seu negócio agora.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-[#a0a0a0]">Nome da Empresa</Label>
+              <Input 
+                value={name} 
+                onChange={e => setName(e.target.value)} 
+                placeholder="Ex: SegurPro Filial" 
+                className="bg-[#0f1115] border-[#2d3139] text-white" 
+              />
+            </div>
+            <Button onClick={() => onCreate(name)} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white">Criar</Button>
+            <Button variant="ghost" onClick={() => setMode('selection')} className="w-full text-[#71717a]">Voltar</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (mode === 'join') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0f1115] p-6">
+        <Card className="w-full max-w-md border-[#2d3139] bg-[#1a1d23]">
+          <CardHeader>
+            <CardTitle className="text-white">Entrar em uma Empresa</CardTitle>
+            <CardDescription className="text-[#71717a]">Insira o código enviado pelo seu administrador.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-[#a0a0a0]">Código da Empresa</Label>
+              <Input 
+                value={code} 
+                onChange={e => setCode(e.target.value)} 
+                placeholder="Código de convite" 
+                className="bg-[#0f1115] border-[#2d3139] text-white" 
+              />
+            </div>
+            <Button onClick={() => onJoin(code)} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white">Entrar</Button>
+            <Button variant="ghost" onClick={() => setMode('selection')} className="w-full text-[#71717a]">Voltar</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#0f1115] p-6">
+      <div className="w-full max-w-2xl text-center space-y-8">
+        <div className="space-y-4">
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-2xl shadow-blue-500/20">
+            <Shield size={40} />
+          </div>
+          <h1 className="text-4xl font-bold tracking-tight text-white">Quase lá!</h1>
+          <p className="text-xl text-[#71717a]">Você precisa estar vinculado a uma empresa para continuar.</p>
+        </div>
+        
+        <div className="grid md:grid-cols-2 gap-6">
+          <Card className="border-[#2d3139] bg-[#1a1d23] hover:border-[#3b82f6]/50 transition-all cursor-pointer group" onClick={() => setMode('create')}>
+            <CardHeader>
+              <div className="w-12 h-12 rounded-lg bg-blue-500/10 flex items-center justify-center mb-4 group-hover:bg-blue-500/20 transition-colors">
+                <Plus className="text-[#3b82f6]" size={24} />
+              </div>
+              <CardTitle className="text-white text-left">Criar minha Firma</CardTitle>
+              <CardDescription className="text-[#71717a] text-left">Para quem quer começar um negócio do zero.</CardDescription>
+            </CardHeader>
+          </Card>
+
+          <Card className="border-[#2d3139] bg-[#1a1d23] hover:border-emerald-500/50 transition-all cursor-pointer group" onClick={() => setMode('join')}>
+            <CardHeader>
+              <div className="w-12 h-12 rounded-lg bg-emerald-500/10 flex items-center justify-center mb-4 group-hover:bg-emerald-500/20 transition-colors">
+                <LayoutDashboard className="text-emerald-500" size={24} />
+              </div>
+              <CardTitle className="text-white text-left">Sou Colaborador</CardTitle>
+              <CardDescription className="text-[#71717a] text-left">Entrar em uma empresa existente via código.</CardDescription>
+            </CardHeader>
+          </Card>
+        </div>
+        
+        <Button variant="ghost" onClick={() => signOut(auth)} className="text-[#a0a0a0] hover:text-white">
+          Sair da Conta
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function SignaturePad({ value, onChange }: { value?: string, onChange: (val: string) => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -854,19 +958,27 @@ export default function App() {
   const [clients, setClients] = useState<Client[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [allCompanies, setAllCompanies] = useState<any[]>([]);
+  const [allFinancials, setAllFinancials] = useState<any[]>([]); // New state for global metrics
+  const [saasSettings, setSaasSettings] = useState<any>({
+    price: 0,
+    billingCycle: 'mensal'
+  });
   const [currentUserData, setCurrentUserData] = useState<any>(null);
+  const [currentCompany, setCurrentCompany] = useState<any>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [userPhotoError, setUserPhotoError] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [companyName, setCompanyName] = useState(''); // For registration/wizard
   const [pixSettings, setPixSettings] = useState<PixSettings>({
     accounts: []
   });
   const [appSettings, setAppSettings] = useState<AppSettings>({
     logoUrl: '',
-    companyName: 'AF Sistemas de Segurança e Informática',
+    companyName: '',
     address: '',
     neighborhood: '',
     responsible: '',
@@ -890,120 +1002,310 @@ export default function App() {
     }
     testConnection();
 
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
-        // Ensure user document exists
+        // 1. Listen to User Document
         const userRef = doc(db, 'users', currentUser.uid);
-        const userSnap = await getDoc(userRef);
-        if (!userSnap.exists()) {
-          const initialData = {
-            uid: currentUser.uid,
-            email: currentUser.email,
-            displayName: currentUser.displayName || displayName,
-            role: 'admin', // Default to admin for the first user
-            createdAt: Timestamp.now()
-          };
-          await setDoc(userRef, initialData);
-          setCurrentUserData(initialData);
-        } else {
-          setCurrentUserData(userSnap.data());
-        }
+        const unsubscribeUser = onSnapshot(userRef, async (snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            setCurrentUserData(data);
+
+            // 2. If user has company, listen to Company data
+            if (data.companyId) {
+              onSnapshot(doc(db, 'companies', data.companyId), (compSnap) => {
+                if (compSnap.exists()) {
+                  setCurrentCompany({ id: compSnap.id, ...compSnap.data() });
+                } else {
+                  setCurrentCompany(null);
+                }
+              });
+            } else if (data.role === 'owner') {
+              // Auto-fix for owners missing a companyId
+              const createDefaultCompany = async () => {
+                try {
+                  const companyRef = await addDoc(collection(db, 'companies'), {
+                    name: 'Minha Empresa',
+                    ownerId: snap.id,
+                    status: 'active',
+                    createdAt: Timestamp.now()
+                  });
+                  await updateDoc(doc(db, 'users', snap.id), { companyId: companyRef.id });
+                  
+                  await setDoc(doc(db, 'companies', companyRef.id, 'settings', 'general'), {
+                    companyName: 'Minha Empresa',
+                    logoUrl: '',
+                    responsible: data.displayName || 'Responsável',
+                    address: '',
+                    neighborhood: '',
+                    city: '',
+                    cep: '',
+                    document: '',
+                    signatureUrl: ''
+                  });
+                } catch (err) {
+                  console.error("Auto-fix company creation failed:", err);
+                }
+              };
+              createDefaultCompany();
+            } else {
+              setCurrentCompany(null);
+            }
+          } else {
+            // Initial signup or missing record
+            let initialCompanyId = '';
+            const isSuper = currentUser.email === 'emailparasiteslixo@gmail.com';
+
+            try {
+              if (!isSuper) {
+                // Create a default company for normal owner if not a super admin
+                const companyRef = await addDoc(collection(db, 'companies'), {
+                  name: 'Minha Empresa',
+                  ownerId: currentUser.uid,
+                  status: 'active',
+                  createdAt: Timestamp.now()
+                });
+                initialCompanyId = companyRef.id;
+                
+                // Initialize default general settings
+                await setDoc(doc(db, 'companies', initialCompanyId, 'settings', 'general'), {
+                  companyName: 'Minha Empresa',
+                  logoUrl: '',
+                  responsible: currentUser.displayName || displayName || 'Responsável',
+                  address: '',
+                  neighborhood: '',
+                  city: '',
+                  cep: '',
+                  document: '',
+                  signatureUrl: ''
+                });
+              }
+
+              const initialData = {
+                uid: currentUser.uid,
+                email: currentUser.email,
+                displayName: currentUser.displayName || displayName || 'Usuário',
+                role: isSuper ? 'super_admin' : 'owner',
+                companyId: initialCompanyId,
+                createdAt: Timestamp.now()
+              };
+              await setDoc(userRef, initialData);
+              setCurrentUserData(initialData);
+            } catch (err) {
+              console.error("Error creating initial profile/company:", err);
+            }
+          }
+          setLoading(false);
+        }, (error) => {
+          console.error("User snap error:", error);
+          setLoading(false);
+        });
+        return () => unsubscribeUser();
       } else {
         setCurrentUserData(null);
+        setCurrentCompany(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
-    return () => unsubscribe();
-  }, []);
+    return () => unsubscribeAuth();
+  }, [displayName]);
 
-  // Data Listeners
+  // Settings & Data Listeners
+  const isSuperAdmin = user?.email === 'emailparasiteslixo@gmail.com' || currentUserData?.role === 'super_admin';
+
+  // Auto-link Super Admin to their first company if missing
+  useEffect(() => {
+    if (isSuperAdmin && user && allCompanies.length > 0 && !currentUserData?.companyId) {
+      const myCompany = allCompanies.find(c => c.ownerId === user.uid) || 
+                        allCompanies.find(c => c.name?.toLowerCase().includes('af sistemas')) || 
+                        allCompanies[0];
+      if (myCompany?.id) {
+        updateDoc(doc(db, 'users', user.uid), {
+          companyId: myCompany.id,
+          role: 'super_admin'
+        }).catch(err => console.error("Error auto-linking super admin:", err));
+      }
+    }
+  }, [allCompanies, isSuperAdmin, user, currentUserData?.companyId]);
+
+  // Synchronize appSettings with currentCompany to ensure all fields are populated
+  useEffect(() => {
+    if (currentCompany) {
+      setAppSettings(prev => {
+        // Robust mapping with fallbacks for different naming conventions
+        // We prioritize prev (current subcollection data) but fall back to currentCompany top-level fields
+        const updated = {
+          logoUrl: prev.logoUrl || currentCompany.logoUrl || currentCompany.companyLogo || '',
+          companyName: prev.companyName || currentCompany.companyName || currentCompany.name || '',
+          document: prev.document || currentCompany.document || currentCompany.cnpj || currentCompany.companyDoc || currentCompany.cpf || '',
+          responsible: prev.responsible || currentCompany.responsible || currentCompany.companyResp || currentCompany.technicianName || '',
+          address: prev.address || currentCompany.address || currentCompany.companyAddress || currentCompany.logradouro || '',
+          city: prev.city || currentCompany.city || currentCompany.companyCity || currentCompany.municipio || '',
+          cep: prev.cep || currentCompany.cep || currentCompany.companyCep || '',
+          neighborhood: prev.neighborhood || currentCompany.neighborhood || currentCompany.companyNeighborhood || currentCompany.bairro || '',
+          signatureUrl: prev.signatureUrl || currentCompany.signatureUrl || ''
+        };
+        // Only update if something actually changed to avoid infinite loops
+        if (JSON.stringify(prev) !== JSON.stringify(updated)) {
+          return updated;
+        }
+        return prev;
+      });
+    }
+  }, [currentCompany]);
+
   useEffect(() => {
     if (!user) return;
+    if (!currentUserData?.companyId && !isSuperAdmin) return;
 
-    const visitsUnsubscribe = onSnapshot(
-      query(collection(db, 'visits'), orderBy('date', 'desc')),
-      (snapshot) => {
-        setVisits(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TechnicalVisit)));
-      },
-      (error) => handleFirestoreError(error, OperationType.LIST, 'visits')
-    );
+    const companyId = currentUserData?.companyId;
 
-    const financialUnsubscribe = onSnapshot(
-      query(collection(db, 'financial'), orderBy('date', 'desc')),
-      (snapshot) => {
-        setFinancials(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FinancialRecord)));
-      },
-      (error) => handleFirestoreError(error, OperationType.LIST, 'financial')
-    );
+    let allCompaniesUnsubscribe: (() => void) | null = null;
+    let allFinancialsUnsubscribe: (() => void) | null = null;
+    let saasSettingsUnsubscribe: (() => void) | null = null;
 
-    const budgetsUnsubscribe = onSnapshot(
-      query(collection(db, 'budgets'), orderBy('createdAt', 'desc')),
-      (snapshot) => {
-        setBudgets(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Budget)));
-      },
-      (error) => handleFirestoreError(error, OperationType.LIST, 'budgets')
-    );
+    if (isSuperAdmin) {
+      allCompaniesUnsubscribe = onSnapshot(
+        collection(db, 'companies'),
+        (snapshot) => {
+          setAllCompanies(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        }
+      );
 
-    const clientsUnsubscribe = onSnapshot(
-      query(collection(db, 'clients'), orderBy('name', 'asc')),
-      (snapshot) => {
-        setClients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client)));
-      },
-      (error) => handleFirestoreError(error, OperationType.LIST, 'clients')
-    );
+      // Global financial listener for Super Admin
+      allFinancialsUnsubscribe = onSnapshot(
+        collection(db, 'financial'),
+        (snapshot) => {
+          setAllFinancials(snapshot.docs.map(doc => doc.data()));
+        }
+      );
 
-    const receiptsUnsubscribe = onSnapshot(
-      query(collection(db, 'receipts'), orderBy('createdAt', 'desc')),
-      (snapshot) => {
-        setReceipts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Receipt)));
-      },
-      (error) => handleFirestoreError(error, OperationType.LIST, 'receipts')
-    );
+      // SaaS Global Settings listener
+      saasSettingsUnsubscribe = onSnapshot(
+        doc(db, 'saas_settings', 'global'),
+        (snapshot) => {
+          if (snapshot.exists()) {
+            setSaasSettings(snapshot.data());
+          }
+        }
+      );
+    }
 
-    const usersUnsubscribe = onSnapshot(
-      query(collection(db, 'users'), orderBy('createdAt', 'desc')),
-      (snapshot) => {
-        setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      },
-      (error) => handleFirestoreError(error, OperationType.LIST, 'users')
-    );
+    let visitsUnsubscribe = () => {};
+    let financialUnsubscribe = () => {};
+    let budgetsUnsubscribe = () => {};
+    let clientsUnsubscribe = () => {};
+    let receiptsUnsubscribe = () => {};
+    let usersUnsubscribe = () => {};
+    let pixUnsubscribe = () => {};
+    let appSettingsUnsubscribe = () => {};
 
-    const pixUnsubscribe = onSnapshot(
-      doc(db, 'settings', 'pix'),
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          if (data.accounts) {
-            setPixSettings(data as PixSettings);
-          } else if (data.key) {
-            // Migration for old single account format
-            const migratedAccount: PixAccount = {
-              id: 'default',
-              label: 'Principal',
-              key: data.key,
-              bank: data.bank,
-              favored: data.favored,
-              document: data.document
-            };
-            setPixSettings({ accounts: [migratedAccount] });
+    if (companyId) {
+      visitsUnsubscribe = onSnapshot(
+        query(collection(db, 'visits'), where('companyId', '==', companyId)),
+        (snapshot) => {
+          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TechnicalVisit));
+          // Sort locally by date desc
+          setVisits(data.sort((a, b) => {
+            const dateA = a.date instanceof Date ? a.date.getTime() : new Date(a.date).getTime();
+            const dateB = b.date instanceof Date ? b.date.getTime() : new Date(b.date).getTime();
+            return dateB - dateA;
+          }));
+        },
+        (error) => handleFirestoreError(error, OperationType.LIST, 'visits')
+      );
+
+      financialUnsubscribe = onSnapshot(
+        query(collection(db, 'financial'), where('companyId', '==', companyId)),
+        (snapshot) => {
+          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FinancialRecord));
+          // Sort locally by date desc
+          setFinancials(data.sort((a, b) => {
+            const dateA = a.date instanceof Date ? a.date.getTime() : new Date(a.date).getTime();
+            const dateB = b.date instanceof Date ? b.date.getTime() : new Date(b.date).getTime();
+            return dateB - dateA;
+          }));
+        },
+        (error) => handleFirestoreError(error, OperationType.LIST, 'financial')
+      );
+
+      budgetsUnsubscribe = onSnapshot(
+        query(collection(db, 'budgets'), where('companyId', '==', companyId)),
+        (snapshot) => {
+          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Budget));
+          // Sort locally by createdAt desc
+          setBudgets(data.sort((a, b) => {
+            const timeA = a.createdAt?.seconds || 0;
+            const timeB = b.createdAt?.seconds || 0;
+            return timeB - timeA;
+          }));
+        },
+        (error) => handleFirestoreError(error, OperationType.LIST, 'budgets')
+      );
+
+      clientsUnsubscribe = onSnapshot(
+        query(collection(db, 'clients'), where('companyId', '==', companyId)),
+        (snapshot) => {
+          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client));
+          // Sort locally by name asc
+          setClients(data.sort((a, b) => a.name.localeCompare(b.name)));
+        },
+        (error) => handleFirestoreError(error, OperationType.LIST, 'clients')
+      );
+
+      receiptsUnsubscribe = onSnapshot(
+        query(collection(db, 'receipts'), where('companyId', '==', companyId)),
+        (snapshot) => {
+          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Receipt));
+          // Sort locally by createdAt desc
+          setReceipts(data.sort((a, b) => {
+            const timeA = a.createdAt?.seconds || 0;
+            const timeB = b.createdAt?.seconds || 0;
+            return timeB - timeA;
+          }));
+        },
+        (error) => handleFirestoreError(error, OperationType.LIST, 'receipts')
+      );
+
+      usersUnsubscribe = onSnapshot(
+        query(collection(db, 'users'), where('companyId', '==', companyId)),
+        (snapshot) => {
+          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          // Sort locally by createdAt desc
+          setUsers(data.sort((a: any, b: any) => {
+            const timeA = a.createdAt?.seconds || 0;
+            const timeB = b.createdAt?.seconds || 0;
+            return timeB - timeA;
+          }));
+        },
+        (error) => handleFirestoreError(error, OperationType.LIST, 'users')
+      );
+
+      pixUnsubscribe = onSnapshot(
+        doc(db, 'companies', companyId, 'settings', 'pix'),
+        (snapshot) => {
+          if (snapshot.exists()) {
+            setPixSettings(snapshot.data() as PixSettings);
           } else {
             setPixSettings({ accounts: [] });
           }
         }
-      },
-      (error) => handleFirestoreError(error, OperationType.GET, 'settings/pix')
-    );
+      );
 
-    const appSettingsUnsubscribe = onSnapshot(
-      doc(db, 'settings', 'general'),
-      (snapshot) => {
-        if (snapshot.exists()) {
-          setAppSettings(snapshot.data() as AppSettings);
+      appSettingsUnsubscribe = onSnapshot(
+        doc(db, 'companies', companyId, 'settings', 'general'),
+        (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data();
+            setAppSettings(prev => ({
+              ...prev,
+              ...data
+            }));
+          }
         }
-      },
-      (error) => handleFirestoreError(error, OperationType.GET, 'settings/general')
-    );
+      );
+    }
 
     return () => {
       visitsUnsubscribe();
@@ -1014,8 +1316,11 @@ export default function App() {
       usersUnsubscribe();
       pixUnsubscribe();
       appSettingsUnsubscribe();
+      if (allCompaniesUnsubscribe) allCompaniesUnsubscribe();
+      if (allFinancialsUnsubscribe) allFinancialsUnsubscribe();
+      if (saasSettingsUnsubscribe) saasSettingsUnsubscribe();
     };
-  }, [user]);
+  }, [user, currentUserData?.companyId, isSuperAdmin]);
 
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
@@ -1031,6 +1336,90 @@ export default function App() {
       } else {
         toast.error(`Erro ao fazer login: ${error.message}`);
       }
+    }
+  };
+
+  const handleCreateCompany = async (name: string) => {
+    if (!user) return;
+    try {
+      const companyRef = await addDoc(collection(db, 'companies'), {
+        name,
+        ownerId: user.uid,
+        status: 'active', // Default status
+        createdAt: Timestamp.now()
+      });
+      
+      const newCompanyId = companyRef.id;
+
+      // Initialize company settings
+      await setDoc(doc(db, 'companies', newCompanyId, 'settings', 'general'), {
+        companyName: name,
+        createdAt: Timestamp.now()
+      });
+
+      // --- MIGRATION LOGIC ---
+      // Update orphaned records to belong to this new company
+      const collectionsToMigrate = ['clients', 'visits', 'receipts', 'financial', 'budgets'];
+      
+      for (const colName of collectionsToMigrate) {
+        const colRef = collection(db, colName);
+        const q = query(colRef); // Fetching all because we need to check for missing companyId
+        const snapshot = await getDocs(q);
+        
+        for (const recordDoc of snapshot.docs) {
+          const data = recordDoc.data();
+          // If the record has no companyId, we migrate it
+          // For visits, we also check if it belongs to the user
+          if (!data.companyId) {
+            let shouldMigrate = false;
+            
+            if (colName === 'visits' && data.technicianId === user.uid) {
+              shouldMigrate = true;
+            } else if (colName !== 'visits') {
+              // For other collections, if it was orphaned, we assume it's theirs 
+              // (Common for the first company created by a previous solo user)
+              shouldMigrate = true;
+            }
+            
+            if (shouldMigrate) {
+              await updateDoc(doc(db, colName, recordDoc.id), {
+                companyId: newCompanyId
+              });
+            }
+          }
+        }
+      }
+
+      await updateDoc(doc(db, 'users', user.uid), {
+        companyId: newCompanyId,
+        role: 'owner'
+      });
+      
+      toast.success(`Empresa "${name}" criada e dados anteriores migrados!`);
+    } catch (error) {
+      console.error("Erro ao criar empresa e migrar dados:", error);
+      toast.error("Erro ao criar empresa.");
+    }
+  };
+
+  const handleJoinCompany = async (code: string) => {
+    if (!user) return;
+    try {
+      const companyRef = doc(db, 'companies', code.trim());
+      const companySnap = await getDoc(companyRef);
+      
+      if (companySnap.exists()) {
+        await updateDoc(doc(db, 'users', user.uid), {
+          companyId: companyRef.id,
+          role: 'technician'
+        });
+        toast.success("Você entrou na empresa com sucesso!");
+      } else {
+        toast.error("Código de empresa inválido.");
+      }
+    } catch (error) {
+      console.error("Erro ao entrar na empresa:", error);
+      toast.error("Erro ao entrar na empresa.");
     }
   };
 
@@ -1086,7 +1475,7 @@ export default function App() {
       <div className="flex h-screen items-center justify-center bg-[#0f1115]">
         <div className="flex flex-col items-center gap-4">
           <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#3b82f6] border-t-transparent"></div>
-          <p className="text-sm font-medium text-[#71717a]">Carregando SegurPro...</p>
+          <p className="text-sm font-medium text-[#71717a]">Carregando Sistema...</p>
         </div>
       </div>
     );
@@ -1103,10 +1492,10 @@ export default function App() {
               </div>
             ) : (
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[#3b82f6] text-white shadow-xl shadow-blue-900/20">
-                <CheckCircle2 size={32} />
+                <Shield size={32} />
               </div>
             )}
-            <h1 className="text-3xl font-bold tracking-tight text-white">{appSettings.companyName || 'SegurPro Gestão'}</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-white">{currentCompany?.name || appSettings.companyName || 'SegurPro SaaS'}</h1>
             <p className="text-[#71717a]">Controle total para instaladores de segurança eletrônica.</p>
           </div>
           <Card className="border-[#2d3139] bg-[#1a1d23]">
@@ -1190,6 +1579,49 @@ export default function App() {
     );
   }
 
+  // Multi-tenancy check
+  if (!currentUserData?.companyId && !isSuperAdmin) {
+    return (
+      <div className="min-h-screen bg-[#0f1115]">
+        <Toaster position="top-right" theme="dark" />
+        <CompanyWizard onCreate={handleCreateCompany} onJoin={handleJoinCompany} />
+      </div>
+    );
+  }
+
+  // Verification if company is blocked - Super Admin bypasses this
+  if (currentCompany && currentCompany.status === 'blocked' && !isSuperAdmin) {
+    return (
+      <div className="min-h-screen bg-[#0f1115] flex items-center justify-center p-4">
+        <Toaster position="top-right" theme="dark" />
+        <Card className="max-w-md w-full bg-[#1a1d23] border-[#2d3139] text-center p-8">
+          <div className="flex justify-center mb-6">
+            <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center">
+              <AlertCircle size={40} className="text-red-500" />
+            </div>
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-2">Acesso Suspenso</h2>
+          <p className="text-[#a0a0a0] mb-6">
+            O acesso da empresa <b>{currentCompany.name}</b> foi temporariamente suspenso. 
+            Isso pode ocorrer devido a pendências financeiras ou revisão dos termos de uso.
+          </p>
+          <div className="bg-[#0f1115] border border-[#2d3139] rounded-lg p-4 mb-6">
+            <p className="text-sm text-[#71717a]">
+              Para restabelecer o acesso, entre em contato com o suporte administrativo ou verifique suas faturas pendentes.
+            </p>
+          </div>
+          <Button 
+            onClick={() => signOut(auth)}
+            variant="outline" 
+            className="w-full border-[#2d3139] text-[#a0a0a0] hover:text-white"
+          >
+            Sair do Aplicativo
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen bg-[#0f1115] text-[#e0e0e0] overflow-hidden">
       <Toaster position="top-right" theme="dark" />
@@ -1201,11 +1633,11 @@ export default function App() {
             {appSettings.logoUrl ? (
               <img src={appSettings.logoUrl} alt="Logo" className="h-10 w-auto object-contain max-w-[40px]" referrerPolicy="no-referrer" />
             ) : (
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#3b82f6] text-white">
-                <CheckCircle2 size={18} />
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-lg shadow-blue-500/20">
+                <Shield size={22} className="fill-white/20" />
               </div>
             )}
-            <span className="font-bold tracking-wider text-white text-lg uppercase">SegurPro</span>
+            <span className="font-bold tracking-wider text-white text-xl">{currentCompany?.name || 'AF Sistemas'}</span>
           </div>
         </div>
         <ScrollArea className="flex-1 px-4 py-4">
@@ -1270,6 +1702,17 @@ export default function App() {
               active={activeTab === 'reports'} 
               onClick={() => setActiveTab('reports')} 
             />
+
+            {(currentUserData?.role === 'super_admin' || user?.email === 'emailparasiteslixo@gmail.com') && (
+              <div className="mt-4 pt-4 border-t border-[#2d3139]/30">
+                <SidebarItem 
+                  icon={<Shield size={18} className="text-yellow-500" />} 
+                  label="Admin SaaS" 
+                  active={activeTab === 'super-admin'} 
+                  onClick={() => setActiveTab('super-admin')} 
+                />
+              </div>
+            )}
           </nav>
         </ScrollArea>
         <div className="p-6 border-t border-[#2d3139]">
@@ -1303,10 +1746,10 @@ export default function App() {
             <img src={appSettings.logoUrl} alt="Logo" className="h-8 w-auto object-contain max-w-[32px]" referrerPolicy="no-referrer" />
           ) : (
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#3b82f6] text-white">
-              <CheckCircle2 size={18} />
+              <Shield size={18} />
             </div>
           )}
-          <span className="font-bold tracking-tight text-white">SegurPro</span>
+          <span className="font-bold tracking-tight text-white">{currentCompany?.name || 'AF Sistemas'}</span>
         </div>
         <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="text-white">
           {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
@@ -1373,6 +1816,14 @@ export default function App() {
               active={activeTab === 'settings'} 
               onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }} 
             />
+            { (currentUserData?.role === 'super_admin' || user?.email === 'emailparasiteslixo@gmail.com') && (
+              <SidebarItem 
+                icon={<Shield size={20} className="text-yellow-500" />} 
+                label="Admin SaaS" 
+                active={activeTab === 'super-admin'} 
+                onClick={() => { setActiveTab('super-admin'); setIsMobileMenuOpen(false); }} 
+              />
+            )}
           </nav>
           <div className="p-6 border-t border-[#2d3139]">
             <Button variant="ghost" className="w-full justify-start gap-2 text-[#a0a0a0]" onClick={handleLogout}>
@@ -1390,7 +1841,18 @@ export default function App() {
             <p className="text-[11px] text-[#71717a] uppercase tracking-widest mb-1">
               {format(new Date(), "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })}
             </p>
-            <h2 className="text-2xl font-medium text-white capitalize">{activeTab === 'dashboard' ? 'Resumo Operacional' : activeTab.replace('-', ' ')}</h2>
+            <h2 className="text-2xl font-medium text-white capitalize">
+              {activeTab === 'dashboard' ? 'Resumo Operacional' : 
+               activeTab === 'visits' ? 'Visitas Técnicas' :
+               activeTab === 'financial' ? 'Movimentação Financeira' :
+               activeTab === 'budgets' ? 'Orçamentos' :
+               activeTab === 'clients' ? 'Gestão de Clientes' :
+               activeTab === 'receipts' ? 'Recibos Emitidos' :
+               activeTab === 'reports' ? 'Relatórios Gerais' :
+               activeTab === 'users' ? 'Controle de Equipe' :
+               activeTab === 'settings' ? 'Configurações do Sistema' :
+               activeTab.replace('-', ' ')}
+            </h2>
           </div>
         </header>
 
@@ -1402,13 +1864,14 @@ export default function App() {
               budgets={budgets} 
               clients={clients} 
               onNavigate={(tab) => setActiveTab(tab)}
+              companyId={currentUserData?.companyId || ''}
             />
           )}
-          {activeTab === 'visits' && <VisitsManager visits={visits} user={user} clients={clients} appSettings={appSettings} pixSettings={pixSettings} />}
-          {activeTab === 'financial' && <FinancialManager financials={financials} visits={visits} clients={clients} />}
-          {activeTab === 'budgets' && <BudgetsManager budgets={budgets} clients={clients} appSettings={appSettings} pixSettings={pixSettings} />}
-          {activeTab === 'clients' && <ClientsManager clients={clients} appSettings={appSettings} pixSettings={pixSettings} />}
-          {activeTab === 'receipts' && <ReceiptsManager receipts={receipts} clients={clients} pixSettings={pixSettings} appSettings={appSettings} />}
+          {activeTab === 'visits' && <VisitsManager visits={visits} user={user} clients={clients} appSettings={appSettings} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} />}
+          {activeTab === 'financial' && <FinancialManager financials={financials} visits={visits} clients={clients} companyId={currentUserData?.companyId || ''} />}
+          {activeTab === 'budgets' && <BudgetsManager budgets={budgets} clients={clients} appSettings={appSettings} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} />}
+          {activeTab === 'clients' && <ClientsManager clients={clients} appSettings={appSettings} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} />}
+          {activeTab === 'receipts' && <ReceiptsManager receipts={receipts} clients={clients} pixSettings={pixSettings} appSettings={appSettings} companyId={currentUserData?.companyId || ''} />}
           {activeTab === 'reports' && (
             <ReportsManager 
               visits={visits} 
@@ -1417,17 +1880,26 @@ export default function App() {
               clients={clients} 
               receipts={receipts} 
               appSettings={appSettings} 
+              companyId={currentUserData?.companyId || ''}
             />
           )}
-          {activeTab === 'users' && <UsersManager users={users} />}
-          {activeTab === 'settings' && <SettingsManager pixSettings={pixSettings} appSettings={appSettings} user={user} />}
+          {activeTab === 'users' && <UsersManager users={users} currentUserData={currentUserData} />}
+          {activeTab === 'super-admin' && (
+            <SuperAdminPanel 
+              companies={allCompanies} 
+              financials={allFinancials} 
+              saasSettings={saasSettings}
+              user={user}
+            />
+          )}
+          {activeTab === 'settings' && <SettingsManager pixSettings={pixSettings} appSettings={appSettings} user={user} companyId={currentUserData?.companyId || ''} />}
         </div>
       </main>
     </div>
   );
 }
 
-function UsersManager({ users }: { users: any[] }) {
+function UsersManager({ users, currentUserData }: { users: any[], currentUserData: any }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'tecnico' });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -1460,6 +1932,7 @@ function UsersManager({ users }: { users: any[] }) {
         email: finalEmail,
         displayName: newUser.name,
         role: newUser.role,
+        companyId: currentUserData.companyId,
         createdAt: Timestamp.now()
       });
 
@@ -1628,9 +2101,9 @@ function UsersManager({ users }: { users: any[] }) {
         </Dialog>
       </div>
 
-      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden">
+      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
         <Table>
-          <TableHeader className="bg-[#25282e]/50">
+          <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">Ações</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Usuário</TableHead>
@@ -1805,7 +2278,7 @@ const PAYMENT_METHODS = [
   "Boleto"
 ];
 
-function ClientsManager({ clients, appSettings, pixSettings }: { clients: Client[], appSettings: AppSettings, pixSettings: PixSettings }) {
+function ClientsManager({ clients, appSettings, pixSettings, companyId }: { clients: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -1881,6 +2354,7 @@ function ClientsManager({ clients, appSettings, pixSettings }: { clients: Client
         ...newClient,
         type: newClient.type || 'Avulso',
         contractValue: newClient.type === 'Contrato' ? Number(newClient.contractValue || 0) : 0,
+        companyId,
         createdAt: Timestamp.now()
       };
       const docRef = await addDoc(collection(db, 'clients'), clientData);
@@ -2329,9 +2803,9 @@ function ClientsManager({ clients, appSettings, pixSettings }: { clients: Client
         </DialogContent>
       </Dialog>
 
-      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden">
+      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
         <Table>
-          <TableHeader className="bg-[#25282e]/50">
+          <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">Ações</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Nome / Tipo</TableHead>
@@ -2462,7 +2936,7 @@ function ClientsManager({ clients, appSettings, pixSettings }: { clients: Client
 
 // --- Receipts Manager Component ---
 
-function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { receipts: Receipt[], clients: Client[], pixSettings: PixSettings, appSettings: AppSettings }) {
+function ReceiptsManager({ receipts, clients, pixSettings, appSettings, companyId }: { receipts: Receipt[], clients: Client[], pixSettings: PixSettings, appSettings: AppSettings, companyId: string }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -2504,6 +2978,7 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
           serviceType: receiptData.clientType === 'Contrato' ? 'Contrato' : 'Serviço Normal',
           clientId: receiptData.clientId || null,
           receiptId: receiptId,
+          companyId,
           createdAt: Timestamp.now()
         });
         toast.info('Lançamento financeiro realizado automaticamente!');
@@ -2532,13 +3007,31 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
     }
 
     try {
-      const nextNumber = receipts.length > 0 ? Math.max(...receipts.map(r => r.number || 0)) + 1 : 1;
+      const year = new Date().getFullYear().toString().slice(-2);
+      // Find the last number for the current year
+      const yearPattern = `/${year}`;
+      const yearReceipts = receipts.filter(r => {
+        const num = String(r.number || '');
+        return num.endsWith(yearPattern);
+      });
+      
+      let nextNum = 1;
+      if (yearReceipts.length > 0) {
+        const numbers = yearReceipts.map(r => {
+          const parts = String(r.number || '').split('/');
+          return parseInt(parts[0]);
+        });
+        nextNum = Math.max(...numbers.filter(n => !isNaN(n))) + 1;
+      }
+
+      const receiptNumber = `${nextNum.toString().padStart(5, '0')}/${year}`;
 
       const receiptData = {
         ...newReceipt,
-        number: nextNumber,
+        number: receiptNumber,
         status: newReceipt.status || 'Aguardando Pagamento',
         date: Timestamp.fromDate(newReceipt.date instanceof Date ? newReceipt.date : new Date()),
+        companyId,
         createdAt: Timestamp.now()
       };
       
@@ -2946,9 +3439,9 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
         </Dialog>
       </div>
 
-      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden">
+      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
         <Table>
-          <TableHeader className="bg-[#25282e]/50">
+          <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[140px]">Ações</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[80px]">Nº</TableHead>
@@ -3053,11 +3546,971 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings }: { rece
   );
 }
 
-// --- Settings Manager Component ---
+// --- Super Admin Panel Component ---
 
-function SettingsManager({ pixSettings, appSettings, user }: { pixSettings: PixSettings, appSettings: AppSettings, user: FirebaseUser }) {
-  const [localApp, setLocalApp] = useState<AppSettings>(appSettings);
-  const [newDisplayName, setNewDisplayName] = useState(user.displayName || '');
+function SuperAdminPanel({ companies, financials, saasSettings, user }: { companies: any[], financials: any[], saasSettings: any, user: any }) {
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
+  const [migrationStats, setMigrationStats] = useState<any>(null);
+  const [migrationLogs, setMigrationLogs] = useState<string[]>([]);
+  const [isMigrationFinished, setIsMigrationFinished] = useState(false);
+  const [lastMigrationTargetName, setLastMigrationTargetName] = useState('');
+  const [deepSearchQuery, setDeepSearchQuery] = useState('');
+  const [deepSearchResults, setDeepSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  const handleDeepSearchRescue = async () => {
+    if (!deepSearchQuery || deepSearchQuery.length < 3) {
+      toast.error("Digite pelo menos 3 caracteres para buscar.");
+      return;
+    }
+
+    if (!selectedCompanyId) {
+      toast.error("Selecione uma empresa de destino para os resultados.");
+      return;
+    }
+
+    setIsSearching(true);
+    setDeepSearchResults([]);
+    const results: any[] = [];
+    const collections = ['clients', 'visits', 'receipts', 'financial', 'budgets', 'users', 'companies'];
+    
+    try {
+      for (const colName of collections) {
+        const colRef = collection(db, colName);
+        const snapshot = await getDocs(query(colRef, limit(2000)));
+        
+        snapshot.docs.forEach(d => {
+          const data = d.data();
+          const str = JSON.stringify(data).toLowerCase();
+          if (str.includes(deepSearchQuery.toLowerCase())) {
+            results.push({ id: d.id, col: colName, ...data });
+          }
+        });
+      }
+      setDeepSearchResults(results);
+      toast.success(`${results.length} resultados encontrados para "${deepSearchQuery}"`);
+    } catch (err) {
+      toast.error("Erro na busca profunda.");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const relinkResult = async (res: any) => {
+    try {
+      await updateDoc(doc(db, res.col, res.id), {
+        companyId: selectedCompanyId,
+        ownerId: user?.uid,
+        migratedAt: Timestamp.now()
+      });
+      setDeepSearchResults(prev => prev.filter(item => item.id !== res.id));
+      toast.success("Registro vinculado com sucesso!");
+    } catch (err) {
+      toast.error("Erro ao vincular registro.");
+    }
+  };
+
+  // New states for block confirmation, company editing, and deletion
+  const [isBlockConfirmOpen, setIsBlockConfirmOpen] = useState(false);
+  const [isEditCompanyOpen, setIsEditCompanyOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [companyToToggle, setCompanyToToggle] = useState<{id: string, status: string} | null>(null);
+  const [editingCompany, setEditingCompany] = useState<any>(null);
+  const logEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (logEndRef.current) {
+      logEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [migrationLogs]);
+
+  const handleDownloadBackup = async (companyId: string, companyName: string, documentNumber: string) => {
+    setIsBackingUp(true);
+    try {
+      const backupData: any = { companyName, companyId, documentNumber, exportedAt: new Date().toISOString(), data: {} };
+      const collections = ['companies', 'clients', 'visits', 'receipts', 'financial', 'budgets', 'users'];
+      
+      for (const col of collections) {
+        let q;
+        if (col === 'companies') {
+          q = query(collection(db, col), where('__name__', '==', companyId));
+        } else {
+          q = query(collection(db, col), where('companyId', '==', companyId));
+        }
+        const snapshot = await getDocs(q);
+        const docs = [];
+        for (const docSnapshot of snapshot.docs) {
+          const docData = { id: docSnapshot.id, ...(docSnapshot.data() as any) };
+          if (col === 'companies') {
+            const settingsSnap = await getDoc(doc(db, 'companies', docSnapshot.id, 'settings', 'general'));
+            if (settingsSnap.exists()) {
+              Object.assign(docData, settingsSnap.data());
+            }
+          }
+          docs.push(docData);
+        }
+        backupData.data[col] = docs;
+      }
+
+      const filename = (documentNumber || companyId).replace(/[^a-zA-Z0-9]/g, '');
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${filename}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast.success("Download do backup concluído!");
+    } catch (error) {
+      toast.error("Erro ao gerar backup.");
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  const handleRestoreBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const text = e.target?.result as string;
+        const backup = JSON.parse(text);
+        
+        if (!backup.data) {
+          toast.error("Arquivo de backup inválido.");
+          return;
+        }
+
+        setIsMigrating(true);
+        const targetId = editingCompany?.id;
+
+        if (!targetId) {
+          toast.error("Nenhuma empresa selecionada para restauração.");
+          return;
+        }
+
+        // Pull top-level fields from backup JSON for better compatibility with old backups
+        const backupCompanyName = backup.companyName || '';
+        const backupDocument = backup.documentNumber || backup.document || '';
+        const backupAddress = backup.companyAddress || backup.address || '';
+        const backupResponsible = backup.responsible || backup.companyResp || '';
+        const backupCity = backup.city || backup.companyCity || '';
+        const backupNeighborhood = backup.neighborhood || backup.companyNeighborhood || '';
+        const backupCep = backup.cep || backup.companyCep || '';
+        const backupLogo = backup.logoUrl || backup.companyLogo || '';
+
+        // Restore all collections
+        for (const colName in backup.data) {
+          const records = backup.data[colName];
+          for (const record of records) {
+            const { id, ...data } = record;
+            
+            // If it's a related record, force it to point to the CURRENT registration ID and current User
+            if (colName !== 'companies') {
+              data.companyId = targetId;
+              // Force ownerId to current user to ensure permissions work
+              if (user?.uid) {
+                data.ownerId = user.uid;
+              }
+              await setDoc(doc(db, colName, id), data, { merge: true });
+            } else {
+              // If it's the company record itself, merge data into the ACTIVE registration ID
+              // but keep the current ID (targetId)
+              const companyData = { ...data };
+              delete companyData.id;
+              
+              const mergedName = companyData.name || companyData.companyName || backupCompanyName;
+              const mergedDoc = companyData.document || companyData.documentNumber || backupDocument || companyData.cnpj || companyData.companyDoc;
+              const mergedAddress = companyData.address || companyData.companyAddress || backupAddress || companyData.logradouro;
+              const mergedResponsible = companyData.responsible || companyData.companyResp || backupResponsible || companyData.technicianName;
+
+              await updateDoc(doc(db, 'companies', targetId), {
+                ...companyData,
+                name: mergedName || 'Empresa Restaurada',
+                status: companyData.status || 'active',
+                ownerId: user?.uid || companyData.ownerId
+              });
+
+              // Also propagate these fields to the settings/general subcollection for the new UI architecture
+              await setDoc(doc(db, 'companies', targetId, 'settings', 'general'), {
+                companyName: mergedName || '',
+                logoUrl: companyData.logoUrl || companyData.companyLogo || backupLogo || '',
+                address: mergedAddress || '',
+                neighborhood: companyData.neighborhood || companyData.companyNeighborhood || backupNeighborhood || companyData.bairro || '',
+                responsible: mergedResponsible || '',
+                city: companyData.city || companyData.companyCity || backupCity || companyData.municipio || '',
+                cep: companyData.cep || companyData.companyCep || backupCep || '',
+                document: mergedDoc || '',
+                signatureUrl: companyData.signatureUrl || ''
+              }, { merge: true });
+            }
+          }
+        }
+
+        toast.success(`Dados restaurados com sucesso para ${editingCompany.name}!`);
+      } catch (error) {
+        console.error("Restore error:", error);
+        toast.error("Erro ao processar arquivo de backup.");
+      } finally {
+        setIsMigrating(false);
+        event.target.value = '';
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleFinalDelete = async (companyId: string) => {
+    try {
+      // 1. Delete company document
+      await deleteDoc(doc(db, 'companies', companyId));
+      
+      // 2. Delete all related data (best effort)
+      const collections = ['clients', 'visits', 'receipts', 'financial', 'budgets', 'users'];
+      for (const col of collections) {
+        const q = query(collection(db, col), where('companyId', '==', companyId));
+        const snapshot = await getDocs(q);
+        for (const d of snapshot.docs) {
+          await deleteDoc(doc(db, col, d.id));
+        }
+      }
+
+      toast.success("Empresa e todos os seus dados foram excluídos permanentemente.");
+      setIsDeleteConfirmOpen(false);
+      setIsEditCompanyOpen(false);
+      setEditingCompany(null);
+    } catch (error) {
+      toast.error("Erro ao excluir dados da empresa.");
+    }
+  };
+
+  const toggleCompanyStatus = async (id: string, currentStatus: string) => {
+    if (currentStatus === 'active') {
+      setCompanyToToggle({ id, status: currentStatus });
+      setIsBlockConfirmOpen(true);
+    } else {
+      await executeToggle(id, 'active');
+    }
+  };
+
+  const executeToggle = async (id: string, newStatus: string) => {
+    try {
+      await updateDoc(doc(db, 'companies', id), { status: newStatus });
+      toast.success(`Empresa ${newStatus === 'active' ? 'Ativada' : 'Bloqueada'} com sucesso!`);
+      setIsBlockConfirmOpen(false);
+      setCompanyToToggle(null);
+    } catch (error) {
+      toast.error("Erro ao atualizar status.");
+    }
+  };
+
+  const handleUpdateCompanyPlan = async () => {
+    if (!editingCompany) return;
+    try {
+      await updateDoc(doc(db, 'companies', editingCompany.id), {
+        billingCycle: editingCompany.billingCycle || 'mensal',
+        customPrice: Number(editingCompany.customPrice) || 0,
+        receivesUpdates: editingCompany.receivesUpdates ?? true,
+        isExempt: editingCompany.isExempt || false
+      });
+      toast.success("Plano da empresa atualizado!");
+      setIsEditCompanyOpen(false);
+      setEditingCompany(null);
+    } catch (error) {
+      toast.error("Erro ao atualizar plano.");
+    }
+  };
+
+  const toggleExemption = async (id: string, currentExempt: boolean) => {
+    try {
+      await updateDoc(doc(db, 'companies', id), { isExempt: !currentExempt });
+      toast.success(`Isenção ${!currentExempt ? 'Ativada' : 'Desativada'}!`);
+    } catch (error) {
+      toast.error("Erro ao alterar isenção.");
+    }
+  };
+
+   const handleMigrateOrphanedData = async () => {
+    if (!selectedCompanyId) {
+      toast.error("Por favor, selecione uma empresa de destino.");
+      return;
+    }
+
+    const myCompanyRecord = companies.find(c => c.id === selectedCompanyId);
+    if (!myCompanyRecord) return;
+
+    setLastMigrationTargetName(myCompanyRecord.name);
+    setIsMigrating(true);
+    setIsMigrationFinished(false);
+    setMigrationLogs(["Iniciando recuperação total da base de dados..."]);
+    let migratedCount = 0;
+    const collectionsToMigrate = ['clients', 'visits', 'receipts', 'financial', 'budgets', 'users'];
+    const foundCompanyIds = new Set<string>();
+    
+    try {
+      // 1. Data Migration - Total Database Recovery (Restoring ALL existing data)
+      for (const colName of collectionsToMigrate) {
+        setMigrationLogs(prev => [...prev, `Analisando coleção: ${colName}...`]);
+        const colRef = collection(db, colName);
+        
+        // We fetch up to 2000 records per collection to ensure a total reset as requested
+        const allDocsSnap = await getDocs(query(colRef, limit(2000)));
+        
+        setMigrationLogs(prev => [...prev, `Encontrados ${allDocsSnap.docs.length} registros em ${colName}.`]);
+
+        for (const recordDoc of allDocsSnap.docs) {
+          const data = recordDoc.data();
+          
+          if (data.companyId && data.companyId !== selectedCompanyId) {
+            foundCompanyIds.add(data.companyId);
+          }
+          
+          // Force link EVERYTHING to the selected company
+          // We only update if it's not already linked to the target to save writes
+          if (data.companyId !== selectedCompanyId || data.ownerId !== user?.uid) {
+            await updateDoc(doc(db, colName, recordDoc.id), {
+              companyId: selectedCompanyId,
+              ownerId: user?.uid,
+              updatedAt: Timestamp.now(),
+              migratedAt: Timestamp.now(),
+              migratedBy: user?.email
+            });
+            migratedCount++;
+          }
+        }
+        setMigrationLogs(prev => [...prev, `Coleção ${colName} processada.`]);
+      }
+
+      setMigrationLogs(prev => [...prev, `--- Início da Recuperação de Configurações ---`]);
+      // 2. Greedy Settings Discovery - Also scan ALL existing companies
+      const settingsToApply: any = {};
+      
+      const mergeSettings = (data: any, source: string) => {
+        if (!data) return;
+        const mapped: any = {
+          companyName: data.name || data.companyName || data.fantasia || data.nomeFantasia || data.razaoSocial || '',
+          document: data.document || data.cnpj || data.companyDoc || data.cpf || data.documento || data.companyCNPJ || '',
+          responsible: data.responsible || data.companyResp || data.technicianName || data.responsavel || data.tecnicoResponsavel || data.proprietario || '',
+          address: data.address || data.companyAddress || data.logradouro || data.endereco || data.rua || '',
+          neighborhood: data.neighborhood || data.companyNeighborhood || data.bairro || '',
+          city: data.city || data.companyCity || data.municipio || data.cidade || '',
+          cep: data.cep || data.companyCep || data.codigoPostal || '',
+          logoUrl: data.logoUrl || data.companyLogo || data.logo || data.avatarUrl || '',
+          signatureUrl: data.signatureUrl || data.assinatura || data.signature || data.rubrica || ''
+        };
+        
+        let foundSomething = false;
+        Object.entries(mapped).forEach(([key, val]) => {
+          if (val && (!settingsToApply[key] || settingsToApply[key] === '')) {
+             settingsToApply[key] = val;
+             foundSomething = true;
+          }
+        });
+        if (foundSomething) {
+          setMigrationLogs(prev => [...prev, `Dados recuperados de: ${source}`]);
+        }
+      };
+
+      const allCompaniesSnap = await getDocs(collection(db, 'companies'));
+      setMigrationLogs(prev => [...prev, `Vasculhando ${allCompaniesSnap.docs.length} empresas registradas...`]);
+
+      for (const d of allCompaniesSnap.docs) {
+        if (d.id !== selectedCompanyId) {
+          const compData = d.data();
+          mergeSettings(compData, `Empresa ${compData.name || d.id}`);
+          
+          const sub = await getDoc(doc(db, 'companies', d.id, 'settings', 'general'));
+          if (sub.exists()) {
+            mergeSettings(sub.data(), `Configurações de ${compData.name || d.id}`);
+          }
+        }
+      }
+
+      // B. Scan specific IDs found in migrated records (if any were missed)
+      for (const id of Array.from(foundCompanyIds)) {
+        if (id !== selectedCompanyId) {
+          const d = await getDoc(doc(db, 'companies', id));
+          if (d.exists()) {
+            mergeSettings(d.data(), `ID Encontrado: ${id}`);
+            const sub = await getDoc(doc(db, 'companies', id, 'settings', 'general'));
+            if (sub.exists()) {
+              mergeSettings(sub.data(), `Sub-configuração do ID: ${id}`);
+            }
+          }
+        }
+      }
+
+      // C. User doc fallback
+      const userDoc = await getDoc(doc(db, 'users', user?.uid || ''));
+      if (userDoc.exists()) {
+        mergeSettings(userDoc.data(), "Seu próprio perfil de usuário");
+      }
+
+      setMigrationLogs(prev => [...prev, `Aplicando configurações recuperadas...`]);
+
+      if (Object.keys(settingsToApply).length > 0) {
+        await setDoc(doc(db, 'companies', selectedCompanyId, 'settings', 'general'), settingsToApply, { merge: true });
+        const topLevelUpdate: any = {};
+        if (settingsToApply.companyName) topLevelUpdate.name = settingsToApply.companyName;
+        if (settingsToApply.document) topLevelUpdate.document = settingsToApply.document;
+        if (settingsToApply.address) topLevelUpdate.address = settingsToApply.address;
+        if (Object.keys(topLevelUpdate).length > 0) {
+          await updateDoc(doc(db, 'companies', selectedCompanyId), topLevelUpdate);
+        }
+        setMigrationLogs(prev => [...prev, `Configurações salvas com sucesso.`]);
+      } else {
+        setMigrationLogs(prev => [...prev, `Nenhuma configuração adicional encontrada para recuperar.`]);
+      }
+
+      setMigrationStats(migratedCount);
+      setMigrationLogs(prev => [...prev, `CONCLUÍDO: ${migratedCount} registros vinculados.`]);
+      setIsMigrationFinished(true);
+      toast.success(`${migratedCount} registros foram vinculados à ${myCompanyRecord.name}!`);
+      setSelectedCompanyId('');
+    } catch (error) {
+      console.error("Migration error:", error);
+      setMigrationLogs(prev => [...prev, `ERRO: ${error instanceof Error ? error.message : "Erro desconhecido"}`]);
+      setIsMigrationFinished(true);
+      toast.error("Erro durante a migração de dados.");
+    } finally {
+      setIsMigrating(false);
+    }
+  };
+
+  // Identify AF Sistemas (User's own company)
+  const myCompany = companies.find(c => c.ownerId === user?.uid) || 
+                    companies.find(c => c.name?.toLowerCase().includes('af sistemas'));
+  
+  // Calculate SaaS Total Revenue (Subscriptions)
+  // Logic: Active companies (excluding my own AND exempt ones)
+  const activeCompaniesCount = (companies || []).filter(c => c && c.status !== 'blocked').length;
+  
+  const saasRevenue = (companies || []).reduce((total, c) => {
+    if (!c || c.status === 'blocked' || c.id === myCompany?.id || c.isExempt) return total;
+    
+    // Use custom company price if set, otherwise global SaaS price (fallback to 0)
+    const price = c.customPrice !== undefined ? Number(c.customPrice) : (saasSettings?.price || 0);
+    
+    return total + price;
+  }, 0);
+
+  // Global Dashboard Revenue (AF Sistemas internal records)
+  const myCompanyFinancials = (financials || []).filter(f => f && f.companyId === myCompany?.id);
+  const myCompanyRevenue = myCompanyFinancials
+    .filter(f => f.type === 'Receita')
+    .reduce((sum, f) => sum + (Number(f.value) || 0), 0);
+
+  // Total Gross Revenue = My Company Revenue + SaaS Subscription Revenue
+  const totalGrossRevenue = myCompanyRevenue + saasRevenue;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+            <Shield className="text-yellow-500" size={24} />
+            Administração SaaS
+          </h2>
+          <p className="text-[#71717a]">Gerenciamento global de empresas, preços e faturamento.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Badge className="bg-blue-500/10 text-blue-500 border-blue-500/20 px-3 py-1">
+            Modo Super Admin
+          </Badge>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <Card className="bg-[#1a1d23] border-[#2d3139] p-5 text-center">
+          <h4 className="text-[#a0a0a0] text-[10px] uppercase tracking-wider mb-2">Total de Empresas</h4>
+          <p className="text-3xl font-bold text-white">{companies.length}</p>
+        </Card>
+        <Card className="bg-[#1a1d23] border-[#2d3139] p-5 text-center">
+          <h4 className="text-[#a0a0a0] text-[10px] uppercase tracking-wider mb-2">Ativas / Bloqueadas</h4>
+          <div className="flex justify-center gap-3 items-baseline">
+            <span className="text-2xl font-bold text-[#10b981]">{activeCompaniesCount}</span>
+            <span className="text-[#71717a]">/</span>
+            <span className="text-2xl font-bold text-[#ef4444]">{companies.length - activeCompaniesCount}</span>
+          </div>
+        </Card>
+        <Card className="bg-[#1a1d23] border-[#2d3139] p-5 text-center">
+          <h4 className="text-[#a0a0a0] text-[10px] uppercase tracking-wider mb-2">Saldo Geral SaaS (Assinaturas)</h4>
+          <p className="text-2xl font-bold text-blue-500">
+            R$ {saasRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          </p>
+          <p className="text-[10px] text-[#71717a] mt-1 italic">Vendas do sistema</p>
+        </Card>
+        <Card className="bg-[#1a1d23] border-[#2d3139] p-5 text-center border-blue-500/30">
+          <h4 className="text-blue-400 text-[10px] uppercase tracking-wider mb-2 font-bold">Receita Total Bruta</h4>
+          <p className="text-2xl font-bold text-white">
+            R$ {totalGrossRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          </p>
+          <p className="text-[10px] text-[#71717a] mt-1 italic">AF Sistemas + Assinaturas</p>
+        </Card>
+      </div>
+
+      {(isMigrating || isMigrationFinished) && (
+        <Card className="bg-[#1a1d23] border-[#2d3139] p-6 mb-6">
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                {isMigrating ? (
+                  <RefreshCw className="animate-spin text-yellow-500" size={32} />
+                ) : (
+                  <Database className="text-green-500" size={32} />
+                )}
+                <div>
+                  <p className="text-white font-medium">
+                    {isMigrating ? "Recuperação Estrutural em Andamento..." : "Recuperação Finalizada"}
+                  </p>
+                  <p className="text-[#a0a0a0] text-sm">
+                    {isMigrating 
+                      ? `Vinculando toda a base de dados à empresa "${lastMigrationTargetName}".`
+                      : `O processo de vinculação para "${lastMigrationTargetName}" terminou. Verifique os resultados abaixo.`
+                    }
+                  </p>
+                </div>
+              </div>
+              {isMigrationFinished && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setIsMigrationFinished(false)}
+                  className="border-[#2d3139] text-[#a0a0a0] hover:text-white"
+                >
+                  Fechar Relatório
+                </Button>
+              )}
+            </div>
+            
+            <div className="bg-[#0f1115] rounded-lg p-3 border border-[#2d3139] font-mono text-[10px] space-y-1 max-h-[300px] overflow-y-auto">
+              {migrationLogs.map((log, i) => (
+                <div key={i} className={cn(
+                  "flex gap-2",
+                  log.startsWith('ERRO') ? "text-red-500" : log.startsWith('CONCLUÍDO') ? "text-green-500" : "text-[#71717a]"
+                )}>
+                  <span className="opacity-30">[{new Date().toLocaleTimeString()}]</span>
+                  <span>{log}</span>
+                </div>
+              ))}
+              <div ref={logEndRef} />
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {!isMigrating && (
+        <div className="space-y-4 mb-6">
+          <div className="bg-[#1a1d23] border border-[#2d3139] p-4 rounded-xl flex flex-col md:flex-row items-center gap-4">
+            <div className="flex items-center gap-3 text-yellow-500 min-w-fit">
+              <Database size={20} />
+              <span className="text-sm font-bold uppercase tracking-wider">Recuperação Estrutural:</span>
+            </div>
+            <div className="flex-1 w-full">
+              <select 
+                value={selectedCompanyId}
+                onChange={(e) => setSelectedCompanyId(e.target.value)}
+                className="w-full bg-[#0f1115] border-[#2d3139] text-white rounded-md h-10 px-3 text-sm focus:border-yellow-500 outline-none"
+              >
+                <option value="">Selecione a empresa de destino (AF Sistemas ou outra)...</option>
+                {companies.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} {c.document ? `(CNPJ: ${c.document})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <Button 
+              onClick={handleMigrateOrphanedData}
+              disabled={!selectedCompanyId || companies.length === 0}
+              className="w-full md:w-auto bg-yellow-500 hover:bg-yellow-600 text-black font-bold h-10 shadow-sm"
+            >
+              Vincular TUDO o que existe no Banco
+            </Button>
+          </div>
+
+          <Card className="bg-[#1a1d23] border-[#2d3139] p-4 border-dashed">
+            <div className="flex flex-col md:flex-row gap-4 items-end">
+              <div className="flex-1 space-y-2">
+                <Label className="text-[10px] text-[#71717a] uppercase font-bold">Busca e Resgate Manual (Deep Search)</Label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#71717a]" size={16} />
+                  <Input 
+                    placeholder="Busque por 'AF', nome do cliente, placa, etc..." 
+                    className="pl-10 bg-[#0f1115] border-[#2d3139]" 
+                    value={deepSearchQuery}
+                    onChange={e => setDeepSearchQuery(e.target.value)}
+                  />
+                </div>
+              </div>
+              <Button 
+                onClick={handleDeepSearchRescue} 
+                disabled={isSearching || !selectedCompanyId}
+                className="bg-blue-600 hover:bg-blue-700 text-white h-10 px-6 font-bold"
+              >
+                {isSearching ? <RefreshCw className="animate-spin mr-2" size={16} /> : <Search className="mr-2" size={16} />}
+                Rastrear Registros
+              </Button>
+            </div>
+            
+            {deepSearchResults.length > 0 && (
+              <div className="mt-4 border-t border-[#2d3139] pt-4">
+                <p className="text-[11px] text-blue-400 mb-2 font-bold uppercase tracking-widest">Registros Encontrados ({deepSearchResults.length})</p>
+                <div className="max-h-[300px] overflow-y-auto space-y-2 pr-2">
+                  {deepSearchResults.map((res, i) => (
+                    <div key={i} className="flex items-center justify-between p-3 bg-[#0f1115] rounded-lg border border-[#2d3139] group">
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-[9px] uppercase">{res.col}</Badge>
+                          <span className="text-xs font-bold text-white">{res.name || res.description || res.clientName || 'Registro Sem Nome'}</span>
+                        </div>
+                        <span className="text-[10px] text-[#71717a] mt-1 font-mono">ID: {res.id}</span>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        variant="ghost" 
+                        onClick={() => relinkResult(res)}
+                        className="text-emerald-500 hover:bg-emerald-500 hover:text-white text-[10px] h-8 font-bold"
+                      >
+                        VINCULAR AGORA
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
+      <Card className="bg-[#1a1d23] border-[#2d3139] rounded-xl overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow className="border-[#2d3139] hover:bg-transparent">
+              <TableHead className="w-10"></TableHead>
+              <TableHead className="text-[#71717a] font-semibold">Empresa</TableHead>
+              <TableHead className="text-[#71717a] font-semibold">Plano / Ciclo</TableHead>
+              <TableHead className="text-[#71717a] font-semibold text-center">Atualizações</TableHead>
+              <TableHead className="text-[#71717a] font-semibold">Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {companies.map((company) => (
+              <TableRow key={company.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
+                <TableCell className="text-center">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0 text-[#a0a0a0] hover:text-white hover:bg-blue-600/20"
+                    onClick={() => {
+                      setEditingCompany({
+                        ...company,
+                        billingCycle: company.billingCycle || saasSettings?.billingCycle || 'mensal',
+                        customPrice: company.customPrice !== undefined ? company.customPrice : (saasSettings?.price || 0),
+                        receivesUpdates: company.receivesUpdates ?? true
+                      });
+                      setIsEditCompanyOpen(true);
+                    }}
+                  >
+                    <Pencil size={14} />
+                  </Button>
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-col">
+                    <span className="font-medium text-white">{company.name}</span>
+                    <span className="text-[10px] text-[#71717a] uppercase font-mono">UID: {company.ownerId}</span>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-col gap-1">
+                    <Badge variant="outline" className={cn(
+                      "text-[10px] font-bold uppercase w-fit",
+                      company.isExempt || company.id === myCompany?.id 
+                        ? "text-blue-400 border-blue-400/30" 
+                        : "text-green-400 border-green-400/30"
+                    )}>
+                      {company.isExempt || company.id === (myCompany?.id || '') 
+                        ? 'Isento' 
+                        : `R$ ${company.customPrice !== undefined ? company.customPrice : (saasSettings?.price || 0)}`}
+                    </Badge>
+                    <span className="text-[10px] text-[#a0a0a0] capitalize ml-1">
+                      {company.billingCycle || saasSettings?.billingCycle || 'mensal'}
+                    </span>
+                  </div>
+                </TableCell>
+                <TableCell className="text-center">
+                  <Badge className={cn(
+                    "text-[10px]",
+                    company.receivesUpdates === false ? "bg-orange-500/20 text-orange-500 border-orange-500/50" : "bg-blue-500/20 text-blue-500 border-blue-500/50"
+                  )}>
+                    {company.receivesUpdates === false ? 'Bloqueadas' : 'Liberadas'}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <Badge className={cn(
+                    "text-[10px]",
+                    company.status === 'blocked' ? "bg-red-500/20 text-red-500 border-red-500/50" : "bg-green-500/20 text-green-500 border-green-500/50"
+                  )}>
+                    {company.status === 'blocked' ? 'Bloqueada' : 'Ativa'}
+                  </Badge>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </Card>
+
+      {/* Edit Company License Modal */}
+      <Dialog open={isEditCompanyOpen} onOpenChange={setIsEditCompanyOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[450px]">
+          <DialogHeader>
+            <DialogTitle>Gerenciar Licença: {editingCompany?.name}</DialogTitle>
+            <DialogDescription className="text-[#a0a0a0]">
+              Configure o plano, ciclo de cobrança e permissão de atualizações.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4 px-2 text-white">
+            <div className="flex items-center justify-between p-3 bg-blue-500/5 border border-blue-500/20 rounded-lg">
+              <div className="flex flex-col">
+                <Label className="text-sm font-bold text-blue-400">Empresa Pagante?</Label>
+                <span className="text-[10px] text-[#71717a]">Define se haverá cobrança de SaaS.</span>
+              </div>
+              <div className="flex bg-[#0f1115] p-1 rounded-md border border-[#2d3139]">
+                <Button 
+                  size="sm" 
+                  variant={editingCompany?.isExempt === false ? "default" : "ghost"}
+                  className={cn("h-7 px-3 text-[11px]", editingCompany?.isExempt === false ? "bg-blue-600 hover:bg-blue-700 text-white font-bold" : "text-[#71717a]")}
+                  onClick={() => setEditingCompany({...editingCompany, isExempt: false})}
+                >
+                  Sim
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant={editingCompany?.isExempt === true ? "destructive" : "ghost"}
+                  className={cn(
+                    "h-7 px-3 text-[11px] font-bold transition-all", 
+                    editingCompany?.isExempt === true ? "bg-red-600 text-white hover:bg-red-700 shadow-md" : "text-[#a0a0a0] hover:text-white"
+                  )}
+                  onClick={() => setEditingCompany({...editingCompany, isExempt: true})}
+                >
+                  Não
+                </Button>
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <input 
+                type="file" 
+                id="restore-company-backup" 
+                className="hidden" 
+                accept=".json"
+                onChange={handleRestoreBackup}
+              />
+              <Button 
+                variant="outline"
+                className="w-full border-blue-500 text-blue-400 hover:bg-blue-600 hover:text-white font-bold border-dashed"
+                onClick={() => document.getElementById('restore-company-backup')?.click()}
+              >
+                <Upload size={16} className="mr-2" />
+                RESTAURAR BACKUP NESTA EMPRESA
+              </Button>
+              <p className="text-[10px] text-[#71717a] mt-2 italic text-center">Use para recuperar dados vinculando-os a este registro atual.</p>
+            </div>
+
+            {editingCompany?.isExempt === false && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }} 
+                animate={{ opacity: 1, y: 0 }}
+                className="grid grid-cols-2 gap-4 p-3 bg-[#0f1115]/50 border border-[#2d3139] rounded-lg"
+              >
+                <div className="space-y-2">
+                  <Label>Valor Customizado (R$)</Label>
+                  <Input 
+                    type="number"
+                    value={editingCompany?.customPrice}
+                    onChange={(e) => setEditingCompany({...editingCompany, customPrice: e.target.value})}
+                    className="bg-[#0f1115] border-[#2d3139]"
+                  />
+                  <p className="text-[10px] text-[#71717a]">Use 0 para valor padrão.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Ciclo de Cobrança</Label>
+                  <select 
+                    className="w-full h-10 bg-[#0f1115] border-[#2d3139] rounded-md px-3 text-sm"
+                    value={editingCompany?.billingCycle}
+                    onChange={(e) => setEditingCompany({...editingCompany, billingCycle: e.target.value})}
+                  >
+                    <option value="mensal">Mensal</option>
+                    <option value="anual">Anual</option>
+                    <option value="vitalicia">Vitalícia (Enterprise)</option>
+                  </select>
+                </div>
+              </motion.div>
+            )}
+
+            <div className="flex items-center justify-between p-3 bg-[#0f1115]/50 border border-[#2d3139] rounded-lg">
+              <div className="flex flex-col">
+                <Label className="text-sm font-bold text-orange-400">Receber Atualizações?</Label>
+                <span className="text-[10px] text-[#71717a]">Se "Não", novos recursos serão bloqueados.</span>
+              </div>
+              <div className="flex bg-[#0f1115] p-1 rounded-md border border-[#2d3139]">
+                <Button 
+                  size="sm" 
+                  variant={editingCompany?.receivesUpdates === true ? "default" : "ghost"}
+                  className={cn("h-7 px-3 text-[11px]", editingCompany?.receivesUpdates === true ? "bg-blue-600 hover:bg-blue-700" : "text-[#71717a]")}
+                  onClick={() => setEditingCompany({...editingCompany, receivesUpdates: true})}
+                >
+                  Sim
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant={editingCompany?.receivesUpdates === false ? "destructive" : "ghost"}
+                  className={cn("h-7 px-3 text-[11px]", editingCompany?.receivesUpdates === false ? "bg-red-600 hover:bg-red-700" : "text-[#71717a]")}
+                  onClick={() => setEditingCompany({...editingCompany, receivesUpdates: false})}
+                >
+                  Não
+                </Button>
+              </div>
+            </div>
+
+            <div className="p-3 bg-red-500/5 border border-red-500/10 rounded-lg space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex flex-col">
+                  <Label className="text-sm font-bold text-red-500">Acesso ao Sistema</Label>
+                  <span className="text-[10px] text-[#71717a]">Bloquear impede totalmente o login dos funcionários.</span>
+                </div>
+                <Button 
+                  size="sm"
+                  variant="outline"
+                  className="border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white h-8 text-[10px]"
+                  onClick={() => setIsDeleteConfirmOpen(true)}
+                >
+                  <Trash2 size={14} className="mr-1" />
+                  Excluir Permanentemente
+                </Button>
+              </div>
+              <Button 
+                variant={editingCompany?.status === 'blocked' ? "default" : "destructive"}
+                className={cn(
+                  "w-full h-9 text-xs font-bold uppercase tracking-wide text-white",
+                  editingCompany?.status === 'blocked' ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"
+                )}
+                onClick={() => toggleCompanyStatus(editingCompany.id, editingCompany.status)}
+              >
+                {editingCompany?.status === 'blocked' ? 'Desbloquear Acesso Agora' : 'Bloquear Acesso Agora'}
+              </Button>
+            </div>
+          </div>
+          <DialogFooter className="bg-[#0f1115]/50 p-4 -mx-6 -mb-6 border-t border-[#2d3139] mt-2 rounded-b-lg">
+            <Button variant="outline" onClick={() => setIsEditCompanyOpen(false)} className="border-[#2d3139] text-[#a0a0a0]">Fechar Janela</Button>
+            <Button className="bg-blue-600 hover:bg-blue-700 text-white font-bold" onClick={handleUpdateCompanyPlan}>Gravar Alterações do Plano</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Company Confirmation Modal */}
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[450px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-500 font-bold">
+              <Trash2 size={24} />
+              EXCLUSÃO TOTAL E IRREVERSÍVEL
+            </DialogTitle>
+            <DialogDescription className="text-[#a0a0a0] pt-2">
+              Você está prestes a apagar a empresa <strong className="text-white">"{editingCompany?.name}"</strong> e TODOS os dados vinculados a ela (clientes, visitas, orçamentos, financeiro).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-lg my-4 space-y-3">
+            <p className="text-xs text-yellow-500 font-bold uppercase flex items-center gap-2">
+              <Database size={14} /> Passo 1: Recomendamos fazer Backup
+            </p>
+            <p className="text-[11px] text-[#a0a0a0]">
+              Baixe todos os registros desta empresa em formato JSON para garantir que não perderá informações importantes.
+            </p>
+            <Button 
+              className="w-full bg-[#2d3139] hover:bg-[#3b414a] text-white text-xs h-9 flex items-center gap-2"
+              onClick={() => handleDownloadBackup(editingCompany.id, editingCompany.name, editingCompany.document)}
+              disabled={isBackingUp}
+            >
+              <Download size={14} />
+              {isBackingUp ? 'Processando Backup...' : 'Download Backup dos Dados (JSON)'}
+            </Button>
+          </div>
+
+          <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-lg my-4 space-y-3">
+            <p className="text-xs text-red-500 font-bold uppercase flex items-center gap-2">
+              <AlertCircle size={14} /> Passo 2: Confirmação Final
+            </p>
+            <p className="text-[11px] text-[#a0a0a0]">
+              Esta ação NÃO PODE ser desfeita. Todos os dados serão removidos do banco de dados permanentemente.
+            </p>
+          </div>
+
+          <DialogFooter className="gap-2 pt-4">
+            <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)} className="border-[#2d3139] text-[#a0a0a0]">
+              Cancelar
+            </Button>
+            <Button 
+              className="bg-red-600 hover:bg-red-700 text-white font-bold"
+              onClick={() => handleFinalDelete(editingCompany.id)}
+            >
+              Sim, Apagar Tudo Agora
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmation Modal for Blocking */}
+      <Dialog open={isBlockConfirmOpen} onOpenChange={setIsBlockConfirmOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className="text-red-500" size={20} />
+              Confirmar Bloqueio
+            </DialogTitle>
+            <DialogDescription className="text-[#a0a0a0]">
+              Tem certeza que deseja bloquear o acesso desta empresa? O usuário não conseguirá entrar no sistema até ser desbloqueado.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="bg-red-500/10 border border-red-500/20 p-3 rounded-md mb-4 text-xs text-red-400">
+            <strong>Atenção:</strong> Bloquear uma empresa interromperá todos os processos em andamento para os funcionários vinculados a ela.
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setIsBlockConfirmOpen(false)} className="border-[#2d3139] text-[#a0a0a0]">
+              Cancelar
+            </Button>
+            <Button 
+              className="bg-red-600 hover:bg-red-700 text-white font-bold"
+              onClick={() => companyToToggle && executeToggle(companyToToggle.id, 'blocked')}
+            >
+              Sim, Bloquear
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function SettingsManager({ pixSettings, appSettings, user, companyId }: { pixSettings: PixSettings, appSettings: AppSettings, user: FirebaseUser, companyId: string }) {
+  const [localApp, setLocalApp] = useState<AppSettings>(appSettings || {
+    logoUrl: '',
+    companyName: '',
+    address: '',
+    neighborhood: '',
+    responsible: '',
+    city: '',
+    cep: '',
+    document: '',
+    signatureUrl: ''
+  });
+  const [newDisplayName, setNewDisplayName] = useState(user?.displayName || '');
   const [newPassword, setNewPassword] = useState('');
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
 
@@ -3066,16 +4519,21 @@ function SettingsManager({ pixSettings, appSettings, user }: { pixSettings: PixS
   const [currentPix, setCurrentPix] = useState<Partial<PixAccount>>({});
   const [editingPixId, setEditingPixId] = useState<string | null>(null);
 
+  // Keep state in sync with props
   useEffect(() => {
     setLocalApp(appSettings);
   }, [appSettings]);
 
+  useEffect(() => {
+    setNewDisplayName(user?.displayName || '');
+  }, [user?.displayName]);
+
   const handleSaveApp = async () => {
     try {
-      await setDoc(doc(db, 'settings', 'general'), localApp);
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'general'), localApp);
       toast.success('Configurações gerais salvas!');
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, 'settings/general');
+      handleFirestoreError(error, OperationType.UPDATE, `companies/${companyId}/settings/general`);
     }
   };
 
@@ -3104,23 +4562,23 @@ function SettingsManager({ pixSettings, appSettings, user }: { pixSettings: PixS
     }
 
     try {
-      await setDoc(doc(db, 'settings', 'pix'), { accounts: updatedAccounts });
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'pix'), { accounts: updatedAccounts });
       toast.success(editingPixId ? 'Conta PIX atualizada!' : 'Nova conta PIX adicionada!');
       setIsPixDialogOpen(false);
       setCurrentPix({});
       setEditingPixId(null);
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, 'settings/pix');
+      handleFirestoreError(error, OperationType.UPDATE, `companies/${companyId}/settings/pix`);
     }
   };
 
   const handleDeletePixAccount = async (id: string) => {
     const updatedAccounts = (pixSettings.accounts || []).filter(acc => acc.id !== id);
     try {
-      await setDoc(doc(db, 'settings', 'pix'), { accounts: updatedAccounts });
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'pix'), { accounts: updatedAccounts });
       toast.success('Conta PIX removida!');
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, 'settings/pix');
+      handleFirestoreError(error, OperationType.UPDATE, `companies/${companyId}/settings/pix`);
     }
   };
 
@@ -3149,6 +4607,60 @@ function SettingsManager({ pixSettings, appSettings, user }: { pixSettings: PixS
     }
   };
 
+  const [isBackingUp, setIsBackingUp] = useState(false);
+
+  const handleDownloadBackup = async () => {
+    setIsBackingUp(true);
+    try {
+      const backupData: any = { 
+        companyName: localApp.companyName, 
+        companyId, 
+        documentNumber: localApp.document, 
+        exportedAt: new Date().toISOString(), 
+        data: {} 
+      };
+      const collections = ['companies', 'clients', 'visits', 'receipts', 'financial', 'budgets', 'users'];
+      
+      for (const col of collections) {
+        let q;
+        if (col === 'companies') {
+          q = query(collection(db, col), where('__name__', '==', companyId));
+        } else {
+          q = query(collection(db, col), where('companyId', '==', companyId));
+        }
+        const snapshot = await getDocs(q);
+        const docs = [];
+        for (const docSnap of snapshot.docs) {
+          const docData = { id: docSnap.id, ...(docSnap.data() as any) };
+          if (col === 'companies') {
+            const settingsSnap = await getDoc(doc(db, 'companies', docSnap.id, 'settings', 'general'));
+            if (settingsSnap.exists()) {
+              Object.assign(docData, settingsSnap.data());
+            }
+          }
+          docs.push(docData);
+        }
+        backupData.data[col] = docs;
+      }
+
+      const dateStr = format(new Date(), 'yyyy-MM-dd');
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${dateStr}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast.success("Backup gerado com sucesso!");
+    } catch (error) {
+      toast.error("Erro ao gerar backup.");
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
       <div>
@@ -3172,7 +4684,7 @@ function SettingsManager({ pixSettings, appSettings, user }: { pixSettings: PixS
               <Label htmlFor="companyName" className="text-[#a0a0a0]">Nome da Empresa</Label>
               <Input 
                 id="companyName" 
-                value={localApp.companyName} 
+                value={localApp.companyName || ''} 
                 onChange={e => setLocalApp({ ...localApp, companyName: e.target.value })} 
                 className="bg-[#0f1115] border-[#2d3139] text-white" 
               />
@@ -3182,7 +4694,7 @@ function SettingsManager({ pixSettings, appSettings, user }: { pixSettings: PixS
                 <Label htmlFor="companyDoc" className="text-[#a0a0a0]">CPF/CNPJ da Empresa</Label>
                 <Input 
                   id="companyDoc" 
-                  value={localApp.document} 
+                  value={localApp.document || ''} 
                   onChange={e => setLocalApp({ ...localApp, document: e.target.value })} 
                   className="bg-[#0f1115] border-[#2d3139] text-white" 
                   placeholder="00.000.000/0001-00"
@@ -3192,7 +4704,7 @@ function SettingsManager({ pixSettings, appSettings, user }: { pixSettings: PixS
                 <Label htmlFor="companyResp" className="text-[#a0a0a0]">Responsável</Label>
                 <Input 
                   id="companyResp" 
-                  value={localApp.responsible} 
+                  value={localApp.responsible || ''} 
                   onChange={e => setLocalApp({ ...localApp, responsible: e.target.value })} 
                   className="bg-[#0f1115] border-[#2d3139] text-white" 
                 />
@@ -3203,7 +4715,7 @@ function SettingsManager({ pixSettings, appSettings, user }: { pixSettings: PixS
                 <Label htmlFor="companyAddress" className="text-[#a0a0a0]">Endereço</Label>
                 <Input 
                   id="companyAddress" 
-                  value={localApp.address} 
+                  value={localApp.address || ''} 
                   onChange={e => setLocalApp({ ...localApp, address: e.target.value })} 
                   className="bg-[#0f1115] border-[#2d3139] text-white" 
                 />
@@ -3223,7 +4735,7 @@ function SettingsManager({ pixSettings, appSettings, user }: { pixSettings: PixS
                 <Label htmlFor="companyCity" className="text-[#a0a0a0]">Cidade - UF</Label>
                 <Input 
                   id="companyCity" 
-                  value={localApp.city} 
+                  value={localApp.city || ''} 
                   onChange={e => setLocalApp({ ...localApp, city: e.target.value })} 
                   className="bg-[#0f1115] border-[#2d3139] text-white" 
                 />
@@ -3232,7 +4744,7 @@ function SettingsManager({ pixSettings, appSettings, user }: { pixSettings: PixS
                 <Label htmlFor="companyCep" className="text-[#a0a0a0]">CEP</Label>
                 <Input 
                   id="companyCep" 
-                  value={localApp.cep} 
+                  value={localApp.cep || ''} 
                   onChange={e => setLocalApp({ ...localApp, cep: e.target.value })} 
                   className="bg-[#0f1115] border-[#2d3139] text-white" 
                 />
@@ -3316,6 +4828,44 @@ function SettingsManager({ pixSettings, appSettings, user }: { pixSettings: PixS
             >
               {isUpdatingProfile ? 'Atualizando...' : 'Salvar Perfil'}
             </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Database className="text-[#3b82f6]" size={20} />
+              Backup de Segurança
+            </CardTitle>
+            <CardDescription className="text-[#71717a]">
+              Baixe uma cópia completa de todos os seus dados.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-xs text-[#a0a0a0]">
+              O backup inclui todos os clientes, visitas técnicas, orçamentos e registros financeiros vinculados à sua empresa.
+            </p>
+            <Button 
+              onClick={handleDownloadBackup} 
+              disabled={isBackingUp}
+              variant="outline"
+              className="w-full border-blue-500/30 text-blue-400 hover:bg-blue-500 hover:text-white"
+            >
+              {isBackingUp ? (
+                <>
+                  <RefreshCw size={16} className="mr-2 animate-spin" />
+                  Gerando arquivo...
+                </>
+              ) : (
+                <>
+                  <Download size={16} className="mr-2" />
+                  GERAR BACKUP DA EMPRESA
+                </>
+              )}
+            </Button>
+            <p className="text-[10px] text-[#71717a] italic text-center">
+              Recomendamos fazer um backup antes de grandes alterações.
+            </p>
           </CardContent>
         </Card>
 
@@ -3443,7 +4993,7 @@ function SettingsManager({ pixSettings, appSettings, user }: { pixSettings: PixS
   );
 }
 
-function ReportsManager({ visits, financials, budgets, clients, receipts, appSettings }: { visits: TechnicalVisit[], financials: FinancialRecord[], budgets: Budget[], clients: Client[], receipts: Receipt[], appSettings: AppSettings }) {
+function ReportsManager({ visits, financials, budgets, clients, receipts, appSettings, companyId }: { visits: TechnicalVisit[], financials: FinancialRecord[], budgets: Budget[], clients: Client[], receipts: Receipt[], appSettings: AppSettings, companyId: string }) {
   const [date, setDate] = useState<Date>(new Date());
   const [month, setMonth] = useState<number>(new Date().getMonth());
   const [year, setYear] = useState<number>(new Date().getFullYear());
@@ -3657,7 +5207,7 @@ function ReportsManager({ visits, financials, budgets, clients, receipts, appSet
 
 // --- Dashboard Component ---
 
-function Dashboard({ visits, financials, budgets, clients, onNavigate }: { visits: TechnicalVisit[], financials: FinancialRecord[], budgets: Budget[], clients: Client[], onNavigate: (tab: string) => void }) {
+function Dashboard({ visits, financials, budgets, clients, onNavigate, companyId }: { visits: TechnicalVisit[], financials: FinancialRecord[], budgets: Budget[], clients: Client[], onNavigate: (tab: string) => void, companyId: string }) {
   const stats = useMemo(() => {
     const now = new Date();
     const currentMonth = now.getMonth();
@@ -3861,7 +5411,7 @@ function StatCard({ title, value, icon, trend, isBalance, isCount }: { title: st
 
 // --- Visits Manager Component ---
 
-function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { visits: TechnicalVisit[], user: FirebaseUser, clients: Client[], appSettings: AppSettings, pixSettings: PixSettings }) {
+function VisitsManager({ visits, user, clients, appSettings, pixSettings, companyId }: { visits: TechnicalVisit[], user: FirebaseUser, clients: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -3909,6 +5459,7 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
         expectedDate: Timestamp.fromDate(newVisit.expectedDate instanceof Date ? newVisit.expectedDate : new Date()),
         technicianId: user.uid,
         technicianName: newVisit.technicianName || user.displayName || 'Técnico',
+        companyId,
         createdAt: Timestamp.now()
       });
       setNewVisit({ 
@@ -3948,6 +5499,8 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
           value: visit.totalValue || 0,
           paymentMethod: 'PIX' as const, 
           date: Timestamp.now(),
+          companyId,
+          status: 'Recebido' as const,
           createdAt: Timestamp.now(),
           visitId: id,
           clientId: visit.clientId || client?.id || null
@@ -3969,6 +5522,7 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
           serviceType: 'Serviço Normal',
           visitId: id,
           clientId: visit.clientId || client?.id || null,
+          companyId,
           createdAt: Timestamp.now()
         });
         
@@ -4266,9 +5820,9 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
         </Dialog>
       </div>
 
-      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden">
+      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
         <Table>
-          <TableHeader className="bg-[#25282e]/50">
+          <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[140px]">Ações</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[60px]">Nº</TableHead>
@@ -4607,7 +6161,7 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings }: { vi
 
 // --- Financial Manager Component ---
 
-function FinancialManager({ financials, visits, clients }: { financials: FinancialRecord[], visits: TechnicalVisit[], clients: Client[] }) {
+function FinancialManager({ financials, visits, clients, companyId }: { financials: FinancialRecord[], visits: TechnicalVisit[], clients: Client[], companyId: string }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -4620,6 +6174,16 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
     if (financialTypeFilter === 'todos') return financials;
     return financials.filter(f => f.type === financialTypeFilter);
   }, [financials, financialTypeFilter]);
+
+  const financialStats = useMemo(() => {
+    const income = financials.filter(f => f.type === 'Receita').reduce((acc, f) => acc + f.value, 0);
+    const expense = financials.filter(f => f.type === 'Despesa').reduce((acc, f) => acc + f.value, 0);
+    return {
+      income,
+      expense,
+      balance: income - expense
+    };
+  }, [financials]);
 
   const [newRecord, setNewRecord] = useState<Partial<FinancialRecord>>({
     type: 'Receita',
@@ -4642,6 +6206,7 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
       await addDoc(collection(db, 'financial'), {
         ...newRecord,
         date: Timestamp.fromDate(newRecord.date instanceof Date ? newRecord.date : new Date()),
+        companyId,
         createdAt: Timestamp.now()
       });
       setNewRecord({ type: 'Receita', date: new Date(), value: 0, serviceType: 'Serviço Normal' });
@@ -4838,9 +6403,9 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
       </div>
     </div>
 
-      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden">
+      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
         <Table>
-          <TableHeader className="bg-[#25282e]/50">
+          <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">Ações</TableHead>
               <TableHead className="text-left text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Valor</TableHead>
@@ -4934,7 +6499,7 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
           <CardContent className="p-6">
             <p className="text-xs text-blue-100 uppercase tracking-wider mb-1 font-semibold">Total em Caixa</p>
             <h3 className="text-3xl font-bold">
-              R$ {financials.reduce((acc, f) => f.type === 'Receita' ? acc + f.value : acc - f.value, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              R$ {financialStats.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </h3>
           </CardContent>
         </Card>
@@ -4942,7 +6507,7 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
           <CardContent className="p-6">
             <p className="text-xs text-[#71717a] uppercase tracking-wider mb-1 font-semibold">Total Receitas</p>
             <h3 className="text-2xl font-bold text-[#10b981]">
-              R$ {financials.filter(f => f.type === 'Receita').reduce((acc, f) => acc + f.value, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              R$ {financialStats.income.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </h3>
           </CardContent>
         </Card>
@@ -4950,7 +6515,7 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
           <CardContent className="p-6">
             <p className="text-xs text-[#71717a] uppercase tracking-wider mb-1 font-semibold">Total Despesas</p>
             <h3 className="text-2xl font-bold text-[#ef4444]">
-              R$ {financials.filter(f => f.type === 'Despesa').reduce((acc, f) => acc + f.value, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              R$ {financialStats.expense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </h3>
           </CardContent>
         </Card>
@@ -5040,7 +6605,7 @@ function FinancialManager({ financials, visits, clients }: { financials: Financi
 
 // --- Budgets Manager Component ---
 
-function BudgetsManager({ budgets, clients, appSettings, pixSettings }: { budgets: Budget[], clients: Client[], appSettings: AppSettings, pixSettings: PixSettings }) {
+function BudgetsManager({ budgets, clients, appSettings, pixSettings, companyId }: { budgets: Budget[], clients: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
   const [newBudget, setNewBudget] = useState<Partial<Budget>>({
@@ -5069,6 +6634,7 @@ function BudgetsManager({ budgets, clients, appSettings, pixSettings }: { budget
         ...newBudget,
         number: nextNumber,
         total,
+        companyId,
         createdAt: Timestamp.now()
       });
       setNewBudget({ items: [{ description: '', quantity: 1, price: 0 }], status: 'Pendente', observations: '', clientName: '', clientPhone: '', address: '' });
@@ -5092,6 +6658,7 @@ function BudgetsManager({ budgets, clients, appSettings, pixSettings }: { budget
         date: Timestamp.now(),
         serviceType: 'Serviço Normal',
         clientId: budget.clientId || null,
+        companyId,
         createdAt: Timestamp.now()
       });
       

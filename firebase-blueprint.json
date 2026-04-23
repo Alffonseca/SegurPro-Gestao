@@ -8,16 +8,29 @@
         "uid": { "type": "string" },
         "email": { "type": "string", "format": "email" },
         "displayName": { "type": "string" },
-        "role": { "type": "string", "enum": ["admin", "technician"] },
+        "role": { "type": "string", "enum": ["owner", "admin", "technician"] },
+        "companyId": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["uid", "email", "role"]
+    },
+    "Company": {
+      "title": "Company",
+      "description": "Company account",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "ownerId"]
     },
     "TechnicalVisit": {
       "title": "Technical Visit",
       "description": "A technical service visit record",
       "type": "object",
       "properties": {
+        "companyId": { "type": "string" },
         "clientName": { "type": "string" },
         "date": { "type": "string", "format": "date-time" },
         "scheduledTime": { "type": "string" },
@@ -40,6 +53,7 @@
       "description": "Income or expense record",
       "type": "object",
       "properties": {
+        "companyId": { "type": "string" },
         "type": { "type": "string", "enum": ["Receita", "Despesa"] },
         "value": { "type": "number" },
         "description": { "type": "string" },
@@ -57,6 +71,7 @@
       "description": "Service budget for a client",
       "type": "object",
       "properties": {
+        "companyId": { "type": "string" },
         "clientName": { "type": "string" },
         "clientEmail": { "type": "string" },
         "total": { "type": "number" },
@@ -72,6 +87,7 @@
       "description": "Customer information",
       "type": "object",
       "properties": {
+        "companyId": { "type": "string" },
         "name": { "type": "string" },
         "email": { "type": "string" },
         "phone": { "type": "string" },
@@ -89,6 +105,7 @@
       "description": "Payment receipt",
       "type": "object",
       "properties": {
+        "companyId": { "type": "string" },
         "number": { "type": "integer" },
         "clientName": { "type": "string" },
         "clientType": { "type": "string" },
@@ -114,6 +131,7 @@
     }
   },
   "firestore": {
+    "/companies/{companyId}": { "schema": "Company", "description": "Company data" },
     "/users/{userId}": { "schema": "User", "description": "User profiles" },
     "/visits/{visitId}": { "schema": "TechnicalVisit", "description": "Technical visits" },
     "/financial/{recordId}": { "schema": "FinancialRecord", "description": "Financial transactions" },
