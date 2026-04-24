@@ -121,7 +121,7 @@ import { cn } from '@/lib/utils';
 
 // --- Helpers ---
 
-function valorPorExtenso(valor: number) {
+function valorPorExtenso(valor: number = 0) {
   const unidades = ["", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove"];
   const dezenas = ["", "dez", "vinte", "trinta", "quarenta", "cinquenta", "sessenta", "setenta", "oitenta", "noventa"];
   const especiais = ["dez", "onze", "doze", "treze", "quatorze", "quinze", "dezesseis", "dezessete", "dezoito", "dezenove"];
@@ -496,14 +496,18 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings) => 
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(0, 0, 0);
-  doc.text(appSettings.companyName || 'SegurPro', appSettings.logoUrl ? margin + 25 : margin, currentY + 7);
+  const companyName = appSettings.companyName || 'SegurPro';
+  const companyNameLines = doc.splitTextToSize(companyName, contentWidth / 2);
+  doc.text(companyNameLines, appSettings.logoUrl ? margin + 25 : margin, currentY + 7);
   
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 100, 100);
   const addressLine = `${appSettings.address || ''}${appSettings.neighborhood ? `, ${appSettings.neighborhood}` : ''}`;
-  doc.text(addressLine, appSettings.logoUrl ? margin + 25 : margin, currentY + 12);
-  doc.text(`${appSettings.city || ''} - Documento: ${appSettings.document || ''}`, appSettings.logoUrl ? margin + 25 : margin, currentY + 16);
+  const addressLines = doc.splitTextToSize(addressLine, contentWidth / 2);
+  const headerTextY = currentY + 7 + (companyNameLines.length * 5);
+  doc.text(addressLines, appSettings.logoUrl ? margin + 25 : margin, headerTextY);
+  doc.text(`${appSettings.city || ''} - Documento: ${appSettings.document || ''}`, appSettings.logoUrl ? margin + 25 : margin, headerTextY + (addressLines.length * 4));
 
   // OS Number and Date on the right
   doc.setFontSize(12);
@@ -516,7 +520,7 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings) => 
   doc.setFont('helvetica', 'normal');
   doc.text(`Técnico: ${os.technicianName}`, pageWidth - margin, currentY + 18, { align: 'right' });
 
-  currentY += 25;
+  currentY += Math.max(25, 7 + (companyNameLines.length * 5) + (addressLines.length * 4) + 10);
   drawLine();
 
   // 2. DADOS DO CLIENTE
@@ -577,7 +581,7 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings) => 
       startY: currentY,
       margin: { left: margin },
       head: [['Descrição', 'Qtd', 'V. Unitário', 'Total']],
-      body: os.parts.map(p => [p.description, p.quantity, `R$ ${p.price.toFixed(2)}`, `R$ ${(p.quantity * p.price).toFixed(2)}`]),
+      body: os.parts.map(p => [p.description, p.quantity, `R$ ${(p.price || 0).toFixed(2)}`, `R$ ${((p.quantity || 0) * (p.price || 0)).toFixed(2)}`]),
       theme: 'grid',
       headStyles: { fillColor: [80, 80, 80], fontSize: 8 },
       styles: { fontSize: 8 },
@@ -1196,7 +1200,7 @@ const getFinalEmail = (input: string) => {
   return clean.includes('@') ? clean : `${clean.toLowerCase()}@segurpro.local`;
 };
 
-export default function App() {
+export default function MainApp() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -1428,8 +1432,8 @@ export default function App() {
         (snapshot) => {
           const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TechnicalVisit));
           setVisits(data.sort((a, b) => {
-            const dateA = a.date instanceof Date ? a.date.getTime() : new Date(a.date).getTime();
-            const dateB = b.date instanceof Date ? b.date.getTime() : new Date(b.date).getTime();
+            const dateA = a.date instanceof Timestamp ? a.date.toDate().getTime() : (a.date instanceof Date ? a.date.getTime() : (a.date ? new Date(a.date).getTime() : 0));
+            const dateB = b.date instanceof Timestamp ? b.date.toDate().getTime() : (b.date instanceof Date ? b.date.getTime() : (b.date ? new Date(b.date).getTime() : 0));
             return dateB - dateA;
           }));
         }
@@ -1440,8 +1444,8 @@ export default function App() {
         (snapshot) => {
           const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ServiceOrder));
           setServiceOrders(data.sort((a, b) => {
-            const dateA = a.date instanceof Timestamp ? a.date.toDate().getTime() : (a.date instanceof Date ? a.date.getTime() : new Date(a.date).getTime());
-            const dateB = b.date instanceof Timestamp ? b.date.toDate().getTime() : (b.date instanceof Date ? b.date.getTime() : new Date(b.date).getTime());
+            const dateA = a.date instanceof Timestamp ? a.date.toDate().getTime() : (a.date instanceof Date ? a.date.getTime() : (a.date ? new Date(a.date).getTime() : 0));
+            const dateB = b.date instanceof Timestamp ? b.date.toDate().getTime() : (b.date instanceof Date ? b.date.getTime() : (b.date ? new Date(b.date).getTime() : 0));
             return dateB - dateA;
           }));
         }
@@ -1452,8 +1456,8 @@ export default function App() {
         (snapshot) => {
           const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FinancialRecord));
           setFinancials(data.sort((a, b) => {
-            const dateA = a.date instanceof Date ? a.date.getTime() : new Date(a.date).getTime();
-            const dateB = b.date instanceof Date ? b.date.getTime() : new Date(b.date).getTime();
+            const dateA = a.date instanceof Timestamp ? a.date.toDate().getTime() : (a.date instanceof Date ? a.date.getTime() : (a.date ? new Date(a.date).getTime() : 0));
+            const dateB = b.date instanceof Timestamp ? b.date.toDate().getTime() : (b.date instanceof Date ? b.date.getTime() : (b.date ? new Date(b.date).getTime() : 0));
             return dateB - dateA;
           }));
         }
@@ -1475,7 +1479,7 @@ export default function App() {
         query(collection(db, 'clients'), where('companyId', '==', companyId)),
         (snapshot) => {
           const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client));
-          setClients(data.sort((a, b) => a.name.localeCompare(b.name)));
+          setClients(data.sort((a, b) => (a.name || '').localeCompare(b.name || '')));
         }
       );
 
@@ -1867,7 +1871,7 @@ export default function App() {
                 <Shield size={22} className="fill-white/20" />
               </div>
             )}
-            <span className="font-bold tracking-wider text-white text-xl">{currentCompany?.name || 'AF Sistemas'}</span>
+            <span className="font-bold tracking-wider text-white text-xl truncate max-w-[130px]">{currentCompany?.name || 'AF Sistemas'}</span>
           </div>
         </div>
         <ScrollArea className="flex-1 px-4 py-4">
@@ -1985,7 +1989,7 @@ export default function App() {
               <Shield size={18} />
             </div>
           )}
-          <span className="font-bold tracking-tight text-white">{currentCompany?.name || 'AF Sistemas'}</span>
+          <span className="font-bold tracking-tight text-white truncate max-w-[180px]">{currentCompany?.name || 'AF Sistemas'}</span>
         </div>
         <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="text-white">
           {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
@@ -2078,16 +2082,20 @@ export default function App() {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col pt-16 md:pt-0 overflow-hidden">
-        <header className="hidden md:flex h-20 items-center justify-center px-10 border-b border-[#2d3139] bg-[#1a1d23]">
+        <header className="hidden md:flex h-24 items-center justify-center px-10 border-b border-[#2d3139] bg-[#1a1d23]">
           <div className="text-center">
-            <p className="text-[11px] text-[#71717a] uppercase tracking-widest mb-1">
+            <p className="text-sm font-bold text-[#3b82f6] uppercase tracking-[0.2em] mb-1">
+              {currentCompany?.name || appSettings.companyName}
+            </p>
+            <p className="text-[10px] text-[#71717a] uppercase tracking-widest mb-1">
               {format(new Date(), "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })}
             </p>
-            <h2 className="text-2xl font-medium text-white capitalize">
+            <h2 className="text-xl font-medium text-white capitalize">
               {activeTab === 'dashboard' ? 'Resumo Operacional' : 
                activeTab === 'visits' ? 'Visitas Técnicas' :
                activeTab === 'financial' ? 'Movimentação Financeira' :
                activeTab === 'budgets' ? 'Orçamentos' :
+               activeTab === 'service-orders' ? 'Ordens de Serviço' :
                activeTab === 'clients' ? 'Gestão de Clientes' :
                activeTab === 'receipts' ? 'Recibos Emitidos' :
                activeTab === 'reports' ? 'Relatórios Gerais' :
@@ -2151,7 +2159,7 @@ export default function App() {
   );
 }
 
-function UsersManager({ users, currentUserData }: { users: any[], currentUserData: any }) {
+function UsersManager({ users = [], currentUserData }: { users?: any[], currentUserData: any }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'tecnico' });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -2547,7 +2555,7 @@ const PAYMENT_METHODS = [
   "Boleto"
 ];
 
-function ClientsManager({ clients, appSettings, pixSettings, companyId }: { clients: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string }) {
+function ClientsManager({ clients = [], appSettings, pixSettings, companyId }: { clients: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -2600,7 +2608,7 @@ function ClientsManager({ clients, appSettings, pixSettings, companyId }: { clie
   };
 
   const filteredClients = useMemo(() => {
-    return clients.filter(c => 
+    return (clients || []).filter(c => 
       (c.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (c.email && c.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (c.phone && c.phone.includes(searchTerm)) ||
@@ -3205,7 +3213,7 @@ function ClientsManager({ clients, appSettings, pixSettings, companyId }: { clie
 
 // --- Receipts Manager Component ---
 
-function ReceiptsManager({ receipts, clients, pixSettings, appSettings, companyId }: { receipts: Receipt[], clients: Client[], pixSettings: PixSettings, appSettings: AppSettings, companyId: string }) {
+function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings, companyId }: { receipts: Receipt[], clients: Client[], pixSettings: PixSettings, appSettings: AppSettings, companyId: string }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -3225,7 +3233,7 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings, companyI
   });
 
   const filteredClientsForSelect = useMemo(() => {
-    return clients.filter(c => (c.name || '').toLowerCase().includes(clientSearch.toLowerCase()));
+    return (clients || []).filter(c => (c.name || '').toLowerCase().includes(clientSearch.toLowerCase()));
   }, [clients, clientSearch]);
 
   const syncReceiptToFinancial = async (receiptId: string, receiptData: any) => {
@@ -3279,7 +3287,7 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings, companyI
       const year = new Date().getFullYear().toString().slice(-2);
       // Find the last number for the current year
       const yearPattern = `/${year}`;
-      const yearReceipts = receipts.filter(r => {
+      const yearReceipts = (receipts || []).filter(r => {
         const num = String(r.number || '');
         return num.endsWith(yearPattern);
       });
@@ -3817,7 +3825,7 @@ function ReceiptsManager({ receipts, clients, pixSettings, appSettings, companyI
 
 // --- Super Admin Panel Component ---
 
-function SuperAdminPanel({ companies, financials, saasSettings, user }: { companies: any[], financials: any[], saasSettings: any, user: any }) {
+function SuperAdminPanel({ companies = [], financials = [], saasSettings, user }: { companies: any[], financials: any[], saasSettings: any, user: any }) {
   const [isMigrating, setIsMigrating] = useState(false);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
   const [migrationStats, setMigrationStats] = useState<any>(null);
@@ -5205,7 +5213,23 @@ function SettingsManager({ pixSettings, appSettings, user, companyId }: { pixSet
   );
 }
 
-function ReportsManager({ visits, financials, budgets, clients, receipts, appSettings, companyId }: { visits: TechnicalVisit[], financials: FinancialRecord[], budgets: Budget[], clients: Client[], receipts: Receipt[], appSettings: AppSettings, companyId: string }) {
+function ReportsManager({ 
+  visits = [], 
+  financials = [], 
+  budgets = [], 
+  clients = [], 
+  receipts = [], 
+  appSettings, 
+  companyId 
+}: { 
+  visits: TechnicalVisit[], 
+  financials: FinancialRecord[], 
+  budgets: Budget[], 
+  clients: Client[], 
+  receipts: Receipt[], 
+  appSettings: AppSettings, 
+  companyId: string 
+}) {
   const [date, setDate] = useState<Date>(new Date());
   const [month, setMonth] = useState<number>(new Date().getMonth());
   const [year, setYear] = useState<number>(new Date().getFullYear());
@@ -5248,7 +5272,7 @@ function ReportsManager({ visits, financials, budgets, clients, receipts, appSet
         formatRecordNumber(v.number, v.date),
         v.clientName,
         v.type,
-        `R$ ${v.totalValue.toFixed(2)}`,
+        `R$ ${(v.totalValue || 0).toFixed(2)}`,
         v.status
       ]);
     } else if (category === 'Financeiro') {
@@ -5261,7 +5285,7 @@ function ReportsManager({ visits, financials, budgets, clients, receipts, appSet
           format(d, 'dd/MM/yyyy'),
           client ? client.name : 'N/A',
           f.description,
-          `R$ ${f.value.toFixed(2)}`,
+          `R$ ${(f.value || 0).toFixed(2)}`,
           f.type,
           f.category || 'N/A'
         ];
@@ -5273,7 +5297,7 @@ function ReportsManager({ visits, financials, budgets, clients, receipts, appSet
         formatRecordNumber(r.number, r.createdAt),
         r.clientName,
         format(r.createdAt instanceof Timestamp ? r.createdAt.toDate() : (r.createdAt instanceof Date ? r.createdAt : new Date(r.createdAt)), 'dd/MM/yyyy'),
-        `R$ ${r.value.toFixed(2)}`
+        `R$ ${(r.value || 0).toFixed(2)}`
       ]);
     } else if (category === 'Orçamentos') {
       filteredData = budgets.filter(b => isMatch(b.createdAt));
@@ -5281,7 +5305,7 @@ function ReportsManager({ visits, financials, budgets, clients, receipts, appSet
       tableRows = filteredData.map(b => [
         formatRecordNumber(b.number, b.createdAt),
         b.clientName,
-        `R$ ${b.total.toFixed(2)}`,
+        `R$ ${(b.total || 0).toFixed(2)}`,
         b.status
       ]);
     } else if (category === 'Clientes') {
@@ -5419,13 +5443,64 @@ function ReportsManager({ visits, financials, budgets, clients, receipts, appSet
 
 // --- Dashboard Component ---
 
-function Dashboard({ visits, serviceOrders, financials, budgets, clients, onNavigate, companyId }: { visits: TechnicalVisit[], serviceOrders: ServiceOrder[], financials: FinancialRecord[], budgets: Budget[], clients: Client[], onNavigate: (tab: string) => void, companyId: string }) {
+function VisitsChart({ data }: { data: any[] }) {
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={data}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
+        <XAxis 
+          dataKey="name" 
+          stroke="#71717a" 
+          fontSize={12} 
+          tickLine={false} 
+          axisLine={false} 
+        />
+        <YAxis 
+          stroke="#71717a" 
+          fontSize={12} 
+          tickLine={false} 
+          axisLine={false}
+        />
+        <Tooltip 
+          cursor={{fill: '#25282e'}}
+          contentStyle={{ 
+            backgroundColor: '#1a1d23', 
+            border: '1px solid #2d3139',
+            borderRadius: '8px',
+            color: '#fff'
+          }}
+          itemStyle={{ color: '#3b82f6' }}
+        />
+        <Bar 
+          dataKey="visitas" 
+          fill="#3b82f6" 
+          radius={[4, 4, 0, 0]} 
+          barSize={40}
+        />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets = [], clients = [], onNavigate, companyId }: { visits: TechnicalVisit[], serviceOrders: ServiceOrder[], financials: FinancialRecord[], budgets: Budget[], clients: Client[], onNavigate: (tab: string) => void, companyId: string }) {
+  const visitsByDay = useMemo(() => {
+    const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    const counts = new Array(7).fill(0);
+    
+    visits.forEach(visit => {
+      const d = visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date);
+      counts[d.getDay()]++;
+    });
+
+    return days.map((name, i) => ({ name, visitas: counts[i] }));
+  }, [visits]);
+
   const stats = useMemo(() => {
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
 
-    const monthlyFinancials = financials.filter(f => {
+    const monthlyFinancials = (financials || []).filter(f => {
       const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
       return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
     });
@@ -5435,7 +5510,7 @@ function Dashboard({ visits, serviceOrders, financials, budgets, clients, onNavi
     
     // Day Stats
     const todayStr = format(now, 'yyyy-MM-dd');
-    const todayFinancials = financials.filter(f => {
+    const todayFinancials = (financials || []).filter(f => {
       const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
       return format(d, 'yyyy-MM-dd') === todayStr;
     });
@@ -5444,13 +5519,13 @@ function Dashboard({ visits, serviceOrders, financials, budgets, clients, onNavi
     const todayExpense = todayFinancials.filter(f => f.type === 'Despesa').reduce((acc, f) => acc + f.value, 0);
     const todayBalance = todayIncome - todayExpense;
 
-    const pendingVisits = visits.filter(v => v.status === 'Agendada' || v.status === 'Em Andamento').length;
-    const completedVisits = visits.filter(v => v.status === 'Concluída').length;
-    const pendingBudgets = budgets.filter(b => b.status === 'Pendente').length;
-    const pendingOS = serviceOrders.filter(os => os.status === 'Aberto' || os.status === 'Em Andamento').length;
-    const totalClients = clients.length;
+    const pendingVisits = (visits || []).filter(v => v.status === 'Agendada' || v.status === 'Em Andamento').length;
+    const completedVisits = (visits || []).filter(v => v.status === 'Concluída').length;
+    const pendingBudgets = (budgets || []).filter(b => b.status === 'Pendente').length;
+    const pendingOS = (serviceOrders || []).filter(os => os.status === 'Aberto' || os.status === 'Em Andamento').length;
+    const totalClients = (clients || []).length;
 
-    const todayVisits = visits.filter(v => {
+    const todayVisits = (visits || []).filter(v => {
       const d = v.date instanceof Timestamp ? v.date.toDate() : new Date(v.date);
       return format(d, 'yyyy-MM-dd') === todayStr && (v.status === 'Agendada' || v.status === 'Em Andamento');
     });
@@ -5466,7 +5541,7 @@ function Dashboard({ visits, serviceOrders, financials, budgets, clients, onNavi
     });
 
     return last7Days.map(day => {
-      const dayFinancials = financials.filter(f => {
+      const dayFinancials = (financials || []).filter(f => {
         const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
         return format(d, 'dd/MM') === day;
       });
@@ -5482,7 +5557,7 @@ function Dashboard({ visits, serviceOrders, financials, budgets, clients, onNavi
     const types = ['CFTV', 'Alarme', 'Cerca Elétrica', 'Motor de Portão', 'Outros'];
     return types.map(type => ({
       name: type,
-      value: visits.filter(v => v.type === type).length
+      value: (visits || []).filter(v => v.type === type).length
     })).filter(t => t.value > 0);
   }, [visits]);
 
@@ -5536,44 +5611,18 @@ function Dashboard({ visits, serviceOrders, financials, budgets, clients, onNavi
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-8">
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden">
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden h-[400px]">
           <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-row items-center justify-between">
-            <CardTitle className="text-[15px] font-semibold text-white">Cronograma de Visitas (Hoje)</CardTitle>
+            <CardTitle className="text-[15px] font-semibold text-white">Cronograma de Visitas (Semana)</CardTitle>
             <span 
               className="text-[12px] text-[#3b82f6] cursor-pointer hover:underline"
               onClick={() => onNavigate('visits')}
             >
-              Ver Mapa
+              Ver Todas
             </span>
           </CardHeader>
-          <CardContent className="p-0">
-            <div className="divide-y divide-[#25282e]">
-              {stats.todayVisits.slice(0, 5).map(visit => (
-                <div key={visit.id} className="flex items-center justify-between px-6 py-4 hover:bg-[#25282e]/30 transition-colors">
-                  <div className="flex flex-col">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono text-[#3b82f6]">{formatRecordNumber(visit.number, visit.date)}</span>
-                      <span className="text-[13px] font-medium text-white">{visit.clientName}</span>
-                      {visit.scheduledTime && (
-                        <span className="text-[10px] text-[#3b82f6] bg-[#3b82f6]/10 px-1.5 py-0.5 rounded">
-                          {visit.scheduledTime}
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-[11px] text-[#71717a] mt-0.5">{visit.type} • {visit.description || 'Manutenção Geral'}</span>
-                  </div>
-                  <Badge className={cn(
-                    "text-[10px] font-semibold uppercase px-2 py-0.5 rounded",
-                    visit.status === 'Em Andamento' ? "bg-blue-500/10 text-blue-500" : "bg-amber-500/10 text-amber-500"
-                  )}>
-                    {visit.status === 'Em Andamento' ? 'Em Rota' : visit.status}
-                  </Badge>
-                </div>
-              ))}
-              {stats.todayVisits.length === 0 && (
-                <p className="text-center py-12 text-sm text-[#71717a]">Nenhuma visita para hoje.</p>
-              )}
-            </div>
+          <CardContent className="p-6 h-[300px]">
+            <VisitsChart data={visitsByDay} />
           </CardContent>
         </Card>
 
@@ -5587,8 +5636,8 @@ function Dashboard({ visits, serviceOrders, financials, budgets, clients, onNavi
                 {budgets.slice(0, 3).map(budget => (
                   <div key={budget.id} className="flex items-center justify-between px-6 py-4 hover:bg-[#25282e]/30 transition-colors">
                     <div className="flex flex-col">
-                      <span className="text-[13px] font-medium text-white">{budget.clientName}</span>
-                      <span className="text-[11px] font-semibold text-white mt-0.5">R$ {budget.total.toFixed(2)}</span>
+                      <span className="text-[13px] font-medium text-white">{budget.clientName || 'Cliente Sem Nome'}</span>
+                      <span className="text-[11px] font-semibold text-white mt-0.5">R$ {(budget.total || 0).toFixed(2)}</span>
                     </div>
                     <Badge className={cn(
                       "text-[10px] font-semibold uppercase px-2 py-0.5 rounded",
@@ -5655,7 +5704,7 @@ function StatCard({ title, value, icon, trend, isBalance, isCount, onClick }: { 
 
 // --- Visits Manager Component ---
 
-function VisitsManager({ visits, user, clients, appSettings, pixSettings, companyId }: { visits: TechnicalVisit[], user: FirebaseUser, clients: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string }) {
+function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettings, companyId }: { visits?: TechnicalVisit[], user: FirebaseUser, clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -5871,7 +5920,7 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings, compan
     }
     
     doc.setFont('helvetica', 'bold');
-    doc.text(`VALOR DO SERVIÇO: R$ ${visit.totalValue.toFixed(2)}`, 20, currentY);
+    doc.text(`VALOR DO SERVIÇO: R$ ${(visit.totalValue || 0).toFixed(2)}`, 20, currentY);
     
     // Signatures
     const signatureY = 260;
@@ -6145,7 +6194,7 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings, compan
                   {visit.scheduledTime && <div className="text-[10px] text-[#71717a]">{visit.scheduledTime}</div>}
                 </TableCell>
                 <TableCell className="text-[12px] font-semibold text-white">
-                  R$ {visit.totalValue.toFixed(2)}
+                  R$ {(visit.totalValue || 0).toFixed(2)}
                 </TableCell>
               </TableRow>
             ))}
@@ -6261,7 +6310,7 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings, compan
               <div className="grid grid-cols-1 gap-4">
                 <div className="space-y-1">
                   <p className="text-[11px] text-[#71717a] uppercase">Valor do Serviço</p>
-                  <p className="text-sm font-bold text-white">R$ {viewingVisit.totalValue.toFixed(2)}</p>
+                  <p className="text-sm font-bold text-white">R$ {(viewingVisit.totalValue || 0).toFixed(2)}</p>
                 </div>
               </div>
             </div>
@@ -6405,7 +6454,7 @@ function VisitsManager({ visits, user, clients, appSettings, pixSettings, compan
 
 // --- Financial Manager Component ---
 
-function FinancialManager({ financials, visits, clients, companyId }: { financials: FinancialRecord[], visits: TechnicalVisit[], clients: Client[], companyId: string }) {
+function FinancialManager({ financials = [], visits = [], clients = [], companyId }: { financials?: FinancialRecord[], visits?: TechnicalVisit[], clients?: Client[], companyId: string }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -6686,7 +6735,7 @@ function FinancialManager({ financials, visits, clients, companyId }: { financia
                   "text-left font-bold text-[13px]",
                   record.type === 'Receita' ? "text-[#10b981]" : "text-[#ef4444]"
                 )}>
-                  {record.type === 'Receita' ? '+' : '-'} R$ {record.value.toFixed(2)}
+                  {record.type === 'Receita' ? '+' : '-'} R$ {(record.value || 0).toFixed(2)}
                 </TableCell>
                 <TableCell className="font-medium text-white text-[13px]">
                   {record.description}
@@ -6849,8 +6898,12 @@ function FinancialManager({ financials, visits, clients, companyId }: { financia
 
 // --- Budgets Manager Component ---
 
-function ServiceOrdersManager({ serviceOrders, clients, users, appSettings, companyId }: { serviceOrders: ServiceOrder[], clients: Client[], users: any[], appSettings: AppSettings, companyId: string }) {
+function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], appSettings, companyId }: { serviceOrders?: ServiceOrder[], clients?: Client[], users?: any[], appSettings: AppSettings, companyId: string }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [editingOS, setEditingOS] = useState<Partial<ServiceOrder> | null>(null);
+  const [osToDelete, setOSToDelete] = useState<ServiceOrder | null>(null);
   const [clientSearch, setClientSearch] = useState('');
   const [newOS, setNewOS] = useState<Partial<ServiceOrder>>({
     serviceType: 'Corretiva',
@@ -6868,16 +6921,23 @@ function ServiceOrdersManager({ serviceOrders, clients, users, appSettings, comp
     return clients.filter(c => (c.name || '').toLowerCase().includes(clientSearch.toLowerCase()));
   }, [clients, clientSearch]);
 
-  const handleAddPart = () => {
-    setNewOS(prev => ({
-      ...prev,
-      parts: [...(prev.parts || []), { description: '', quantity: 1, price: 0 }]
-    }));
+  const handleAddPart = (isEdit = false) => {
+    if (isEdit) {
+      setEditingOS(prev => prev ? ({
+        ...prev,
+        parts: [...(prev.parts || []), { description: '', quantity: 1, price: 0 }]
+      }) : null);
+    } else {
+      setNewOS(prev => ({
+        ...prev,
+        parts: [...(prev.parts || []), { description: '', quantity: 1, price: 0 }]
+      }));
+    }
   };
 
   const handleOSSave = async () => {
     try {
-      const nextNumber = serviceOrders.length > 0 ? Math.max(...serviceOrders.map(o => o.number || 0)) + 1 : 1;
+      const nextNumber = (serviceOrders || []).length > 0 ? Math.max(...(serviceOrders || []).map(o => o.number || 0)) + 1 : 1;
       const finalPartsValue = (newOS.parts || []).reduce((acc, p) => acc + (p.quantity * p.price), 0);
       const finalTotal = (newOS.laborValue || 0) + finalPartsValue;
 
@@ -6906,6 +6966,8 @@ function ServiceOrdersManager({ serviceOrders, clients, users, appSettings, comp
         laborValue: 0,
         partsValue: 0,
         totalValue: 0,
+        startDateTime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+        endDateTime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
       });
       toast.success('Ordem de Serviço criada com sucesso!');
 
@@ -6914,6 +6976,40 @@ function ServiceOrdersManager({ serviceOrders, clients, users, appSettings, comp
       }
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'serviceOrders');
+    }
+  };
+
+  const handleUpdateOS = async () => {
+    if (!editingOS?.id) return;
+    try {
+      const finalPartsValue = (editingOS.parts || []).reduce((acc, p) => acc + (p.quantity * p.price), 0);
+      const finalTotal = (editingOS.laborValue || 0) + finalPartsValue;
+
+      const osData = {
+        ...editingOS,
+        partsValue: finalPartsValue,
+        totalValue: finalTotal,
+        startDateTime: Timestamp.fromDate(new Date(editingOS.startDateTime || Date.now())),
+        endDateTime: Timestamp.fromDate(new Date(editingOS.endDateTime || Date.now())),
+        updatedAt: Timestamp.now(),
+      };
+
+      await updateDoc(doc(db, 'serviceOrders', editingOS.id), osData);
+      setIsEditOpen(false);
+      toast.success('Ordem de serviço atualizada!');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, 'serviceOrders');
+    }
+  };
+
+  const handleDeleteOS = async () => {
+    if (!osToDelete?.id) return;
+    try {
+      await deleteDoc(doc(db, 'serviceOrders', osToDelete.id));
+      setIsDeleteConfirmOpen(false);
+      toast.success('Ordem de serviço excluída com sucesso.');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, 'serviceOrders');
     }
   };
 
@@ -7199,14 +7295,30 @@ function ServiceOrdersManager({ serviceOrders, clients, users, appSettings, comp
                   <span className="text-[#10b981]">{os.technicianName}</span>
                 </div>
                 <div className="mt-4 p-2 bg-[#0f1115] rounded border border-[#2d3139] text-[10px] text-[#a0a0a0] min-h-[40px] italic">
-                  "{os.performedServices.length > 80 ? os.performedServices.substring(0, 80) + '...' : os.performedServices}"
+                  "{(os.performedServices || '').length > 80 ? (os.performedServices || '').substring(0, 80) + '...' : (os.performedServices || '')}"
                 </div>
               </div>
               <div className="flex items-center justify-between">
-                <p className="text-lg font-bold text-white">R$ {os.totalValue.toFixed(2)}</p>
-                <div className="flex gap-2">
+                <p className="text-lg font-bold text-white">R$ {(os.totalValue || 0).toFixed(2)}</p>
+                <div className="flex gap-1">
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-[#a0a0a0] hover:text-white" onClick={() => {
+                    setEditingOS({
+                      ...os,
+                      startDateTime: format(os.startDateTime instanceof Timestamp ? os.startDateTime.toDate() : new Date(os.startDateTime as any), "yyyy-MM-dd'T'HH:mm"),
+                      endDateTime: format(os.endDateTime instanceof Timestamp ? os.endDateTime.toDate() : new Date(os.endDateTime as any), "yyyy-MM-dd'T'HH:mm"),
+                    });
+                    setIsEditOpen(true);
+                  }}>
+                    <Pencil size={14} />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-[#ef4444]/60 hover:text-[#ef4444]" onClick={() => {
+                    setOSToDelete(os);
+                    setIsDeleteConfirmOpen(true);
+                  }}>
+                    <Trash2 size={14} />
+                  </Button>
                   <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-xs" onClick={() => generateServiceOrderPDF(os, appSettings)}>
-                    PDF / Ver
+                    PDF
                   </Button>
                 </div>
               </div>
@@ -7221,11 +7333,189 @@ function ServiceOrdersManager({ serviceOrders, clients, users, appSettings, comp
           </div>
         )}
       </div>
+
+      {/* Edit Dialog */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-[90vw] md:max-w-[800px] max-h-[90vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="p-6 pb-2 border-b border-[#2d3139]">
+            <DialogTitle>Editar Ordem de Serviço</DialogTitle>
+            <DialogDescription className="text-[#71717a]">Atualize os detalhes técnicos do atendimento.</DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            {editingOS && (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <Select value={editingOS.status} onValueChange={(val: any) => setEditingOS({...editingOS, status: val})}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="Aberto">Aberto</SelectItem>
+                        <SelectItem value="Em Andamento">Em Andamento</SelectItem>
+                        <SelectItem value="Finalizado">Finalizado</SelectItem>
+                        <SelectItem value="Cancelado">Cancelado</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Técnico Responsável</Label>
+                    <Select value={editingOS.technicianId} onValueChange={(val) => {
+                      const u = users.find(usr => usr.uid === val);
+                      if (u) setEditingOS({ ...editingOS, technicianId: u.uid, technicianName: u.displayName || u.email });
+                    }}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
+                        <SelectValue placeholder="Selecione o técnico" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        {users.map(u => <SelectItem key={u.uid} value={u.uid}>{u.displayName || u.email}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Equipamento</Label>
+                    <Input className="bg-[#0f1115] border-[#2d3139]" value={editingOS.equipment || ''} onChange={e => setEditingOS({...editingOS, equipment: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Marca/Modelo/SN</Label>
+                    <Input className="bg-[#0f1115] border-[#2d3139]" value={editingOS.brandModelSN || ''} onChange={e => setEditingOS({...editingOS, brandModelSN: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Tipo de Serviço</Label>
+                    <Select value={editingOS.serviceType} onValueChange={(val: any) => setEditingOS({...editingOS, serviceType: val})}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="Corretiva">Corretiva</SelectItem>
+                        <SelectItem value="Preventiva">Preventiva</SelectItem>
+                        <SelectItem value="Instalação">Instalação</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Problema Relatado</Label>
+                  <textarea 
+                    className="w-full min-h-[80px] bg-[#0f1115] border-[#2d3139] rounded-md p-3 text-sm focus:ring-1 focus:ring-[#3b82f6]" 
+                    value={editingOS.reportedProblem || ''} 
+                    onChange={e => setEditingOS({...editingOS, reportedProblem: e.target.value})}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Diagnóstico Técnico</Label>
+                    <textarea 
+                      className="w-full min-h-[80px] bg-[#0f1115] border-[#2d3139] rounded-md p-3 text-sm focus:ring-1 focus:ring-[#3b82f6]" 
+                      value={editingOS.diagnosis || ''} 
+                      onChange={e => setEditingOS({...editingOS, diagnosis: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Serviços Realizados</Label>
+                    <textarea 
+                      className="w-full min-h-[80px] bg-[#0f1115] border-[#2d3139] rounded-md p-3 text-sm focus:ring-1 focus:ring-[#3b82f6]" 
+                      value={editingOS.performedServices || ''} 
+                      onChange={e => setEditingOS({...editingOS, performedServices: e.target.value})}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label>Peças e Materiais</Label>
+                    <Button variant="outline" size="sm" onClick={() => handleAddPart(true)} className="h-7 border-[#2d3139] text-xs">+ Peça</Button>
+                  </div>
+                  {editingOS.parts?.map((p, i) => (
+                    <div key={i} className="grid grid-cols-12 gap-2">
+                      <Input className="col-span-6 bg-[#0f1115] border-[#2d3139] h-8 text-xs" value={p.description} onChange={e => {
+                        const next = [...(editingOS.parts || [])];
+                        next[i].description = e.target.value;
+                        setEditingOS({...editingOS, parts: next});
+                      }} />
+                      <Input type="number" className="col-span-2 bg-[#0f1115] border-[#2d3139] h-8 text-xs" value={p.quantity} onChange={e => {
+                        const next = [...(editingOS.parts || [])];
+                        next[i].quantity = Number(e.target.value);
+                        setEditingOS({...editingOS, parts: next});
+                      }} />
+                      <Input type="number" className="col-span-3 bg-[#0f1115] border-[#2d3139] h-8 text-xs" value={p.price} onChange={e => {
+                        const next = [...(editingOS.parts || [])];
+                        next[i].price = Number(e.target.value);
+                        setEditingOS({...editingOS, parts: next});
+                      }} />
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-[#ef4444]" onClick={() => setEditingOS({...editingOS, parts: editingOS.parts?.filter((_, idx) => idx !== i)})}><X size={14} /></Button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="space-y-4">
+                  <Label>Checklist</Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-[#0f1115] p-4 rounded-lg border border-[#2d3139]">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox id="edit-test" checked={editingOS.checklist?.functionalityTest} onCheckedChange={(val) => setEditingOS({...editingOS, checklist: { ...editingOS.checklist!, functionalityTest: !!val }})} />
+                      <Label htmlFor="edit-test" className="text-xs">Teste</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox id="edit-cleaning" checked={editingOS.checklist?.cleaning} onCheckedChange={(val) => setEditingOS({...editingOS, checklist: { ...editingOS.checklist!, cleaning: !!val }})} />
+                      <Label htmlFor="edit-cleaning" className="text-xs">Limpeza</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox id="edit-safety" checked={editingOS.checklist?.safetyCheck} onCheckedChange={(val) => setEditingOS({...editingOS, checklist: { ...editingOS.checklist!, safetyCheck: !!val }})} />
+                      <Label htmlFor="edit-safety" className="text-xs">Segurança</Label>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-[#2d3139]">
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Início</Label>
+                      <Input type="datetime-local" className="bg-[#0f1115] border-[#2d3139]" value={editingOS.startDateTime} onChange={e => setEditingOS({...editingOS, startDateTime: e.target.value})} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Fim</Label>
+                      <Input type="datetime-local" className="bg-[#0f1115] border-[#2d3139]" value={editingOS.endDateTime} onChange={e => setEditingOS({...editingOS, endDateTime: e.target.value})} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Mão de Obra (R$)</Label>
+                      <Input type="number" className="bg-[#0f1115] border-[#2d3139]" value={editingOS.laborValue} onChange={e => setEditingOS({...editingOS, laborValue: Number(e.target.value)})} />
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+          <DialogFooter className="p-6 border-t border-[#2d3139] bg-[#1a1d23]">
+            <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139]">Cancelar</Button>
+            <Button className="bg-[#3b82f6] hover:bg-[#2563eb]" onClick={handleUpdateOS}>Atualizar O.S.</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation */}
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Confirmar Exclusão</DialogTitle>
+            <DialogDescription className="text-[#71717a]">Esta ação não pode ser desfeita. Deseja excluir a O.S. {osToDelete && formatRecordNumber(osToDelete.number, osToDelete.date)}?</DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)} className="border-[#2d3139]">Cancelar</Button>
+            <Button variant="destructive" onClick={handleDeleteOS} className="bg-red-500 hover:bg-red-600">Excluir</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function BudgetsManager({ budgets, clients, appSettings, pixSettings, companyId }: { budgets: Budget[], clients: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string }) {
+function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, companyId }: { budgets?: Budget[], clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
   const [newBudget, setNewBudget] = useState<Partial<Budget>>({
@@ -7248,7 +7538,7 @@ function BudgetsManager({ budgets, clients, appSettings, pixSettings, companyId 
   const handleSaveBudget = async () => {
     const total = (newBudget.items || []).reduce((acc, item) => acc + (item.quantity * item.price), 0);
     try {
-      const nextNumber = budgets.length > 0 ? Math.max(...budgets.map(b => b.number || 0)) + 1 : 1;
+      const nextNumber = (budgets || []).length > 0 ? Math.max(...(budgets || []).map(b => b.number || 0)) + 1 : 1;
       
       await addDoc(collection(db, 'budgets'), {
         ...newBudget,
@@ -7321,8 +7611,8 @@ function BudgetsManager({ budgets, clients, appSettings, pixSettings, companyId 
     const tableData = budget.items.map(item => [
       item.description,
       item.quantity.toString(),
-      `R$ ${item.price.toFixed(2)}`,
-      `R$ ${(item.quantity * item.price).toFixed(2)}`
+      `R$ ${(item.price || 0).toFixed(2)}`,
+      `R$ ${((item.quantity || 0) * (item.price || 0)).toFixed(2)}`
     ]);
 
     autoTable(doc, {
@@ -7338,7 +7628,7 @@ function BudgetsManager({ budgets, clients, appSettings, pixSettings, companyId 
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
-    doc.text(`VALOR TOTAL: R$ ${budget.total.toFixed(2)}`, 190, finalY, { align: 'right' });
+    doc.text(`VALOR TOTAL: R$ ${(budget.total || 0).toFixed(2)}`, 190, finalY, { align: 'right' });
 
     if (budget.pixAccountId) {
       const selectedPix = pixSettings.accounts.find(a => a.id === budget.pixAccountId);
@@ -7554,28 +7844,28 @@ function BudgetsManager({ budgets, clients, appSettings, pixSettings, companyId 
                     "text-[10px] font-semibold uppercase px-2 py-0.5 rounded w-fit",
                     budget.status === 'Aprovado' ? "bg-emerald-500/10 text-emerald-500" : "bg-blue-500/10 text-blue-500"
                   )}>
-                    {budget.status}
+                    {budget.status || 'Pendente'}
                   </Badge>
                   <span className="text-[10px] font-mono text-[#3b82f6]">{formatRecordNumber(budget.number, budget.createdAt)}</span>
                 </div>
                 <p className="text-[11px] text-[#71717a]">{format(budget.createdAt instanceof Timestamp ? budget.createdAt.toDate() : new Date(budget.createdAt), 'dd/MM/yyyy')}</p>
               </div>
-              <CardTitle className="mt-3 text-[16px] font-bold text-white">{budget.clientName}</CardTitle>
+              <CardTitle className="mt-3 text-[16px] font-bold text-white">{budget.clientName || 'Cliente Sem Nome'}</CardTitle>
               <CardDescription className="text-[#71717a] text-[12px]">{budget.clientPhone || 'Sem telefone'}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-2 mb-6">
-                {budget.items.slice(0, 2).map((item, i) => (
+                {(budget.items || []).slice(0, 2).map((item, i) => (
                   <div key={i} className="flex justify-between text-[12px]">
                     <span className="text-[#a0a0a0] truncate mr-2">{item.quantity}x {item.description}</span>
-                    <span className="font-medium text-[#e0e0e0]">R$ {(item.quantity * item.price).toFixed(2)}</span>
+                    <span className="font-medium text-[#e0e0e0]">R$ {(item.quantity * item.price || 0).toFixed(2)}</span>
                   </div>
                 ))}
-                {budget.items.length > 2 && <p className="text-[10px] text-[#555]">+{budget.items.length - 2} itens...</p>}
+                {(budget.items || []).length > 2 && <p className="text-[10px] text-[#555]">+{(budget.items || []).length - 2} itens...</p>}
               </div>
               <Separator className="my-4 bg-[#2d3139]" />
               <div className="flex items-center justify-between">
-                <p className="text-lg font-bold text-white">R$ {budget.total.toFixed(2)}</p>
+                <p className="text-lg font-bold text-white">R$ {(budget.total || 0).toFixed(2)}</p>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white text-[11px]" onClick={() => generateBudgetPDF(budget)}>
                     PDF
