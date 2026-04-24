@@ -445,6 +445,254 @@ const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettin
   doc.save(`contrato_${(client.name || 'cliente').replace(/\s/g, '_')}.pdf`);
 };
 
+const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings) => {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 15;
+  const contentWidth = pageWidth - (margin * 2);
+  let currentY = 15;
+
+  // Header helpers
+  const drawLine = () => {
+    doc.setDrawColor(200, 200, 200);
+    doc.line(margin, currentY, pageWidth - margin, currentY);
+    currentY += 5;
+  };
+
+  const drawSectionTitle = (title: string) => {
+    doc.setFillColor(240, 240, 240);
+    doc.rect(margin, currentY, contentWidth, 7, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(50, 50, 50);
+    doc.text(title.toUpperCase(), margin + 2, currentY + 5);
+    currentY += 10;
+  };
+
+  const checkPageBreak = (neededHeight: number) => {
+    if (currentY + neededHeight > pageHeight - margin) {
+      doc.addPage();
+      currentY = margin;
+      return true;
+    }
+    return false;
+  };
+
+  // 1. HEADER
+  if (appSettings.logoUrl) {
+    try {
+      doc.addImage(appSettings.logoUrl, 'PNG', margin, currentY, 20, 20);
+    } catch (e) {
+      console.error("Erro logo OS:", e);
+    }
+  }
+
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
+  doc.text(appSettings.companyName || 'SegurPro', appSettings.logoUrl ? margin + 25 : margin, currentY + 7);
+  
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 100, 100);
+  const addressLine = `${appSettings.address || ''}${appSettings.neighborhood ? `, ${appSettings.neighborhood}` : ''}`;
+  doc.text(addressLine, appSettings.logoUrl ? margin + 25 : margin, currentY + 12);
+  doc.text(`${appSettings.city || ''} - Documento: ${appSettings.document || ''}`, appSettings.logoUrl ? margin + 25 : margin, currentY + 16);
+
+  // OS Number and Date on the right
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
+  doc.text(`ORDEM DE SERVIÇO Nº ${formatRecordNumber(os.number, os.date)}`, pageWidth - margin, currentY + 7, { align: 'right' });
+  doc.setFontSize(10);
+  doc.text(`Data: ${format(os.date instanceof Timestamp ? os.date.toDate() : new Date(os.date), 'dd/MM/yyyy')}`, pageWidth - margin, currentY + 13, { align: 'right' });
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Técnico: ${os.technicianName}`, pageWidth - margin, currentY + 18, { align: 'right' });
+
+  currentY += 25;
+  drawLine();
+
+  // 2. DADOS DO CLIENTE
+  drawSectionTitle('1. Dados do Cliente');
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(0, 0, 0);
+  doc.text(`Nome/Empresa: ${os.clientName}`, margin, currentY);
+  currentY += 5;
+  doc.text(`Endereço: ${os.address}`, margin, currentY);
+  currentY += 5;
+  doc.text(`Contato: ${os.contact}`, margin, currentY);
+  currentY += 10;
+
+  // 3. INFORMAÇÕES DO EQUIPAMENTO
+  drawSectionTitle('2. Informações do Equipamento / Serviço');
+  doc.text(`Equipamento: ${os.equipment}`, margin, currentY);
+  currentY += 5;
+  doc.text(`Marca/Modelo/Série: ${os.brandModelSN}`, margin, currentY);
+  currentY += 5;
+  doc.text(`Tipo de Serviço: [${os.serviceType === 'Preventiva' ? 'X' : ' '}] Manutenção Preventiva  [${os.serviceType === 'Corretiva' ? 'X' : ' '}] Corretiva  [${os.serviceType === 'Instalação' ? 'X' : ' '}] Instalação`, margin, currentY);
+  currentY += 8;
+  doc.setFont('helvetica', 'bold');
+  doc.text('Problema Relatado:', margin, currentY);
+  currentY += 5;
+  doc.setFont('helvetica', 'normal');
+  const probLines = doc.splitTextToSize(os.reportedProblem, contentWidth);
+  doc.text(probLines, margin, currentY);
+  currentY += (probLines.length * 5) + 5;
+
+  // 4. DETALHES TÉCNICOS
+  checkPageBreak(30);
+  drawSectionTitle('3. Detalhes Técnicos (O que foi feito)');
+  doc.setFont('helvetica', 'bold');
+  doc.text('Diagnóstico:', margin, currentY);
+  currentY += 5;
+  doc.setFont('helvetica', 'normal');
+  const diagLines = doc.splitTextToSize(os.diagnosis, contentWidth);
+  doc.text(diagLines, margin, currentY);
+  currentY += (diagLines.length * 5) + 5;
+
+  checkPageBreak(30);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Serviços Realizados:', margin, currentY);
+  currentY += 5;
+  doc.setFont('helvetica', 'normal');
+  const servLines = doc.splitTextToSize(os.performedServices, contentWidth);
+  doc.text(servLines, margin, currentY);
+  currentY += (servLines.length * 5) + 5;
+
+  // Parts Table if exists
+  if (os.parts && os.parts.length > 0) {
+    checkPageBreak(30);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Peças/Materiais Substituídos:', margin, currentY);
+    currentY += 2;
+    autoTable(doc, {
+      startY: currentY,
+      margin: { left: margin },
+      head: [['Descrição', 'Qtd', 'V. Unitário', 'Total']],
+      body: os.parts.map(p => [p.description, p.quantity, `R$ ${p.price.toFixed(2)}`, `R$ ${(p.quantity * p.price).toFixed(2)}`]),
+      theme: 'grid',
+      headStyles: { fillColor: [80, 80, 80], fontSize: 8 },
+      styles: { fontSize: 8 },
+      columnStyles: {
+        1: { halign: 'center' },
+        2: { halign: 'right' },
+        3: { halign: 'right' }
+      }
+    });
+    currentY = (doc as any).lastAutoTable.finalY + 10;
+  }
+
+  // Checklist
+  checkPageBreak(25);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Checklist de Conformidade:', margin, currentY);
+  currentY += 5;
+  doc.setFont('helvetica', 'normal');
+  doc.text(`[${os.checklist.functionalityTest ? 'X' : ' '}] Teste de Funcionamento   [${os.checklist.cleaning ? 'X' : ' '}] Limpeza   [${os.checklist.safetyCheck ? 'X' : ' '}] Verificação de Segurança`, margin, currentY);
+  if (os.checklist.additional) {
+    currentY += 5;
+    doc.text(`Observações: ${os.checklist.additional}`, margin, currentY);
+  }
+  currentY += 10;
+
+  // 5. TEMPOS E VALORES
+  checkPageBreak(40);
+  drawSectionTitle('4. Tempos e Valores');
+  const startStr = format(os.startDateTime instanceof Timestamp ? os.startDateTime.toDate() : new Date(os.startDateTime), 'dd/MM/yyyy HH:mm');
+  const endStr = format(os.endDateTime instanceof Timestamp ? os.endDateTime.toDate() : new Date(os.endDateTime), 'dd/MM/yyyy HH:mm');
+  
+  doc.text(`Início: ${startStr}`, margin, currentY);
+  doc.text(`Conclusão: ${endStr}`, margin + 80, currentY);
+  currentY += 8;
+  
+  doc.text(`Valor Mão de Obra: R$ ${os.laborValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, margin, currentY);
+  doc.text(`Valor Peças: R$ ${os.partsValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, margin + 80, currentY);
+  currentY += 8;
+  
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`VALOR TOTAL: R$ ${os.totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, margin, currentY);
+  currentY += 15;
+
+  // 6. ASSINATURAS
+  checkPageBreak(50);
+  
+  doc.setLineWidth(0.3);
+  doc.line(margin + 10, currentY + 20, margin + 80, currentY + 20);
+  doc.line(pageWidth - margin - 80, currentY + 20, pageWidth - margin - 10, currentY + 20);
+  
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Assinatura do Técnico', margin + 45, currentY + 25, { align: 'center' });
+  doc.text('Assinatura do Cliente (Ciente)', pageWidth - margin - 45, currentY + 25, { align: 'center' });
+  
+  if (os.technicianSignature) {
+    try { doc.addImage(os.technicianSignature, 'PNG', margin + 25, currentY, 40, 18); } catch(e) {}
+  }
+  if (os.clientSignature) {
+    try { doc.addImage(os.clientSignature, 'PNG', pageWidth - margin - 65, currentY, 40, 18); } catch(e) {}
+  }
+
+  doc.save(`OS_${formatRecordNumber(os.number, os.date).replace('/', '-')}.pdf`);
+};
+
+interface ServiceOrder {
+  id: string;
+  number?: number;
+  date: any; // Firestore Timestamp
+  technicianId: string;
+  technicianName: string;
+  companyId: string;
+  
+  // Client Data
+  clientId?: string;
+  clientName: string;
+  address: string;
+  contact: string;
+  
+  // Equipment Info
+  equipment: string;
+  brandModelSN: string;
+  serviceType: 'Preventiva' | 'Corretiva' | 'Instalação';
+  reportedProblem: string;
+  
+  // Technical details
+  diagnosis: string;
+  performedServices: string;
+  parts: { description: string; quantity: number; price: number }[];
+  checklist: { 
+    functionalityTest: boolean;
+    cleaning: boolean;
+    safetyCheck: boolean;
+    additional?: string;
+  };
+  
+  // Time and Values
+  startDateTime: any;
+  endDateTime: any;
+  laborValue: number;
+  partsValue: number;
+  totalValue: number;
+  
+  // Signatures
+  technicianSignature?: string;
+  clientSignature?: string;
+  
+  // Status
+  status: 'Aberto' | 'Em Andamento' | 'Concluído' | 'Cancelado';
+  
+  createdAt: any;
+  updatedAt: any;
+}
+
 interface TechnicalVisit {
   id: string;
   clientId?: string;
@@ -953,6 +1201,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [visits, setVisits] = useState<TechnicalVisit[]>([]);
+  const [serviceOrders, setServiceOrders] = useState<ServiceOrder[]>([]);
   const [financials, setFinancials] = useState<FinancialRecord[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -988,128 +1237,102 @@ export default function App() {
     signatureUrl: ''
   });
 
-  // Auth Listener
+  // 1. Auth Listener
   useEffect(() => {
     async function testConnection() {
       try {
         await getDocFromServer(doc(db, 'test', 'connection'));
       } catch (error: any) {
         if (error.message.includes('the client is offline')) {
-          console.error("Erro de conexão com o Firebase: O cliente está offline ou a configuração está incorreta.");
-          toast.error("Erro de conexão: Verifique se o Firestore foi ativado no Console do Firebase.");
+          console.error("Erro de conexão com o Firebase: O cliente está offline.");
+          toast.error("Erro de conexão: Verifique se o Firestore foi ativado.");
         }
       }
     }
     testConnection();
 
-    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
+    // Safety timeout to ensure loading doesn't get stuck forever
+    const loadingTimeout = setTimeout(() => {
+      setLoading(false);
+    }, 10000);
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      if (currentUser) {
-        // 1. Listen to User Document
-        const userRef = doc(db, 'users', currentUser.uid);
-        const unsubscribeUser = onSnapshot(userRef, async (snap) => {
-          if (snap.exists()) {
-            const data = snap.data();
-            setCurrentUserData(data);
-
-            // 2. If user has company, listen to Company data
-            if (data.companyId) {
-              onSnapshot(doc(db, 'companies', data.companyId), (compSnap) => {
-                if (compSnap.exists()) {
-                  setCurrentCompany({ id: compSnap.id, ...compSnap.data() });
-                } else {
-                  setCurrentCompany(null);
-                }
-              });
-            } else if (data.role === 'owner') {
-              // Auto-fix for owners missing a companyId
-              const createDefaultCompany = async () => {
-                try {
-                  const companyRef = await addDoc(collection(db, 'companies'), {
-                    name: 'Minha Empresa',
-                    ownerId: snap.id,
-                    status: 'active',
-                    createdAt: Timestamp.now()
-                  });
-                  await updateDoc(doc(db, 'users', snap.id), { companyId: companyRef.id });
-                  
-                  await setDoc(doc(db, 'companies', companyRef.id, 'settings', 'general'), {
-                    companyName: 'Minha Empresa',
-                    logoUrl: '',
-                    responsible: data.displayName || 'Responsável',
-                    address: '',
-                    neighborhood: '',
-                    city: '',
-                    cep: '',
-                    document: '',
-                    signatureUrl: ''
-                  });
-                } catch (err) {
-                  console.error("Auto-fix company creation failed:", err);
-                }
-              };
-              createDefaultCompany();
-            } else {
-              setCurrentCompany(null);
-            }
-          } else {
-            // Initial signup or missing record
-            let initialCompanyId = '';
-            const isSuper = currentUser.email === 'emailparasiteslixo@gmail.com';
-
-            try {
-              if (!isSuper) {
-                // Create a default company for normal owner if not a super admin
-                const companyRef = await addDoc(collection(db, 'companies'), {
-                  name: 'Minha Empresa',
-                  ownerId: currentUser.uid,
-                  status: 'active',
-                  createdAt: Timestamp.now()
-                });
-                initialCompanyId = companyRef.id;
-                
-                // Initialize default general settings
-                await setDoc(doc(db, 'companies', initialCompanyId, 'settings', 'general'), {
-                  companyName: 'Minha Empresa',
-                  logoUrl: '',
-                  responsible: currentUser.displayName || displayName || 'Responsável',
-                  address: '',
-                  neighborhood: '',
-                  city: '',
-                  cep: '',
-                  document: '',
-                  signatureUrl: ''
-                });
-              }
-
-              const initialData = {
-                uid: currentUser.uid,
-                email: currentUser.email,
-                displayName: currentUser.displayName || displayName || 'Usuário',
-                role: isSuper ? 'super_admin' : 'owner',
-                companyId: initialCompanyId,
-                createdAt: Timestamp.now()
-              };
-              await setDoc(userRef, initialData);
-              setCurrentUserData(initialData);
-            } catch (err) {
-              console.error("Error creating initial profile/company:", err);
-            }
-          }
-          setLoading(false);
-        }, (error) => {
-          console.error("User snap error:", error);
-          setLoading(false);
-        });
-        return () => unsubscribeUser();
-      } else {
+      if (!currentUser) {
         setCurrentUserData(null);
         setCurrentCompany(null);
         setLoading(false);
+        clearTimeout(loadingTimeout);
       }
     });
-    return () => unsubscribeAuth();
-  }, [displayName]);
+
+    return () => {
+      unsubscribeAuth();
+      clearTimeout(loadingTimeout);
+    };
+  }, []);
+
+  // 2. User Profile Listener
+  useEffect(() => {
+    if (!user) return;
+
+    const userRef = doc(db, 'users', user.uid);
+    const unsubscribeUser = onSnapshot(userRef, async (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setCurrentUserData(data);
+        if (!data.companyId) {
+          setLoading(false);
+        }
+      } else {
+        // Initial setup for new user
+        const isSuper = user.email === 'emailparasiteslixo@gmail.com';
+        try {
+          const initialData = {
+            uid: user.uid,
+            email: user.email,
+            displayName: user.displayName || 'Usuário',
+            role: isSuper ? 'super_admin' : 'pending',
+            companyId: '',
+            createdAt: Timestamp.now()
+          };
+          await setDoc(userRef, initialData);
+          setCurrentUserData(initialData);
+        } catch (err) {
+          console.error("Erro ao criar perfil inicial:", err);
+        }
+        setLoading(false);
+      }
+    }, (error) => {
+      console.error("Erro no listener de usuário:", error);
+      setLoading(false);
+    });
+
+    return () => unsubscribeUser();
+  }, [user]);
+
+  // 3. Current Company Listener
+  useEffect(() => {
+    if (!currentUserData?.companyId) {
+      setCurrentCompany(null);
+      return;
+    }
+
+    const compRef = doc(db, 'companies', currentUserData.companyId);
+    const unsubscribeCompany = onSnapshot(compRef, (compSnap) => {
+      if (compSnap.exists()) {
+        setCurrentCompany({ id: compSnap.id, ...compSnap.data() });
+      } else {
+        setCurrentCompany(null);
+      }
+      setLoading(false);
+    }, (error) => {
+      console.error("Erro no listener de empresa:", error);
+      setLoading(false);
+    });
+
+    return () => unsubscribeCompany();
+  }, [currentUserData?.companyId]);
 
   // Settings & Data Listeners
   const isSuperAdmin = user?.email === 'emailparasiteslixo@gmail.com' || currentUserData?.role === 'super_admin';
@@ -1133,8 +1356,6 @@ export default function App() {
   useEffect(() => {
     if (currentCompany) {
       setAppSettings(prev => {
-        // Robust mapping with fallbacks for different naming conventions
-        // We prioritize prev (current subcollection data) but fall back to currentCompany top-level fields
         const updated = {
           logoUrl: prev.logoUrl || currentCompany.logoUrl || currentCompany.companyLogo || '',
           companyName: prev.companyName || currentCompany.companyName || currentCompany.name || '',
@@ -1146,7 +1367,6 @@ export default function App() {
           neighborhood: prev.neighborhood || currentCompany.neighborhood || currentCompany.companyNeighborhood || currentCompany.bairro || '',
           signatureUrl: prev.signatureUrl || currentCompany.signatureUrl || ''
         };
-        // Only update if something actually changed to avoid infinite loops
         if (JSON.stringify(prev) !== JSON.stringify(updated)) {
           return updated;
         }
@@ -1193,6 +1413,7 @@ export default function App() {
     }
 
     let visitsUnsubscribe = () => {};
+    let serviceOrdersUnsubscribe = () => {};
     let financialUnsubscribe = () => {};
     let budgetsUnsubscribe = () => {};
     let clientsUnsubscribe = () => {};
@@ -1206,80 +1427,80 @@ export default function App() {
         query(collection(db, 'visits'), where('companyId', '==', companyId)),
         (snapshot) => {
           const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TechnicalVisit));
-          // Sort locally by date desc
           setVisits(data.sort((a, b) => {
             const dateA = a.date instanceof Date ? a.date.getTime() : new Date(a.date).getTime();
             const dateB = b.date instanceof Date ? b.date.getTime() : new Date(b.date).getTime();
             return dateB - dateA;
           }));
-        },
-        (error) => handleFirestoreError(error, OperationType.LIST, 'visits')
+        }
+      );
+
+      serviceOrdersUnsubscribe = onSnapshot(
+        query(collection(db, 'serviceOrders'), where('companyId', '==', companyId)),
+        (snapshot) => {
+          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ServiceOrder));
+          setServiceOrders(data.sort((a, b) => {
+            const dateA = a.date instanceof Timestamp ? a.date.toDate().getTime() : (a.date instanceof Date ? a.date.getTime() : new Date(a.date).getTime());
+            const dateB = b.date instanceof Timestamp ? b.date.toDate().getTime() : (b.date instanceof Date ? b.date.getTime() : new Date(b.date).getTime());
+            return dateB - dateA;
+          }));
+        }
       );
 
       financialUnsubscribe = onSnapshot(
         query(collection(db, 'financial'), where('companyId', '==', companyId)),
         (snapshot) => {
           const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FinancialRecord));
-          // Sort locally by date desc
           setFinancials(data.sort((a, b) => {
             const dateA = a.date instanceof Date ? a.date.getTime() : new Date(a.date).getTime();
             const dateB = b.date instanceof Date ? b.date.getTime() : new Date(b.date).getTime();
             return dateB - dateA;
           }));
-        },
-        (error) => handleFirestoreError(error, OperationType.LIST, 'financial')
+        }
       );
 
       budgetsUnsubscribe = onSnapshot(
         query(collection(db, 'budgets'), where('companyId', '==', companyId)),
         (snapshot) => {
           const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Budget));
-          // Sort locally by createdAt desc
           setBudgets(data.sort((a, b) => {
             const timeA = a.createdAt?.seconds || 0;
             const timeB = b.createdAt?.seconds || 0;
             return timeB - timeA;
           }));
-        },
-        (error) => handleFirestoreError(error, OperationType.LIST, 'budgets')
+        }
       );
 
       clientsUnsubscribe = onSnapshot(
         query(collection(db, 'clients'), where('companyId', '==', companyId)),
         (snapshot) => {
           const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client));
-          // Sort locally by name asc
           setClients(data.sort((a, b) => a.name.localeCompare(b.name)));
-        },
-        (error) => handleFirestoreError(error, OperationType.LIST, 'clients')
+        }
       );
 
       receiptsUnsubscribe = onSnapshot(
         query(collection(db, 'receipts'), where('companyId', '==', companyId)),
         (snapshot) => {
           const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Receipt));
-          // Sort locally by createdAt desc
           setReceipts(data.sort((a, b) => {
             const timeA = a.createdAt?.seconds || 0;
             const timeB = b.createdAt?.seconds || 0;
             return timeB - timeA;
           }));
-        },
-        (error) => handleFirestoreError(error, OperationType.LIST, 'receipts')
+        }
       );
 
       usersUnsubscribe = onSnapshot(
         query(collection(db, 'users'), where('companyId', '==', companyId)),
         (snapshot) => {
           const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          // Sort locally by createdAt desc
           setUsers(data.sort((a: any, b: any) => {
             const timeA = a.createdAt?.seconds || 0;
             const timeB = b.createdAt?.seconds || 0;
             return timeB - timeA;
           }));
-        },
-        (error) => handleFirestoreError(error, OperationType.LIST, 'users')
+        }
       );
 
       pixUnsubscribe = onSnapshot(
@@ -1309,6 +1530,7 @@ export default function App() {
 
     return () => {
       visitsUnsubscribe();
+      serviceOrdersUnsubscribe();
       financialUnsubscribe();
       budgetsUnsubscribe();
       clientsUnsubscribe();
@@ -1472,10 +1694,18 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#0f1115]">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#3b82f6] border-t-transparent"></div>
-          <p className="text-sm font-medium text-[#71717a]">Carregando Sistema...</p>
+      <div className="flex h-screen items-center justify-center bg-[#07080a]">
+        <div className="flex flex-col items-center gap-6">
+          <div className="relative">
+            <div className="h-20 w-20 animate-spin rounded-full border-4 border-[#3b82f6]/20 border-t-[#3b82f6]"></div>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Shield className="text-[#3b82f6] animate-pulse" size={24} />
+            </div>
+          </div>
+          <div className="text-center space-y-2">
+            <p className="text-lg font-semibold text-white tracking-widest uppercase">SegurPro Gestão</p>
+            <p className="text-xs font-medium text-[#71717a] animate-pulse">Iniciando ambiente seguro...</p>
+          </div>
         </div>
       </div>
     );
@@ -1666,6 +1896,12 @@ export default function App() {
               active={activeTab === 'budgets'} 
               onClick={() => setActiveTab('budgets')} 
             />
+            <SidebarItem 
+              icon={<CheckCircle2 size={18} />} 
+              label="Ordem de Serviço" 
+              active={activeTab === 'service-orders'} 
+              onClick={() => setActiveTab('service-orders')} 
+            />
             
             <div className="pt-6 pb-2 px-4">
               <span className="text-[11px] uppercase tracking-widest text-[#555] font-semibold">Gestão</span>
@@ -1785,6 +2021,12 @@ export default function App() {
               onClick={() => { setActiveTab('budgets'); setIsMobileMenuOpen(false); }} 
             />
             <SidebarItem 
+              icon={<CheckCircle2 size={20} />} 
+              label="Ordem de Serviço" 
+              active={activeTab === 'service-orders'} 
+              onClick={() => { setActiveTab('service-orders'); setIsMobileMenuOpen(false); }} 
+            />
+            <SidebarItem 
               icon={<FileText size={20} />} 
               label="Relatórios" 
               active={activeTab === 'reports'} 
@@ -1860,6 +2102,7 @@ export default function App() {
           {activeTab === 'dashboard' && (
             <Dashboard 
               visits={visits} 
+              serviceOrders={serviceOrders}
               financials={financials} 
               budgets={budgets} 
               clients={clients} 
@@ -1870,6 +2113,15 @@ export default function App() {
           {activeTab === 'visits' && <VisitsManager visits={visits} user={user} clients={clients} appSettings={appSettings} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} />}
           {activeTab === 'financial' && <FinancialManager financials={financials} visits={visits} clients={clients} companyId={currentUserData?.companyId || ''} />}
           {activeTab === 'budgets' && <BudgetsManager budgets={budgets} clients={clients} appSettings={appSettings} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} />}
+          {activeTab === 'service-orders' && (
+            <ServiceOrdersManager 
+              serviceOrders={serviceOrders} 
+              clients={clients} 
+              users={users}
+              appSettings={appSettings} 
+              companyId={currentUserData?.companyId || ''} 
+            />
+          )}
           {activeTab === 'clients' && <ClientsManager clients={clients} appSettings={appSettings} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} />}
           {activeTab === 'receipts' && <ReceiptsManager receipts={receipts} clients={clients} pixSettings={pixSettings} appSettings={appSettings} companyId={currentUserData?.companyId || ''} />}
           {activeTab === 'reports' && (
@@ -2025,15 +2277,31 @@ function UsersManager({ users, currentUserData }: { users: any[], currentUserDat
           <h2 className="text-2xl font-bold tracking-tight text-white">Gestão de Usuários</h2>
           <p className="text-[#71717a]">Cadastre e gerencie os acessos ao sistema.</p>
         </div>
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger 
-            render={
-              <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
-                <Plus size={18} />
-                Novo Usuário
-              </Button>
-            }
-          />
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1 rounded-md">
+            <div className="text-[10px] uppercase text-[#71717a] font-bold">Código de Convite:</div>
+            <code className="text-[#3b82f6] font-mono font-bold text-sm">{currentUserData.companyId}</code>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-6 w-6 text-[#71717a] hover:text-white"
+              onClick={() => {
+                navigator.clipboard.writeText(currentUserData.companyId);
+                toast.success('Código copiado!');
+              }}
+            >
+              <Share2 size={12} />
+            </Button>
+          </div>
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+            <DialogTrigger 
+              render={
+                <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+                  <Plus size={18} />
+                  Novo Usuário
+                </Button>
+              }
+            />
           <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[500px]">
             <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Cadastrar Novo Usuário</DialogTitle>
@@ -2100,6 +2368,7 @@ function UsersManager({ users, currentUserData }: { users: any[], currentUserDat
           </DialogContent>
         </Dialog>
       </div>
+    </div>
 
       <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
         <Table>
@@ -3610,7 +3879,6 @@ function SuperAdminPanel({ companies, financials, saasSettings, user }: { compan
       toast.error("Erro ao vincular registro.");
     }
   };
-
   // New states for block confirmation, company editing, and deletion
   const [isBlockConfirmOpen, setIsBlockConfirmOpen] = useState(false);
   const [isEditCompanyOpen, setIsEditCompanyOpen] = useState(false);
@@ -3884,87 +4152,6 @@ function SuperAdminPanel({ companies, financials, saasSettings, user }: { compan
           }
         }
         setMigrationLogs(prev => [...prev, `Coleção ${colName} processada.`]);
-      }
-
-      setMigrationLogs(prev => [...prev, `--- Início da Recuperação de Configurações ---`]);
-      // 2. Greedy Settings Discovery - Also scan ALL existing companies
-      const settingsToApply: any = {};
-      
-      const mergeSettings = (data: any, source: string) => {
-        if (!data) return;
-        const mapped: any = {
-          companyName: data.name || data.companyName || data.fantasia || data.nomeFantasia || data.razaoSocial || '',
-          document: data.document || data.cnpj || data.companyDoc || data.cpf || data.documento || data.companyCNPJ || '',
-          responsible: data.responsible || data.companyResp || data.technicianName || data.responsavel || data.tecnicoResponsavel || data.proprietario || '',
-          address: data.address || data.companyAddress || data.logradouro || data.endereco || data.rua || '',
-          neighborhood: data.neighborhood || data.companyNeighborhood || data.bairro || '',
-          city: data.city || data.companyCity || data.municipio || data.cidade || '',
-          cep: data.cep || data.companyCep || data.codigoPostal || '',
-          logoUrl: data.logoUrl || data.companyLogo || data.logo || data.avatarUrl || '',
-          signatureUrl: data.signatureUrl || data.assinatura || data.signature || data.rubrica || ''
-        };
-        
-        let foundSomething = false;
-        Object.entries(mapped).forEach(([key, val]) => {
-          if (val && (!settingsToApply[key] || settingsToApply[key] === '')) {
-             settingsToApply[key] = val;
-             foundSomething = true;
-          }
-        });
-        if (foundSomething) {
-          setMigrationLogs(prev => [...prev, `Dados recuperados de: ${source}`]);
-        }
-      };
-
-      const allCompaniesSnap = await getDocs(collection(db, 'companies'));
-      setMigrationLogs(prev => [...prev, `Vasculhando ${allCompaniesSnap.docs.length} empresas registradas...`]);
-
-      for (const d of allCompaniesSnap.docs) {
-        if (d.id !== selectedCompanyId) {
-          const compData = d.data();
-          mergeSettings(compData, `Empresa ${compData.name || d.id}`);
-          
-          const sub = await getDoc(doc(db, 'companies', d.id, 'settings', 'general'));
-          if (sub.exists()) {
-            mergeSettings(sub.data(), `Configurações de ${compData.name || d.id}`);
-          }
-        }
-      }
-
-      // B. Scan specific IDs found in migrated records (if any were missed)
-      for (const id of Array.from(foundCompanyIds)) {
-        if (id !== selectedCompanyId) {
-          const d = await getDoc(doc(db, 'companies', id));
-          if (d.exists()) {
-            mergeSettings(d.data(), `ID Encontrado: ${id}`);
-            const sub = await getDoc(doc(db, 'companies', id, 'settings', 'general'));
-            if (sub.exists()) {
-              mergeSettings(sub.data(), `Sub-configuração do ID: ${id}`);
-            }
-          }
-        }
-      }
-
-      // C. User doc fallback
-      const userDoc = await getDoc(doc(db, 'users', user?.uid || ''));
-      if (userDoc.exists()) {
-        mergeSettings(userDoc.data(), "Seu próprio perfil de usuário");
-      }
-
-      setMigrationLogs(prev => [...prev, `Aplicando configurações recuperadas...`]);
-
-      if (Object.keys(settingsToApply).length > 0) {
-        await setDoc(doc(db, 'companies', selectedCompanyId, 'settings', 'general'), settingsToApply, { merge: true });
-        const topLevelUpdate: any = {};
-        if (settingsToApply.companyName) topLevelUpdate.name = settingsToApply.companyName;
-        if (settingsToApply.document) topLevelUpdate.document = settingsToApply.document;
-        if (settingsToApply.address) topLevelUpdate.address = settingsToApply.address;
-        if (Object.keys(topLevelUpdate).length > 0) {
-          await updateDoc(doc(db, 'companies', selectedCompanyId), topLevelUpdate);
-        }
-        setMigrationLogs(prev => [...prev, `Configurações salvas com sucesso.`]);
-      } else {
-        setMigrationLogs(prev => [...prev, `Nenhuma configuração adicional encontrada para recuperar.`]);
       }
 
       setMigrationStats(migratedCount);
@@ -4668,6 +4855,31 @@ function SettingsManager({ pixSettings, appSettings, user, companyId }: { pixSet
         <p className="text-[#71717a]">Gerencie os dados globais do sistema e seu perfil.</p>
       </div>
 
+      <div className="flex flex-col md:flex-row justify-between items-center bg-[#3b82f6]/10 border border-[#3b82f6]/20 p-6 rounded-xl gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-bold text-white tracking-tight">Código de Convite</h3>
+            <Badge className="bg-[#3b82f6] text-white">Ativo</Badge>
+          </div>
+          <p className="text-sm text-[#71717a]">Novos técnicos podem entrar na sua empresa usando este código único.</p>
+        </div>
+        <div className="flex items-center gap-3 w-full md:w-auto">
+          <div className="bg-[#0f1115] px-4 py-2.5 rounded-lg border border-[#2d3139] text-[#3b82f6] font-mono font-bold text-lg flex-1 md:flex-none text-center">
+            {companyId}
+          </div>
+          <Button 
+            variant="default" 
+            className="bg-[#3b82f6] hover:bg-[#2563eb] text-white whitespace-nowrap"
+            onClick={() => {
+              navigator.clipboard.writeText(companyId);
+              toast.success('Código copiado com sucesso!');
+            }}
+          >
+            Copiar Código
+          </Button>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
           <CardHeader>
@@ -5207,7 +5419,7 @@ function ReportsManager({ visits, financials, budgets, clients, receipts, appSet
 
 // --- Dashboard Component ---
 
-function Dashboard({ visits, financials, budgets, clients, onNavigate, companyId }: { visits: TechnicalVisit[], financials: FinancialRecord[], budgets: Budget[], clients: Client[], onNavigate: (tab: string) => void, companyId: string }) {
+function Dashboard({ visits, serviceOrders, financials, budgets, clients, onNavigate, companyId }: { visits: TechnicalVisit[], serviceOrders: ServiceOrder[], financials: FinancialRecord[], budgets: Budget[], clients: Client[], onNavigate: (tab: string) => void, companyId: string }) {
   const stats = useMemo(() => {
     const now = new Date();
     const currentMonth = now.getMonth();
@@ -5235,6 +5447,7 @@ function Dashboard({ visits, financials, budgets, clients, onNavigate, companyId
     const pendingVisits = visits.filter(v => v.status === 'Agendada' || v.status === 'Em Andamento').length;
     const completedVisits = visits.filter(v => v.status === 'Concluída').length;
     const pendingBudgets = budgets.filter(b => b.status === 'Pendente').length;
+    const pendingOS = serviceOrders.filter(os => os.status === 'Aberto' || os.status === 'Em Andamento').length;
     const totalClients = clients.length;
 
     const todayVisits = visits.filter(v => {
@@ -5242,8 +5455,8 @@ function Dashboard({ visits, financials, budgets, clients, onNavigate, companyId
       return format(d, 'yyyy-MM-dd') === todayStr && (v.status === 'Agendada' || v.status === 'Em Andamento');
     });
 
-    return { income, expense, balance: income - expense, todayBalance, pendingVisits, completedVisits, pendingBudgets, totalClients, todayVisits };
-  }, [visits, financials, budgets, clients]);
+    return { income, expense, balance: income - expense, todayBalance, pendingVisits, completedVisits, pendingBudgets, pendingOS, totalClients, todayVisits };
+  }, [visits, serviceOrders, financials, budgets, clients]);
 
   const chartData = useMemo(() => {
     const last7Days = Array.from({ length: 7 }, (_, i) => {
@@ -5277,13 +5490,38 @@ function Dashboard({ visits, financials, budgets, clients, onNavigate, companyId
 
   return (
     <div className="space-y-10">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        <StatCard title="Visitas Agendadas" value={stats.pendingVisits} icon={<CalendarIcon className="text-[#3b82f6]" />} trend={`${stats.completedVisits} concluídas`} isCount />
-        <StatCard title="Orçamentos Pendentes" value={stats.pendingBudgets} icon={<FileText className="text-[#f59e0b]" />} trend="Aguardando aprovação" isCount />
-        <Card className={cn(
-          "border-[#2d3139] p-6 rounded-xl",
-          stats.todayBalance >= 0 ? "bg-emerald-500/10 border-emerald-500/20" : "bg-red-500/10 border-red-500/20"
-        )}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatCard 
+          title="Visitas Agendadas" 
+          value={stats.pendingVisits} 
+          icon={<CalendarIcon className="text-[#3b82f6]" />} 
+          trend={`${stats.completedVisits} concluídas`} 
+          isCount 
+          onClick={() => onNavigate('visits')}
+        />
+        <StatCard 
+          title="O.S. Ativas" 
+          value={stats.pendingOS} 
+          icon={<CheckCircle2 className="text-[#10b981]" />} 
+          trend="Em andamento/Aberto" 
+          isCount 
+          onClick={() => onNavigate('service-orders')}
+        />
+        <StatCard 
+          title="Orçamentos Pendentes" 
+          value={stats.pendingBudgets} 
+          icon={<FileText className="text-[#f59e0b]" />} 
+          trend="Aguardando aprovação" 
+          isCount 
+          onClick={() => onNavigate('budgets')}
+        />
+        <Card 
+          className={cn(
+            "border-[#2d3139] p-6 rounded-xl cursor-pointer hover:border-[#3b82f6]/40 transition-all",
+            stats.todayBalance >= 0 ? "bg-emerald-500/10 border-emerald-500/20" : "bg-red-500/10 border-red-500/20"
+          )}
+          onClick={() => onNavigate('financial')}
+        >
           <div className="text-[12px] text-[#71717a] mb-2 font-medium">Saldo do Dia</div>
           <div className={cn(
             "text-[22px] font-bold tracking-tight",
@@ -5390,10 +5628,16 @@ function ActionCard({ title, desc, onClick }: { title: string, desc: string, onC
   );
 }
 
-function StatCard({ title, value, icon, trend, isBalance, isCount }: { title: string, value: number, icon: React.ReactNode, trend?: string, isBalance?: boolean, isCount?: boolean }) {
+function StatCard({ title, value, icon, trend, isBalance, isCount, onClick }: { title: string, value: number, icon: React.ReactNode, trend?: string, isBalance?: boolean, isCount?: boolean, onClick?: () => void }) {
   return (
-    <Card className="border-[#2d3139] bg-[#1a1d23] p-6 rounded-xl">
-      <div className="text-[12px] text-[#71717a] mb-2 font-medium">{title}</div>
+    <Card 
+      className={cn("border-[#2d3139] bg-[#1a1d23] p-6 rounded-xl", onClick && "cursor-pointer hover:border-[#3b82f6]/40 transition-all")} 
+      onClick={onClick}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[12px] text-[#71717a] font-medium">{title}</div>
+        <div className="opacity-60">{icon}</div>
+      </div>
       <div className="text-[22px] font-bold text-white tracking-tight">
         {isCount ? value.toString().padStart(2, '0') : `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
       </div>
@@ -6604,6 +6848,382 @@ function FinancialManager({ financials, visits, clients, companyId }: { financia
 }
 
 // --- Budgets Manager Component ---
+
+function ServiceOrdersManager({ serviceOrders, clients, users, appSettings, companyId }: { serviceOrders: ServiceOrder[], clients: Client[], users: any[], appSettings: AppSettings, companyId: string }) {
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [clientSearch, setClientSearch] = useState('');
+  const [newOS, setNewOS] = useState<Partial<ServiceOrder>>({
+    serviceType: 'Corretiva',
+    parts: [],
+    checklist: { functionalityTest: false, cleaning: false, safetyCheck: false },
+    status: 'Aberto',
+    laborValue: 0,
+    partsValue: 0,
+    totalValue: 0,
+    startDateTime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+    endDateTime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+  });
+
+  const filteredClients = useMemo(() => {
+    return clients.filter(c => (c.name || '').toLowerCase().includes(clientSearch.toLowerCase()));
+  }, [clients, clientSearch]);
+
+  const handleAddPart = () => {
+    setNewOS(prev => ({
+      ...prev,
+      parts: [...(prev.parts || []), { description: '', quantity: 1, price: 0 }]
+    }));
+  };
+
+  const handleOSSave = async () => {
+    try {
+      const nextNumber = serviceOrders.length > 0 ? Math.max(...serviceOrders.map(o => o.number || 0)) + 1 : 1;
+      const finalPartsValue = (newOS.parts || []).reduce((acc, p) => acc + (p.quantity * p.price), 0);
+      const finalTotal = (newOS.laborValue || 0) + finalPartsValue;
+
+      const osData = {
+        ...newOS,
+        number: nextNumber,
+        date: Timestamp.now(),
+        partsValue: finalPartsValue,
+        totalValue: finalTotal,
+        startDateTime: Timestamp.fromDate(new Date(newOS.startDateTime || Date.now())),
+        endDateTime: Timestamp.fromDate(new Date(newOS.endDateTime || Date.now())),
+        companyId,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      };
+
+      const docRef = await addDoc(collection(db, 'serviceOrders'), osData);
+      const createdOS = { id: docRef.id, ...osData } as ServiceOrder;
+      
+      setIsAddOpen(false);
+      setNewOS({
+        serviceType: 'Corretiva',
+        parts: [],
+        checklist: { functionalityTest: false, cleaning: false, safetyCheck: false },
+        status: 'Aberto',
+        laborValue: 0,
+        partsValue: 0,
+        totalValue: 0,
+      });
+      toast.success('Ordem de Serviço criada com sucesso!');
+
+      if (window.confirm('Deseja gerar o PDF para impressão agora?')) {
+        generateServiceOrderPDF(createdOS, appSettings);
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, 'serviceOrders');
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-white">Ordens de Serviço</h2>
+          <p className="text-[#71717a]">Gerencie ordens de serviço técnicas e vistorias.</p>
+        </div>
+        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+          <DialogTrigger render={
+            <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+              <Plus size={18} />
+              Nova O.S.
+            </Button>
+          } />
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-[90vw] md:max-w-[800px] max-h-[90vh] flex flex-col p-0 overflow-hidden">
+            <DialogHeader className="p-6 pb-2 border-b border-[#2d3139]">
+              <DialogTitle>Abrir Ordem de Serviço</DialogTitle>
+              <DialogDescription className="text-[#71717a]">Preencha os detalhes técnicos do atendimento.</DialogDescription>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Client Selection */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Cliente</Label>
+                  <Select onValueChange={(val) => {
+                    const c = clients.find(cl => cl.id === val);
+                    if (c) setNewOS({ ...newOS, clientId: c.id, clientName: c.name || '', address: c.address || '', contact: c.phone || '' });
+                  }}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
+                      <SelectValue placeholder="Selecione um cliente" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <div className="p-2 border-b border-[#2d3139]">
+                        <Input 
+                          placeholder="Buscar cliente..." 
+                          className="h-8 bg-[#0f1115] border-[#2d3139]" 
+                          value={clientSearch}
+                          onChange={e => setClientSearch(e.target.value)}
+                        />
+                      </div>
+                      {filteredClients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Técnico Responsável</Label>
+                  <Select onValueChange={(val) => {
+                    const u = users.find(usr => usr.uid === val);
+                    if (u) setNewOS({ ...newOS, technicianId: u.uid, technicianName: u.displayName || u.email });
+                  }}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
+                      <SelectValue placeholder="Selecione o técnico" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      {users.map(u => <SelectItem key={u.uid} value={u.uid}>{u.displayName || u.email}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Equipment Info */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Equipamento</Label>
+                  <Input className="bg-[#0f1115] border-[#2d3139]" value={newOS.equipment || ''} onChange={e => setNewOS({...newOS, equipment: e.target.value})} placeholder="Ex: DVR, Motor, Câmera" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Marca/Modelo/SN</Label>
+                  <Input className="bg-[#0f1115] border-[#2d3139]" value={newOS.brandModelSN || ''} onChange={e => setNewOS({...newOS, brandModelSN: e.target.value})} placeholder="Ex: Intelbras - Mod 123" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Tipo de Serviço</Label>
+                  <Select value={newOS.serviceType} onValueChange={(val: any) => setNewOS({...newOS, serviceType: val})}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="Corretiva">Corretiva</SelectItem>
+                      <SelectItem value="Preventiva">Preventiva</SelectItem>
+                      <SelectItem value="Instalação">Instalação</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Problema Relatado / Descrição Detalhada</Label>
+                <textarea 
+                  className="w-full min-h-[80px] bg-[#0f1115] border-[#2d3139] rounded-md p-3 text-sm focus:ring-1 focus:ring-[#3b82f6]" 
+                  value={newOS.reportedProblem || ''} 
+                  onChange={e => setNewOS({...newOS, reportedProblem: e.target.value})}
+                  placeholder="Relato do cliente..."
+                />
+              </div>
+
+              <Separator className="bg-[#2d3139]" />
+
+              {/* Technical realization */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Diagnóstico Técnico</Label>
+                  <textarea 
+                    className="w-full min-h-[80px] bg-[#0f1115] border-[#2d3139] rounded-md p-3 text-sm focus:ring-1 focus:ring-[#3b82f6]" 
+                    value={newOS.diagnosis || ''} 
+                    onChange={e => setNewOS({...newOS, diagnosis: e.target.value})}
+                    placeholder="O que foi identificado..."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Serviços Realizados</Label>
+                  <textarea 
+                    className="w-full min-h-[80px] bg-[#0f1115] border-[#2d3139] rounded-md p-3 text-sm focus:ring-1 focus:ring-[#3b82f6]" 
+                    value={newOS.performedServices || ''} 
+                    onChange={e => setNewOS({...newOS, performedServices: e.target.value})}
+                    placeholder="O que foi executado..."
+                  />
+                </div>
+              </div>
+
+              {/* Parts */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-white font-medium">Peças e Materiais</Label>
+                  <Button variant="outline" size="sm" onClick={handleAddPart} className="h-7 border-[#2d3139] text-xs">
+                    + Peça
+                  </Button>
+                </div>
+                {newOS.parts?.map((p, i) => (
+                  <div key={i} className="grid grid-cols-12 gap-2">
+                    <Input 
+                      className="col-span-6 bg-[#0f1115] border-[#2d3139] h-8 text-xs" 
+                      placeholder="Descrição"
+                      value={p.description} 
+                      onChange={e => {
+                        const next = [...(newOS.parts || [])];
+                        next[i].description = e.target.value;
+                        setNewOS({...newOS, parts: next});
+                      }}
+                    />
+                    <Input 
+                      type="number"
+                      className="col-span-2 bg-[#0f1115] border-[#2d3139] h-8 text-xs" 
+                      placeholder="Qtd"
+                      value={p.quantity} 
+                      onChange={e => {
+                        const next = [...(newOS.parts || [])];
+                        next[i].quantity = Number(e.target.value);
+                        setNewOS({...newOS, parts: next});
+                      }}
+                    />
+                    <Input 
+                      type="number"
+                      className="col-span-3 bg-[#0f1115] border-[#2d3139] h-8 text-xs" 
+                      placeholder="Preço"
+                      value={p.price} 
+                      onChange={e => {
+                        const next = [...(newOS.parts || [])];
+                        next[i].price = Number(e.target.value);
+                        setNewOS({...newOS, parts: next});
+                      }}
+                    />
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-8 w-8 text-[#ef4444]" 
+                      onClick={() => setNewOS({...newOS, parts: newOS.parts?.filter((_, idx) => idx !== i)})}
+                    >
+                      <X size={14} />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Checklist */}
+              <div className="space-y-4">
+                <Label>Checklist de Verificação</Label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-[#0f1115] p-4 rounded-lg border border-[#2d3139]">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="checklist-test" 
+                      checked={newOS.checklist?.functionalityTest} 
+                      onCheckedChange={(val) => setNewOS({...newOS, checklist: { ...newOS.checklist!, functionalityTest: !!val }})}
+                    />
+                    <Label htmlFor="checklist-test" className="text-xs">Teste de Funcionamento</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="checklist-cleaning" 
+                      checked={newOS.checklist?.cleaning} 
+                      onCheckedChange={(val) => setNewOS({...newOS, checklist: { ...newOS.checklist!, cleaning: !!val }})}
+                    />
+                    <Label htmlFor="checklist-cleaning" className="text-xs">Limpeza Técnica</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="checklist-safety" 
+                      checked={newOS.checklist?.safetyCheck} 
+                      onCheckedChange={(val) => setNewOS({...newOS, checklist: { ...newOS.checklist!, safetyCheck: !!val }})}
+                    />
+                    <Label htmlFor="checklist-safety" className="text-xs">Segurança/Vedação</Label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Values and Signatures */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-[#2d3139]">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Início do Atendimento</Label>
+                    <Input 
+                      type="datetime-local" 
+                      className="bg-[#0f1115] border-[#2d3139]" 
+                      value={newOS.startDateTime} 
+                      onChange={e => setNewOS({...newOS, startDateTime: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Conclusão do Atendimento</Label>
+                    <Input 
+                      type="datetime-local" 
+                      className="bg-[#0f1115] border-[#2d3139]" 
+                      value={newOS.endDateTime} 
+                      onChange={e => setNewOS({...newOS, endDateTime: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Valor Mão de Obra (R$)</Label>
+                    <Input 
+                      type="number" 
+                      className="bg-[#0f1115] border-[#2d3139]" 
+                      value={newOS.laborValue} 
+                      onChange={e => setNewOS({...newOS, laborValue: Number(e.target.value)})}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0] block text-xs mb-2">Assinatura do Cliente</Label>
+                    <SignaturePad value={newOS.clientSignature} onChange={val => setNewOS({...newOS, clientSignature: val})} />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <DialogFooter className="p-6 border-t border-[#2d3139] bg-[#1a1d23]">
+              <div className="flex items-center gap-4 w-full">
+                <div className="flex-1">
+                  <p className="text-[10px] text-[#71717a] uppercase">Valor Estimado</p>
+                  <p className="text-xl font-bold text-[#3b82f6]">R$ {((newOS.laborValue || 0) + (newOS.parts || []).reduce((acc, p) => acc + (p.quantity * p.price), 0)).toFixed(2)}</p>
+                </div>
+                <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139]">Cancelar</Button>
+                <Button className="bg-[#3b82f6] hover:bg-[#2563eb]" onClick={handleOSSave}>Gravar & Finalizar</Button>
+              </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {serviceOrders.map(os => (
+          <Card key={os.id} className="border-[#2d3139] bg-[#1a1d23] hover:border-[#3b82f6]/40 transition-all overflow-hidden group">
+            <CardHeader className="pb-3 border-b border-[#2d3139]/30">
+              <div className="flex justify-between items-start">
+                <Badge className="bg-emerald-500/10 text-emerald-500 font-normal">{os.status}</Badge>
+                <span className="text-[10px] font-mono text-[#3b82f6]">{formatRecordNumber(os.number, os.date)}</span>
+              </div>
+              <CardTitle className="mt-3 text-white flex items-center gap-2">
+                <Shield size={16} className="text-[#3b82f6]" />
+                {os.clientName}
+              </CardTitle>
+              <p className="text-xs text-[#71717a]">{os.equipment} - {os.brandModelSN}</p>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <div className="space-y-2 mb-6">
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-[#71717a]">Data Atendimento</span>
+                  <span className="text-white font-medium">{format(os.date instanceof Timestamp ? os.date.toDate() : new Date(os.date), 'dd/MM/yyyy')}</span>
+                </div>
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-[#71717a]">Técnico</span>
+                  <span className="text-[#10b981]">{os.technicianName}</span>
+                </div>
+                <div className="mt-4 p-2 bg-[#0f1115] rounded border border-[#2d3139] text-[10px] text-[#a0a0a0] min-h-[40px] italic">
+                  "{os.performedServices.length > 80 ? os.performedServices.substring(0, 80) + '...' : os.performedServices}"
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <p className="text-lg font-bold text-white">R$ {os.totalValue.toFixed(2)}</p>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-xs" onClick={() => generateServiceOrderPDF(os, appSettings)}>
+                    PDF / Ver
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+        {serviceOrders.length === 0 && (
+          <div className="col-span-full py-20 text-center bg-[#1a1d23] rounded-xl border border-dashed border-[#2d3139]">
+            <Plus className="mx-auto h-12 w-12 text-[#2d3139] mb-4" />
+            <h3 className="text-lg font-medium text-white">Nenhuma Ordem de Serviço</h3>
+            <p className="text-[#71717a]">Registre seu primeiro atendimento técnico hoje.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function BudgetsManager({ budgets, clients, appSettings, pixSettings, companyId }: { budgets: Budget[], clients: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
