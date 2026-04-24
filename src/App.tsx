@@ -28,7 +28,10 @@ import {
   Shield,
   Database,
   RefreshCw,
-  Upload
+  Upload,
+  Users,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { 
   collection, 
@@ -1200,8 +1203,51 @@ const getFinalEmail = (input: string) => {
   return clean.includes('@') ? clean : `${clean.toLowerCase()}@segurpro.local`;
 };
 
+const safeParseDate = (date: any): Date => {
+  if (!date) return new Date();
+  if (date instanceof Date) {
+    const d = new Date(date);
+    if (d.getHours() === 0 && d.getMinutes() === 0) d.setHours(12);
+    return d;
+  }
+  if (date && typeof date.toDate === 'function') {
+    const d = date.toDate();
+    if (d.getHours() === 0 && d.getMinutes() === 0) d.setHours(12);
+    return d;
+  }
+  if (date && date.seconds !== undefined) {
+    const d = new Date(date.seconds * 1000);
+    if (d.getHours() === 0 && d.getMinutes() === 0) d.setHours(12);
+    return d;
+  }
+  if (typeof date === 'string') {
+    // YYYY-MM-DD
+    if (date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const parts = date.split('-').map(Number);
+      return new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
+    }
+    // DD/MM/YYYY
+    if (date.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+      const parts = date.split('/').map(Number);
+      return new Date(parts[2], parts[1] - 1, parts[0], 12, 0, 0);
+    }
+    // DD-MM-YYYY
+    if (date.match(/^\d{2}-\d{2}-\d{4}$/)) {
+      const parts = date.split('-').map(Number);
+      return new Date(parts[2], parts[1] - 1, parts[0], 12, 0, 0);
+    }
+    const d = new Date(date);
+    if (!isNaN(d.getTime())) {
+      if (d.getHours() === 0 && d.getMinutes() === 0) d.setHours(12);
+      return d;
+    }
+  }
+  return new Date();
+};
+
 export default function MainApp() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [visits, setVisits] = useState<TechnicalVisit[]>([]);
@@ -1222,6 +1268,7 @@ export default function MainApp() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [userPhotoError, setUserPhotoError] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [visitsFilter, setVisitsFilter] = useState<{ date: Date | null }>({ date: null });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -1383,7 +1430,8 @@ export default function MainApp() {
     if (!user) return;
     if (!currentUserData?.companyId && !isSuperAdmin) return;
 
-    const companyId = currentUserData?.companyId;
+    const effectiveCompanyId = isSuperAdmin ? (selectedCompanyId || currentUserData?.companyId) : currentUserData?.companyId;
+    const companyId = effectiveCompanyId;
 
     let allCompaniesUnsubscribe: (() => void) | null = null;
     let allFinancialsUnsubscribe: (() => void) | null = null;
@@ -1431,11 +1479,11 @@ export default function MainApp() {
         query(collection(db, 'visits'), where('companyId', '==', companyId)),
         (snapshot) => {
           const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TechnicalVisit));
-          setVisits(data.sort((a, b) => {
-            const dateA = a.date instanceof Timestamp ? a.date.toDate().getTime() : (a.date instanceof Date ? a.date.getTime() : (a.date ? new Date(a.date).getTime() : 0));
-            const dateB = b.date instanceof Timestamp ? b.date.toDate().getTime() : (b.date instanceof Date ? b.date.getTime() : (b.date ? new Date(b.date).getTime() : 0));
-            return dateB - dateA;
-          }));
+      setVisits(data.sort((a, b) => {
+        const dateA = safeParseDate(a.date).getTime();
+        const dateB = safeParseDate(b.date).getTime();
+        return dateB - dateA;
+      }));
         }
       );
 
@@ -1444,9 +1492,9 @@ export default function MainApp() {
         (snapshot) => {
           const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ServiceOrder));
           setServiceOrders(data.sort((a, b) => {
-            const dateA = a.date instanceof Timestamp ? a.date.toDate().getTime() : (a.date instanceof Date ? a.date.getTime() : (a.date ? new Date(a.date).getTime() : 0));
-            const dateB = b.date instanceof Timestamp ? b.date.toDate().getTime() : (b.date instanceof Date ? b.date.getTime() : (b.date ? new Date(b.date).getTime() : 0));
-            return dateB - dateA;
+            const dateCodeA = safeParseDate(a.date).getTime();
+            const dateCodeB = safeParseDate(b.date).getTime();
+            return dateCodeB - dateCodeA;
           }));
         }
       );
@@ -1546,7 +1594,7 @@ export default function MainApp() {
       if (allFinancialsUnsubscribe) allFinancialsUnsubscribe();
       if (saasSettingsUnsubscribe) saasSettingsUnsubscribe();
     };
-  }, [user, currentUserData?.companyId, isSuperAdmin]);
+  }, [user, currentUserData?.companyId, isSuperAdmin, selectedCompanyId]);
 
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
@@ -1876,6 +1924,21 @@ export default function MainApp() {
         </div>
         <ScrollArea className="flex-1 px-4 py-4">
           <nav className="space-y-1">
+            {isSuperAdmin && allCompanies.length > 0 && (
+              <div className="px-4 py-2 mb-4">
+                <p className="text-[10px] text-[#71717a] font-medium uppercase mb-2">Visão da Empresa</p>
+                <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
+                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-xs h-9 text-white">
+                    <SelectValue placeholder="Trocar Empresa" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                    {allCompanies.map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.name || 'Empresa S/N'}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <SidebarItem 
               icon={<LayoutDashboard size={18} />} 
               label="Painel Geral" 
@@ -1922,9 +1985,9 @@ export default function MainApp() {
               active={activeTab === 'receipts'} 
               onClick={() => setActiveTab('receipts')} 
             />
-            {currentUserData?.role === 'admin' && (
+            {(currentUserData?.role === 'admin' || currentUserData?.role === 'super_admin' || user?.email === 'emailparasiteslixo@gmail.com') && (
               <SidebarItem 
-                icon={<UserIcon size={18} />} 
+                icon={<Users size={18} />} 
                 label="Gerenciar Equipe" 
                 active={activeTab === 'users'} 
                 onClick={() => setActiveTab('users')} 
@@ -2048,10 +2111,10 @@ export default function MainApp() {
               active={activeTab === 'receipts'} 
               onClick={() => { setActiveTab('receipts'); setIsMobileMenuOpen(false); }} 
             />
-            {currentUserData?.role === 'admin' && (
+            {(currentUserData?.role === 'admin' || currentUserData?.role === 'super_admin' || user?.email === 'emailparasiteslixo@gmail.com') && (
               <SidebarItem 
-                icon={<UserIcon size={20} />} 
-                label="Usuários" 
+                icon={<Users size={20} />} 
+                label="Gerenciar Equipe" 
                 active={activeTab === 'users'} 
                 onClick={() => { setActiveTab('users'); setIsMobileMenuOpen(false); }} 
               />
@@ -2114,11 +2177,29 @@ export default function MainApp() {
               financials={financials} 
               budgets={budgets} 
               clients={clients} 
-              onNavigate={(tab) => setActiveTab(tab)}
+              onNavigate={(tab, filter) => {
+                if (tab === 'visits' && filter) {
+                  setVisitsFilter(filter);
+                } else if (tab === 'visits') {
+                  setVisitsFilter({ date: null });
+                }
+                setActiveTab(tab);
+              }}
               companyId={currentUserData?.companyId || ''}
             />
           )}
-          {activeTab === 'visits' && <VisitsManager visits={visits} user={user} clients={clients} appSettings={appSettings} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} />}
+          {activeTab === 'visits' && (
+            <VisitsManager 
+              visits={visits} 
+              user={user!} 
+              clients={clients} 
+              appSettings={appSettings} 
+              pixSettings={pixSettings} 
+              companyId={currentUserData?.companyId || ''} 
+              initialFilter={visitsFilter}
+              onClearFilter={() => setVisitsFilter({ date: null })}
+            />
+          )}
           {activeTab === 'financial' && <FinancialManager financials={financials} visits={visits} clients={clients} companyId={currentUserData?.companyId || ''} />}
           {activeTab === 'budgets' && <BudgetsManager budgets={budgets} clients={clients} appSettings={appSettings} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} />}
           {activeTab === 'service-orders' && (
@@ -2150,6 +2231,8 @@ export default function MainApp() {
               financials={allFinancials} 
               saasSettings={saasSettings}
               user={user}
+              selectedCompanyId={selectedCompanyId}
+              setSelectedCompanyId={setSelectedCompanyId}
             />
           )}
           {activeTab === 'settings' && <SettingsManager pixSettings={pixSettings} appSettings={appSettings} user={user} companyId={currentUserData?.companyId || ''} />}
@@ -3825,9 +3908,8 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
 
 // --- Super Admin Panel Component ---
 
-function SuperAdminPanel({ companies = [], financials = [], saasSettings, user }: { companies: any[], financials: any[], saasSettings: any, user: any }) {
+function SuperAdminPanel({ companies = [], financials = [], saasSettings, user, selectedCompanyId, setSelectedCompanyId }: { companies: any[], financials: any[], saasSettings: any, user: any, selectedCompanyId: string, setSelectedCompanyId: (id: string) => void }) {
   const [isMigrating, setIsMigrating] = useState(false);
-  const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
   const [migrationStats, setMigrationStats] = useState<any>(null);
   const [migrationLogs, setMigrationLogs] = useState<string[]>([]);
   const [isMigrationFinished, setIsMigrationFinished] = useState(false);
@@ -5257,7 +5339,7 @@ function ReportsManager({
     let tableRows: any[][] = [];
 
     const isMatch = (itemDate: any) => {
-      const d = itemDate instanceof Timestamp ? itemDate.toDate() : (itemDate instanceof Date ? itemDate : new Date(itemDate));
+      const d = safeParseDate(itemDate);
       if (reportType === 'daily') {
         return format(d, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd');
       } else {
@@ -5443,10 +5525,18 @@ function ReportsManager({
 
 // --- Dashboard Component ---
 
-function VisitsChart({ data }: { data: any[] }) {
+function VisitsChart({ data, onBarClick }: { data: any[], onBarClick?: (date: Date) => void }) {
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <BarChart data={data}>
+      <BarChart 
+        data={data}
+        onClick={(state: any) => {
+          if (state && state.activePayload && state.activePayload.length > 0 && onBarClick) {
+            const date = state.activePayload[0].payload.fullDate;
+            if (date) onBarClick(date);
+          }
+        }}
+      >
         <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
         <XAxis 
           dataKey="name" 
@@ -5476,24 +5566,52 @@ function VisitsChart({ data }: { data: any[] }) {
           fill="#3b82f6" 
           radius={[4, 4, 0, 0]} 
           barSize={40}
+          style={{ cursor: 'pointer' }}
         />
       </BarChart>
     </ResponsiveContainer>
   );
 }
 
-function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets = [], clients = [], onNavigate, companyId }: { visits: TechnicalVisit[], serviceOrders: ServiceOrder[], financials: FinancialRecord[], budgets: Budget[], clients: Client[], onNavigate: (tab: string) => void, companyId: string }) {
+function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets = [], clients = [], onNavigate, companyId }: { visits: TechnicalVisit[], serviceOrders: ServiceOrder[], financials: FinancialRecord[], budgets: Budget[], clients: Client[], onNavigate: (tab: string, filter?: any) => void, companyId: string }) {
+  const [weekOffset, setWeekOffset] = useState(0);
+
   const visitsByDay = useMemo(() => {
-    const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-    const counts = new Array(7).fill(0);
+    const today = new Date();
+    today.setHours(12, 0, 0, 0); // Use mid-day to avoid TZ shifts
     
-    visits.forEach(visit => {
-      const d = visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date);
-      counts[d.getDay()]++;
+    // Get start of week (Sunday) based on offset
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() - today.getDay() + (weekOffset * 7));
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+    endOfWeek.setHours(23, 59, 59, 999);
+
+    const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    const data = days.map((name, i) => {
+      const currentDate = new Date(startOfWeek);
+      currentDate.setDate(startOfWeek.getDate() + i);
+      const currentDateStr = format(currentDate, 'yyyy-MM-dd');
+      
+      const count = (visits || []).filter(v => {
+        const d = safeParseDate(v.date);
+        return format(d, 'yyyy-MM-dd') === currentDateStr;
+      }).length;
+
+      return {
+        name,
+        visitas: count,
+        fullDate: currentDate
+      };
     });
 
-    return days.map((name, i) => ({ name, visitas: counts[i] }));
-  }, [visits]);
+    return { 
+      data, 
+      range: `${format(startOfWeek, 'dd/MM')} - ${format(endOfWeek, 'dd/MM')}` 
+    };
+  }, [visits, weekOffset]);
 
   const stats = useMemo(() => {
     const now = new Date();
@@ -5501,7 +5619,7 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
     const currentYear = now.getFullYear();
 
     const monthlyFinancials = (financials || []).filter(f => {
-      const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
+      const d = safeParseDate(f.date);
       return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
     });
 
@@ -5511,7 +5629,7 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
     // Day Stats
     const todayStr = format(now, 'yyyy-MM-dd');
     const todayFinancials = (financials || []).filter(f => {
-      const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
+      const d = safeParseDate(f.date);
       return format(d, 'yyyy-MM-dd') === todayStr;
     });
     
@@ -5526,7 +5644,7 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
     const totalClients = (clients || []).length;
 
     const todayVisits = (visits || []).filter(v => {
-      const d = v.date instanceof Timestamp ? v.date.toDate() : new Date(v.date);
+      const d = safeParseDate(v.date);
       return format(d, 'yyyy-MM-dd') === todayStr && (v.status === 'Agendada' || v.status === 'Em Andamento');
     });
 
@@ -5542,7 +5660,7 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
 
     return last7Days.map(day => {
       const dayFinancials = (financials || []).filter(f => {
-        const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
+        const d = safeParseDate(f.date);
         return format(d, 'dd/MM') === day;
       });
       return {
@@ -5613,7 +5731,38 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
       <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-8">
         <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden h-[400px]">
           <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-row items-center justify-between">
-            <CardTitle className="text-[15px] font-semibold text-white">Cronograma de Visitas (Semana)</CardTitle>
+            <div className="flex flex-col">
+              <CardTitle className="text-[15px] font-semibold text-white">Cronograma de Visitas</CardTitle>
+              <div className="flex items-center gap-2 mt-1">
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-6 w-6 text-[#71717a] hover:text-white" 
+                  onClick={() => setWeekOffset(prev => prev - 1)}
+                >
+                  <ChevronLeft size={14} />
+                </Button>
+                <span className="text-[10px] text-[#71717a] font-mono uppercase tracking-wider">{visitsByDay.range}</span>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-6 w-6 text-[#71717a] hover:text-white" 
+                  onClick={() => setWeekOffset(prev => prev + 1)}
+                >
+                  <ChevronRight size={14} />
+                </Button>
+                {weekOffset !== 0 && (
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-6 px-2 text-[9px] text-[#3b82f6] hover:bg-[#3b82f6]/10" 
+                    onClick={() => setWeekOffset(0)}
+                  >
+                    Hoje
+                  </Button>
+                )}
+              </div>
+            </div>
             <span 
               className="text-[12px] text-[#3b82f6] cursor-pointer hover:underline"
               onClick={() => onNavigate('visits')}
@@ -5622,9 +5771,33 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
             </span>
           </CardHeader>
           <CardContent className="p-6 h-[300px]">
-            <VisitsChart data={visitsByDay} />
+            <VisitsChart 
+              data={visitsByDay.data} 
+              onBarClick={(date) => onNavigate('visits', { date })}
+            />
           </CardContent>
         </Card>
+
+        {stats.todayVisits.length > 0 && (
+          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden col-span-full">
+            <CardHeader className="border-b border-[#2d3139] px-6 py-4">
+              <CardTitle className="text-[15px] font-semibold text-white">Visitas para Hoje ({stats.todayVisits.length})</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="divide-y divide-[#25282e]">
+                {stats.todayVisits.map(visit => (
+                  <div key={visit.id} className="flex items-center justify-between px-6 py-4 hover:bg-[#25282e]/30 transition-colors cursor-pointer" onClick={() => onNavigate('visits', { date: new Date() })}>
+                    <div className="flex flex-col">
+                      <span className="text-[13px] font-medium text-white">{visit.clientName}</span>
+                      <span className="text-[11px] text-[#71717a] mt-0.5">{visit.type} • {visit.scheduledTime} • {visit.technicianName}</span>
+                    </div>
+                    <Badge className="bg-blue-500/10 text-blue-500 text-[10px] uppercase">{visit.status}</Badge>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="flex flex-col gap-8">
           <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden">
@@ -5704,15 +5877,33 @@ function StatCard({ title, value, icon, trend, isBalance, isCount, onClick }: { 
 
 // --- Visits Manager Component ---
 
-function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettings, companyId }: { visits?: TechnicalVisit[], user: FirebaseUser, clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string }) {
+function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettings, companyId, initialFilter, onClearFilter }: { visits?: TechnicalVisit[], user: FirebaseUser, clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, initialFilter?: { date: Date | null }, onClearFilter?: () => void }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
+  const [dateFilter, setDateFilter] = useState<string>(initialFilter?.date ? format(initialFilter.date, 'yyyy-MM-dd') : '');
+  const [statusFilter, setStatusFilter] = useState('Todas');
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [visitToDelete, setVisitToDelete] = useState<TechnicalVisit | null>(null);
   const [editingVisit, setEditingVisit] = useState<TechnicalVisit | null>(null);
   const [viewingVisit, setViewingVisit] = useState<TechnicalVisit | null>(null);
+
+  // Sync date filter if initialFilter changes
+  useEffect(() => {
+    if (initialFilter?.date) {
+      setDateFilter(format(initialFilter.date, 'yyyy-MM-dd'));
+    }
+  }, [initialFilter]);
+
+  const filteredVisits = useMemo(() => {
+    return (visits || []).filter(v => {
+      const d = safeParseDate(v.date);
+      const dateMatch = dateFilter ? format(d, 'yyyy-MM-dd') === dateFilter : true;
+      const statusMatch = statusFilter === 'Todas' ? true : v.status === statusFilter;
+      return dateMatch && statusMatch;
+    });
+  }, [visits, dateFilter, statusFilter]);
   const [newVisit, setNewVisit] = useState<Partial<TechnicalVisit>>({
     type: 'CFTV',
     status: 'Agendada',
@@ -5954,13 +6145,46 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
           <h2 className="text-2xl font-bold tracking-tight text-white">Visitas Técnicas</h2>
           <p className="text-[#71717a]">Gerencie seus agendamentos e ordens de serviço.</p>
         </div>
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger render={
-            <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
-              <Plus size={18} />
-              Nova Visita
-            </Button>
-          } />
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-lg">
+            <span className="text-[10px] text-[#71717a] font-medium uppercase">Filtrar:</span>
+            <Input 
+              type="date" 
+              className="h-7 bg-transparent border-none text-[12px] w-auto p-0 focus-visible:ring-0" 
+              value={dateFilter} 
+              onChange={e => setDateFilter(e.target.value)} 
+            />
+            {dateFilter && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-5 w-5 text-[#71717a] hover:text-[#ef4444]" 
+                onClick={() => { setDateFilter(''); if (onClearFilter) onClearFilter(); }}
+              >
+                <X size={12} />
+              </Button>
+            )}
+            <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 min-w-[90px]">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                <SelectItem value="Todas">Status: Todos</SelectItem>
+                <SelectItem value="Agendada">Agendada</SelectItem>
+                <SelectItem value="Em Andamento">Em Rota</SelectItem>
+                <SelectItem value="Concluída">Concluída</SelectItem>
+                <SelectItem value="Cancelada">Cancelada</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+            <DialogTrigger render={
+              <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+                <Plus size={18} />
+                Nova Visita
+              </Button>
+            } />
           <DialogContent className="sm:max-w-[600px] bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0">
             <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Agendar Nova Visita</DialogTitle>
@@ -6112,8 +6336,9 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
           </DialogContent>
         </Dialog>
       </div>
+    </div>
 
-      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
+    <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
         <Table>
           <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
@@ -6127,7 +6352,7 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
             </TableRow>
           </TableHeader>
           <TableBody>
-            {visits.map((visit) => (
+            {filteredVisits.map((visit) => (
               <TableRow key={visit.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
                 <TableCell>
                   <div className="flex gap-2">
@@ -6198,9 +6423,9 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
                 </TableCell>
               </TableRow>
             ))}
-            {visits.length === 0 && (
+            {filteredVisits.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-12 text-[#71717a] text-sm">
+                <TableCell colSpan={7} className="text-center py-12 text-[#71717a] text-sm">
                   Nenhuma visita encontrada.
                 </TableCell>
               </TableRow>
