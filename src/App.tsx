@@ -643,6 +643,9 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings) => 
   
   if (os.technicianSignature) {
     try { doc.addImage(os.technicianSignature, 'PNG', margin + 25, currentY, 40, 18); } catch(e) {}
+  } else if (appSettings.signatureUrl) {
+    // Auto-include admin signature if technician signature is missing
+    try { doc.addImage(appSettings.signatureUrl, 'PNG', margin + 25, currentY, 40, 18); } catch(e) {}
   }
   if (os.clientSignature) {
     try { doc.addImage(os.clientSignature, 'PNG', pageWidth - margin - 65, currentY, 40, 18); } catch(e) {}
@@ -1385,8 +1388,51 @@ export default function MainApp() {
     return () => unsubscribeCompany();
   }, [currentUserData?.companyId]);
 
-  // Settings & Data Listeners
-  const isSuperAdmin = user?.email === 'emailparasiteslixo@gmail.com' || currentUserData?.role === 'super_admin';
+
+  const isSuperAdmin = user?.email?.toLowerCase().trim() === 'emailparasiteslixo@gmail.com' || currentUserData?.role === 'super_admin';
+
+  // Access Helper for Sidebar
+  const canAccess = (tabName: string) => {
+    const role = currentUserData?.role;
+    if (isSuperAdmin || role === 'admin') return true;
+    
+    if (role === 'secretaria') {
+      return ['dashboard', 'financial', 'budgets', 'clients', 'receipts', 'users', 'reports', 'settings'].includes(tabName);
+    }
+    
+    if (role === 'tecnico') {
+      return ['visits', 'service-orders', 'receipts', 'settings'].includes(tabName);
+    }
+    
+    // Default fallback
+    return true;
+  };
+
+  // Sidebar Keyboard Navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle if no input is focused
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+
+      const tabs = [
+        'dashboard', 'visits', 'financial', 'budgets', 'service-orders',
+        'clients', 'receipts', 'users', 'settings', 'reports', 'super-admin'
+      ].filter(canAccess);
+
+      const currentIndex = tabs.indexOf(activeTab);
+
+      if (e.key === 'ArrowDown') {
+        const nextIndex = (currentIndex + 1) % tabs.length;
+        setActiveTab(tabs[nextIndex]);
+      } else if (e.key === 'ArrowUp') {
+        const nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+        setActiveTab(tabs[nextIndex]);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTab, currentUserData?.role, isSuperAdmin]);
 
   // Auto-link Super Admin to their first company if missing
   useEffect(() => {
@@ -1441,7 +1487,12 @@ export default function MainApp() {
       allCompaniesUnsubscribe = onSnapshot(
         collection(db, 'companies'),
         (snapshot) => {
-          setAllCompanies(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+          const comps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setAllCompanies(comps);
+          // Auto-select first company if none selected and we have companies
+          if (comps.length > 0 && !selectedCompanyId) {
+            setSelectedCompanyId(comps[0].id);
+          }
         }
       );
 
@@ -1920,9 +1971,10 @@ export default function MainApp() {
               </div>
             )}
             <span className="font-bold tracking-wider text-white text-xl truncate max-w-[130px]">{currentCompany?.name || 'AF Sistemas'}</span>
+            {isSuperAdmin && <Badge className="bg-yellow-500/10 text-yellow-500 text-[8px] uppercase px-1">Master</Badge>}
           </div>
         </div>
-        <ScrollArea className="flex-1 px-4 py-4">
+        <ScrollArea className="flex-1 px-4 py-4 overflow-y-auto">
           <nav className="space-y-1">
             {isSuperAdmin && allCompanies.length > 0 && (
               <div className="px-4 py-2 mb-4">
@@ -1939,53 +1991,70 @@ export default function MainApp() {
                 </Select>
               </div>
             )}
-            <SidebarItem 
-              icon={<LayoutDashboard size={18} />} 
-              label="Painel Geral" 
-              active={activeTab === 'dashboard'} 
-              onClick={() => setActiveTab('dashboard')} 
-            />
-            <SidebarItem 
-              icon={<CalendarIcon size={18} />} 
-              label="Visitas Técnicas" 
-              active={activeTab === 'visits'} 
-              onClick={() => setActiveTab('visits')} 
-            />
-            <SidebarItem 
-              icon={<DollarSign size={18} />} 
-              label="Financeiro" 
-              active={activeTab === 'financial'} 
-              onClick={() => setActiveTab('financial')} 
-            />
-            <SidebarItem 
-              icon={<FileText size={18} />} 
-              label="Orçamentos" 
-              active={activeTab === 'budgets'} 
-              onClick={() => setActiveTab('budgets')} 
-            />
-            <SidebarItem 
-              icon={<CheckCircle2 size={18} />} 
-              label="Ordem de Serviço" 
-              active={activeTab === 'service-orders'} 
-              onClick={() => setActiveTab('service-orders')} 
-            />
+            {canAccess('dashboard') && (
+              <SidebarItem 
+                icon={<LayoutDashboard size={18} />} 
+                label="Painel Geral" 
+                active={activeTab === 'dashboard'} 
+                onClick={() => setActiveTab('dashboard')} 
+              />
+            )}
+            {canAccess('visits') && (
+              <SidebarItem 
+                icon={<CalendarIcon size={18} />} 
+                label="Visitas Técnicas" 
+                active={activeTab === 'visits'} 
+                onClick={() => setActiveTab('visits')} 
+              />
+            )}
+            {canAccess('financial') && (
+              <SidebarItem 
+                icon={<DollarSign size={18} />} 
+                label="Financeiro" 
+                active={activeTab === 'financial'} 
+                onClick={() => setActiveTab('financial')} 
+              />
+            )}
+            {canAccess('budgets') && (
+              <SidebarItem 
+                icon={<FileText size={18} />} 
+                label="Orçamentos" 
+                active={activeTab === 'budgets'} 
+                onClick={() => setActiveTab('budgets')} 
+              />
+            )}
+            {canAccess('service-orders') && (
+              <SidebarItem 
+                icon={<CheckCircle2 size={18} />} 
+                label="Ordem de Serviço" 
+                active={activeTab === 'service-orders'} 
+                onClick={() => setActiveTab('service-orders')} 
+              />
+            )}
             
-            <div className="pt-6 pb-2 px-4">
-              <span className="text-[11px] uppercase tracking-widest text-[#555] font-semibold">Gestão</span>
-            </div>
-            <SidebarItem 
-              icon={<UserIcon size={18} />} 
-              label="Clientes" 
-              active={activeTab === 'clients'} 
-              onClick={() => setActiveTab('clients')} 
-            />
-            <SidebarItem 
-              icon={<ReceiptIcon size={18} />} 
-              label="Recibos" 
-              active={activeTab === 'receipts'} 
-              onClick={() => setActiveTab('receipts')} 
-            />
-            {(currentUserData?.role === 'admin' || currentUserData?.role === 'super_admin' || user?.email === 'emailparasiteslixo@gmail.com') && (
+            {(canAccess('clients') || canAccess('receipts') || canAccess('users')) && (
+              <div className="pt-6 pb-2 px-4">
+                <span className="text-[11px] uppercase tracking-widest text-[#555] font-semibold">Gestão</span>
+              </div>
+            )}
+            
+            {canAccess('clients') && (
+              <SidebarItem 
+                icon={<UserIcon size={18} />} 
+                label="Clientes" 
+                active={activeTab === 'clients'} 
+                onClick={() => setActiveTab('clients')} 
+              />
+            )}
+            {canAccess('receipts') && (
+              <SidebarItem 
+                icon={<ReceiptIcon size={18} />} 
+                label="Recibos" 
+                active={activeTab === 'receipts'} 
+                onClick={() => setActiveTab('receipts')} 
+              />
+            )}
+            {canAccess('users') && (
               <SidebarItem 
                 icon={<Users size={18} />} 
                 label="Gerenciar Equipe" 
@@ -1993,20 +2062,24 @@ export default function MainApp() {
                 onClick={() => setActiveTab('users')} 
               />
             )}
-            <SidebarItem 
-              icon={<Settings size={18} />} 
-              label="Configurações" 
-              active={activeTab === 'settings'} 
-              onClick={() => setActiveTab('settings')} 
-            />
-            <SidebarItem 
-              icon={<FileText size={18} />} 
-              label="Relatórios" 
-              active={activeTab === 'reports'} 
-              onClick={() => setActiveTab('reports')} 
-            />
+            {canAccess('settings') && (
+              <SidebarItem 
+                icon={<Settings size={18} />} 
+                label="Configurações" 
+                active={activeTab === 'settings'} 
+                onClick={() => setActiveTab('settings')} 
+              />
+            )}
+            {canAccess('reports') && (
+              <SidebarItem 
+                icon={<FileText size={18} />} 
+                label="Relatórios" 
+                active={activeTab === 'reports'} 
+                onClick={() => setActiveTab('reports')} 
+              />
+            )}
 
-            {(currentUserData?.role === 'super_admin' || user?.email === 'emailparasiteslixo@gmail.com') && (
+            {isSuperAdmin && (
               <div className="mt-4 pt-4 border-t border-[#2d3139]/30">
                 <SidebarItem 
                   icon={<Shield size={18} className="text-yellow-500" />} 
@@ -2062,56 +2135,72 @@ export default function MainApp() {
       {/* Mobile Menu Overlay */}
       {isMobileMenuOpen && (
         <div className="md:hidden fixed inset-0 bg-[#0f1115] z-40 pt-16 flex flex-col">
-          <nav className="flex-1 p-6 space-y-2">
-            <SidebarItem 
-              icon={<LayoutDashboard size={20} />} 
-              label="Painel Geral" 
-              active={activeTab === 'dashboard'} 
-              onClick={() => { setActiveTab('dashboard'); setIsMobileMenuOpen(false); }} 
-            />
-            <SidebarItem 
-              icon={<CalendarIcon size={20} />} 
-              label="Visitas Técnicas" 
-              active={activeTab === 'visits'} 
-              onClick={() => { setActiveTab('visits'); setIsMobileMenuOpen(false); }} 
-            />
-            <SidebarItem 
-              icon={<DollarSign size={20} />} 
-              label="Financeiro" 
-              active={activeTab === 'financial'} 
-              onClick={() => { setActiveTab('financial'); setIsMobileMenuOpen(false); }} 
-            />
-            <SidebarItem 
-              icon={<FileText size={20} />} 
-              label="Orçamentos" 
-              active={activeTab === 'budgets'} 
-              onClick={() => { setActiveTab('budgets'); setIsMobileMenuOpen(false); }} 
-            />
-            <SidebarItem 
-              icon={<CheckCircle2 size={20} />} 
-              label="Ordem de Serviço" 
-              active={activeTab === 'service-orders'} 
-              onClick={() => { setActiveTab('service-orders'); setIsMobileMenuOpen(false); }} 
-            />
-            <SidebarItem 
-              icon={<FileText size={20} />} 
-              label="Relatórios" 
-              active={activeTab === 'reports'} 
-              onClick={() => { setActiveTab('reports'); setIsMobileMenuOpen(false); }} 
-            />
-            <SidebarItem 
-              icon={<UserIcon size={20} />} 
-              label="Clientes" 
-              active={activeTab === 'clients'} 
-              onClick={() => { setActiveTab('clients'); setIsMobileMenuOpen(false); }} 
-            />
-            <SidebarItem 
-              icon={<ReceiptIcon size={20} />} 
-              label="Recibos" 
-              active={activeTab === 'receipts'} 
-              onClick={() => { setActiveTab('receipts'); setIsMobileMenuOpen(false); }} 
-            />
-            {(currentUserData?.role === 'admin' || currentUserData?.role === 'super_admin' || user?.email === 'emailparasiteslixo@gmail.com') && (
+          <nav className="flex-1 p-6 space-y-2 overflow-y-auto">
+            {canAccess('dashboard') && (
+              <SidebarItem 
+                icon={<LayoutDashboard size={20} />} 
+                label="Painel Geral" 
+                active={activeTab === 'dashboard'} 
+                onClick={() => { setActiveTab('dashboard'); setIsMobileMenuOpen(false); }} 
+              />
+            )}
+            {canAccess('visits') && (
+              <SidebarItem 
+                icon={<CalendarIcon size={20} />} 
+                label="Visitas Técnicas" 
+                active={activeTab === 'visits'} 
+                onClick={() => { setActiveTab('visits'); setIsMobileMenuOpen(false); }} 
+              />
+            )}
+            {canAccess('financial') && (
+              <SidebarItem 
+                icon={<DollarSign size={20} />} 
+                label="Financeiro" 
+                active={activeTab === 'financial'} 
+                onClick={() => { setActiveTab('financial'); setIsMobileMenuOpen(false); }} 
+              />
+            )}
+            {canAccess('budgets') && (
+              <SidebarItem 
+                icon={<FileText size={20} />} 
+                label="Orçamentos" 
+                active={activeTab === 'budgets'} 
+                onClick={() => { setActiveTab('budgets'); setIsMobileMenuOpen(false); }} 
+              />
+            )}
+            {canAccess('service-orders') && (
+              <SidebarItem 
+                icon={<CheckCircle2 size={20} />} 
+                label="Ordem de Serviço" 
+                active={activeTab === 'service-orders'} 
+                onClick={() => { setActiveTab('service-orders'); setIsMobileMenuOpen(false); }} 
+              />
+            )}
+            {canAccess('reports') && (
+              <SidebarItem 
+                icon={<FileText size={20} />} 
+                label="Relatórios" 
+                active={activeTab === 'reports'} 
+                onClick={() => { setActiveTab('reports'); setIsMobileMenuOpen(false); }} 
+              />
+            )}
+            {canAccess('clients') && (
+              <SidebarItem 
+                icon={<UserIcon size={20} />} 
+                label="Clientes" 
+                active={activeTab === 'clients'} 
+                onClick={() => { setActiveTab('clients'); setIsMobileMenuOpen(false); }} 
+              />
+            )}
+            {canAccess('receipts') && (
+              <SidebarItem 
+                icon={<ReceiptIcon size={20} />} 
+                label="Recibos" 
+                active={activeTab === 'receipts'} 
+                onClick={() => { setActiveTab('receipts'); setIsMobileMenuOpen(false); }} 
+              />
+            )}
+            {canAccess('users') && (
               <SidebarItem 
                 icon={<Users size={20} />} 
                 label="Gerenciar Equipe" 
@@ -2119,13 +2208,15 @@ export default function MainApp() {
                 onClick={() => { setActiveTab('users'); setIsMobileMenuOpen(false); }} 
               />
             )}
-            <SidebarItem 
-              icon={<Settings size={20} />} 
-              label="Configurações" 
-              active={activeTab === 'settings'} 
-              onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }} 
-            />
-            { (currentUserData?.role === 'super_admin' || user?.email === 'emailparasiteslixo@gmail.com') && (
+            {canAccess('settings') && (
+              <SidebarItem 
+                icon={<Settings size={20} />} 
+                label="Configurações" 
+                active={activeTab === 'settings'} 
+                onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }} 
+              />
+            )}
+            {isSuperAdmin && (
               <SidebarItem 
                 icon={<Shield size={20} className="text-yellow-500" />} 
                 label="Admin SaaS" 
@@ -2442,6 +2533,7 @@ function UsersManager({ users = [], currentUserData }: { users?: any[], currentU
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       <SelectItem value="admin">Administrador</SelectItem>
+                      <SelectItem value="secretaria">Secretaria</SelectItem>
                       <SelectItem value="tecnico">Técnico</SelectItem>
                     </SelectContent>
                   </Select>
@@ -2506,9 +2598,11 @@ function UsersManager({ users = [], currentUserData }: { users?: any[], currentU
                 <TableCell>
                   <Badge className={cn(
                     "font-normal text-[10px] uppercase tracking-wider",
-                    u.role === 'admin' ? "bg-purple-500/10 text-purple-500" : "bg-blue-500/10 text-blue-500"
+                    u.role === 'admin' ? "bg-purple-500/10 text-purple-500" : 
+                    u.role === 'secretaria' ? "bg-pink-500/10 text-pink-500" : 
+                    "bg-blue-500/10 text-blue-500"
                   )}>
-                    {u.role === 'admin' ? 'Administrador' : 'Técnico'}
+                    {u.role === 'admin' ? 'Administrador' : u.role === 'secretaria' ? 'Secretaria' : 'Técnico'}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-[12px] text-[#71717a]">
@@ -2548,6 +2642,7 @@ function UsersManager({ users = [], currentUserData }: { users?: any[], currentU
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       <SelectItem value="admin">Administrador</SelectItem>
+                      <SelectItem value="secretaria">Secretaria</SelectItem>
                       <SelectItem value="tecnico">Técnico</SelectItem>
                     </SelectContent>
                   </Select>
@@ -5526,50 +5621,63 @@ function ReportsManager({
 // --- Dashboard Component ---
 
 function VisitsChart({ data, onBarClick }: { data: any[], onBarClick?: (date: Date) => void }) {
+  const [isClient, setIsClient] = useState(false);
+  
+  useEffect(() => {
+    const timer = setTimeout(() => setIsClient(true), 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (!isClient) {
+    return <div className="h-full w-full bg-[#1a1d23]/50 animate-pulse flex items-center justify-center text-[#71717a] text-xs">Carregando gráfico...</div>;
+  }
+
   return (
-    <ResponsiveContainer width="100%" height="100%">
-      <BarChart 
-        data={data}
-        onClick={(state: any) => {
-          if (state && state.activePayload && state.activePayload.length > 0 && onBarClick) {
-            const date = state.activePayload[0].payload.fullDate;
-            if (date) onBarClick(date);
-          }
-        }}
-      >
-        <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
-        <XAxis 
-          dataKey="name" 
-          stroke="#71717a" 
-          fontSize={12} 
-          tickLine={false} 
-          axisLine={false} 
-        />
-        <YAxis 
-          stroke="#71717a" 
-          fontSize={12} 
-          tickLine={false} 
-          axisLine={false}
-        />
-        <Tooltip 
-          cursor={{fill: '#25282e'}}
-          contentStyle={{ 
-            backgroundColor: '#1a1d23', 
-            border: '1px solid #2d3139',
-            borderRadius: '8px',
-            color: '#fff'
+    <div style={{ width: '100%', height: '100%', minHeight: '200px' }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart 
+          data={data}
+          onClick={(state: any) => {
+            if (state && state.activePayload && state.activePayload.length > 0 && onBarClick) {
+              const date = state.activePayload[0].payload.fullDate;
+              if (date) onBarClick(date);
+            }
           }}
-          itemStyle={{ color: '#3b82f6' }}
-        />
-        <Bar 
-          dataKey="visitas" 
-          fill="#3b82f6" 
-          radius={[4, 4, 0, 0]} 
-          barSize={40}
-          style={{ cursor: 'pointer' }}
-        />
-      </BarChart>
-    </ResponsiveContainer>
+        >
+          <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
+          <XAxis 
+            dataKey="name" 
+            stroke="#71717a" 
+            fontSize={12} 
+            tickLine={false} 
+            axisLine={false} 
+          />
+          <YAxis 
+            stroke="#71717a" 
+            fontSize={12} 
+            tickLine={false} 
+            axisLine={false}
+          />
+          <Tooltip 
+            cursor={{fill: '#25282e'}}
+            contentStyle={{ 
+              backgroundColor: '#1a1d23', 
+              border: '1px solid #2d3139',
+              borderRadius: '8px',
+              color: '#fff'
+            }}
+            itemStyle={{ color: '#3b82f6' }}
+          />
+          <Bar 
+            dataKey="visitas" 
+            fill="#3b82f6" 
+            radius={[4, 4, 0, 0]} 
+            barSize={40}
+            style={{ cursor: 'pointer' }}
+          />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -5645,8 +5753,8 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
 
     const todayVisits = (visits || []).filter(v => {
       const d = safeParseDate(v.date);
-      return format(d, 'yyyy-MM-dd') === todayStr && (v.status === 'Agendada' || v.status === 'Em Andamento');
-    });
+      return format(d, 'yyyy-MM-dd') === todayStr;
+    }).sort((a, b) => (a.scheduledTime || '').localeCompare(b.scheduledTime || ''));
 
     return { income, expense, balance: income - expense, todayBalance, pendingVisits, completedVisits, pendingBudgets, pendingOS, totalClients, todayVisits };
   }, [visits, serviceOrders, financials, budgets, clients]);
@@ -5791,7 +5899,15 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
                       <span className="text-[13px] font-medium text-white">{visit.clientName}</span>
                       <span className="text-[11px] text-[#71717a] mt-0.5">{visit.type} • {visit.scheduledTime} • {visit.technicianName}</span>
                     </div>
-                    <Badge className="bg-blue-500/10 text-blue-500 text-[10px] uppercase">{visit.status}</Badge>
+                    <Badge className={cn(
+                      "text-[10px] uppercase px-2 py-0.5",
+                      visit.status === 'Concluída' ? "bg-emerald-500/10 text-emerald-500" :
+                      visit.status === 'Cancelada' ? "bg-red-500/10 text-red-500" :
+                      visit.status === 'Em Andamento' ? "bg-amber-500/10 text-amber-500" :
+                      "bg-blue-500/10 text-blue-500"
+                    )}>
+                      {visit.status}
+                    </Badge>
                   </div>
                 ))}
               </div>
