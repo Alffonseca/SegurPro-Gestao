@@ -19,6 +19,7 @@ import {
   Trash2,
   Pencil,
   Eye,
+  EyeOff,
   User as UserIcon,
   Receipt as ReceiptIcon,
   Share2,
@@ -1213,9 +1214,21 @@ function SignaturePad({ value, onChange }: { value?: string, onChange: (val: str
 }
 
 const getFinalEmail = (input: string) => {
-  const clean = input.trim();
+  let clean = input.trim().toLowerCase();
   if (!clean) return '';
-  return clean.includes('@') ? clean : `${clean.toLowerCase()}@segurpro.local`;
+  
+  if (clean.includes('@')) {
+    // Basic validation for manual emails
+    if (clean.endsWith('@') || !clean.includes('.') || clean.startsWith('@')) return '';
+    return clean;
+  }
+  
+  // Sanitize username: only letters, numbers, dots, underscores, dashes
+  // This prevents invalid-email errors from weird characters
+  clean = clean.replace(/[^a-z0-9._-]/g, '');
+  if (!clean) return '';
+  
+  return `${clean}@segurpro.com`;
 };
 
 const safeParseDate = (date: any): Date => {
@@ -1283,10 +1296,12 @@ export default function MainApp() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [userPhotoError, setUserPhotoError] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [showPassword, setShowPassword] = useState(false);
   const [visitsFilter, setVisitsFilter] = useState<{ date: Date | null }>({ date: null });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [companyName, setCompanyName] = useState(''); // For registration/wizard
   const [pixSettings, setPixSettings] = useState<PixSettings>({
     accounts: []
@@ -1413,12 +1428,26 @@ export default function MainApp() {
     }
     
     if (role === 'tecnico') {
-      return ['visits', 'service-orders', 'receipts', 'settings'].includes(tabName);
+      return ['visits', 'service-orders', 'receipts'].includes(tabName);
     }
     
     // Default fallback
-    return true;
+    return false;
   };
+
+  // Redirect if current tab is not accessible
+  useEffect(() => {
+    if (currentUserData && !canAccess(activeTab)) {
+      const allowedTabs = [
+        'dashboard', 'visits', 'financial', 'budgets', 'service-orders',
+        'clients', 'receipts', 'users', 'settings', 'reports', 'super-admin'
+      ].filter(canAccess);
+      
+      if (allowedTabs.length > 0) {
+        setActiveTab(allowedTabs[0]);
+      }
+    }
+  }, [currentUserData?.role, activeTab]);
 
   // Sidebar Keyboard Navigation
   useEffect(() => {
@@ -1768,14 +1797,21 @@ export default function MainApp() {
     }
 
     const finalEmail = getFinalEmail(email);
+    if (!finalEmail || !finalEmail.includes('@')) {
+      toast.error('O formato do usuário ou e-mail é inválido.');
+      return;
+    }
+    
+    setIsAuthLoading(true);
 
     try {
       if (authMode === 'login') {
-        await signInWithEmailAndPassword(auth, finalEmail, password);
-        toast.success('Entrando no sistema...');
+        const userCredential = await signInWithEmailAndPassword(auth, finalEmail, password);
+        toast.success(`Bem-vindo, ${userCredential.user.displayName || 'usuário'}!`);
       } else {
         if (!displayName) {
           toast.error('Por favor, informe seu nome para o cadastro.');
+          setIsAuthLoading(false);
           return;
         }
         const userCredential = await createUserWithEmailAndPassword(auth, finalEmail, password);
@@ -1791,10 +1827,12 @@ export default function MainApp() {
       } else if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
         toast.error('Usuário ou senha incorretos. Verifique suas credenciais.');
       } else if (error.code === 'auth/invalid-email') {
-        toast.error('O formato do usuário ou e-mail é inválido.');
+        toast.error(`O formato do usuário ou e-mail é inválido: ${finalEmail}`);
       } else {
         toast.error('Erro na autenticação: ' + (error.message || 'Desconhecido'));
       }
+    } finally {
+      setIsAuthLoading(false);
     }
   };
 
@@ -1810,6 +1848,7 @@ export default function MainApp() {
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-[#07080a]">
+        <Toaster position="top-right" theme="dark" />
         <div className="flex flex-col items-center gap-6">
           <div className="relative">
             <div className="h-20 w-20 animate-spin rounded-full border-4 border-[#3b82f6]/20 border-t-[#3b82f6]"></div>
@@ -1829,6 +1868,7 @@ export default function MainApp() {
   if (!user) {
     return (
       <div className="flex h-screen flex-col items-center justify-center bg-[#0f1115] p-6 overflow-y-auto">
+        <Toaster position="top-right" theme="dark" />
         <div className="w-full max-w-md space-y-8 text-center py-8">
           <div className="space-y-2">
             {appSettings.logoUrl ? (
@@ -1866,29 +1906,45 @@ export default function MainApp() {
                   </div>
                 )}
                 <div className="space-y-2">
-                  <Label htmlFor="auth-username" className="text-[#a0a0a0]">Usuário</Label>
+                  <Label htmlFor="auth-username" className="text-[#a0a0a0]">Usuário ou E-mail</Label>
                   <Input 
                     id="auth-username" 
                     type="text" 
                     value={email} 
                     onChange={e => setEmail(e.target.value)} 
-                    placeholder="Seu usuário"
+                    placeholder="Seu usuário ou e-mail"
                     className="bg-[#0f1115] border-[#2d3139] text-white" 
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="auth-pass" className="text-[#a0a0a0]">Senha</Label>
-                  <Input 
-                    id="auth-pass" 
-                    type="password" 
-                    value={password} 
-                    onChange={e => setPassword(e.target.value)} 
-                    placeholder="••••••••"
-                    className="bg-[#0f1115] border-[#2d3139] text-white" 
-                  />
+                  <div className="relative">
+                    <Input 
+                      id="auth-pass" 
+                      type={showPassword ? "text" : "password"} 
+                      value={password} 
+                      onChange={e => setPassword(e.target.value)} 
+                      placeholder="••••••••"
+                      className="bg-[#0f1115] border-[#2d3139] text-white pr-10" 
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#71717a] hover:text-white transition-colors"
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
                 </div>
-                <Button type="submit" className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none">
-                  {authMode === 'login' ? 'Entrar' : 'Cadastrar'}
+                <Button type="submit" disabled={isAuthLoading} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none h-11">
+                  {isAuthLoading ? (
+                    <div className="flex items-center gap-2">
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      <span>{authMode === 'login' ? 'Entrando...' : 'Cadastrando...'}</span>
+                    </div>
+                  ) : (
+                    <span>{authMode === 'login' ? 'Entrar' : 'Cadastrar'}</span>
+                  )}
                 </Button>
               </form>
 
@@ -2351,6 +2407,8 @@ function UsersManager({ users = [], currentUserData }: { users?: any[], currentU
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'tecnico' });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showAddPassword, setShowAddPassword] = useState(false);
+  const [showEditPassword, setShowEditPassword] = useState(false);
 
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
@@ -2544,14 +2602,23 @@ function UsersManager({ users = [], currentUserData }: { users?: any[], currentU
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="user-pass" className="text-[#a0a0a0]">Senha</Label>
-                  <Input 
-                    id="user-pass" 
-                    type="password"
-                    value={newUser.password} 
-                    onChange={e => setNewUser({...newUser, password: e.target.value})} 
-                    placeholder="Mínimo 6 caracteres"
-                    className="bg-[#0f1115] border-[#2d3139] text-white" 
-                  />
+                  <div className="relative">
+                    <Input 
+                      id="user-pass" 
+                      type={showAddPassword ? "text" : "password"}
+                      value={newUser.password} 
+                      onChange={e => setNewUser({...newUser, password: e.target.value})} 
+                      placeholder="Mínimo 6 caracteres"
+                      className="bg-[#0f1115] border-[#2d3139] text-white pr-10" 
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowAddPassword(!showAddPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#71717a] hover:text-white transition-colors"
+                    >
+                      {showAddPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label className="text-[#a0a0a0]">Nível de Acesso</Label>
@@ -2681,13 +2748,22 @@ function UsersManager({ users = [], currentUserData }: { users?: any[], currentU
                 </div>
                 <div className="space-y-2">
                   <Label className="text-[#a0a0a0]">Nova Senha (opcional)</Label>
-                  <Input 
-                    type="password"
-                    value={newPassword}
-                    onChange={e => setNewPassword(e.target.value)}
-                    placeholder="Deixe em branco para manter a atual"
-                    className="bg-[#0f1115] border-[#2d3139] text-white" 
-                  />
+                  <div className="relative">
+                    <Input 
+                      type={showEditPassword ? "text" : "password"}
+                      value={newPassword}
+                      onChange={e => setNewPassword(e.target.value)}
+                      placeholder="Deixe em branco para manter a atual"
+                      className="bg-[#0f1115] border-[#2d3139] text-white pr-10" 
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowEditPassword(!showEditPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#71717a] hover:text-white transition-colors"
+                    >
+                      {showEditPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
                   <p className="text-[10px] text-[#71717a]">Ao preencher, o sistema enviará um link de alteração para o usuário.</p>
                 </div>
               </div>
