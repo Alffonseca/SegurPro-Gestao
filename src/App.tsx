@@ -449,7 +449,7 @@ const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettin
   doc.save(`contrato_${(client.name || 'cliente').replace(/\s/g, '_')}.pdf`);
 };
 
-const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings) => {
+const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, includeValues = false) => {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -571,7 +571,7 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings) => 
   doc.text(equipLines, col2X, currentY);
   const equipHeight = (equipLines.length * 5) + 5;
 
-  currentY = startY + Math.max(clientHeight, equipHeight) + 15;
+  currentY = startY + Math.max(clientHeight, equipHeight) + 12;
 
   // 3. PROBLEMA RELATADO
   doc.setDrawColor(200, 200, 200);
@@ -583,7 +583,7 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings) => 
   doc.setFont('helvetica', 'normal');
   const probLines = doc.splitTextToSize(os.reportedProblem, contentWidth);
   doc.text(probLines, margin, currentY);
-  currentY += (probLines.length * 5) + 8;
+  currentY += (probLines.length * 5) + 5;
 
   // 4. DETALHES TÉCNICOS
   checkPageBreak(30);
@@ -594,20 +594,20 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings) => 
   doc.setFont('helvetica', 'normal');
   const diagLines = doc.splitTextToSize(os.diagnosis, contentWidth);
   doc.text(diagLines, margin, currentY);
-  currentY += (diagLines.length * 5) + 5;
+  currentY += (diagLines.length * 5) + 3;
 
-  checkPageBreak(30);
+  checkPageBreak(25);
   doc.setFont('helvetica', 'bold');
   doc.text('Serviços Realizados:', margin, currentY);
   currentY += 5;
   doc.setFont('helvetica', 'normal');
   const servLines = doc.splitTextToSize(os.performedServices, contentWidth);
   doc.text(servLines, margin, currentY);
-  currentY += (servLines.length * 5) + 5;
+  currentY += (servLines.length * 5) + 3;
 
   // Parts Table if exists
   if (os.parts && os.parts.length > 0) {
-    checkPageBreak(30);
+    checkPageBreak(25);
     doc.setFont('helvetica', 'bold');
     doc.text('Peças/Materiais Substituídos:', margin, currentY);
     currentY += 2;
@@ -625,42 +625,62 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings) => 
         3: { halign: 'right' }
       }
     });
-    currentY = (doc as any).lastAutoTable.finalY + 10;
+    currentY = (doc as any).lastAutoTable.finalY + 6;
+  }
+
+  // 4. TEMPOS E VALORES (Condicional)
+  if (includeValues) {
+    checkPageBreak(30);
+    drawSectionTitle('4. Tempos e Valores');
+    
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Início: ${format(os.startDateTime instanceof Timestamp ? os.startDateTime.toDate() : new Date(os.startDateTime as any), 'dd/MM/yyyy HH:mm')}`, margin, currentY);
+    doc.text(`Fim: ${format(os.endDateTime instanceof Timestamp ? os.endDateTime.toDate() : new Date(os.endDateTime as any), 'dd/MM/yyyy HH:mm')}`, margin + contentWidth / 2, currentY);
+    currentY += 7;
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Valor Mão de Obra: R$ ${(os.laborValue || 0).toFixed(2)}`, margin, currentY);
+    doc.text(`Valor Peças: R$ ${(os.partsValue || 0).toFixed(2)}`, margin + contentWidth / 2, currentY);
+    currentY += 7;
+    
+    doc.setFontSize(11);
+    doc.text(`VALOR TOTAL: R$ ${(os.totalValue || 0).toFixed(2)}`, margin, currentY);
+    doc.setFontSize(9);
+    currentY += 10;
   }
 
   // Checklist
-  checkPageBreak(25);
+  checkPageBreak(20);
   doc.setFont('helvetica', 'bold');
   doc.text('Checklist de Conformidade:', margin, currentY);
-  currentY += 5;
+  currentY += 4;
   doc.setFont('helvetica', 'normal');
   doc.text(`[${os.checklist.functionalityTest ? 'X' : ' '}] Teste de Funcionamento   [${os.checklist.cleaning ? 'X' : ' '}] Limpeza   [${os.checklist.safetyCheck ? 'X' : ' '}] Verificação de Segurança`, margin, currentY);
   if (os.checklist.additional) {
-    currentY += 5;
+    currentY += 4;
     doc.text(`Observações: ${os.checklist.additional}`, margin, currentY);
   }
-  currentY += 10;
+  currentY += 6;
 
   // 5. ASSINATURAS
-  checkPageBreak(50);
+  checkPageBreak(40);
   
   doc.setLineWidth(0.3);
-  doc.line(margin + 10, currentY + 20, margin + 80, currentY + 20);
-  doc.line(pageWidth - margin - 80, currentY + 20, pageWidth - margin - 10, currentY + 20);
+  doc.line(margin + 10, currentY + 15, margin + 80, currentY + 15);
+  doc.line(pageWidth - margin - 80, currentY + 15, pageWidth - margin - 10, currentY + 15);
   
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
-  doc.text('Assinatura do Técnico', margin + 45, currentY + 25, { align: 'center' });
-  doc.text('Assinatura do Cliente (Ciente)', pageWidth - margin - 45, currentY + 25, { align: 'center' });
+  doc.text('Assinatura do Técnico', margin + 45, currentY + 20, { align: 'center' });
+  doc.text('Assinatura do Cliente (Ciente)', pageWidth - margin - 45, currentY + 20, { align: 'center' });
   
   if (os.technicianSignature) {
-    try { doc.addImage(os.technicianSignature, 'PNG', margin + 25, currentY, 40, 18); } catch(e) {}
+    try { doc.addImage(os.technicianSignature, 'PNG', margin + 25, currentY - 5, 40, 18); } catch(e) {}
   } else if (appSettings.signatureUrl) {
-    // Auto-include admin signature if technician signature is missing
-    try { doc.addImage(appSettings.signatureUrl, 'PNG', margin + 25, currentY, 40, 18); } catch(e) {}
+    try { doc.addImage(appSettings.signatureUrl, 'PNG', margin + 25, currentY - 5, 40, 18); } catch(e) {}
   }
   if (os.clientSignature) {
-    try { doc.addImage(os.clientSignature, 'PNG', pageWidth - margin - 65, currentY, 40, 18); } catch(e) {}
+    try { doc.addImage(os.clientSignature, 'PNG', pageWidth - margin - 65, currentY - 5, 40, 18); } catch(e) {}
   }
 
   doc.save(`OS_${formatRecordNumber(os.number, os.date).replace('/', '-')}.pdf`);
@@ -883,8 +903,9 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
   }
   
   // Table Row
+  const rowH = 15;
   doc.setFillColor(245, 245, 245);
-  doc.rect(20, servicesY + 13, 170, 15, 'F');
+  doc.rect(20, servicesY + 13, 170, rowH, 'F');
   doc.setTextColor(0, 0, 0);
   doc.setFont('helvetica', 'normal');
   const serviceText = receipt.serviceSpecification || 'Serviços prestados';
@@ -902,13 +923,17 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
     doc.text(formattedVal, 185, servicesY + 18, { align: 'right' });
   }
   
+  let currentY = servicesY + 13 + rowH + 10;
+  
   // 5. Totals
   doc.setFillColor(120, 120, 120);
-  doc.rect(100, servicesY + 50, 90, 10, 'F');
+  doc.rect(100, currentY, 90, 10, 'F');
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(12);
-  doc.text('Total', 105, servicesY + 57);
-  doc.text(formattedVal, 185, servicesY + 57, { align: 'right' });
+  doc.text('Total', 105, currentY + 7);
+  doc.text(formattedVal, 185, currentY + 7, { align: 'right' });
+  
+  currentY += 20;
   
   // PIX Info
   const selectedPix = pixSettings.accounts.find(a => a.id === receipt.pixAccountId) || pixSettings.accounts[0];
@@ -916,28 +941,41 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(9);
     doc.setFont('helvetica', 'bold');
-    doc.text('Dados para Pagamento (PIX):', 20, servicesY + 70);
+    doc.text('Dados para Pagamento (PIX):', 20, currentY);
+    currentY += 6;
     doc.setFont('helvetica', 'normal');
-    doc.text(`Chave: ${selectedPix.key}`, 20, servicesY + 75);
-    doc.text(`Banco: ${selectedPix.bank}`, 20, servicesY + 80);
-    doc.text(`Favorecido: ${selectedPix.favored}`, 20, servicesY + 85);
-    doc.text(`CPF/CNPJ: ${selectedPix.document}`, 20, servicesY + 90);
+    doc.text(`Chave: ${selectedPix.key}`, 20, currentY);
+    currentY += 5;
+    doc.text(`Banco: ${selectedPix.bank}`, 20, currentY);
+    currentY += 5;
+    doc.text(`Favorecido: ${selectedPix.favored}`, 20, currentY);
+    currentY += 5;
+    doc.text(`CPF/CNPJ: ${selectedPix.document}`, 20, currentY);
+    currentY += 15;
   }
 
   // Observations
   if (receipt.observations) {
-    const obsY = servicesY + (selectedPix && selectedPix.key ? 100 : 70);
+    doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
-    doc.text('Observações:', 20, obsY);
+    doc.text('Observações:', 20, currentY);
     doc.setFont('helvetica', 'normal');
     const splitObs = doc.splitTextToSize(receipt.observations, 170);
-    doc.text(splitObs, 20, obsY + 5);
+    doc.text(splitObs, 20, currentY + 6);
+    currentY += (splitObs.length * 6) + 20;
   }
 
   // 6. Signature
+  if (currentY > 240) {
+    doc.addPage();
+    currentY = 30;
+  } else {
+    currentY += 20; // Space before signature
+  }
+
   if (appSettings.signatureUrl) {
     try {
-      doc.addImage(appSettings.signatureUrl, 'PNG', 80, 250, 50, 20);
+      doc.addImage(appSettings.signatureUrl, 'PNG', 80, currentY, 50, 20);
     } catch (e) {
       console.error("Erro ao adicionar assinatura ao recibo:", e);
     }
@@ -946,9 +984,9 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
-  doc.text(dateStr, 105, 260, { align: 'center' });
-  doc.line(70, 270, 140, 270);
-  doc.text(appSettings.companyName || 'André Fonseca', 105, 275, { align: 'center' });
+  doc.text(dateStr, 105, currentY + 25, { align: 'center' });
+  doc.line(70, currentY + 30, 140, currentY + 30);
+  doc.text(appSettings.companyName || 'André Fonseca', 105, currentY + 35, { align: 'center' });
   
   const fileName = `recibo_${receipt.clientName.replace(/\s/g, '_')}.pdf`;
 
@@ -6296,56 +6334,86 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
     doc.setFont('helvetica', 'normal');
     doc.text(`Data Agendada: ${dateStr}${visit.scheduledTime ? ` às ${visit.scheduledTime}` : ''}`, 20, 50);
     
-    let currentLineY = 57;
+    let currentY = 58;
 
     if (visit.expectedDate) {
       const expDateStr = format(visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate), 'dd/MM/yyyy');
-      doc.text(`Data Prevista: ${expDateStr}${visit.expectedTime ? ` às ${visit.expectedTime}` : ''}`, 20, currentLineY);
-      currentLineY += 7;
+      doc.text(`Data Prevista: ${expDateStr}${visit.expectedTime ? ` às ${visit.expectedTime}` : ''}`, 20, currentY);
+      currentY += 8;
     }
     
-    doc.text(`Técnico Responsável: ${visit.technicianName}`, 20, currentLineY);
+    doc.text(`Técnico Responsável: ${visit.technicianName}`, 20, currentY);
+    currentY += 8;
     
-    doc.line(20, currentLineY + 6, 190, currentLineY + 6);
+    doc.line(20, currentY, 190, currentY);
+    currentY += 10;
     
     // Client Info
     doc.setFont('helvetica', 'bold');
-    doc.text('DADOS DO CLIENTE', 20, currentLineY + 16);
+    doc.text('DADOS DO CLIENTE', 20, currentY);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Cliente: ${visit.clientName}`, 20, currentLineY + 23);
-    doc.text(`Endereço: ${visit.address}`, 20, currentLineY + 30);
-    doc.text(`Telefone: ${visit.clientPhone || 'N/A'}`, 20, currentLineY + 37);
-    doc.text(`Responsável no Local: ${visit.responsibleName || 'N/A'}`, 20, currentLineY + 44);
+    currentY += 7;
+    doc.text(`Cliente: ${visit.clientName}`, 20, currentY);
+    currentY += 7;
+    doc.text(`Endereço: ${visit.address}`, 20, currentY);
+    currentY += 7;
+    doc.text(`Telefone: ${visit.clientPhone || 'N/A'}`, 20, currentY);
+    currentY += 7;
+    doc.text(`Responsável no Local: ${visit.responsibleName || 'N/A'}`, 20, currentY);
+    currentY += 6;
     
-    doc.line(20, currentLineY + 50, 190, currentLineY + 50);
+    doc.line(20, currentY, 190, currentY);
+    currentY += 10;
     
     // Service Info
     doc.setFont('helvetica', 'bold');
-    doc.text('DETALHES DO SERVIÇO', 20, currentLineY + 57);
+    doc.text('DETALHES DO SERVIÇO', 20, currentY);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Tipo de Sistema: ${visit.type}`, 20, currentLineY + 64);
-    doc.text(`Status: ${visit.status}`, 20, currentLineY + 71);
+    currentY += 7;
+    doc.text(`Tipo de Sistema: ${visit.type}`, 20, currentY);
+    currentY += 7;
+    doc.text(`Status: ${visit.status}`, 20, currentY);
+    currentY += 10;
     
-    doc.text('Descrição do Serviço/Problema:', 20, currentLineY + 81);
+    doc.text('Descrição do Serviço/Problema:', 20, currentY);
+    currentY += 7;
     const splitDesc = doc.splitTextToSize(visit.description || 'N/A', 170);
-    doc.text(splitDesc, 20, currentLineY + 81);
-    
-    let currentY = currentLineY + 81 + (splitDesc.length * 5) + 10;
+    doc.text(splitDesc, 20, currentY);
+    currentY += (splitDesc.length * 5) + 10;
 
     if (visit.observations) {
+      // Check if we need a new page for observations
+      if (currentY > 260) {
+        doc.addPage();
+        currentY = 20;
+      }
       doc.setFont('helvetica', 'bold');
       doc.text('Observações:', 20, currentY);
       doc.setFont('helvetica', 'normal');
+      currentY += 7;
       const splitObs = doc.splitTextToSize(visit.observations, 170);
-      doc.text(splitObs, 20, currentY + 7);
-      currentY += (splitObs.length * 5) + 15;
+      doc.text(splitObs, 20, currentY);
+      currentY += (splitObs.length * 5) + 10;
     }
     
+    // Check space for total value
+    if (currentY > 270) {
+      doc.addPage();
+      currentY = 20;
+    }
+
     doc.setFont('helvetica', 'bold');
     doc.text(`VALOR DO SERVIÇO: R$ ${(visit.totalValue || 0).toFixed(2)}`, 20, currentY);
     
-    // Signatures
-    const signatureY = 260;
+    // Signatures - Make them dynamic based on currentY
+    let signatureY = currentY + 35;
+    
+    // If not enough space for signatures at the current position, move to next page
+    if (signatureY > 280) {
+      doc.addPage();
+      signatureY = 40;
+    }
+    
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     
@@ -7364,6 +7432,8 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isValuesModalOpen, setIsValuesModalOpen] = useState(false);
+  const [selectedOSForPDF, setSelectedOSForPDF] = useState<ServiceOrder | null>(null);
   const [editingOS, setEditingOS] = useState<Partial<ServiceOrder> | null>(null);
   const [osToDelete, setOSToDelete] = useState<ServiceOrder | null>(null);
   const [clientSearch, setClientSearch] = useState('');
@@ -7433,9 +7503,8 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
       });
       toast.success('Ordem de Serviço criada com sucesso!');
 
-      if (window.confirm('Deseja gerar o PDF para impressão agora?')) {
-        generateServiceOrderPDF(createdOS, appSettings);
-      }
+      setSelectedOSForPDF(createdOS);
+      setIsValuesModalOpen(true);
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'serviceOrders');
     }
@@ -7459,6 +7528,10 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
       await updateDoc(doc(db, 'serviceOrders', editingOS.id), osData);
       setIsEditOpen(false);
       toast.success('Ordem de serviço atualizada!');
+      
+      const updatedOS = { ...osData, id: editingOS.id } as ServiceOrder;
+      setSelectedOSForPDF(updatedOS);
+      setIsValuesModalOpen(true);
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, 'serviceOrders');
     }
@@ -7792,7 +7865,10 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                   }}>
                     <Trash2 size={14} />
                   </Button>
-                  <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-xs" onClick={() => generateServiceOrderPDF(os, appSettings)}>
+                  <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-xs" onClick={() => {
+                    setSelectedOSForPDF(os);
+                    setIsValuesModalOpen(true);
+                  }}>
                     PDF
                   </Button>
                 </div>
@@ -7989,6 +8065,37 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)} className="border-[#2d3139]">Cancelar</Button>
             <Button variant="destructive" onClick={handleDeleteOS} className="bg-red-500 hover:bg-red-600">Excluir</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* OS PDF Values Prompt */}
+      <Dialog open={isValuesModalOpen} onOpenChange={setIsValuesModalOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Opções de Impressão</DialogTitle>
+            <DialogDescription className="text-[#71717a]">Deseja incluir os valores (Mão de Obra e Peças) na Ordem de Serviço?</DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex flex-col sm:flex-row gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                if (selectedOSForPDF) generateServiceOrderPDF(selectedOSForPDF, appSettings, false);
+                setIsValuesModalOpen(false);
+              }} 
+              className="flex-1 border-[#2d3139] text-white hover:bg-[#2d3139]"
+            >
+              Não (Sem Valores)
+            </Button>
+            <Button 
+              onClick={() => {
+                if (selectedOSForPDF) generateServiceOrderPDF(selectedOSForPDF, appSettings, true);
+                setIsValuesModalOpen(false);
+              }} 
+              className="flex-1 bg-[#3b82f6] hover:bg-[#2563eb] text-white"
+            >
+              Sim (Com Valores)
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
