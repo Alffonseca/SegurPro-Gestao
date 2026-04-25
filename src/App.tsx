@@ -526,33 +526,63 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings) => 
   currentY += Math.max(25, 7 + (companyNameLines.length * 5) + (addressLines.length * 4) + 10);
   drawLine();
 
-  // 2. DADOS DO CLIENTE
-  drawSectionTitle('1. Dados do Cliente');
-  doc.setFont('helvetica', 'normal');
+  // 1 & 2. DADOS DO CLIENTE E EQUIPAMENTO (LADO A LADO)
+  const colWidth = contentWidth / 2 - 5;
+  const startY = currentY;
+
+  // 1. Dados do Cliente
+  doc.setFillColor(240, 240, 240);
+  doc.rect(margin, currentY, colWidth, 7, 'F');
+  doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
-  doc.setTextColor(0, 0, 0);
-  doc.text(`Nome/Empresa: ${os.clientName}`, margin, currentY);
-  currentY += 5;
-  doc.text(`Endereço: ${os.address}`, margin, currentY);
-  currentY += 5;
-  doc.text(`Contato: ${os.contact}`, margin, currentY);
+  doc.setTextColor(50, 50, 50);
+  doc.text('1. DADOS DO CLIENTE', margin + 2, currentY + 5);
   currentY += 10;
 
-  // 3. INFORMAÇÕES DO EQUIPAMENTO
-  drawSectionTitle('2. Informações do Equipamento / Serviço');
-  doc.text(`Equipamento: ${os.equipment}`, margin, currentY);
-  currentY += 5;
-  doc.text(`Marca/Modelo/Série: ${os.brandModelSN}`, margin, currentY);
-  currentY += 5;
-  doc.text(`Tipo de Serviço: [${os.serviceType === 'Preventiva' ? 'X' : ' '}] Manutenção Preventiva  [${os.serviceType === 'Corretiva' ? 'X' : ' '}] Corretiva  [${os.serviceType === 'Instalação' ? 'X' : ' '}] Instalação`, margin, currentY);
-  currentY += 8;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(0, 0, 0);
+  
+  const clientInfoText = `Nome: ${os.clientName}\n` +
+    `Endereço: ${os.address}\n` +
+    `Contato: ${os.contactName || ''}\n` +
+    `Fone: ${os.contact}`;
+  
+  const clientLines = doc.splitTextToSize(clientInfoText, colWidth);
+  doc.text(clientLines, margin, currentY);
+  const clientHeight = (clientLines.length * 5) + 5;
+  
+  // 2. Informações do Equipamento
+  currentY = startY;
+  const col2X = margin + colWidth + 10;
+  doc.setFillColor(240, 240, 240);
+  doc.rect(col2X, currentY, colWidth, 7, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.text('2. EQUIPAMENTO / SERVIÇO', col2X + 2, currentY + 5);
+  currentY += 10;
+
+  doc.setFont('helvetica', 'normal');
+  const equipInfoText = `Equipamento: ${os.equipment}\n` +
+    `Marca/Modelo: ${os.brandModelSN}\n` +
+    `Tipo: ${os.serviceType}`;
+  
+  const equipLines = doc.splitTextToSize(equipInfoText, colWidth);
+  doc.text(equipLines, col2X, currentY);
+  const equipHeight = (equipLines.length * 5) + 5;
+
+  currentY = startY + Math.max(clientHeight, equipHeight) + 15;
+
+  // 3. PROBLEMA RELATADO
+  doc.setDrawColor(200, 200, 200);
+  doc.line(margin, currentY - 5, pageWidth - margin, currentY - 5);
+  
   doc.setFont('helvetica', 'bold');
   doc.text('Problema Relatado:', margin, currentY);
   currentY += 5;
   doc.setFont('helvetica', 'normal');
   const probLines = doc.splitTextToSize(os.reportedProblem, contentWidth);
   doc.text(probLines, margin, currentY);
-  currentY += (probLines.length * 5) + 5;
+  currentY += (probLines.length * 5) + 8;
 
   // 4. DETALHES TÉCNICOS
   checkPageBreak(30);
@@ -610,26 +640,7 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings) => 
   }
   currentY += 10;
 
-  // 5. TEMPOS E VALORES
-  checkPageBreak(40);
-  drawSectionTitle('4. Tempos e Valores');
-  const startStr = format(os.startDateTime instanceof Timestamp ? os.startDateTime.toDate() : new Date(os.startDateTime), 'dd/MM/yyyy HH:mm');
-  const endStr = format(os.endDateTime instanceof Timestamp ? os.endDateTime.toDate() : new Date(os.endDateTime), 'dd/MM/yyyy HH:mm');
-  
-  doc.text(`Início: ${startStr}`, margin, currentY);
-  doc.text(`Conclusão: ${endStr}`, margin + 80, currentY);
-  currentY += 8;
-  
-  doc.text(`Valor Mão de Obra: R$ ${os.laborValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, margin, currentY);
-  doc.text(`Valor Peças: R$ ${os.partsValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, margin + 80, currentY);
-  currentY += 8;
-  
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'bold');
-  doc.text(`VALOR TOTAL: R$ ${os.totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, margin, currentY);
-  currentY += 15;
-
-  // 6. ASSINATURAS
+  // 5. ASSINATURAS
   checkPageBreak(50);
   
   doc.setLineWidth(0.3);
@@ -667,6 +678,7 @@ interface ServiceOrder {
   clientName: string;
   address: string;
   contact: string;
+  contactName?: string;
   
   // Equipment Info
   equipment: string;
@@ -1981,7 +1993,9 @@ export default function MainApp() {
                 <p className="text-[10px] text-[#71717a] font-medium uppercase mb-2">Visão da Empresa</p>
                 <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
                   <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-xs h-9 text-white">
-                    <SelectValue placeholder="Trocar Empresa" />
+                    <SelectValue>
+                      {allCompanies.find(c => c.id === selectedCompanyId)?.name || 'Empresa S/N'}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                     {allCompanies.map(c => (
@@ -2026,7 +2040,7 @@ export default function MainApp() {
             {canAccess('service-orders') && (
               <SidebarItem 
                 icon={<CheckCircle2 size={18} />} 
-                label="Ordem de Serviço" 
+                label="Ordens de Serviço" 
                 active={activeTab === 'service-orders'} 
                 onClick={() => setActiveTab('service-orders')} 
               />
@@ -2171,7 +2185,7 @@ export default function MainApp() {
             {canAccess('service-orders') && (
               <SidebarItem 
                 icon={<CheckCircle2 size={20} />} 
-                label="Ordem de Serviço" 
+                label="Ordens de Serviço" 
                 active={activeTab === 'service-orders'} 
                 onClick={() => { setActiveTab('service-orders'); setIsMobileMenuOpen(false); }} 
               />
@@ -2442,10 +2456,24 @@ function UsersManager({ users = [], currentUserData }: { users?: any[], currentU
   const handleDeleteUser = async () => {
     if (!userToDelete) return;
     try {
+      // Delete from Firestore
       await deleteDoc(doc(db, 'users', userToDelete.id));
+      
+      // Delete from Auth via server
+      try {
+        await fetch('/api/admin/delete-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uid: userToDelete.id })
+        });
+      } catch (authErr) {
+        console.error("Auth deletion failed via API:", authErr);
+        // We still consider business success if firestore is cleared
+      }
+
       setIsDeleteConfirmOpen(false);
       setUserToDelete(null);
-      toast.success('Usuário removido com sucesso!');
+      toast.success('Usuário removido com sucesso (Firestore e Auth)!');
     } catch (error) {
       console.error(error);
       toast.error('Erro ao remover usuário.');
@@ -2529,7 +2557,9 @@ function UsersManager({ users = [], currentUserData }: { users?: any[], currentU
                   <Label className="text-[#a0a0a0]">Nível de Acesso</Label>
                   <Select value={newUser.role} onValueChange={(val: any) => setNewUser({...newUser, role: val})}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue />
+                      <SelectValue>
+                        {newUser.role === 'admin' ? 'Administrador' : newUser.role === 'secretaria' ? 'Secretaria' : newUser.role === 'tecnico' ? 'Técnico' : 'Selecione o nível'}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       <SelectItem value="admin">Administrador</SelectItem>
@@ -2638,7 +2668,9 @@ function UsersManager({ users = [], currentUserData }: { users?: any[], currentU
                   <Label className="text-[#a0a0a0]">Nível de Acesso</Label>
                   <Select value={editingUser.role} onValueChange={(val: any) => setEditingUser({...editingUser, role: val})}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue />
+                      <SelectValue>
+                        {editingUser.role === 'admin' ? 'Administrador' : editingUser.role === 'secretaria' ? 'Secretaria' : editingUser.role === 'tecnico' ? 'Técnico' : 'Selecione o nível'}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       <SelectItem value="admin">Administrador</SelectItem>
@@ -2939,7 +2971,9 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId }: {
                     <Label className="text-[#a0a0a0]">Tipo de Cliente</Label>
                     <Select value={newClient.type} onValueChange={(val: any) => setNewClient({...newClient, type: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                        <SelectValue placeholder="Selecione" />
+                        <SelectValue>
+                          {newClient.type || "Selecione"}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         <SelectItem value="Avulso">Avulso</SelectItem>
@@ -3128,7 +3162,9 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId }: {
                     <Label className="text-[#a0a0a0]">Tipo de Cliente</Label>
                     <Select value={editingClient.type} onValueChange={(val: any) => setEditingClient({...editingClient, type: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                        <SelectValue placeholder="Selecione" />
+                        <SelectValue>
+                          {editingClient.type || "Selecione"}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         <SelectItem value="Avulso">Avulso</SelectItem>
@@ -5534,7 +5570,9 @@ function ReportsManager({
               <Label className="text-[#a0a0a0]">Tipo de Período</Label>
               <Select value={reportType} onValueChange={(v: any) => setReportType(v)}>
                 <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white h-11">
-                  <SelectValue />
+                  <SelectValue>
+                    {reportType === 'daily' ? 'Diário (Listagem por Dia)' : reportType === 'monthly' ? 'Mensal (Listagem por Mês)' : 'Selecione'}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                   <SelectItem value="daily">Diário (Listagem por Dia)</SelectItem>
@@ -5704,7 +5742,8 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
       const currentDateStr = format(currentDate, 'yyyy-MM-dd');
       
       const count = (visits || []).filter(v => {
-        const d = safeParseDate(v.date);
+        // Look for both date and expectedDate to include all visits (scheduled and completed)
+        const d = safeParseDate(v.expectedDate || v.date);
         return format(d, 'yyyy-MM-dd') === currentDateStr;
       }).length;
 
@@ -6369,7 +6408,9 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
                     <Label className="text-[#a0a0a0]">Tipo de Serviço</Label>
                     <Select value={newVisit.type} onValueChange={(val: any) => setNewVisit({...newVisit, type: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                        <SelectValue placeholder="Selecione" />
+                        <SelectValue>
+                          {newVisit.type || "Selecione"}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         <SelectItem value="CFTV">CFTV</SelectItem>
@@ -6690,7 +6731,9 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
                     <Label className="text-[#a0a0a0]">Tipo de Serviço</Label>
                     <Select value={editingVisit.type} onValueChange={(val: any) => setEditingVisit({...editingVisit, type: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                        <SelectValue />
+                        <SelectValue>
+                          {editingVisit.type || "Selecione o tipo"}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         <SelectItem value="CFTV">CFTV</SelectItem>
@@ -6751,7 +6794,9 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
                     <Label className="text-[#a0a0a0]">Status</Label>
                     <Select value={editingVisit.status} onValueChange={(val: any) => setEditingVisit({...editingVisit, status: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                        <SelectValue />
+                        <SelectValue>
+                          {editingVisit.status || "Selecione o status"}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         <SelectItem value="Agendada">Agendada</SelectItem>
@@ -7380,10 +7425,19 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                   <Label>Cliente</Label>
                   <Select onValueChange={(val) => {
                     const c = clients.find(cl => cl.id === val);
-                    if (c) setNewOS({ ...newOS, clientId: c.id, clientName: c.name || '', address: c.address || '', contact: c.phone || '' });
+                    if (c) setNewOS({ 
+                      ...newOS, 
+                      clientId: c.id, 
+                      clientName: c.name || '', 
+                      address: c.address || '', 
+                      contact: c.phone || '',
+                      contactName: c.responsible || ''
+                    });
                   }}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
-                      <SelectValue placeholder="Selecione um cliente" />
+                      <SelectValue>
+                        {clients.find(c => c.id === newOS.clientId)?.name || "Selecione um cliente"}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       <div className="p-2 border-b border-[#2d3139]">
@@ -7405,7 +7459,9 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                     if (u) setNewOS({ ...newOS, technicianId: u.uid, technicianName: u.displayName || u.email });
                   }}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
-                      <SelectValue placeholder="Selecione o técnico" />
+                      <SelectValue>
+                        {users.find(u => u.uid === newOS.technicianId)?.displayName || users.find(u => u.uid === newOS.technicianId)?.email || "Selecione o técnico"}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       {users.map(u => <SelectItem key={u.uid} value={u.uid}>{u.displayName || u.email}</SelectItem>)}
@@ -7428,7 +7484,9 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                   <Label>Tipo de Serviço</Label>
                   <Select value={newOS.serviceType} onValueChange={(val: any) => setNewOS({...newOS, serviceType: val})}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
-                      <SelectValue />
+                      <SelectValue>
+                        {newOS.serviceType || "Selecione o tipo"}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       <SelectItem value="Corretiva">Corretiva</SelectItem>
@@ -7562,7 +7620,7 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-[#2d3139]">
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label>Início do Atendimento</Label>
+                    <Label>Início Trabalho</Label>
                     <Input 
                       type="datetime-local" 
                       className="bg-[#0f1115] border-[#2d3139]" 
@@ -7633,7 +7691,7 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                 </div>
                 <div className="flex justify-between text-[11px]">
                   <span className="text-[#71717a]">Técnico</span>
-                  <span className="text-[#10b981]">{os.technicianName}</span>
+                  <span className="text-[#10b981]">{os.technicianName || users.find(u => u.uid === os.technicianId)?.displayName || os.technicianId || 'Consultar Técnico'}</span>
                 </div>
                 <div className="mt-4 p-2 bg-[#0f1115] rounded border border-[#2d3139] text-[10px] text-[#a0a0a0] min-h-[40px] italic">
                   "{(os.performedServices || '').length > 80 ? (os.performedServices || '').substring(0, 80) + '...' : (os.performedServices || '')}"
@@ -7690,7 +7748,9 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                     <Label>Status</Label>
                     <Select value={editingOS.status} onValueChange={(val: any) => setEditingOS({...editingOS, status: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
-                        <SelectValue />
+                        <SelectValue>
+                          {editingOS.status || "Selecione o status"}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         <SelectItem value="Aberto">Aberto</SelectItem>
@@ -7707,7 +7767,9 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                       if (u) setEditingOS({ ...editingOS, technicianId: u.uid, technicianName: u.displayName || u.email });
                     }}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
-                        <SelectValue placeholder="Selecione o técnico" />
+                        <SelectValue>
+                          {users.find(u => u.uid === editingOS.technicianId)?.displayName || users.find(u => u.uid === editingOS.technicianId)?.email || "Selecione o técnico"}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         {users.map(u => <SelectItem key={u.uid} value={u.uid}>{u.displayName || u.email}</SelectItem>)}
@@ -7729,7 +7791,9 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                     <Label>Tipo de Serviço</Label>
                     <Select value={editingOS.serviceType} onValueChange={(val: any) => setEditingOS({...editingOS, serviceType: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
-                        <SelectValue />
+                        <SelectValue>
+                          {editingOS.serviceType || "Selecione o tipo"}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         <SelectItem value="Corretiva">Corretiva</SelectItem>
@@ -7816,11 +7880,11 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-[#2d3139]">
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label>Início</Label>
+                      <Label>Início Trabalho</Label>
                       <Input type="datetime-local" className="bg-[#0f1115] border-[#2d3139]" value={editingOS.startDateTime} onChange={e => setEditingOS({...editingOS, startDateTime: e.target.value})} />
                     </div>
                     <div className="space-y-2">
-                      <Label>Fim</Label>
+                      <Label>Fim Trabalho</Label>
                       <Input type="datetime-local" className="bg-[#0f1115] border-[#2d3139]" value={editingOS.endDateTime} onChange={e => setEditingOS({...editingOS, endDateTime: e.target.value})} />
                     </div>
                     <div className="space-y-2">

@@ -35,6 +35,23 @@ async function startServer() {
     }
   });
 
+  // API to delete user from Auth
+  app.post("/api/admin/delete-user", async (req, res) => {
+    const { uid } = req.body;
+    
+    if (!uid) {
+      return res.status(400).json({ error: "UID is required." });
+    }
+
+    try {
+      await admin.auth().deleteUser(uid);
+      res.json({ success: true, message: "Usuário excluído com sucesso do Auth." });
+    } catch (error: any) {
+      console.error("Error deleting user from auth:", error);
+      res.status(500).json({ error: error.message || "Erro ao excluir usuário do Auth." });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
