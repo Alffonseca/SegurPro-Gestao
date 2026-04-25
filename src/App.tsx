@@ -828,6 +828,21 @@ interface Receipt {
   createdAt: any;
 }
 
+interface Supplier {
+  id: string;
+  companyId: string;
+  registrationNumber?: number;
+  name: string;
+  activity?: string;
+  contact?: string;
+  phone?: string;
+  address?: string;
+  neighborhood?: string;
+  cityState?: string;
+  zipCode?: string;
+  createdAt: any;
+}
+
 const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSettings: PixSettings, shouldShare = false) => {
   const doc = new jsPDF();
   const dateStr = format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), 'dd/MM/yyyy');
@@ -1322,6 +1337,7 @@ export default function MainApp() {
   const [financials, setFinancials] = useState<FinancialRecord[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [allCompanies, setAllCompanies] = useState<any[]>([]);
@@ -1480,7 +1496,7 @@ export default function MainApp() {
     if (isSuperAdmin || role === 'admin') return true;
     
     if (role === 'secretaria') {
-      return ['dashboard', 'financial', 'budgets', 'clients', 'receipts', 'users', 'reports', 'settings'].includes(tabName);
+      return ['dashboard', 'financial', 'budgets', 'clients', 'suppliers', 'receipts', 'users', 'reports', 'settings'].includes(tabName);
     }
     
     if (role === 'tecnico') {
@@ -1496,7 +1512,7 @@ export default function MainApp() {
     if (currentUserData && !canAccess(activeTab)) {
       const allowedTabs = [
         'dashboard', 'visits', 'financial', 'budgets', 'service-orders',
-        'clients', 'receipts', 'users', 'settings', 'reports', 'super-admin'
+        'clients', 'suppliers', 'receipts', 'users', 'settings', 'reports', 'super-admin'
       ].filter(canAccess);
       
       if (allowedTabs.length > 0) {
@@ -1513,7 +1529,7 @@ export default function MainApp() {
 
       const tabs = [
         'dashboard', 'visits', 'financial', 'budgets', 'service-orders',
-        'clients', 'receipts', 'users', 'settings', 'reports', 'super-admin'
+        'clients', 'suppliers', 'receipts', 'users', 'settings', 'reports', 'super-admin'
       ].filter(canAccess);
 
       const currentIndex = tabs.indexOf(activeTab);
@@ -1617,6 +1633,7 @@ export default function MainApp() {
     let financialUnsubscribe = () => {};
     let budgetsUnsubscribe = () => {};
     let clientsUnsubscribe = () => {};
+    let suppliersUnsubscribe = () => {};
     let receiptsUnsubscribe = () => {};
     let usersUnsubscribe = () => {};
     let pixUnsubscribe = () => {};
@@ -1679,6 +1696,14 @@ export default function MainApp() {
         }
       );
 
+      suppliersUnsubscribe = onSnapshot(
+        query(collection(db, 'suppliers'), where('companyId', '==', companyId)),
+        (snapshot) => {
+          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Supplier));
+          setSuppliers(data.sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+        }
+      );
+
       receiptsUnsubscribe = onSnapshot(
         query(collection(db, 'receipts'), where('companyId', '==', companyId)),
         (snapshot) => {
@@ -1734,6 +1759,7 @@ export default function MainApp() {
       financialUnsubscribe();
       budgetsUnsubscribe();
       clientsUnsubscribe();
+      suppliersUnsubscribe();
       receiptsUnsubscribe();
       usersUnsubscribe();
       pixUnsubscribe();
@@ -2125,12 +2151,20 @@ export default function MainApp() {
                 onClick={() => setActiveTab('dashboard')} 
               />
             )}
-            {canAccess('visits') && (
+            {canAccess('clients') && (
               <SidebarItem 
-                icon={<CalendarIcon size={18} />} 
-                label="Visitas Técnicas" 
-                active={activeTab === 'visits'} 
-                onClick={() => setActiveTab('visits')} 
+                icon={<UserIcon size={18} />} 
+                label="Clientes" 
+                active={activeTab === 'clients'} 
+                onClick={() => setActiveTab('clients')} 
+              />
+            )}
+            {canAccess('suppliers') && (
+              <SidebarItem 
+                icon={<Database size={18} />} 
+                label="Fornecedores" 
+                active={activeTab === 'suppliers'} 
+                onClick={() => setActiveTab('suppliers')} 
               />
             )}
             {canAccess('financial') && (
@@ -2141,6 +2175,22 @@ export default function MainApp() {
                 onClick={() => setActiveTab('financial')} 
               />
             )}
+            {canAccess('receipts') && (
+              <SidebarItem 
+                icon={<ReceiptIcon size={18} />} 
+                label="Recibos" 
+                active={activeTab === 'receipts'} 
+                onClick={() => setActiveTab('receipts')} 
+              />
+            )}
+            {canAccess('reports') && (
+              <SidebarItem 
+                icon={<FileText size={18} />} 
+                label="Relatórios" 
+                active={activeTab === 'reports'} 
+                onClick={() => setActiveTab('reports')} 
+              />
+            )}
             {canAccess('budgets') && (
               <SidebarItem 
                 icon={<FileText size={18} />} 
@@ -2149,35 +2199,20 @@ export default function MainApp() {
                 onClick={() => setActiveTab('budgets')} 
               />
             )}
+            {canAccess('visits') && (
+              <SidebarItem 
+                icon={<CalendarIcon size={18} />} 
+                label="Visitas Técnicas" 
+                active={activeTab === 'visits'} 
+                onClick={() => setActiveTab('visits')} 
+              />
+            )}
             {canAccess('service-orders') && (
               <SidebarItem 
                 icon={<CheckCircle2 size={18} />} 
                 label="Ordens de Serviço" 
                 active={activeTab === 'service-orders'} 
                 onClick={() => setActiveTab('service-orders')} 
-              />
-            )}
-            
-            {(canAccess('clients') || canAccess('receipts') || canAccess('users')) && (
-              <div className="pt-6 pb-2 px-4">
-                <span className="text-[11px] uppercase tracking-widest text-[#555] font-semibold">Gestão</span>
-              </div>
-            )}
-            
-            {canAccess('clients') && (
-              <SidebarItem 
-                icon={<UserIcon size={18} />} 
-                label="Clientes" 
-                active={activeTab === 'clients'} 
-                onClick={() => setActiveTab('clients')} 
-              />
-            )}
-            {canAccess('receipts') && (
-              <SidebarItem 
-                icon={<ReceiptIcon size={18} />} 
-                label="Recibos" 
-                active={activeTab === 'receipts'} 
-                onClick={() => setActiveTab('receipts')} 
               />
             )}
             {canAccess('users') && (
@@ -2194,14 +2229,6 @@ export default function MainApp() {
                 label="Configurações" 
                 active={activeTab === 'settings'} 
                 onClick={() => setActiveTab('settings')} 
-              />
-            )}
-            {canAccess('reports') && (
-              <SidebarItem 
-                icon={<FileText size={18} />} 
-                label="Relatórios" 
-                active={activeTab === 'reports'} 
-                onClick={() => setActiveTab('reports')} 
               />
             )}
 
@@ -2270,12 +2297,20 @@ export default function MainApp() {
                 onClick={() => { setActiveTab('dashboard'); setIsMobileMenuOpen(false); }} 
               />
             )}
-            {canAccess('visits') && (
+            {canAccess('clients') && (
               <SidebarItem 
-                icon={<CalendarIcon size={20} />} 
-                label="Visitas Técnicas" 
-                active={activeTab === 'visits'} 
-                onClick={() => { setActiveTab('visits'); setIsMobileMenuOpen(false); }} 
+                icon={<UserIcon size={20} />} 
+                label="Clientes" 
+                active={activeTab === 'clients'} 
+                onClick={() => { setActiveTab('clients'); setIsMobileMenuOpen(false); }} 
+              />
+            )}
+            {canAccess('suppliers') && (
+              <SidebarItem 
+                icon={<Database size={20} />} 
+                label="Fornecedores" 
+                active={activeTab === 'suppliers'} 
+                onClick={() => { setActiveTab('suppliers'); setIsMobileMenuOpen(false); }} 
               />
             )}
             {canAccess('financial') && (
@@ -2286,20 +2321,12 @@ export default function MainApp() {
                 onClick={() => { setActiveTab('financial'); setIsMobileMenuOpen(false); }} 
               />
             )}
-            {canAccess('budgets') && (
+            {canAccess('receipts') && (
               <SidebarItem 
-                icon={<FileText size={20} />} 
-                label="Orçamentos" 
-                active={activeTab === 'budgets'} 
-                onClick={() => { setActiveTab('budgets'); setIsMobileMenuOpen(false); }} 
-              />
-            )}
-            {canAccess('service-orders') && (
-              <SidebarItem 
-                icon={<CheckCircle2 size={20} />} 
-                label="Ordens de Serviço" 
-                active={activeTab === 'service-orders'} 
-                onClick={() => { setActiveTab('service-orders'); setIsMobileMenuOpen(false); }} 
+                icon={<ReceiptIcon size={20} />} 
+                label="Recibos" 
+                active={activeTab === 'receipts'} 
+                onClick={() => { setActiveTab('receipts'); setIsMobileMenuOpen(false); }} 
               />
             )}
             {canAccess('reports') && (
@@ -2310,20 +2337,28 @@ export default function MainApp() {
                 onClick={() => { setActiveTab('reports'); setIsMobileMenuOpen(false); }} 
               />
             )}
-            {canAccess('clients') && (
+            {canAccess('budgets') && (
               <SidebarItem 
-                icon={<UserIcon size={20} />} 
-                label="Clientes" 
-                active={activeTab === 'clients'} 
-                onClick={() => { setActiveTab('clients'); setIsMobileMenuOpen(false); }} 
+                icon={<FileText size={20} />} 
+                label="Orçamentos" 
+                active={activeTab === 'budgets'} 
+                onClick={() => { setActiveTab('budgets'); setIsMobileMenuOpen(false); }} 
               />
             )}
-            {canAccess('receipts') && (
+            {canAccess('visits') && (
               <SidebarItem 
-                icon={<ReceiptIcon size={20} />} 
-                label="Recibos" 
-                active={activeTab === 'receipts'} 
-                onClick={() => { setActiveTab('receipts'); setIsMobileMenuOpen(false); }} 
+                icon={<CalendarIcon size={20} />} 
+                label="Visitas Técnicas" 
+                active={activeTab === 'visits'} 
+                onClick={() => { setActiveTab('visits'); setIsMobileMenuOpen(false); }} 
+              />
+            )}
+            {canAccess('service-orders') && (
+              <SidebarItem 
+                icon={<CheckCircle2 size={20} />} 
+                label="Ordens de Serviço" 
+                active={activeTab === 'service-orders'} 
+                onClick={() => { setActiveTab('service-orders'); setIsMobileMenuOpen(false); }} 
               />
             )}
             {canAccess('users') && (
@@ -2429,6 +2464,7 @@ export default function MainApp() {
             />
           )}
           {activeTab === 'clients' && <ClientsManager clients={clients} appSettings={appSettings} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} />}
+          {activeTab === 'suppliers' && <SuppliersManager suppliers={suppliers} companyId={currentUserData?.companyId || ''} />}
           {activeTab === 'receipts' && <ReceiptsManager receipts={receipts} clients={clients} pixSettings={pixSettings} appSettings={appSettings} companyId={currentUserData?.companyId || ''} currentUserData={currentUserData} />}
           {activeTab === 'reports' && (
             <ReportsManager 
@@ -2437,6 +2473,8 @@ export default function MainApp() {
               budgets={budgets} 
               clients={clients} 
               receipts={receipts} 
+              serviceOrders={serviceOrders}
+              suppliers={suppliers}
               appSettings={appSettings} 
               companyId={currentUserData?.companyId || ''}
             />
@@ -3547,6 +3585,301 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId }: {
                   setClientToDelete(null);
                 } catch (error) {
                   handleFirestoreError(error, OperationType.DELETE, `clients/${clientToDelete.id}`);
+                }
+              }
+            }} className="bg-[#ef4444] hover:bg-[#dc2626] text-white">Excluir</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// --- Suppliers Manager Component ---
+
+function SuppliersManager({ suppliers = [], companyId }: { suppliers: Supplier[], companyId: string }) {
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [newSupplier, setNewSupplier] = useState<Partial<Supplier>>({});
+  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [supplierToDelete, setSupplierToDelete] = useState<Supplier | null>(null);
+
+  const filteredSuppliers = useMemo(() => {
+    return (suppliers || []).filter(s => 
+      (s.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (s.activity || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (s.contact || '').toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [suppliers, searchTerm]);
+
+  const handleAddSupplier = async () => {
+    try {
+      const supplierData = {
+        registrationNumber: Number(newSupplier.registrationNumber || 0),
+        name: newSupplier.name || '',
+        activity: newSupplier.activity || '',
+        contact: newSupplier.contact || '',
+        phone: newSupplier.phone || '',
+        address: newSupplier.address || '',
+        neighborhood: newSupplier.neighborhood || '',
+        cityState: newSupplier.cityState || '',
+        zipCode: newSupplier.zipCode || '',
+        companyId,
+        createdAt: Timestamp.now()
+      };
+      await addDoc(collection(db, 'suppliers'), supplierData);
+      setNewSupplier({});
+      setIsAddOpen(false);
+      toast.success('Fornecedor cadastrado com sucesso!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'suppliers');
+    }
+  };
+
+  const handleUpdateSupplier = async () => {
+    if (!editingSupplier) return;
+    try {
+      const { id, ...data } = editingSupplier;
+      const updatedData = {
+        ...data,
+        registrationNumber: Number(data.registrationNumber || 0),
+        name: data.name || '',
+        activity: data.activity || '',
+        contact: data.contact || '',
+        phone: data.phone || '',
+        address: data.address || '',
+        neighborhood: data.neighborhood || '',
+        cityState: data.cityState || '',
+        zipCode: data.zipCode || ''
+      };
+      await updateDoc(doc(db, 'suppliers', id), updatedData);
+      setEditingSupplier(null);
+      setIsEditOpen(false);
+      toast.success('Fornecedor atualizado com sucesso!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `suppliers/${editingSupplier.id}`);
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-white">Gestão de Fornecedores</h2>
+          <p className="text-[#71717a]">Cadastro e manutenção de fornecedores e parceiros.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#71717a]" size={16} />
+            <Input 
+              className="pl-9 w-64 bg-[#0f1115] border-[#2d3139] text-white focus:ring-[#3b82f6] transition-all" 
+              placeholder="Pesquisar fornecedores..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+            <DialogTrigger asChild>
+              <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+                <Plus size={18} />
+                Novo Fornecedor
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[600px]">
+              <DialogHeader className="p-6 pb-2">
+                <DialogTitle>Cadastrar Novo Fornecedor</DialogTitle>
+              </DialogHeader>
+              <div className="flex-1 overflow-y-auto px-6 py-2">
+                <div className="grid gap-4 py-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-[#a0a0a0]">N.º Cadastro</Label>
+                      <Input type="number" value={newSupplier.registrationNumber || ''} onChange={e => setNewSupplier({...newSupplier, registrationNumber: Number(e.target.value)})} placeholder="000" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[#a0a0a0]">Fornecedor</Label>
+                      <Input value={newSupplier.name || ''} onChange={e => setNewSupplier({...newSupplier, name: e.target.value})} placeholder="Nome da empresa" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-[#a0a0a0]">Atividade/Ramo</Label>
+                      <Input value={newSupplier.activity || ''} onChange={e => setNewSupplier({...newSupplier, activity: e.target.value})} placeholder="Ex: Equipamentos de Segurança" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[#a0a0a0]">Contato</Label>
+                      <Input value={newSupplier.contact || ''} onChange={e => setNewSupplier({...newSupplier, contact: e.target.value})} placeholder="Nome do representante" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-[#a0a0a0]">Telefone/whatsapp</Label>
+                      <Input value={newSupplier.phone || ''} onChange={e => setNewSupplier({...newSupplier, phone: e.target.value})} placeholder="(00) 00000-0000" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[#a0a0a0]">Cep</Label>
+                      <Input value={newSupplier.zipCode || ''} onChange={e => setNewSupplier({...newSupplier, zipCode: e.target.value})} placeholder="00000-000" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Endereço</Label>
+                    <Input value={newSupplier.address || ''} onChange={e => setNewSupplier({...newSupplier, address: e.target.value})} placeholder="Rua, Número" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-[#a0a0a0]">Bairro</Label>
+                      <Input value={newSupplier.neighborhood || ''} onChange={e => setNewSupplier({...newSupplier, neighborhood: e.target.value})} placeholder="Bairro" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[#a0a0a0]">Cidade/UF</Label>
+                      <Input value={newSupplier.cityState || ''} onChange={e => setNewSupplier({...newSupplier, cityState: e.target.value})} placeholder="Cidade/UF" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <DialogFooter className="p-6 border-t border-[#2d3139]">
+                <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]">Cancelar</Button>
+                <Button onClick={handleAddSupplier} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Cadastrar</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+
+      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden shadow-2xl">
+        <Table>
+          <TableHeader>
+            <TableRow className="border-[#2d3139] hover:bg-transparent">
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">N.º Cadastro</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Fornecedor</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ramo</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Contato</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Telefone</TableHead>
+              <TableHead className="text-right text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ações</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredSuppliers.map((supplier) => (
+              <TableRow key={supplier.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
+                <TableCell className="text-[12px] text-[#e0e0e0] font-mono">{supplier.registrationNumber || '-'}</TableCell>
+                <TableCell className="font-medium text-white text-[13px]">{supplier.name}</TableCell>
+                <TableCell className="text-[12px] text-[#71717a]">{supplier.activity || '-'}</TableCell>
+                <TableCell className="text-[12px] text-[#e0e0e0]">{supplier.contact || '-'}</TableCell>
+                <TableCell className="text-[12px] text-[#e0e0e0]">{supplier.phone || '-'}</TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-[#f59e0b] hover:bg-[#f59e0b]/10" onClick={() => {
+                      setEditingSupplier(supplier);
+                      setIsEditOpen(true);
+                    }}>
+                      <Pencil size={14} />
+                    </Button>
+                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
+                      setSupplierToDelete(supplier);
+                      setIsDeleteConfirmOpen(true);
+                    }}>
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+            {filteredSuppliers.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-12 text-[#71717a] text-sm italic">
+                  Nenhum fornecedor encontrado.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </Card>
+
+      {/* Edit Dialog */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[600px]">
+          <DialogHeader className="p-6 pb-2">
+            <DialogTitle>Editar Fornecedor</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto px-6 py-2">
+            {editingSupplier && (
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">N.º Cadastro</Label>
+                    <Input type="number" value={editingSupplier.registrationNumber || ''} onChange={e => setEditingSupplier({...editingSupplier, registrationNumber: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Fornecedor</Label>
+                    <Input value={editingSupplier.name || ''} onChange={e => setEditingSupplier({...editingSupplier, name: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Atividade/Ramo</Label>
+                    <Input value={editingSupplier.activity || ''} onChange={e => setEditingSupplier({...editingSupplier, activity: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Contato</Label>
+                    <Input value={editingSupplier.contact || ''} onChange={e => setEditingSupplier({...editingSupplier, contact: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Telefone/whatsapp</Label>
+                    <Input value={editingSupplier.phone || ''} onChange={e => setEditingSupplier({...editingSupplier, phone: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Cep</Label>
+                    <Input value={editingSupplier.zipCode || ''} onChange={e => setEditingSupplier({...editingSupplier, zipCode: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Endereço</Label>
+                  <Input value={editingSupplier.address || ''} onChange={e => setEditingSupplier({...editingSupplier, address: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Bairro</Label>
+                    <Input value={editingSupplier.neighborhood || ''} onChange={e => setEditingSupplier({...editingSupplier, neighborhood: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Cidade/UF</Label>
+                    <Input value={editingSupplier.cityState || ''} onChange={e => setEditingSupplier({...editingSupplier, cityState: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="p-6 border-t border-[#2d3139]">
+            <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]">Cancelar</Button>
+            <Button onClick={handleUpdateSupplier} className="bg-[#f59e0b] hover:bg-[#d97706] text-white">Salvar Alterações</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirm */}
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Confirmar Exclusão</DialogTitle>
+            <DialogDescription className="text-[#71717a]">
+              Deseja realmente excluir este fornecedor? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]">Cancelar</Button>
+            <Button variant="destructive" onClick={async () => {
+              if (supplierToDelete) {
+                try {
+                  await deleteDoc(doc(db, 'suppliers', supplierToDelete.id));
+                  toast.success('Fornecedor removido.');
+                  setIsDeleteConfirmOpen(false);
+                  setSupplierToDelete(null);
+                } catch (error) {
+                  handleFirestoreError(error, OperationType.DELETE, `suppliers/${supplierToDelete.id}`);
                 }
               }
             }} className="bg-[#ef4444] hover:bg-[#dc2626] text-white">Excluir</Button>
@@ -5585,6 +5918,8 @@ function ReportsManager({
   budgets = [], 
   clients = [], 
   receipts = [], 
+  serviceOrders = [],
+  suppliers = [],
   appSettings, 
   companyId 
 }: { 
@@ -5593,6 +5928,8 @@ function ReportsManager({
   budgets: Budget[], 
   clients: Client[], 
   receipts: Receipt[], 
+  serviceOrders: ServiceOrder[],
+  suppliers: Supplier[],
   appSettings: AppSettings, 
   companyId: string 
 }) {
@@ -5682,6 +6019,28 @@ function ReportsManager({
         c.type,
         c.phone,
         c.address
+      ]);
+    } else if (category === 'Ordem de Serviço') {
+      filteredData = serviceOrders.filter(os => isMatch(os.date));
+      tableHeaders = ['Número', 'Cliente', 'Equipamento', 'Técnico', 'Status', 'Valor'];
+      tableRows = filteredData.map(os => [
+        formatRecordNumber(os.number, os.date),
+        os.clientName,
+        os.equipment,
+        os.technicianName,
+        os.status,
+        `R$ ${(os.totalValue || 0).toFixed(2)}`
+      ]);
+    } else if (category === 'Fornecedores') {
+      filteredData = suppliers; // Suppliers report might not need date filtering if they don't have a transaction date, but I'll leave it simple
+      tableHeaders = ['Nº Cad.', 'Fornecedor', 'Atividade', 'Contato', 'Telefone', 'Cidade/UF'];
+      tableRows = filteredData.map(s => [
+        s.registrationNumber || '-',
+        s.name,
+        s.activity || '-',
+        s.contact || '-',
+        s.phone || '-',
+        s.cityState || '-'
       ]);
     }
 
@@ -5785,6 +6144,8 @@ function ReportsManager({
               { label: 'Livro Financeiro', icon: <DollarSign size={24} />, cat: 'Financeiro', color: '#10b981' },
               { label: 'Recibos Emitidos', icon: <ReceiptIcon size={24} />, cat: 'Recibos', color: '#f59e0b' },
               { label: 'Orçamentos', icon: <FileText size={24} />, cat: 'Orçamentos', color: '#8b5cf6' },
+              { label: 'Ordens de Serviço', icon: <Settings size={24} />, cat: 'Ordem de Serviço', color: '#6366f1' },
+              { label: 'Fornecedores', icon: <Database size={24} />, cat: 'Fornecedores', color: '#8b5cf6' },
               { label: 'Base de Clientes', icon: <UserIcon size={24} />, cat: 'Clientes', color: '#ec4899' },
             ].map(item => (
               <button 
