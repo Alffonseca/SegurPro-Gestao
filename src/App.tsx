@@ -3721,12 +3721,12 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
           <p className="text-[#71717a]">Gere e consulte recibos de pagamentos.</p>
         </div>
         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger render={
+          <DialogTrigger asChild>
             <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
               <Plus size={18} />
               Novo Recibo
             </Button>
-          } />
+          </DialogTrigger>
           <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[600px]">
             <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Gerar Novo Recibo</DialogTitle>
@@ -4064,7 +4064,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
 
       {currentUserData?.role === 'tecnico' ? (
         <div className="bg-[#1a1d23] border border-dashed border-[#2d3139] rounded-xl p-12 text-center">
-          <Receipt className="mx-auto h-12 w-12 text-[#3b82f6] mb-4 opacity-50" />
+          <ReceiptIcon className="mx-auto h-12 w-12 text-[#3b82f6] mb-4 opacity-50" />
           <h3 className="text-lg font-medium text-white mb-2">Emissão de Recibos</h3>
           <p className="text-[#71717a] max-w-sm mx-auto">
             Sua conta tem permissão apenas para emitir novos recibos. A listagem de registros anteriores é restrita aos administradores.
