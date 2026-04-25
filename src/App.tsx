@@ -524,7 +524,7 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, inc
   doc.setFont('helvetica', 'normal');
   doc.text(`Técnico: ${os.technicianName}`, pageWidth - margin, currentY + 18, { align: 'right' });
 
-  currentY += Math.max(25, 7 + (companyNameLines.length * 5) + (addressLines.length * 4) + 10);
+  currentY += Math.max(20, 7 + (companyNameLines.length * 5) + (addressLines.length * 4) + 5);
   drawLine();
 
   // 1 & 2. DADOS DO CLIENTE E EQUIPAMENTO (LADO A LADO)
@@ -538,7 +538,7 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, inc
   doc.setFontSize(10);
   doc.setTextColor(50, 50, 50);
   doc.text('1. DADOS DO CLIENTE', margin + 2, currentY + 5);
-  currentY += 10;
+  currentY += 8;
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
@@ -551,7 +551,7 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, inc
   
   const clientLines = doc.splitTextToSize(clientInfoText, colWidth);
   doc.text(clientLines, margin, currentY);
-  const clientHeight = (clientLines.length * 5) + 5;
+  const clientHeight = (clientLines.length * 5) + 3;
   
   // 2. Informações do Equipamento
   currentY = startY;
@@ -560,7 +560,7 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, inc
   doc.rect(col2X, currentY, colWidth, 7, 'F');
   doc.setFont('helvetica', 'bold');
   doc.text('2. EQUIPAMENTO / SERVIÇO', col2X + 2, currentY + 5);
-  currentY += 10;
+  currentY += 8;
 
   doc.setFont('helvetica', 'normal');
   const equipInfoText = `Equipamento: ${os.equipment}\n` +
@@ -569,48 +569,48 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, inc
   
   const equipLines = doc.splitTextToSize(equipInfoText, colWidth);
   doc.text(equipLines, col2X, currentY);
-  const equipHeight = (equipLines.length * 5) + 5;
+  const equipHeight = (equipLines.length * 5) + 3;
 
-  currentY = startY + Math.max(clientHeight, equipHeight) + 12;
+  currentY = startY + Math.max(clientHeight, equipHeight) + 8;
 
   // 3. PROBLEMA RELATADO
   doc.setDrawColor(200, 200, 200);
-  doc.line(margin, currentY - 5, pageWidth - margin, currentY - 5);
+  doc.line(margin, currentY - 4, pageWidth - margin, currentY - 4);
   
   doc.setFont('helvetica', 'bold');
   doc.text('Problema Relatado:', margin, currentY);
-  currentY += 5;
+  currentY += 4;
   doc.setFont('helvetica', 'normal');
   const probLines = doc.splitTextToSize(os.reportedProblem, contentWidth);
   doc.text(probLines, margin, currentY);
-  currentY += (probLines.length * 5) + 5;
+  currentY += (probLines.length * 5) + 3;
 
   // 4. DETALHES TÉCNICOS
-  checkPageBreak(30);
+  checkPageBreak(20);
   drawSectionTitle('3. Detalhes Técnicos (O que foi feito)');
   doc.setFont('helvetica', 'bold');
   doc.text('Diagnóstico:', margin, currentY);
-  currentY += 5;
+  currentY += 4;
   doc.setFont('helvetica', 'normal');
   const diagLines = doc.splitTextToSize(os.diagnosis, contentWidth);
   doc.text(diagLines, margin, currentY);
-  currentY += (diagLines.length * 5) + 3;
+  currentY += (diagLines.length * 5) + 2;
 
-  checkPageBreak(25);
+  checkPageBreak(15);
   doc.setFont('helvetica', 'bold');
   doc.text('Serviços Realizados:', margin, currentY);
-  currentY += 5;
+  currentY += 4;
   doc.setFont('helvetica', 'normal');
   const servLines = doc.splitTextToSize(os.performedServices, contentWidth);
   doc.text(servLines, margin, currentY);
-  currentY += (servLines.length * 5) + 3;
+  currentY += (servLines.length * 5) + 2;
 
   // Parts Table if exists
   if (os.parts && os.parts.length > 0) {
-    checkPageBreak(25);
+    checkPageBreak(20);
     doc.setFont('helvetica', 'bold');
     doc.text('Peças/Materiais Substituídos:', margin, currentY);
-    currentY += 2;
+    currentY += 1;
     autoTable(doc, {
       startY: currentY,
       margin: { left: margin },
@@ -625,7 +625,7 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, inc
         3: { halign: 'right' }
       }
     });
-    currentY = (doc as any).lastAutoTable.finalY + 6;
+    currentY = (doc as any).lastAutoTable.finalY + 4;
   }
 
   // 4. TEMPOS E VALORES (Condicional)
@@ -650,7 +650,7 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, inc
   }
 
   // Checklist
-  checkPageBreak(20);
+  checkPageBreak(15);
   doc.setFont('helvetica', 'bold');
   doc.text('Checklist de Conformidade:', margin, currentY);
   currentY += 4;
@@ -660,27 +660,28 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, inc
     currentY += 4;
     doc.text(`Observações: ${os.checklist.additional}`, margin, currentY);
   }
-  currentY += 6;
+  currentY += 5;
 
   // 5. ASSINATURAS
-  checkPageBreak(40);
+  checkPageBreak(30);
+  currentY += 5;
   
   doc.setLineWidth(0.3);
-  doc.line(margin + 10, currentY + 15, margin + 80, currentY + 15);
-  doc.line(pageWidth - margin - 80, currentY + 15, pageWidth - margin - 10, currentY + 15);
+  doc.line(margin + 10, currentY + 12, margin + 80, currentY + 12);
+  doc.line(pageWidth - margin - 80, currentY + 12, pageWidth - margin - 10, currentY + 12);
   
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
-  doc.text('Assinatura do Técnico', margin + 45, currentY + 20, { align: 'center' });
-  doc.text('Assinatura do Cliente (Ciente)', pageWidth - margin - 45, currentY + 20, { align: 'center' });
+  doc.text('Assinatura do Técnico', margin + 45, currentY + 17, { align: 'center' });
+  doc.text('Assinatura do Cliente (Ciente)', pageWidth - margin - 45, currentY + 17, { align: 'center' });
   
   if (os.technicianSignature) {
-    try { doc.addImage(os.technicianSignature, 'PNG', margin + 25, currentY - 5, 40, 18); } catch(e) {}
+    try { doc.addImage(os.technicianSignature, 'PNG', margin + 25, currentY - 6, 40, 16); } catch(e) {}
   } else if (appSettings.signatureUrl) {
-    try { doc.addImage(appSettings.signatureUrl, 'PNG', margin + 25, currentY - 5, 40, 18); } catch(e) {}
+    try { doc.addImage(appSettings.signatureUrl, 'PNG', margin + 25, currentY - 6, 40, 16); } catch(e) {}
   }
   if (os.clientSignature) {
-    try { doc.addImage(os.clientSignature, 'PNG', pageWidth - margin - 65, currentY - 5, 40, 18); } catch(e) {}
+    try { doc.addImage(os.clientSignature, 'PNG', pageWidth - margin - 65, currentY - 6, 40, 16); } catch(e) {}
   }
 
   doc.save(`OS_${formatRecordNumber(os.number, os.date).replace('/', '-')}.pdf`);
@@ -1400,6 +1401,17 @@ export default function MainApp() {
       if (snap.exists()) {
         const data = snap.data();
         setCurrentUserData(data);
+        
+        // Sincroniza o nome de exibição do Auth com o Firestore se houver divergência
+        // Isso resolve casos onde o usuário alterou o nome no perfil mas o Firestore ficou desatualizado
+        if (user.displayName && data.displayName !== user.displayName) {
+          try {
+            await updateDoc(userRef, { displayName: user.displayName });
+          } catch (err) {
+            console.error("Erro ao sincronizar nome com Firestore:", err);
+          }
+        }
+        
         if (!data.companyId) {
           setLoading(false);
         }
@@ -1453,6 +1465,12 @@ export default function MainApp() {
     return () => unsubscribeCompany();
   }, [currentUserData?.companyId]);
 
+  // Redirect technicians if they land on dashboard
+  useEffect(() => {
+    if (currentUserData?.role === 'tecnico' && activeTab === 'dashboard') {
+      setActiveTab('visits');
+    }
+  }, [currentUserData, activeTab]);
 
   const isSuperAdmin = user?.email?.toLowerCase().trim() === 'emailparasiteslixo@gmail.com' || currentUserData?.role === 'super_admin';
 
@@ -2411,7 +2429,7 @@ export default function MainApp() {
             />
           )}
           {activeTab === 'clients' && <ClientsManager clients={clients} appSettings={appSettings} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} />}
-          {activeTab === 'receipts' && <ReceiptsManager receipts={receipts} clients={clients} pixSettings={pixSettings} appSettings={appSettings} companyId={currentUserData?.companyId || ''} />}
+          {activeTab === 'receipts' && <ReceiptsManager receipts={receipts} clients={clients} pixSettings={pixSettings} appSettings={appSettings} companyId={currentUserData?.companyId || ''} currentUserData={currentUserData} />}
           {activeTab === 'reports' && (
             <ReportsManager 
               visits={visits} 
@@ -3541,7 +3559,7 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId }: {
 
 // --- Receipts Manager Component ---
 
-function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings, companyId }: { receipts: Receipt[], clients: Client[], pixSettings: PixSettings, appSettings: AppSettings, companyId: string }) {
+function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings, companyId, currentUserData }: { receipts: Receipt[], clients: Client[], pixSettings: PixSettings, appSettings: AppSettings, companyId: string, currentUserData: any }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -4044,83 +4062,93 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
         </Dialog>
       </div>
 
-      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
-        <Table>
-          <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
-            <TableRow className="border-[#2d3139] hover:bg-transparent">
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[140px]">Ações</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[80px]">Nº</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Status</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Cliente</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Serviço</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Valor</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {receipts.map((receipt) => (
-              <TableRow key={receipt.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
-                <TableCell>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="icon" title="Baixar PDF" className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => generateReceiptPDF(receipt, appSettings, pixSettings)}>
-                      <Download size={14} />
-                    </Button>
-                    <Button variant="outline" size="icon" title="Compartilhar" className="h-8 w-8 border-[#2d3139] text-[#10b981] hover:bg-[#10b981]/10" onClick={() => generateReceiptPDF(receipt, appSettings, pixSettings, true)}>
-                      <Share2 size={14} />
-                    </Button>
-                    <Button variant="outline" size="icon" title="Editar" className="h-8 w-8 border-[#2d3139] text-[#f59e0b] hover:bg-[#f59e0b]/10" onClick={() => {
-                      setEditingReceipt(receipt);
-                      setIsEditOpen(true);
-                    }}>
-                      <Pencil size={14} />
-                    </Button>
-                    <Button variant="outline" size="icon" title="Excluir" className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
-                      setReceiptToDelete(receipt);
-                      setIsDeleteConfirmOpen(true);
-                    }}>
-                      <Trash2 size={14} />
-                    </Button>
-                  </div>
-                </TableCell>
-                <TableCell className="text-[12px] text-[#e0e0e0] font-mono">
-                  {receipt.number ? `Recibo Nº ${formatRecordNumber(receipt.number, receipt.date)}` : '-'}
-                </TableCell>
-                <TableCell>
-                  <Select 
-                    value={receipt.status || 'Aguardando Pagamento'} 
-                    onValueChange={(val: any) => updateReceiptStatus(receipt.id, val, receipt)}
-                  >
-                    <SelectTrigger className="h-8 w-[170px] text-[11px] bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      <SelectItem value="Aguardando Pagamento">Aguardando Pagamento</SelectItem>
-                      <SelectItem value="Recebido">Recebido</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </TableCell>
-                <TableCell className="text-[12px] text-[#e0e0e0]">
-                  {format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), 'dd/MM/yyyy')}
-                </TableCell>
-                <TableCell className="font-medium text-white text-[13px]">{receipt.clientName}</TableCell>
-                <TableCell className="text-[12px] text-[#71717a] max-w-[200px] truncate">
-                  {receipt.serviceSpecification || 'N/A'}
-                </TableCell>
-                <TableCell className="text-[12px] text-[#10b981] font-medium">
-                  R$ {Number(receipt.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </TableCell>
+      {currentUserData?.role === 'tecnico' ? (
+        <div className="bg-[#1a1d23] border border-dashed border-[#2d3139] rounded-xl p-12 text-center">
+          <Receipt className="mx-auto h-12 w-12 text-[#3b82f6] mb-4 opacity-50" />
+          <h3 className="text-lg font-medium text-white mb-2">Emissão de Recibos</h3>
+          <p className="text-[#71717a] max-w-sm mx-auto">
+            Sua conta tem permissão apenas para emitir novos recibos. A listagem de registros anteriores é restrita aos administradores.
+          </p>
+        </div>
+      ) : (
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
+          <Table>
+            <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
+              <TableRow className="border-[#2d3139] hover:bg-transparent">
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[140px]">Ações</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[80px]">Nº</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Status</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Cliente</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Serviço</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Valor</TableHead>
               </TableRow>
-            ))}
-            {receipts.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center py-12 text-[#71717a] text-sm">
-                  Nenhum recibo gerado.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </Card>
+            </TableHeader>
+            <TableBody>
+              {receipts.map((receipt) => (
+                <TableRow key={receipt.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
+                  <TableCell>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="icon" title="Baixar PDF" className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => generateReceiptPDF(receipt, appSettings, pixSettings)}>
+                        <Download size={14} />
+                      </Button>
+                      <Button variant="outline" size="icon" title="Compartilhar" className="h-8 w-8 border-[#2d3139] text-[#10b981] hover:bg-[#10b981]/10" onClick={() => generateReceiptPDF(receipt, appSettings, pixSettings, true)}>
+                        <Share2 size={14} />
+                      </Button>
+                      <Button variant="outline" size="icon" title="Editar" className="h-8 w-8 border-[#2d3139] text-[#f59e0b] hover:bg-[#f59e0b]/10" onClick={() => {
+                        setEditingReceipt(receipt);
+                        setIsEditOpen(true);
+                      }}>
+                        <Pencil size={14} />
+                      </Button>
+                      <Button variant="outline" size="icon" title="Excluir" className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
+                        setReceiptToDelete(receipt);
+                        setIsDeleteConfirmOpen(true);
+                      }}>
+                        <Trash2 size={14} />
+                      </Button>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-[12px] text-[#e0e0e0] font-mono">
+                    {receipt.number ? `Recibo Nº ${formatRecordNumber(receipt.number, receipt.date)}` : '-'}
+                  </TableCell>
+                  <TableCell>
+                    <Select 
+                      value={receipt.status || 'Aguardando Pagamento'} 
+                      onValueChange={(val: any) => updateReceiptStatus(receipt.id, val, receipt)}
+                    >
+                      <SelectTrigger className="h-8 w-[170px] text-[11px] bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="Aguardando Pagamento">Aguardando Pagamento</SelectItem>
+                        <SelectItem value="Recebido">Recebido</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
+                  <TableCell className="text-[12px] text-[#e0e0e0]">
+                    {format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), 'dd/MM/yyyy')}
+                  </TableCell>
+                  <TableCell className="font-medium text-white text-[13px]">{receipt.clientName}</TableCell>
+                  <TableCell className="text-[12px] text-[#71717a] max-w-[200px] truncate">
+                    {receipt.serviceSpecification || 'N/A'}
+                  </TableCell>
+                  <TableCell className="text-[12px] text-[#10b981] font-medium">
+                    R$ {Number(receipt.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </TableCell>
+                </TableRow>
+              ))}
+              {receipts.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-12 text-[#71717a] text-sm">
+                    Nenhum recibo gerado.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
 
       <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
         <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[400px]">
@@ -5107,8 +5135,19 @@ function SettingsManager({ pixSettings, appSettings, user, companyId }: { pixSet
   const handleUpdateProfile = async () => {
     setIsUpdatingProfile(true);
     try {
-      if (newDisplayName !== user.displayName) {
-        await updateProfile(user, { displayName: newDisplayName });
+      if (newDisplayName !== (user?.displayName || '')) {
+        // Update Auth profile
+        if (user) {
+          await updateProfile(user, { displayName: newDisplayName });
+        }
+        
+        // Update Firestore profile to ensure all lists are correctly updated
+        if (user?.uid) {
+          await updateDoc(doc(db, 'users', user.uid), {
+            displayName: newDisplayName
+          });
+        }
+        
         toast.success('Nome atualizado com sucesso!');
       }
       
