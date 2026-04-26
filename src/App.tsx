@@ -2245,7 +2245,7 @@ export default function MainApp() {
                 <Shield size={36} className="fill-white/20" />
               </div>
             )}
-            <span className="font-bold tracking-[0.2em] text-[#71717a] text-base uppercase">MENU</span>
+            <span className="font-bold tracking-[0.2em] text-white text-base uppercase">M E N U</span>
           </div>
         </div>
         <ScrollArea className="flex-1 px-4 py-4 overflow-y-auto">
