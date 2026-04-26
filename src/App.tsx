@@ -723,9 +723,9 @@ const generateOSLabelsPDF = (selectedOSs: ServiceOrder[], appSettings: AppSettin
     const startX = marginX + (col * (labelWidth + spacingX));
     const startY = marginY + (row * (labelHeight + spacingY));
 
-    // Desenha borda leve para corte
-    doc.setDrawColor(220, 220, 220);
-    doc.setLineWidth(0.1);
+    // Desenha borda para corte (em negrito/mais grosso)
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.8);
     doc.rect(startX, startY, labelWidth, labelHeight);
 
     const internalMargin = 4;
@@ -748,13 +748,13 @@ const generateOSLabelsPDF = (selectedOSs: ServiceOrder[], appSettings: AppSettin
     doc.text(`O.S. Nº ${formatRecordNumber(os.number, os.date)}`, appSettings.logoUrl ? startX + internalMargin + 14 : startX + internalMargin, currentY + 5);
     
     currentY += 10;
-    doc.setLineWidth(0.1);
-    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.3);
+    doc.setDrawColor(0, 0, 0);
     doc.line(startX + internalMargin, currentY, startX + labelWidth - internalMargin, currentY);
     currentY += 5;
 
     // Campos da Etiqueta
-    const rowHeightText = 4;
+    const rowHeightText = 3.5;
     const labelXPosition = startX + internalMargin;
     const valueXPosition = startX + internalMargin + 18;
     const fieldWidthVal = contentWidth - 18;
@@ -771,14 +771,29 @@ const generateOSLabelsPDF = (selectedOSs: ServiceOrder[], appSettings: AppSettin
       currentY += (splitVal.length * rowHeightText);
     };
 
+    const formatDateSafe = (dateVal: any) => {
+      if (!dateVal) return 'N/A';
+      
+      let d: Date;
+      if (typeof dateVal.toDate === 'function') {
+        d = dateVal.toDate();
+      } else if (typeof dateVal === 'object' && dateVal.seconds !== undefined) {
+        d = new Date(dateVal.seconds * 1000);
+      } else {
+        d = new Date(dateVal);
+      }
+
+      return isNaN(d.getTime()) ? 'N/A' : format(d, 'dd/MM HH:mm');
+    };
+
     drawField('Cliente:', os.clientName);
-    drawField('Eqp:', os.equipment);
-    drawField('Modelo/SN:', os.brandModelSN);
+    drawField('Início:', formatDateSafe(os.startDateTime));
+    drawField('Fim:', formatDateSafe(os.endDateTime));
+    drawField('Eqp/Mod:', `${os.equipment} ${os.brandModelSN}`);
     drawField('Técnico:', os.technicianName || 'N/A');
     drawField('Status:', os.status);
 
-    // Anotações (Deixando campo em branco conforme solicitado pelo usuário anteriormente, 
-    // mas agora preenchendo com o novo campo notes se existir)
+    // Anotações
     doc.setFont('helvetica', 'bold');
     doc.text('Anotações:', startX + internalMargin, currentY);
     currentY += 3;
