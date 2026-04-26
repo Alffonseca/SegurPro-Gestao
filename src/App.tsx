@@ -181,11 +181,13 @@ function valorPorExtenso(valor: number = 0) {
 
 // --- Types ---
 
-const formatRecordNumber = (number?: number, date?: any) => {
+const formatRecordNumber = (number?: number | string, date?: any) => {
   if (!number) return '---';
+  const numStr = number.toString();
+  if (numStr.includes('/')) return numStr; // Already formatted (e.g. old receipts)
   const d = date instanceof Timestamp ? date.toDate() : (date ? new Date(date) : new Date());
   const year = format(d, 'yy');
-  return `${number.toString().padStart(5, '0')}/${year}`;
+  return `${numStr.padStart(5, '0')}/${year}`;
 };
 const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettings: PixSettings) => {
   const doc = new jsPDF({
@@ -831,7 +833,7 @@ interface Receipt {
 interface Supplier {
   id: string;
   companyId: string;
-  registrationNumber?: number;
+  registrationNumber?: string;
   name: string;
   activity?: string;
   contact?: string;
@@ -1700,7 +1702,11 @@ export default function MainApp() {
         query(collection(db, 'suppliers'), where('companyId', '==', companyId)),
         (snapshot) => {
           const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Supplier));
-          setSuppliers(data.sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+          setSuppliers(data.sort((a, b) => {
+            const numA = String(a.registrationNumber || '').padStart(10, '0');
+            const numB = String(b.registrationNumber || '').padStart(10, '0');
+            return numA.localeCompare(numB); // lowest first (crescente)
+          }));
         }
       );
 
@@ -2114,14 +2120,13 @@ export default function MainApp() {
         <div className="flex h-20 items-center px-8 border-b border-[#2d3139]/30">
           <div className="flex items-center gap-3">
             {appSettings.logoUrl ? (
-              <img src={appSettings.logoUrl} alt="Logo" className="h-10 w-auto object-contain max-w-[40px]" referrerPolicy="no-referrer" />
+              <img src={appSettings.logoUrl} alt="Logo" className="h-16 w-auto object-contain max-w-[64px]" referrerPolicy="no-referrer" />
             ) : (
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-lg shadow-blue-500/20">
-                <Shield size={22} className="fill-white/20" />
+              <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-lg shadow-blue-500/20">
+                <Shield size={36} className="fill-white/20" />
               </div>
             )}
-            <span className="font-bold tracking-wider text-white text-xl truncate max-w-[130px]">{currentCompany?.name || 'AF Sistemas'}</span>
-            {isSuperAdmin && <Badge className="bg-yellow-500/10 text-yellow-500 text-[8px] uppercase px-1">Master</Badge>}
+            <span className="font-bold tracking-[0.2em] text-[#71717a] text-base uppercase">MENU</span>
           </div>
         </div>
         <ScrollArea className="flex-1 px-4 py-4 overflow-y-auto">
@@ -2245,6 +2250,7 @@ export default function MainApp() {
           </nav>
         </ScrollArea>
         <div className="p-6 border-t border-[#2d3139]">
+          {isSuperAdmin && <div className="mb-2"><Badge className="bg-yellow-500/10 text-yellow-500 text-[10px] uppercase font-bold px-2 py-0.5 border border-yellow-500/20">Master</Badge></div>}
           <div className="flex items-center gap-3 px-3 py-3 rounded-lg bg-[#2d3139]/30 mb-4">
             <div className="h-8 w-8 rounded-full bg-[#2d3139] flex items-center justify-center overflow-hidden border border-[#2d3139]">
               {user.photoURL && !userPhotoError ? (
@@ -3617,7 +3623,7 @@ function SuppliersManager({ suppliers = [], companyId }: { suppliers: Supplier[]
   const handleAddSupplier = async () => {
     try {
       const supplierData = {
-        registrationNumber: Number(newSupplier.registrationNumber || 0),
+        registrationNumber: newSupplier.registrationNumber || '',
         name: newSupplier.name || '',
         activity: newSupplier.activity || '',
         contact: newSupplier.contact || '',
@@ -3644,7 +3650,7 @@ function SuppliersManager({ suppliers = [], companyId }: { suppliers: Supplier[]
       const { id, ...data } = editingSupplier;
       const updatedData = {
         ...data,
-        registrationNumber: Number(data.registrationNumber || 0),
+        registrationNumber: data.registrationNumber || '',
         name: data.name || '',
         activity: data.activity || '',
         contact: data.contact || '',
@@ -3681,12 +3687,12 @@ function SuppliersManager({ suppliers = [], companyId }: { suppliers: Supplier[]
             />
           </div>
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-            <DialogTrigger asChild>
+            <DialogTrigger render={
               <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
                 <Plus size={18} />
                 Novo Fornecedor
               </Button>
-            </DialogTrigger>
+            } />
             <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[600px]">
               <DialogHeader className="p-6 pb-2">
                 <DialogTitle>Cadastrar Novo Fornecedor</DialogTitle>
@@ -3696,7 +3702,7 @@ function SuppliersManager({ suppliers = [], companyId }: { suppliers: Supplier[]
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label className="text-[#a0a0a0]">N.º Cadastro</Label>
-                      <Input type="number" value={newSupplier.registrationNumber || ''} onChange={e => setNewSupplier({...newSupplier, registrationNumber: Number(e.target.value)})} placeholder="000" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                      <Input value={newSupplier.registrationNumber || ''} onChange={e => setNewSupplier({...newSupplier, registrationNumber: e.target.value})} placeholder="000" className="bg-[#0f1115] border-[#2d3139] text-white" />
                     </div>
                     <div className="space-y-2">
                       <Label className="text-[#a0a0a0]">Fornecedor</Label>
@@ -3752,24 +3758,19 @@ function SuppliersManager({ suppliers = [], companyId }: { suppliers: Supplier[]
         <Table>
           <TableHeader>
             <TableRow className="border-[#2d3139] hover:bg-transparent">
+              <TableHead className="w-[100px] text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ações</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">N.º Cadastro</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Fornecedor</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ramo</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Contato</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Telefone</TableHead>
-              <TableHead className="text-right text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ações</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ramo</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredSuppliers.map((supplier) => (
               <TableRow key={supplier.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
-                <TableCell className="text-[12px] text-[#e0e0e0] font-mono">{supplier.registrationNumber || '-'}</TableCell>
-                <TableCell className="font-medium text-white text-[13px]">{supplier.name}</TableCell>
-                <TableCell className="text-[12px] text-[#71717a]">{supplier.activity || '-'}</TableCell>
-                <TableCell className="text-[12px] text-[#e0e0e0]">{supplier.contact || '-'}</TableCell>
-                <TableCell className="text-[12px] text-[#e0e0e0]">{supplier.phone || '-'}</TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
+                <TableCell>
+                  <div className="flex gap-2">
                     <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-[#f59e0b] hover:bg-[#f59e0b]/10" onClick={() => {
                       setEditingSupplier(supplier);
                       setIsEditOpen(true);
@@ -3784,6 +3785,11 @@ function SuppliersManager({ suppliers = [], companyId }: { suppliers: Supplier[]
                     </Button>
                   </div>
                 </TableCell>
+                <TableCell className="text-[12px] text-[#e0e0e0] font-mono">{supplier.registrationNumber || '-'}</TableCell>
+                <TableCell className="font-medium text-white text-[13px]">{supplier.name}</TableCell>
+                <TableCell className="text-[12px] text-[#e0e0e0]">{supplier.contact || '-'}</TableCell>
+                <TableCell className="text-[12px] text-[#e0e0e0]">{supplier.phone || '-'}</TableCell>
+                <TableCell className="text-[12px] text-[#71717a]">{supplier.activity || '-'}</TableCell>
               </TableRow>
             ))}
             {filteredSuppliers.length === 0 && (
@@ -3809,7 +3815,7 @@ function SuppliersManager({ suppliers = [], companyId }: { suppliers: Supplier[]
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">N.º Cadastro</Label>
-                    <Input type="number" value={editingSupplier.registrationNumber || ''} onChange={e => setEditingSupplier({...editingSupplier, registrationNumber: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    <Input value={editingSupplier.registrationNumber || ''} onChange={e => setEditingSupplier({...editingSupplier, registrationNumber: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Fornecedor</Label>
@@ -3961,30 +3967,22 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
       toast.error('Preencha os campos obrigatórios.');
       return;
     }
-
     try {
-      const year = new Date().getFullYear().toString().slice(-2);
-      // Find the last number for the current year
-      const yearPattern = `/${year}`;
-      const yearReceipts = (receipts || []).filter(r => {
-        const num = String(r.number || '');
-        return num.endsWith(yearPattern);
+      const year = new Date().getFullYear();
+      const currentYearReceipts = (receipts || []).filter(r => {
+        const d = r.date instanceof Timestamp ? r.date.toDate() : new Date(r.date);
+        return d.getFullYear() === year;
       });
       
       let nextNum = 1;
-      if (yearReceipts.length > 0) {
-        const numbers = yearReceipts.map(r => {
-          const parts = String(r.number || '').split('/');
-          return parseInt(parts[0]);
-        });
-        nextNum = Math.max(...numbers.filter(n => !isNaN(n))) + 1;
+      if (currentYearReceipts.length > 0) {
+        const numbers = currentYearReceipts.map(r => Number(r.number) || 0);
+        nextNum = Math.max(...numbers) + 1;
       }
-
-      const receiptNumber = `${nextNum.toString().padStart(5, '0')}/${year}`;
 
       const receiptData = {
         ...newReceipt,
-        number: receiptNumber,
+        number: nextNum,
         status: newReceipt.status || 'Aguardando Pagamento',
         date: Timestamp.fromDate(newReceipt.date instanceof Date ? newReceipt.date : new Date()),
         companyId,
@@ -4054,12 +4052,12 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
           <p className="text-[#71717a]">Gere e consulte recibos de pagamentos.</p>
         </div>
         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger asChild>
+          <DialogTrigger render={
             <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
               <Plus size={18} />
               Novo Recibo
             </Button>
-          </DialogTrigger>
+          } />
           <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[600px]">
             <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Gerar Novo Recibo</DialogTitle>
@@ -6567,7 +6565,7 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
 
   const filteredVisits = useMemo(() => {
     return (visits || []).filter(v => {
-      const d = safeParseDate(v.date);
+      const d = safeParseDate(v.expectedDate || v.date);
       const dateMatch = dateFilter ? format(d, 'yyyy-MM-dd') === dateFilter : true;
       const statusMatch = statusFilter === 'Todas' ? true : v.status === statusFilter;
       return dateMatch && statusMatch;
@@ -7832,6 +7830,7 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isPrintConfirmOpen, setIsPrintConfirmOpen] = useState(false);
   const [isValuesModalOpen, setIsValuesModalOpen] = useState(false);
   const [selectedOSForPDF, setSelectedOSForPDF] = useState<ServiceOrder | null>(null);
   const [editingOS, setEditingOS] = useState<Partial<ServiceOrder> | null>(null);
@@ -7904,7 +7903,7 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
       toast.success('Ordem de Serviço criada com sucesso!');
 
       setSelectedOSForPDF(createdOS);
-      setIsValuesModalOpen(true);
+      setIsPrintConfirmOpen(true);
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'serviceOrders');
     }
@@ -7931,7 +7930,7 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
       
       const updatedOS = { ...osData, id: editingOS.id } as ServiceOrder;
       setSelectedOSForPDF(updatedOS);
-      setIsValuesModalOpen(true);
+      setIsPrintConfirmOpen(true);
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, 'serviceOrders');
     }
@@ -8465,6 +8464,25 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)} className="border-[#2d3139]">Cancelar</Button>
             <Button variant="destructive" onClick={handleDeleteOS} className="bg-red-500 hover:bg-red-600">Excluir</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Print Confirmation */}
+      <Dialog open={isPrintConfirmOpen} onOpenChange={setIsPrintConfirmOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Gerar PDF</DialogTitle>
+            <DialogDescription className="text-[#71717a]">
+              Deseja gerar o PDF da Ordem de Serviço agora?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setIsPrintConfirmOpen(false)} className="flex-1 border-[#2d3139] text-white hover:bg-[#2d3139]">Não</Button>
+            <Button onClick={() => {
+              setIsPrintConfirmOpen(false);
+              setIsValuesModalOpen(true);
+            }} className="flex-1 bg-[#3b82f6] hover:bg-[#2563eb] text-white">Sim</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
