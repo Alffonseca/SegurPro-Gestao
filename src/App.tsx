@@ -33,7 +33,8 @@ import {
   Users,
   ChevronLeft,
   ChevronRight,
-  Printer
+  Printer,
+  ShieldAlert
 } from 'lucide-react';
 import { 
   collection, 
@@ -195,6 +196,28 @@ const formatRecordNumber = (number?: number | string, date?: any) => {
   const year = format(d, 'yy');
   return `${numStr.padStart(5, '0')}/${year}`;
 };
+
+const ALL_ROLES = [
+  { id: 'admin', label: 'Administrador' },
+  { id: 'tecnico', label: 'Técnico' },
+  { id: 'secretaria', label: 'Secretaria' },
+  { id: 'auxiliar', label: 'Auxiliar' }
+];
+
+const ALL_MENU_ITEMS = [
+  { id: 'dashboard', label: 'Painel Geral' },
+  { id: 'clients', label: 'Clientes' },
+  { id: 'suppliers', label: 'Fornecedores' },
+  { id: 'financial', label: 'Financeiro' },
+  { id: 'receipts', label: 'Recibos' },
+  { id: 'reports', label: 'Relatórios' },
+  { id: 'budgets', label: 'Orçamentos' },
+  { id: 'visits', label: 'Visitas Técnicas' },
+  { id: 'service-orders', label: 'Ordens de Serviço' },
+  { id: 'users', label: 'Gerenciar Equipe' },
+  { id: 'settings', label: 'Configurações' }
+];
+
 const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettings: PixSettings) => {
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -739,15 +762,31 @@ const generateOSLabelsPDF = (selectedOSs: ServiceOrder[], appSettings: AppSettin
       } catch (e) {}
     }
     
-    doc.setFontSize(9);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(0, 0, 0);
-    doc.text(appSettings.companyName || 'Sua Empresa', appSettings.logoUrl ? startX + internalMargin + 14 : startX + internalMargin, currentY + 1);
+
+    const companyNameLabel = appSettings.companyName || 'Sua Empresa';
+    const companyX = appSettings.logoUrl ? startX + internalMargin + 14 : startX + internalMargin;
+    const companyWidth = appSettings.logoUrl ? contentWidth - 14 : contentWidth;
+    
+    const splitCompanyName = doc.splitTextToSize(companyNameLabel, companyWidth);
+    const companyLines = splitCompanyName.length;
+    
+    // Ajustar tamanho da fonte se o nome for muito grande
+    if (companyLines > 2) {
+      doc.setFontSize(7.5);
+    } else if (companyLines > 1) {
+      doc.setFontSize(8);
+    } else {
+      doc.setFontSize(9);
+    }
+    
+    doc.text(splitCompanyName, companyX, currentY + 1);
     
     doc.setFontSize(8);
-    doc.text(`O.S. Nº ${formatRecordNumber(os.number, os.date)}`, appSettings.logoUrl ? startX + internalMargin + 14 : startX + internalMargin, currentY + 5);
+    doc.text(`O.S. Nº ${formatRecordNumber(os.number, os.date)}`, companyX, currentY + 1 + (companyLines * 3.8));
     
-    currentY += 10;
+    currentY += 10 + ((companyLines - 1) * 3.5);
     doc.setLineWidth(0.3);
     doc.setDrawColor(0, 0, 0);
     doc.line(startX + internalMargin, currentY, startX + labelWidth - internalMargin, currentY);
@@ -1388,6 +1427,23 @@ function SignaturePad({ value, onChange }: { value?: string, onChange: (val: str
   );
 }
 
+function NoAccessList({ title }: { title: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center p-20 bg-[#1a1d23] border border-dashed border-[#2d3139] rounded-xl text-center space-y-4">
+      <div className="p-4 bg-yellow-500/10 rounded-full">
+        <Shield className="text-yellow-500" size={32} />
+      </div>
+      <div className="space-y-1">
+        <h3 className="text-lg font-bold text-white">Visualização Restrita</h3>
+        <p className="text-[#a0a0a0] max-w-xs text-sm">
+          Você tem permissão para acessar o menu de {title}, mas a listagem de registros foi ocultada pelo administrador master nas configurações de acesso.
+        </p>
+      </div>
+      <p className="text-[10px] text-[#71717a] uppercase font-bold tracking-widest">Acesso Negado à Lista</p>
+    </div>
+  );
+}
+
 const getFinalEmail = (input: string) => {
   let clean = input.trim().toLowerCase();
   if (!clean) return '';
@@ -1482,6 +1538,7 @@ export default function MainApp() {
   const [pixSettings, setPixSettings] = useState<PixSettings>({
     accounts: []
   });
+  const [rolePermissions, setRolePermissions] = useState<any>(null);
   const [appSettings, setAppSettings] = useState<AppSettings>({
     logoUrl: '',
     companyName: '',
@@ -1495,6 +1552,11 @@ export default function MainApp() {
   });
 
   // 1. Auth Listener
+  useEffect(() => {
+    const titleText = currentCompany?.name || appSettings.companyName || 'SegurPro Gestão';
+    document.title = titleText;
+  }, [currentCompany?.name, appSettings.companyName]);
+
   useEffect(() => {
     async function testConnection() {
       try {
@@ -1528,6 +1590,18 @@ export default function MainApp() {
       clearTimeout(loadingTimeout);
     };
   }, []);
+
+  // 1.1. Role Permissions Listener
+  useEffect(() => {
+    if (!currentUserData?.companyId) return;
+
+    const unsub = onSnapshot(doc(db, 'companies', currentUserData.companyId, 'settings', 'permissions'), (docSnap) => {
+      if (docSnap.exists()) {
+        setRolePermissions(docSnap.data());
+      }
+    });
+    return () => unsub();
+  }, [currentUserData?.companyId]);
 
   // 2. User Profile Listener
   useEffect(() => {
@@ -1616,6 +1690,11 @@ export default function MainApp() {
     const role = currentUserData?.role;
     if (isSuperAdmin || role === 'admin') return true;
     
+    // Check dynamic permissions if they exist
+    if (rolePermissions && rolePermissions[role]) {
+      return rolePermissions[role].menus?.includes(tabName) || false;
+    }
+
     if (role === 'secretaria') {
       return ['dashboard', 'financial', 'budgets', 'clients', 'suppliers', 'receipts', 'users', 'reports', 'settings'].includes(tabName);
     }
@@ -1626,6 +1705,18 @@ export default function MainApp() {
     
     // Default fallback
     return false;
+  };
+
+  const canViewList = (tabName: string) => {
+    const role = currentUserData?.role;
+    if (isSuperAdmin || role === 'admin') return true;
+    
+    if (rolePermissions && rolePermissions[role]) {
+      return rolePermissions[role].lists?.includes(tabName) || false;
+    }
+
+    // Default fallback based on hardcoded roles
+    return canAccess(tabName);
   };
 
   // Redirect if current tab is not accessible
@@ -2064,7 +2155,7 @@ export default function MainApp() {
             </div>
           </div>
           <div className="text-center space-y-2">
-            <p className="text-lg font-semibold text-white tracking-widest uppercase">SegurPro Gestão</p>
+            <p className="text-lg font-semibold text-white tracking-widest uppercase">{appSettings.companyName || 'SegurPro Gestão'}</p>
             <p className="text-xs font-medium text-[#71717a] animate-pulse">Iniciando ambiente seguro...</p>
           </div>
         </div>
@@ -2181,7 +2272,7 @@ export default function MainApp() {
               </div>
             </CardContent>
           </Card>
-          <p className="text-xs text-[#555]">© 2026 SegurPro Gestão. Todos os direitos reservados.</p>
+          <p className="text-xs text-[#555]">© 2026 {appSettings.companyName || 'SegurPro Gestão'}. Todos os direitos reservados.</p>
         </div>
       </div>
     );
@@ -2403,7 +2494,7 @@ export default function MainApp() {
               <Shield size={18} />
             </div>
           )}
-          <span className="font-bold tracking-tight text-white truncate max-w-[180px]">{currentCompany?.name || 'AF Sistemas'}</span>
+          <span className="font-bold tracking-tight text-white truncate max-w-[180px]">{currentCompany?.name || appSettings.companyName || 'SegurPro Gestão'}</span>
         </div>
         <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="text-white">
           {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
@@ -2525,7 +2616,7 @@ export default function MainApp() {
         <header className="hidden md:flex h-24 items-center justify-center px-10 border-b border-[#2d3139] bg-[#1a1d23]">
           <div className="text-center">
             <p className="text-sm font-bold text-[#3b82f6] uppercase tracking-[0.2em] mb-1">
-              {currentCompany?.name || appSettings.companyName}
+              {currentCompany?.name || appSettings.companyName || 'SegurPro Gestão'}
             </p>
             <p className="text-[10px] text-[#71717a] uppercase tracking-widest mb-1">
               {format(new Date(), "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })}
@@ -2563,6 +2654,7 @@ export default function MainApp() {
                 setActiveTab(tab);
               }}
               companyId={currentUserData?.companyId || ''}
+              showList={canViewList('dashboard')}
             />
           )}
           {activeTab === 'visits' && (
@@ -2575,10 +2667,11 @@ export default function MainApp() {
               companyId={currentUserData?.companyId || ''} 
               initialFilter={visitsFilter}
               onClearFilter={() => setVisitsFilter({ date: null })}
+              showList={canViewList('visits')}
             />
           )}
-          {activeTab === 'financial' && <FinancialManager financials={financials} visits={visits} clients={clients} companyId={currentUserData?.companyId || ''} />}
-          {activeTab === 'budgets' && <BudgetsManager budgets={budgets} clients={clients} appSettings={appSettings} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} />}
+          {activeTab === 'financial' && <FinancialManager financials={financials} visits={visits} clients={clients} companyId={currentUserData?.companyId || ''} showList={canViewList('financial')} />}
+          {activeTab === 'budgets' && <BudgetsManager budgets={budgets} clients={clients} appSettings={appSettings} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} showList={canViewList('budgets')} />}
           {activeTab === 'service-orders' && (
             <ServiceOrdersManager 
               serviceOrders={serviceOrders} 
@@ -2586,11 +2679,12 @@ export default function MainApp() {
               users={users}
               appSettings={appSettings} 
               companyId={currentUserData?.companyId || ''} 
+              showList={canViewList('service-orders')}
             />
           )}
-          {activeTab === 'clients' && <ClientsManager clients={clients} appSettings={appSettings} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} />}
-          {activeTab === 'suppliers' && <SuppliersManager suppliers={suppliers} companyId={currentUserData?.companyId || ''} />}
-          {activeTab === 'receipts' && <ReceiptsManager receipts={receipts} clients={clients} pixSettings={pixSettings} appSettings={appSettings} companyId={currentUserData?.companyId || ''} currentUserData={currentUserData} />}
+          {activeTab === 'clients' && <ClientsManager clients={clients} appSettings={appSettings} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} showList={canViewList('clients')} />}
+          {activeTab === 'suppliers' && <SuppliersManager suppliers={suppliers} companyId={currentUserData?.companyId || ''} showList={canViewList('suppliers')} />}
+          {activeTab === 'receipts' && <ReceiptsManager receipts={receipts} clients={clients} pixSettings={pixSettings} appSettings={appSettings} companyId={currentUserData?.companyId || ''} currentUserData={currentUserData} showList={canViewList('receipts')} />}
           {activeTab === 'reports' && (
             <ReportsManager 
               visits={visits} 
@@ -2602,9 +2696,10 @@ export default function MainApp() {
               suppliers={suppliers}
               appSettings={appSettings} 
               companyId={currentUserData?.companyId || ''}
+              showList={canViewList('reports')}
             />
           )}
-          {activeTab === 'users' && <UsersManager users={users} currentUserData={currentUserData} />}
+          {activeTab === 'users' && <UsersManager users={users} currentUserData={currentUserData} showList={canViewList('users')} />}
           {activeTab === 'super-admin' && (
             <SuperAdminPanel 
               companies={allCompanies} 
@@ -2615,14 +2710,14 @@ export default function MainApp() {
               setSelectedCompanyId={setSelectedCompanyId}
             />
           )}
-          {activeTab === 'settings' && <SettingsManager pixSettings={pixSettings} appSettings={appSettings} user={user} companyId={currentUserData?.companyId || ''} />}
+          {activeTab === 'settings' && <SettingsManager pixSettings={pixSettings} appSettings={appSettings} user={user!} companyId={currentUserData?.companyId || ''} currentUserData={currentUserData} />}
         </div>
       </main>
     </div>
   );
 }
 
-function UsersManager({ users = [], currentUserData }: { users?: any[], currentUserData: any }) {
+function UsersManager({ users = [], currentUserData, showList }: { users?: any[], currentUserData: any, showList: boolean }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'tecnico' });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -2869,66 +2964,70 @@ function UsersManager({ users = [], currentUserData }: { users?: any[], currentU
       </div>
     </div>
 
-      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
-        <Table>
-          <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
-            <TableRow className="border-[#2d3139] hover:bg-transparent">
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">Ações</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Usuário</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">E-mail</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Nível</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data Cadastro</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {users.map((u) => (
-              <TableRow key={u.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
-                <TableCell>
-                  <div className="flex gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="icon" 
-                      className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10"
-                      onClick={() => {
-                        setEditingUser(u);
-                        setIsEditOpen(true);
-                      }}
-                    >
-                      <Pencil size={14} />
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="icon" 
-                      className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10"
-                      onClick={() => {
-                        setUserToDelete(u);
-                        setIsDeleteConfirmOpen(true);
-                      }}
-                    >
-                      <Trash2 size={14} />
-                    </Button>
-                  </div>
-                </TableCell>
-                <TableCell className="font-medium text-white text-[13px]">{u.displayName}</TableCell>
-                <TableCell className="text-[12px] text-[#e0e0e0]">{u.email}</TableCell>
-                <TableCell>
-                  <Badge className={cn(
-                    "font-normal text-[10px] uppercase tracking-wider",
-                    u.role === 'admin' ? "bg-purple-500/10 text-purple-500" : 
-                    u.role === 'secretaria' ? "bg-pink-500/10 text-pink-500" : 
-                    "bg-blue-500/10 text-blue-500"
-                  )}>
-                    {u.role === 'admin' ? 'Administrador' : u.role === 'secretaria' ? 'Secretaria' : 'Técnico'}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-[12px] text-[#71717a]">
-                  {u.createdAt ? format(u.createdAt instanceof Timestamp ? u.createdAt.toDate() : new Date(u.createdAt), 'dd/MM/yyyy') : '-'}
-                </TableCell>
+      {showList ? (
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
+          <Table>
+            <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
+              <TableRow className="border-[#2d3139] hover:bg-transparent">
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">Ações</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Usuário</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">E-mail</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Nível</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data Cadastro</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
+            </TableHeader>
+            <TableBody>
+              {users.map((u) => (
+                <TableRow key={u.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
+                  <TableCell>
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="icon" 
+                        className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10"
+                        onClick={() => {
+                          setEditingUser(u);
+                          setIsEditOpen(true);
+                        }}
+                      >
+                        <Pencil size={14} />
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="icon" 
+                        className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10"
+                        onClick={() => {
+                          setUserToDelete(u);
+                          setIsDeleteConfirmOpen(true);
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </Button>
+                    </div>
+                  </TableCell>
+                  <TableCell className="font-medium text-white text-[13px]">{u.displayName}</TableCell>
+                  <TableCell className="text-[12px] text-[#e0e0e0]">{u.email}</TableCell>
+                  <TableCell>
+                    <Badge className={cn(
+                      "font-normal text-[10px] uppercase tracking-wider",
+                      u.role === 'admin' ? "bg-purple-500/10 text-purple-500" : 
+                      u.role === 'secretaria' ? "bg-pink-500/10 text-pink-500" : 
+                      "bg-blue-500/10 text-blue-500"
+                    )}>
+                      {u.role === 'admin' ? 'Administrador' : u.role === 'secretaria' ? 'Secretaria' : 'Técnico'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-[12px] text-[#71717a]">
+                    {u.createdAt ? format(u.createdAt instanceof Timestamp ? u.createdAt.toDate() : new Date(u.createdAt), 'dd/MM/yyyy') : '-'}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
+      ) : (
+        <NoAccessList title="Equipe" />
+      )}
 
       {/* Edit User Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
@@ -3060,7 +3159,7 @@ const PAYMENT_METHODS = [
   "Boleto"
 ];
 
-function ClientsManager({ clients = [], appSettings, pixSettings, companyId }: { clients: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string }) {
+function ClientsManager({ clients = [], appSettings, pixSettings, companyId, showList }: { clients: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, showList: boolean }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -3589,87 +3688,91 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId }: {
         </DialogContent>
       </Dialog>
 
-      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
-        <Table>
-          <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
-            <TableRow className="border-[#2d3139] hover:bg-transparent">
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">Ações</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Nome / Tipo</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Contato</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Contrato / Serviço</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredClients.map((client) => (
-              <TableRow key={client.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
-                <TableCell>
-                  <div className="flex gap-2">
-                    {client.type === 'Contrato' && (
-                      <Button 
-                        variant="outline" 
-                        size="icon" 
-                        className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" 
-                        title="Gerar Contrato PDF"
-                        onClick={() => generateContractPDF(client, appSettings, pixSettings)}
-                      >
-                        <FileText size={14} />
+      {showList ? (
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
+          <Table>
+            <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
+              <TableRow className="border-[#2d3139] hover:bg-transparent">
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">Ações</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Nome / Tipo</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Contato</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Contrato / Serviço</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredClients.map((client) => (
+                <TableRow key={client.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
+                  <TableCell>
+                    <div className="flex gap-2">
+                      {client.type === 'Contrato' && (
+                        <Button 
+                          variant="outline" 
+                          size="icon" 
+                          className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" 
+                          title="Gerar Contrato PDF"
+                          onClick={() => generateContractPDF(client, appSettings, pixSettings)}
+                        >
+                          <FileText size={14} />
+                        </Button>
+                      )}
+                      <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
+                        setEditingClient(client);
+                        setIsEditOpen(true);
+                      }}>
+                        <Pencil size={14} />
                       </Button>
+                      <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
+                        setClientToDelete(client);
+                        setIsDeleteConfirmOpen(true);
+                      }}>
+                        <Trash2 size={14} />
+                      </Button>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="font-medium text-white text-[13px]">{client.name || 'Cliente Sem Nome'}</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Badge variant="outline" className={cn(
+                        "text-[10px] h-5",
+                        client.type === 'Contrato' ? "border-[#10b981] text-[#10b981]" : "border-[#71717a] text-[#71717a]"
+                      )}>
+                        {client.type || 'Avulso'}
+                      </Badge>
+                      {client.type === 'Contrato' && client.contractValue && (
+                        <span className="text-[11px] text-[#10b981] font-medium">R$ {client.contractValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="text-[12px] text-white font-medium">{client.responsible || 'Sem Resp'}</div>
+                    <div className="text-[11px] text-[#e0e0e0]">{client.phone || 'N/A'}</div>
+                    <div className="text-[10px] text-[#71717a]">{client.email || 'N/A'}</div>
+                  </TableCell>
+                  <TableCell>
+                    {client.type === 'Contrato' ? (
+                      <>
+                        <div className="text-[12px] text-[#10b981] font-medium">R$ {(client.contractValue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/mês</div>
+                        <div className="text-[11px] text-[#71717a] max-w-[200px] truncate">{client.serviceSpecification || 'Sem especificação'}</div>
+                      </>
+                    ) : (
+                      <div className="text-[12px] text-[#71717a]">Serviços Avulsos</div>
                     )}
-                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
-                      setEditingClient(client);
-                      setIsEditOpen(true);
-                    }}>
-                      <Pencil size={14} />
-                    </Button>
-                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
-                      setClientToDelete(client);
-                      setIsDeleteConfirmOpen(true);
-                    }}>
-                      <Trash2 size={14} />
-                    </Button>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="font-medium text-white text-[13px]">{client.name || 'Cliente Sem Nome'}</div>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Badge variant="outline" className={cn(
-                      "text-[10px] h-5",
-                      client.type === 'Contrato' ? "border-[#10b981] text-[#10b981]" : "border-[#71717a] text-[#71717a]"
-                    )}>
-                      {client.type || 'Avulso'}
-                    </Badge>
-                    {client.type === 'Contrato' && client.contractValue && (
-                      <span className="text-[11px] text-[#10b981] font-medium">R$ {client.contractValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="text-[12px] text-white font-medium">{client.responsible || 'Sem Resp'}</div>
-                  <div className="text-[11px] text-[#e0e0e0]">{client.phone || 'N/A'}</div>
-                  <div className="text-[10px] text-[#71717a]">{client.email || 'N/A'}</div>
-                </TableCell>
-                <TableCell>
-                  {client.type === 'Contrato' ? (
-                    <>
-                      <div className="text-[12px] text-[#10b981] font-medium">R$ {(client.contractValue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/mês</div>
-                      <div className="text-[11px] text-[#71717a] max-w-[200px] truncate">{client.serviceSpecification || 'Sem especificação'}</div>
-                    </>
-                  ) : (
-                    <div className="text-[12px] text-[#71717a]">Serviços Avulsos</div>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-            {filteredClients.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={4} className="text-center py-12 text-[#71717a] text-sm">
-                  {searchTerm ? 'Nenhum cliente encontrado para esta pesquisa.' : 'Nenhum cliente cadastrado.'}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </Card>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {filteredClients.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center py-12 text-[#71717a] text-sm">
+                    {searchTerm ? 'Nenhum cliente encontrado para esta pesquisa.' : 'Nenhum cliente cadastrado.'}
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Card>
+      ) : (
+        <NoAccessList title="Clientes" />
+      )}
 
       <Dialog open={isContractConfirmOpen} onOpenChange={setIsContractConfirmOpen}>
         <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[400px]">
@@ -3722,7 +3825,7 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId }: {
 
 // --- Suppliers Manager Component ---
 
-function SuppliersManager({ suppliers = [], companyId }: { suppliers: Supplier[], companyId: string }) {
+function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: Supplier[], companyId: string, showList: boolean }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -3873,54 +3976,58 @@ function SuppliersManager({ suppliers = [], companyId }: { suppliers: Supplier[]
         </div>
       </div>
 
-      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden shadow-2xl">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-[#2d3139] hover:bg-transparent">
-              <TableHead className="w-[100px] text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ações</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">N.º Cadastro</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Fornecedor</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Contato</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Telefone</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ramo</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredSuppliers.map((supplier) => (
-              <TableRow key={supplier.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
-                <TableCell>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-[#f59e0b] hover:bg-[#f59e0b]/10" onClick={() => {
-                      setEditingSupplier(supplier);
-                      setIsEditOpen(true);
-                    }}>
-                      <Pencil size={14} />
-                    </Button>
-                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
-                      setSupplierToDelete(supplier);
-                      setIsDeleteConfirmOpen(true);
-                    }}>
-                      <Trash2 size={14} />
-                    </Button>
-                  </div>
-                </TableCell>
-                <TableCell className="text-[12px] text-[#e0e0e0] font-mono">{supplier.registrationNumber || '-'}</TableCell>
-                <TableCell className="font-medium text-white text-[13px]">{supplier.name}</TableCell>
-                <TableCell className="text-[12px] text-[#e0e0e0]">{supplier.contact || '-'}</TableCell>
-                <TableCell className="text-[12px] text-[#e0e0e0]">{supplier.phone || '-'}</TableCell>
-                <TableCell className="text-[12px] text-[#71717a]">{supplier.activity || '-'}</TableCell>
+      {showList ? (
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden shadow-2xl">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-[#2d3139] hover:bg-transparent">
+                <TableHead className="w-[100px] text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ações</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">N.º Cadastro</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Fornecedor</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Contato</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Telefone</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ramo</TableHead>
               </TableRow>
-            ))}
-            {filteredSuppliers.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center py-12 text-[#71717a] text-sm italic">
-                  Nenhum fornecedor encontrado.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </Card>
+            </TableHeader>
+            <TableBody>
+              {filteredSuppliers.map((supplier) => (
+                <TableRow key={supplier.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
+                  <TableCell>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-[#f59e0b] hover:bg-[#f59e0b]/10" onClick={() => {
+                        setEditingSupplier(supplier);
+                        setIsEditOpen(true);
+                      }}>
+                        <Pencil size={14} />
+                      </Button>
+                      <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
+                        setSupplierToDelete(supplier);
+                        setIsDeleteConfirmOpen(true);
+                      }}>
+                        <Trash2 size={14} />
+                      </Button>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-[12px] text-[#e0e0e0] font-mono">{supplier.registrationNumber || '-'}</TableCell>
+                  <TableCell className="font-medium text-white text-[13px]">{supplier.name}</TableCell>
+                  <TableCell className="text-[12px] text-[#e0e0e0]">{supplier.contact || '-'}</TableCell>
+                  <TableCell className="text-[12px] text-[#e0e0e0]">{supplier.phone || '-'}</TableCell>
+                  <TableCell className="text-[12px] text-[#71717a]">{supplier.activity || '-'}</TableCell>
+                </TableRow>
+              ))}
+              {filteredSuppliers.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-12 text-[#71717a] text-sm italic">
+                    Nenhum fornecedor encontrado.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Card>
+      ) : (
+        <NoAccessList title="Fornecedores" />
+      )}
 
       {/* Edit Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
@@ -4017,7 +4124,7 @@ function SuppliersManager({ suppliers = [], companyId }: { suppliers: Supplier[]
 
 // --- Receipts Manager Component ---
 
-function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings, companyId, currentUserData }: { receipts: Receipt[], clients: Client[], pixSettings: PixSettings, appSettings: AppSettings, companyId: string, currentUserData: any }) {
+function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings, companyId, currentUserData, showList }: { receipts: Receipt[], clients: Client[], pixSettings: PixSettings, appSettings: AppSettings, companyId: string, currentUserData: any, showList: boolean }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -4512,7 +4619,9 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
         </Dialog>
       </div>
 
-      {currentUserData?.role === 'tecnico' ? (
+      {!showList ? (
+        <NoAccessList title="Recibos" />
+      ) : currentUserData?.role === 'tecnico' ? (
         <div className="bg-[#1a1d23] border border-dashed border-[#2d3139] rounded-xl p-12 text-center">
           <ReceiptIcon className="mx-auto h-12 w-12 text-[#3b82f6] mb-4 opacity-50" />
           <h3 className="text-lg font-medium text-white mb-2">Emissão de Recibos</h3>
@@ -5498,7 +5607,172 @@ function SuperAdminPanel({ companies = [], financials = [], saasSettings, user, 
   );
 }
 
-function SettingsManager({ pixSettings, appSettings, user, companyId }: { pixSettings: PixSettings, appSettings: AppSettings, user: FirebaseUser, companyId: string }) {
+function RolePermissionManager({ companyId, user }: { companyId: string, user: FirebaseUser }) {
+  const [rolePermissions, setRolePermissions] = useState<any>({});
+  const [selectedRole, setSelectedRole] = useState<string>('tecnico');
+  const [loading, setLoading] = useState(true);
+
+  const isMaster = user?.email?.toLowerCase().trim() === 'emailparasiteslixo@gmail.com';
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'companies', companyId, 'settings', 'permissions'), (docSnap) => {
+      if (docSnap.exists()) {
+        setRolePermissions(docSnap.data());
+      } else {
+        // Initial setup based on current hardcoded logic
+        setRolePermissions({
+          admin: { menus: ALL_MENU_ITEMS.map(m => m.id), lists: ALL_MENU_ITEMS.map(m => m.id) },
+          secretaria: { 
+            menus: ['dashboard', 'financial', 'budgets', 'clients', 'suppliers', 'receipts', 'users', 'reports', 'settings'],
+            lists: ['dashboard', 'financial', 'budgets', 'clients', 'suppliers', 'receipts', 'users', 'reports', 'settings']
+          },
+          tecnico: { 
+            menus: ['visits', 'service-orders', 'receipts'],
+            lists: ['visits', 'service-orders']
+          },
+          auxiliar: { menus: ['dashboard'], lists: [] }
+        });
+      }
+      setLoading(false);
+    });
+    return () => unsub();
+  }, [companyId]);
+
+  const togglePermission = async (menuId: string, type: 'menus' | 'lists') => {
+    const current = rolePermissions[selectedRole] || { menus: [], lists: [] };
+    const list = current[type] || [];
+    const newList = list.includes(menuId)
+      ? list.filter((id: string) => id !== menuId)
+      : [...list, menuId];
+    
+    const newPermissions = {
+      ...rolePermissions,
+      [selectedRole]: {
+        ...current,
+        [type]: newList
+      }
+    };
+
+    try {
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'permissions'), newPermissions);
+      toast.success('Permissões atualizadas!');
+    } catch (error) {
+      toast.error('Erro ao atualizar permissões.');
+    }
+  };
+
+  if (loading) return <div className="p-4 text-[#71717a] text-sm italic">Carregando permissões...</div>;
+
+  if (!isMaster) {
+    return (
+      <Card className="bg-[#1a1d23] border-[#2d3139] text-white lg:col-span-2">
+        <CardContent className="flex flex-col items-center justify-center p-12 text-center">
+          <ShieldAlert className="h-12 w-12 text-[#ef4444] mb-4 opacity-50" />
+          <h3 className="text-lg font-medium text-white mb-2">Painel de Acesso Restrito</h3>
+          <p className="text-[#a0a0a0] max-w-sm">
+            Esta área de configuração de permissões avançadas é reservada exclusivamente ao administrador mestre do sistema.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="bg-[#1a1d23] border-[#2d3139] text-white lg:col-span-2 overflow-hidden">
+      <CardHeader className="bg-[#2d3139]/20 border-b border-[#2d3139]/30">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-yellow-500/10 rounded-lg">
+              <Shield className="text-yellow-500" size={24} />
+            </div>
+            <div>
+              <CardTitle className="text-white text-lg">Controle de Acesso Granular (Master)</CardTitle>
+              <CardDescription className="text-[#a0a0a0]">
+                Configure o acesso aos menus e visibilidade de dados por perfil.
+              </CardDescription>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 bg-[#0f1115] p-1.5 rounded-lg border border-[#2d3139]">
+            <span className="text-[10px] text-[#71717a] font-bold uppercase pl-2">Perfil:</span>
+            <Select value={selectedRole} onValueChange={setSelectedRole}>
+              <SelectTrigger className="w-[180px] bg-transparent border-none h-8 text-xs font-bold text-white focus:ring-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                {ALL_ROLES.map(role => (
+                  <SelectItem key={role.id} value={role.id} className="text-xs">{role.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="grid grid-cols-1 md:grid-cols-2 divide-x divide-[#2d3139]">
+           <div className="p-6 space-y-4">
+             <div className="flex items-center gap-2 mb-2">
+               <Menu className="text-[#3b82f6]" size={16} />
+               <h4 className="font-bold text-xs text-[#3b82f6] uppercase tracking-wider">Acesso ao Menu Principal</h4>
+             </div>
+             <p className="text-[10px] text-[#71717a]">Define quais abas aparecerão na barra lateral para este perfil.</p>
+             <div className="grid grid-cols-1 gap-1">
+               {ALL_MENU_ITEMS.map(item => (
+                 <label 
+                   key={item.id} 
+                   className={cn(
+                     "flex items-center justify-between p-3 rounded-lg border transition-all cursor-pointer",
+                     rolePermissions[selectedRole]?.menus?.includes(item.id) 
+                       ? "bg-[#3b82f6]/5 border-[#3b82f6]/20 text-white" 
+                       : "bg-transparent border-[#2d3139] text-[#71717a] hover:bg-white/5"
+                   )}
+                 >
+                   <span className="text-xs font-medium">{item.label}</span>
+                   <Checkbox 
+                     checked={rolePermissions[selectedRole]?.menus?.includes(item.id)}
+                     onCheckedChange={() => togglePermission(item.id, 'menus')}
+                     className="data-[state=checked]:bg-[#3b82f6] data-[state=checked]:border-[#3b82f6]"
+                   />
+                 </label>
+               ))}
+             </div>
+           </div>
+           <div className="p-6 space-y-4">
+             <div className="flex items-center gap-2 mb-2">
+               <Eye className="text-yellow-500" size={16} />
+               <h4 className="font-bold text-xs text-yellow-500 uppercase tracking-wider">Visualizar Listagens de Dados</h4>
+             </div>
+             <p className="text-[10px] text-[#71717a]">Se desmarcado, o usuário acessa a tela mas verá o aviso de "Acesso Negado" na lista.</p>
+             <div className="grid grid-cols-1 gap-1">
+               {ALL_MENU_ITEMS.map(item => (
+                 <label 
+                   key={item.id} 
+                   className={cn(
+                     "flex items-center justify-between p-3 rounded-lg border transition-all cursor-pointer",
+                     rolePermissions[selectedRole]?.lists?.includes(item.id) 
+                       ? "bg-yellow-500/5 border-yellow-500/20 text-white" 
+                       : "bg-transparent border-[#2d3139] text-[#71717a] hover:bg-white/5"
+                   )}
+                 >
+                   <span className="text-xs font-medium">{item.label}</span>
+                   <Checkbox 
+                     checked={rolePermissions[selectedRole]?.lists?.includes(item.id)}
+                     onCheckedChange={() => togglePermission(item.id, 'lists')}
+                     className="data-[state=checked]:bg-yellow-500 data-[state=checked]:border-yellow-500"
+                   />
+                 </label>
+               ))}
+             </div>
+           </div>
+        </div>
+      </CardContent>
+      <div className="bg-[#0f1115] p-3 text-[10px] text-[#71717a] text-center border-t border-[#2d3139]">
+        As alterações são aplicadas instantaneamente para todos os usuários deste nível.
+      </div>
+    </Card>
+  );
+}
+
+function SettingsManager({ pixSettings, appSettings, user, companyId, currentUserData }: { pixSettings: PixSettings, appSettings: AppSettings, user: FirebaseUser, companyId: string, currentUserData: any }) {
   const [localApp, setLocalApp] = useState<AppSettings>(appSettings || {
     logoUrl: '',
     companyName: '',
@@ -5619,6 +5893,8 @@ function SettingsManager({ pixSettings, appSettings, user, companyId }: { pixSet
   };
 
   const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDownloadBackup = async () => {
     setIsBackingUp(true);
@@ -5646,7 +5922,15 @@ function SettingsManager({ pixSettings, appSettings, user, companyId }: { pixSet
           if (col === 'companies') {
             const settingsSnap = await getDoc(doc(db, 'companies', docSnap.id, 'settings', 'general'));
             if (settingsSnap.exists()) {
-              Object.assign(docData, settingsSnap.data());
+              docData.generalSettings = settingsSnap.data();
+            }
+            const pixSnap = await getDoc(doc(db, 'companies', docSnap.id, 'settings', 'pix'));
+            if (pixSnap.exists()) {
+              docData.pixSettings = pixSnap.data();
+            }
+            const permissionsSnap = await getDoc(doc(db, 'companies', docSnap.id, 'settings', 'permissions'));
+            if (permissionsSnap.exists()) {
+              docData.permissionsSettings = permissionsSnap.data();
             }
           }
           docs.push(docData);
@@ -5659,16 +5943,81 @@ function SettingsManager({ pixSettings, appSettings, user, companyId }: { pixSet
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${dateStr}.json`;
+      link.download = `backup_${localApp.companyName.replace(/\s+/g, '_')}_${dateStr}.json`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       toast.success("Backup gerado com sucesso!");
     } catch (error) {
+      console.error(error);
       toast.error("Erro ao gerar backup.");
     } finally {
       setIsBackingUp(false);
+    }
+  };
+
+  const handleRestoreBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const confirmRestore = window.confirm("ATENÇÃO: Restaurar um backup substituirá os dados atuais que possuírem o mesmo ID. Deseja continuar?");
+    if (!confirmRestore) {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    setIsRestoring(true);
+    try {
+      const text = await file.text();
+      const backup = JSON.parse(text);
+
+      if (!backup.data) {
+        throw new Error("Formato de backup inválido.");
+      }
+
+      const collections = Object.keys(backup.data);
+      let totalRestored = 0;
+
+      for (const col of collections) {
+        const docs = backup.data[col];
+        if (!Array.isArray(docs)) continue;
+
+        for (const item of docs) {
+          const { id, generalSettings, pixSettings, permissionsSettings, ...data } = item;
+          
+          // Ensure data belongs to current company if it's not the company doc itself
+          if (col !== 'companies') {
+            data.companyId = companyId;
+          }
+
+          // Restore main document
+          await setDoc(doc(db, col, id), data);
+
+          // Special handling for subcollections if it's the companies collection
+          if (col === 'companies' && id === companyId) {
+            if (generalSettings) {
+              await setDoc(doc(db, 'companies', id, 'settings', 'general'), generalSettings);
+            }
+            if (pixSettings) {
+              await setDoc(doc(db, 'companies', id, 'settings', 'pix'), pixSettings);
+            }
+            if (permissionsSettings) {
+              await setDoc(doc(db, 'companies', id, 'settings', 'permissions'), permissionsSettings);
+            }
+          }
+          
+          totalRestored++;
+        }
+      }
+
+      toast.success(`Restauração concluída! ${totalRestored} registros processados.`);
+    } catch (error: any) {
+      console.error(error);
+      toast.error(`Erro na restauração: ${error.message || 'Formato inválido'}`);
+    } finally {
+      setIsRestoring(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -5871,36 +6220,66 @@ function SettingsManager({ pixSettings, appSettings, user, companyId }: { pixSet
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Database className="text-[#3b82f6]" size={20} />
-              Backup de Segurança
+              Backup e Restauração
             </CardTitle>
             <CardDescription className="text-[#71717a]">
-              Baixe uma cópia completa de todos os seus dados.
+              Gerencie a segurança dos seus dados.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-xs text-[#a0a0a0]">
               O backup inclui todos os clientes, visitas técnicas, orçamentos e registros financeiros vinculados à sua empresa.
             </p>
-            <Button 
-              onClick={handleDownloadBackup} 
-              disabled={isBackingUp}
-              variant="outline"
-              className="w-full border-blue-500/30 text-blue-400 hover:bg-blue-500 hover:text-white"
-            >
-              {isBackingUp ? (
-                <>
-                  <RefreshCw size={16} className="mr-2 animate-spin" />
-                  Gerando arquivo...
-                </>
-              ) : (
-                <>
-                  <Download size={16} className="mr-2" />
-                  GERAR BACKUP DA EMPRESA
-                </>
-              )}
-            </Button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Button 
+                onClick={handleDownloadBackup} 
+                disabled={isBackingUp || isRestoring}
+                variant="outline"
+                className="border-blue-500/30 text-blue-400 hover:bg-blue-500 hover:text-white h-11"
+              >
+                {isBackingUp ? (
+                  <>
+                    <RefreshCw size={16} className="mr-2 animate-spin" />
+                    Gerando...
+                  </>
+                ) : (
+                  <>
+                    <Download size={16} className="mr-2" />
+                    GERAR BACKUP
+                  </>
+                )}
+              </Button>
+
+              <div className="relative">
+                <input 
+                  type="file" 
+                  ref={fileInputRef}
+                  onChange={handleRestoreBackup}
+                  accept=".json,application/json"
+                  className="hidden"
+                />
+                <Button 
+                  onClick={() => fileInputRef.current?.click()} 
+                  disabled={isBackingUp || isRestoring}
+                  variant="outline"
+                  className="w-full border-yellow-500/30 text-yellow-400 hover:bg-yellow-500 hover:text-white h-11"
+                >
+                  {isRestoring ? (
+                    <>
+                      <RefreshCw size={16} className="mr-2 animate-spin" />
+                      Restaurando...
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={16} className="mr-2" />
+                      RESTAURAR BACKUP
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
             <p className="text-[10px] text-[#71717a] italic text-center">
-              Recomendamos fazer um backup antes de grandes alterações.
+              A restauração substituirá dados existentes com o mesmo identificador.
             </p>
           </CardContent>
         </Card>
@@ -6024,6 +6403,8 @@ function SettingsManager({ pixSettings, appSettings, user, companyId }: { pixSet
             </div>
           </CardContent>
         </Card>
+
+        <RolePermissionManager companyId={companyId} user={user} />
       </div>
     </div>
   );
@@ -6038,7 +6419,8 @@ function ReportsManager({
   serviceOrders = [],
   suppliers = [],
   appSettings, 
-  companyId 
+  companyId,
+  showList
 }: { 
   visits: TechnicalVisit[], 
   financials: FinancialRecord[], 
@@ -6048,7 +6430,8 @@ function ReportsManager({
   serviceOrders: ServiceOrder[],
   suppliers: Supplier[],
   appSettings: AppSettings, 
-  companyId: string 
+  companyId: string,
+  showList: boolean
 }) {
   const [date, setDate] = useState<Date>(new Date());
   const [month, setMonth] = useState<number>(new Date().getMonth());
@@ -6185,104 +6568,108 @@ function ReportsManager({
         <p className="text-[#71717a]">Gere listagens em PDF das suas atividades por período.</p>
       </div>
 
-      <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
-        <CardHeader>
-          <CardTitle className="text-[17px] flex items-center gap-2">
-            <FileText size={18} className="text-[#3b82f6]" />
-            Configuração do Relatório
-          </CardTitle>
-          <CardDescription className="text-[#71717a] text-[13px]">Selecione o filtro de tempo para a listagem.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-8">
-          <div className="flex flex-col md:flex-row gap-6">
-            <div className="flex-1 space-y-3">
-              <Label className="text-[#a0a0a0]">Tipo de Período</Label>
-              <Select value={reportType} onValueChange={(v: any) => setReportType(v)}>
-                <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white h-11">
-                  <SelectValue>
-                    {reportType === 'daily' ? 'Diário (Listagem por Dia)' : reportType === 'monthly' ? 'Mensal (Listagem por Mês)' : 'Selecione'}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                  <SelectItem value="daily">Diário (Listagem por Dia)</SelectItem>
-                  <SelectItem value="monthly">Mensal (Listagem por Mês)</SelectItem>
-                </SelectContent>
-              </Select>
+      {showList ? (
+        <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
+          <CardHeader>
+            <CardTitle className="text-[17px] flex items-center gap-2">
+              <FileText size={18} className="text-[#3b82f6]" />
+              Configuração do Relatório
+            </CardTitle>
+            <CardDescription className="text-[#71717a] text-[13px]">Selecione o filtro de tempo para a listagem.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-8">
+            <div className="flex flex-col md:flex-row gap-6">
+              <div className="flex-1 space-y-3">
+                <Label className="text-[#a0a0a0]">Tipo de Período</Label>
+                <Select value={reportType} onValueChange={(v: any) => setReportType(v)}>
+                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white h-11">
+                    <SelectValue>
+                      {reportType === 'daily' ? 'Diário (Listagem por Dia)' : reportType === 'monthly' ? 'Mensal (Listagem por Mês)' : 'Selecione'}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                    <SelectItem value="daily">Diário (Listagem por Dia)</SelectItem>
+                    <SelectItem value="monthly">Mensal (Listagem por Mês)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {reportType === 'daily' ? (
+                <div className="flex-1 space-y-3">
+                  <Label className="text-[#a0a0a0]">Data da Listagem</Label>
+                  <Popover>
+                    <PopoverTrigger render={
+                      <Button variant="outline" className={cn("w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white h-11", !date && "text-muted-foreground")}>
+                        <CalendarIcon className="mr-2 h-4 w-4 text-[#3b82f6]" />
+                        {date ? format(date, "PPP", { locale: ptBR }) : <span>Selecione</span>}
+                      </Button>
+                    } />
+                    <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
+                      <Calendar mode="single" selected={date} onSelect={(d) => d && setDate(d)} initialFocus className="bg-[#1a1d23] text-white" />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              ) : (
+                <div className="flex-1 grid grid-cols-2 gap-4">
+                  <div className="space-y-3">
+                    <Label className="text-[#a0a0a0]">Mês</Label>
+                    <Select value={month.toString()} onValueChange={(v) => setMonth(parseInt(v))}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white h-11">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        {Array.from({ length: 12 }, (_, i) => (
+                          <SelectItem key={i} value={i.toString()}>{format(new Date(2022, i, 1), 'MMMM', { locale: ptBR }).toUpperCase()}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-3">
+                    <Label className="text-[#a0a0a0]">Ano</Label>
+                    <Input 
+                      type="number" 
+                      value={year} 
+                      onChange={e => setYear(parseInt(e.target.value))} 
+                      className="bg-[#0f1115] border-[#2d3139] text-white h-11" 
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
-            {reportType === 'daily' ? (
-              <div className="flex-1 space-y-3">
-                <Label className="text-[#a0a0a0]">Data da Listagem</Label>
-                <Popover>
-                  <PopoverTrigger render={
-                    <Button variant="outline" className={cn("w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white h-11", !date && "text-muted-foreground")}>
-                      <CalendarIcon className="mr-2 h-4 w-4 text-[#3b82f6]" />
-                      {date ? format(date, "PPP", { locale: ptBR }) : <span>Selecione</span>}
-                    </Button>
-                  } />
-                  <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
-                    <Calendar mode="single" selected={date} onSelect={(d) => d && setDate(d)} initialFocus className="bg-[#1a1d23] text-white" />
-                  </PopoverContent>
-                </Popover>
-              </div>
-            ) : (
-              <div className="flex-1 grid grid-cols-2 gap-4">
-                <div className="space-y-3">
-                  <Label className="text-[#a0a0a0]">Mês</Label>
-                  <Select value={month.toString()} onValueChange={(v) => setMonth(parseInt(v))}>
-                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white h-11">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      {Array.from({ length: 12 }, (_, i) => (
-                        <SelectItem key={i} value={i.toString()}>{format(new Date(2022, i, 1), 'MMMM', { locale: ptBR }).toUpperCase()}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-3">
-                  <Label className="text-[#a0a0a0]">Ano</Label>
-                  <Input 
-                    type="number" 
-                    value={year} 
-                    onChange={e => setYear(parseInt(e.target.value))} 
-                    className="bg-[#0f1115] border-[#2d3139] text-white h-11" 
-                  />
-                </div>
-              </div>
-            )}
-          </div>
+            <Separator className="bg-[#2d3139]" />
 
-          <Separator className="bg-[#2d3139]" />
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[
-              { label: 'Visitas Técnicas', icon: <CalendarIcon size={24} />, cat: 'Visitas', color: '#3b82f6' },
-              { label: 'Livro Financeiro', icon: <DollarSign size={24} />, cat: 'Financeiro', color: '#10b981' },
-              { label: 'Recibos Emitidos', icon: <ReceiptIcon size={24} />, cat: 'Recibos', color: '#f59e0b' },
-              { label: 'Orçamentos', icon: <FileText size={24} />, cat: 'Orçamentos', color: '#8b5cf6' },
-              { label: 'Ordens de Serviço', icon: <Settings size={24} />, cat: 'Ordem de Serviço', color: '#6366f1' },
-              { label: 'Fornecedores', icon: <Database size={24} />, cat: 'Fornecedores', color: '#8b5cf6' },
-              { label: 'Base de Clientes', icon: <UserIcon size={24} />, cat: 'Clientes', color: '#ec4899' },
-            ].map(item => (
-              <button 
-                key={item.cat}
-                onClick={() => generateReport(item.cat)}
-                className="flex flex-col items-center justify-center p-8 rounded-2xl bg-[#0f1115] border border-[#2d3139] hover:border-[#3b82f6]/50 hover:bg-[#3b82f6]/5 transition-all text-center group active:scale-95"
-              >
-                <div 
-                  className="mb-4 p-4 rounded-2xl bg-[#1a1d23] border border-[#2d3139] group-hover:scale-110 transition-transform"
-                  style={{ color: item.color }}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[
+                { label: 'Visitas Técnicas', icon: <CalendarIcon size={24} />, cat: 'Visitas', color: '#3b82f6' },
+                { label: 'Livro Financeiro', icon: <DollarSign size={24} />, cat: 'Financeiro', color: '#10b981' },
+                { label: 'Recibos Emitidos', icon: <ReceiptIcon size={24} />, cat: 'Recibos', color: '#f59e0b' },
+                { label: 'Orçamentos', icon: <FileText size={24} />, cat: 'Orçamentos', color: '#8b5cf6' },
+                { label: 'Ordens de Serviço', icon: <Settings size={24} />, cat: 'Ordem de Serviço', color: '#6366f1' },
+                { label: 'Fornecedores', icon: <Database size={24} />, cat: 'Fornecedores', color: '#8b5cf6' },
+                { label: 'Base de Clientes', icon: <UserIcon size={24} />, cat: 'Clientes', color: '#ec4899' },
+              ].map(item => (
+                <button 
+                  key={item.cat}
+                  onClick={() => generateReport(item.cat)}
+                  className="flex flex-col items-center justify-center p-8 rounded-2xl bg-[#0f1115] border border-[#2d3139] hover:border-[#3b82f6]/50 hover:bg-[#3b82f6]/5 transition-all text-center group active:scale-95"
                 >
-                  {item.icon}
-                </div>
-                <h3 className="text-white font-bold text-sm mb-1">{item.label}</h3>
-                <p className="text-[10px] text-[#71717a]">Gerar relatório PDF agora</p>
-              </button>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+                  <div 
+                    className="mb-4 p-4 rounded-2xl bg-[#1a1d23] border border-[#2d3139] group-hover:scale-110 transition-transform"
+                    style={{ color: item.color }}
+                  >
+                    {item.icon}
+                  </div>
+                  <h3 className="text-white font-bold text-sm mb-1">{item.label}</h3>
+                  <p className="text-[10px] text-[#71717a]">Gerar relatório PDF agora</p>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <NoAccessList title="Relatórios" />
+      )}
     </div>
   );
 }
@@ -6350,7 +6737,7 @@ function VisitsChart({ data, onBarClick }: { data: any[], onBarClick?: (date: Da
   );
 }
 
-function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets = [], clients = [], onNavigate, companyId }: { visits: TechnicalVisit[], serviceOrders: ServiceOrder[], financials: FinancialRecord[], budgets: Budget[], clients: Client[], onNavigate: (tab: string, filter?: any) => void, companyId: string }) {
+function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets = [], clients = [], onNavigate, companyId, showList }: { visits: TechnicalVisit[], serviceOrders: ServiceOrder[], financials: FinancialRecord[], budgets: Budget[], clients: Client[], onNavigate: (tab: string, filter?: any) => void, companyId: string, showList: boolean }) {
   const [weekOffset, setWeekOffset] = useState(0);
 
   const visitsByDay = useMemo(() => {
@@ -6461,7 +6848,17 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
 
   return (
     <div className="space-y-10">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      {!showList ? (
+        <div className="flex flex-col items-center justify-center p-12 bg-[#1a1d23] border border-[#2d3139] rounded-xl text-center">
+          <Database className="h-12 w-12 text-[#3b82f6] mb-4 opacity-50" />
+          <h3 className="text-lg font-medium text-white mb-2">Painel Restrito</h3>
+          <p className="text-[#a0a0a0] max-w-md">
+            Você não tem permissão para visualizar as listagens de dados, por isso o resumo estatístico do painel geral está bloqueado.
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
           title="Visitas Agendadas" 
           value={stats.pendingVisits} 
@@ -6684,8 +7081,10 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
           </div>
         </div>
       </div>
-    </div>
-  );
+    </>
+  )}
+</div>
+);
 }
 
 function ActionCard({ title, desc, onClick }: { title: string, desc: string, onClick?: () => void }) {
@@ -6727,7 +7126,7 @@ function StatCard({ title, value, icon, trend, isBalance, isCount, onClick }: { 
 
 // --- Visits Manager Component ---
 
-function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettings, companyId, initialFilter, onClearFilter }: { visits?: TechnicalVisit[], user: FirebaseUser, clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, initialFilter?: { date: Date | null }, onClearFilter?: () => void }) {
+function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettings, companyId, initialFilter, onClearFilter, showList }: { visits?: TechnicalVisit[], user: FirebaseUser, clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, initialFilter?: { date: Date | null }, onClearFilter?: () => void, showList: boolean }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
   const [dateFilter, setDateFilter] = useState<string>(initialFilter?.date ? format(initialFilter.date, 'yyyy-MM-dd') : '');
@@ -7221,7 +7620,8 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
       </div>
     </div>
 
-    <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
+    {showList ? (
+      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
         <Table>
           <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
@@ -7316,6 +7716,9 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
           </TableBody>
         </Table>
       </Card>
+    ) : (
+      <NoAccessList title="Visitas Técnicas" />
+    )}
 
       <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
         <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[400px]">
@@ -7566,7 +7969,7 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
 
 // --- Financial Manager Component ---
 
-function FinancialManager({ financials = [], visits = [], clients = [], companyId }: { financials?: FinancialRecord[], visits?: TechnicalVisit[], clients?: Client[], companyId: string }) {
+function FinancialManager({ financials = [], visits = [], clients = [], companyId, showList }: { financials?: FinancialRecord[], visits?: TechnicalVisit[], clients?: Client[], companyId: string, showList: boolean }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -7808,6 +8211,7 @@ function FinancialManager({ financials = [], visits = [], clients = [], companyI
       </div>
     </div>
 
+    {showList ? (
       <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
         <Table>
           <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
@@ -7898,6 +8302,9 @@ function FinancialManager({ financials = [], visits = [], clients = [], companyI
           </TableBody>
         </Table>
       </Card>
+    ) : (
+      <NoAccessList title="Financeiro" />
+    )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="bg-[#3b82f6] text-white border-none shadow-lg shadow-blue-900/20">
@@ -8010,7 +8417,7 @@ function FinancialManager({ financials = [], visits = [], clients = [], companyI
 
 // --- Budgets Manager Component ---
 
-function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], appSettings, companyId }: { serviceOrders?: ServiceOrder[], clients?: Client[], users?: any[], appSettings: AppSettings, companyId: string }) {
+function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], appSettings, companyId, showList }: { serviceOrders?: ServiceOrder[], clients?: Client[], users?: any[], appSettings: AppSettings, companyId: string, showList: boolean }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -8445,86 +8852,90 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {serviceOrders.map(os => (
-          <Card key={os.id} className={`border-[#2d3139] bg-[#1a1d23] hover:border-[#3b82f6]/40 transition-all overflow-hidden group ${selectedIds.includes(os.id) ? 'ring-2 ring-[#3b82f6] border-transparent' : ''}`}>
-            <CardHeader className="pb-3 border-b border-[#2d3139]/30 relative pt-10">
-              <div className="absolute top-4 left-4 z-10 flex items-center gap-2">
-                <Checkbox 
-                  checked={selectedIds.includes(os.id)}
-                  onCheckedChange={(checked) => {
-                    if (checked) {
-                      setSelectedIds(prev => [...prev, os.id]);
-                    } else {
-                      setSelectedIds(prev => prev.filter(id => id !== os.id));
-                    }
-                  }}
-                  className="bg-[#0f1115] border-[#2d3139] data-[state=checked]:bg-[#3b82f6]"
-                />
-                <span className="text-[10px] text-[#71717a] uppercase font-bold tracking-wider">Selecionar</span>
-              </div>
-              <div className="flex justify-between items-start">
-                <Badge className="bg-emerald-500/10 text-emerald-500 font-normal">{os.status}</Badge>
-                <span className="text-[10px] font-mono text-[#3b82f6]">{formatRecordNumber(os.number, os.date)}</span>
-              </div>
-              <CardTitle className="mt-3 text-white flex items-center gap-2">
-                <Shield size={16} className="text-[#3b82f6]" />
-                {os.clientName}
-              </CardTitle>
-              <p className="text-xs text-[#71717a]">{os.equipment} - {os.brandModelSN}</p>
-            </CardHeader>
-            <CardContent className="pt-4">
-              <div className="space-y-2 mb-6">
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-[#71717a]">Data Atendimento</span>
-                  <span className="text-white font-medium">{format(os.date instanceof Timestamp ? os.date.toDate() : new Date(os.date), 'dd/MM/yyyy')}</span>
+      {showList ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {serviceOrders.map(os => (
+            <Card key={os.id} className={`border-[#2d3139] bg-[#1a1d23] hover:border-[#3b82f6]/40 transition-all overflow-hidden group ${selectedIds.includes(os.id) ? 'ring-2 ring-[#3b82f6] border-transparent' : ''}`}>
+              <CardHeader className="pb-3 border-b border-[#2d3139]/30 relative pt-10">
+                <div className="absolute top-4 left-4 z-10 flex items-center gap-2">
+                  <Checkbox 
+                    checked={selectedIds.includes(os.id)}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        setSelectedIds(prev => [...prev, os.id]);
+                      } else {
+                        setSelectedIds(prev => prev.filter(id => id !== os.id));
+                      }
+                    }}
+                    className="bg-[#0f1115] border-[#2d3139] data-[state=checked]:bg-[#3b82f6]"
+                  />
+                  <span className="text-[10px] text-[#71717a] uppercase font-bold tracking-wider">Selecionar</span>
                 </div>
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-[#71717a]">Técnico</span>
-                  <span className="text-[#10b981]">{os.technicianName || users.find(u => u.uid === os.technicianId)?.displayName || os.technicianId || 'Consultar Técnico'}</span>
+                <div className="flex justify-between items-start">
+                  <Badge className="bg-emerald-500/10 text-emerald-500 font-normal">{os.status}</Badge>
+                  <span className="text-[10px] font-mono text-[#3b82f6]">{formatRecordNumber(os.number, os.date)}</span>
                 </div>
-                <div className="mt-4 p-2 bg-[#0f1115] rounded border border-[#2d3139] text-[10px] text-[#a0a0a0] min-h-[40px] italic">
-                  "{(os.performedServices || '').length > 80 ? (os.performedServices || '').substring(0, 80) + '...' : (os.performedServices || '')}"
+                <CardTitle className="mt-3 text-white flex items-center gap-2">
+                  <Shield size={16} className="text-[#3b82f6]" />
+                  {os.clientName}
+                </CardTitle>
+                <p className="text-xs text-[#71717a]">{os.equipment} - {os.brandModelSN}</p>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <div className="space-y-2 mb-6">
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-[#71717a]">Data Atendimento</span>
+                    <span className="text-white font-medium">{format(os.date instanceof Timestamp ? os.date.toDate() : new Date(os.date), 'dd/MM/yyyy')}</span>
+                  </div>
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-[#71717a]">Técnico</span>
+                    <span className="text-[#10b981]">{os.technicianName || users.find(u => u.uid === os.technicianId)?.displayName || os.technicianId || 'Consultar Técnico'}</span>
+                  </div>
+                  <div className="mt-4 p-2 bg-[#0f1115] rounded border border-[#2d3139] text-[10px] text-[#a0a0a0] min-h-[40px] italic">
+                    "{(os.performedServices || '').length > 80 ? (os.performedServices || '').substring(0, 80) + '...' : (os.performedServices || '')}"
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <p className="text-lg font-bold text-white">R$ {(os.totalValue || 0).toFixed(2)}</p>
-                <div className="flex gap-1">
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-[#a0a0a0] hover:text-white" onClick={() => {
-                    setEditingOS({
-                      ...os,
-                      startDateTime: format(os.startDateTime instanceof Timestamp ? os.startDateTime.toDate() : new Date(os.startDateTime as any), "yyyy-MM-dd'T'HH:mm"),
-                      endDateTime: format(os.endDateTime instanceof Timestamp ? os.endDateTime.toDate() : new Date(os.endDateTime as any), "yyyy-MM-dd'T'HH:mm"),
-                    });
-                    setIsEditOpen(true);
-                  }}>
-                    <Pencil size={14} />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-[#ef4444]/60 hover:text-[#ef4444]" onClick={() => {
-                    setOSToDelete(os);
-                    setIsDeleteConfirmOpen(true);
-                  }}>
-                    <Trash2 size={14} />
-                  </Button>
-                  <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-xs" onClick={() => {
-                    setSelectedOSForPDF(os);
-                    setIsValuesModalOpen(true);
-                  }}>
-                    PDF
-                  </Button>
+                <div className="flex items-center justify-between">
+                  <p className="text-lg font-bold text-white">R$ {(os.totalValue || 0).toFixed(2)}</p>
+                  <div className="flex gap-1">
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-[#a0a0a0] hover:text-white" onClick={() => {
+                      setEditingOS({
+                        ...os,
+                        startDateTime: format(os.startDateTime instanceof Timestamp ? os.startDateTime.toDate() : new Date(os.startDateTime as any), "yyyy-MM-dd'T'HH:mm"),
+                        endDateTime: format(os.endDateTime instanceof Timestamp ? os.endDateTime.toDate() : new Date(os.endDateTime as any), "yyyy-MM-dd'T'HH:mm"),
+                      });
+                      setIsEditOpen(true);
+                    }}>
+                      <Pencil size={14} />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-[#ef4444]/60 hover:text-[#ef4444]" onClick={() => {
+                      setOSToDelete(os);
+                      setIsDeleteConfirmOpen(true);
+                    }}>
+                      <Trash2 size={14} />
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-xs" onClick={() => {
+                      setSelectedOSForPDF(os);
+                      setIsValuesModalOpen(true);
+                    }}>
+                      PDF
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-        {serviceOrders.length === 0 && (
-          <div className="col-span-full py-20 text-center bg-[#1a1d23] rounded-xl border border-dashed border-[#2d3139]">
-            <Plus className="mx-auto h-12 w-12 text-[#2d3139] mb-4" />
-            <h3 className="text-lg font-medium text-white">Nenhuma Ordem de Serviço</h3>
-            <p className="text-[#71717a]">Registre seu primeiro atendimento técnico hoje.</p>
-          </div>
-        )}
-      </div>
+              </CardContent>
+            </Card>
+          ))}
+          {serviceOrders.length === 0 && (
+            <div className="col-span-full py-20 text-center bg-[#1a1d23] rounded-xl border border-dashed border-[#2d3139]">
+              <Plus className="mx-auto h-12 w-12 text-[#2d3139] mb-4" />
+              <h3 className="text-lg font-medium text-white">Nenhuma Ordem de Serviço</h3>
+              <p className="text-[#71717a]">Registre seu primeiro atendimento técnico hoje.</p>
+            </div>
+          )}
+        </div>
+      ) : (
+        <NoAccessList title="Ordens de Serviço" />
+      )}
 
       {/* Edit Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
@@ -8773,7 +9184,7 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
   );
 }
 
-function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, companyId }: { budgets?: Budget[], clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string }) {
+function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, companyId, showList }: { budgets?: Budget[], clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, showList: boolean }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
   const [newBudget, setNewBudget] = useState<Partial<Budget>>({
@@ -9093,7 +9504,8 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
         </Dialog>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {showList ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {budgets.map((budget) => (
           <Card key={budget.id} className="border-[#2d3139] bg-[#1a1d23] rounded-xl hover:border-[#3b82f6]/50 transition-all group">
             <CardHeader className="pb-2">
@@ -9152,6 +9564,9 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
           </div>
         )}
       </div>
+    ) : (
+      <NoAccessList title="Orçamentos" />
+    )}
     </div>
   );
 }
