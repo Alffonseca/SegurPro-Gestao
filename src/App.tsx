@@ -32,7 +32,8 @@ import {
   Upload,
   Users,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Printer
 } from 'lucide-react';
 import { 
   collection, 
@@ -70,14 +71,19 @@ import { ptBR } from 'date-fns/locale';
 import { 
   BarChart, 
   Bar, 
+  AreaChart,
+  Area,
   XAxis, 
   YAxis, 
   CartesianGrid, 
   Tooltip, 
   ResponsiveContainer, 
   Cell,
+  LineChart,
+  Line,
   PieChart,
-  Pie
+  Pie,
+  Legend
 } from 'recharts';
 import { motion } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -216,7 +222,7 @@ const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettin
   // Header
   if (appSettings.logoUrl) {
     try {
-      doc.addImage(appSettings.logoUrl, 'PNG', margin, currentY, 25, 25);
+      doc.addImage(appSettings.logoUrl, 'PNG', margin, currentY, 18, 18);
     } catch (e) {
       console.error("Erro ao adicionar logo ao PDF:", e);
     }
@@ -225,13 +231,13 @@ const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettin
   doc.setFontSize(16);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(0, 0, 0);
-  doc.text(appSettings.companyName || 'Sua Empresa', appSettings.logoUrl ? margin + 30 : margin, currentY + 10);
+  doc.text(appSettings.companyName || 'Sua Empresa', appSettings.logoUrl ? margin + 25 : margin, currentY + 7);
   
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 100, 100);
   const companyInfo = `${appSettings.address || ''}${appSettings.neighborhood ? `, ${appSettings.neighborhood}` : ''}, ${appSettings.city || ''} - CEP: ${appSettings.cep || ''}`;
-  doc.text(companyInfo, appSettings.logoUrl ? margin + 30 : margin, currentY + 17);
+  doc.text(companyInfo, appSettings.logoUrl ? margin + 25 : margin, currentY + 14);
   
   currentY += 35;
   doc.setDrawColor(200, 200, 200);
@@ -493,7 +499,7 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, inc
   // 1. HEADER
   if (appSettings.logoUrl) {
     try {
-      doc.addImage(appSettings.logoUrl, 'PNG', margin, currentY, 20, 20);
+      doc.addImage(appSettings.logoUrl, 'PNG', margin, currentY, 18, 18);
     } catch (e) {
       console.error("Erro logo OS:", e);
     }
@@ -504,16 +510,16 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, inc
   doc.setTextColor(0, 0, 0);
   const companyName = appSettings.companyName || 'SegurPro';
   const companyNameLines = doc.splitTextToSize(companyName, contentWidth / 2);
-  doc.text(companyNameLines, appSettings.logoUrl ? margin + 25 : margin, currentY + 7);
+  doc.text(companyNameLines, appSettings.logoUrl ? margin + 22 : margin, currentY + 6);
   
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 100, 100);
   const addressLine = `${appSettings.address || ''}${appSettings.neighborhood ? `, ${appSettings.neighborhood}` : ''}`;
   const addressLines = doc.splitTextToSize(addressLine, contentWidth / 2);
-  const headerTextY = currentY + 7 + (companyNameLines.length * 5);
-  doc.text(addressLines, appSettings.logoUrl ? margin + 25 : margin, headerTextY);
-  doc.text(`${appSettings.city || ''} - Documento: ${appSettings.document || ''}`, appSettings.logoUrl ? margin + 25 : margin, headerTextY + (addressLines.length * 4));
+  const headerTextY = currentY + 6 + (companyNameLines.length * 5);
+  doc.text(addressLines, appSettings.logoUrl ? margin + 22 : margin, headerTextY);
+  doc.text(`${appSettings.city || ''} - Documento: ${appSettings.document || ''}`, appSettings.logoUrl ? margin + 22 : margin, headerTextY + (addressLines.length * 4));
 
   // OS Number and Date on the right
   doc.setFontSize(12);
@@ -689,6 +695,103 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, inc
   doc.save(`OS_${formatRecordNumber(os.number, os.date).replace('/', '-')}.pdf`);
 };
 
+const generateOSLabelsPDF = (selectedOSs: ServiceOrder[], appSettings: AppSettings) => {
+  // Configurando jsPDF para folha A4
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  const labelWidth = 80;
+  const labelHeight = 60;
+  const marginX = 20; // Centralizando um pouco mais no A4
+  const marginY = 15;
+  const spacingX = 5;
+  const spacingY = 5;
+
+  selectedOSs.forEach((os, index) => {
+    // 8 etiquetas por página (2 colunas x 4 linhas)
+    const pageIndex = index % 8;
+    if (index > 0 && pageIndex === 0) {
+      doc.addPage();
+    }
+
+    const col = pageIndex % 2;
+    const row = Math.floor(pageIndex / 2);
+
+    const startX = marginX + (col * (labelWidth + spacingX));
+    const startY = marginY + (row * (labelHeight + spacingY));
+
+    // Desenha borda leve para corte
+    doc.setDrawColor(220, 220, 220);
+    doc.setLineWidth(0.1);
+    doc.rect(startX, startY, labelWidth, labelHeight);
+
+    const internalMargin = 4;
+    const contentWidth = labelWidth - (internalMargin * 2);
+    let currentY = startY + 7;
+
+    // Logo & Cabeçalho
+    if (appSettings.logoUrl) {
+      try {
+        doc.addImage(appSettings.logoUrl, 'PNG', startX + internalMargin, currentY - 3, 12, 12);
+      } catch (e) {}
+    }
+    
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 0, 0);
+    doc.text(appSettings.companyName || 'Sua Empresa', appSettings.logoUrl ? startX + internalMargin + 14 : startX + internalMargin, currentY + 1);
+    
+    doc.setFontSize(8);
+    doc.text(`O.S. Nº ${formatRecordNumber(os.number, os.date)}`, appSettings.logoUrl ? startX + internalMargin + 14 : startX + internalMargin, currentY + 5);
+    
+    currentY += 10;
+    doc.setLineWidth(0.1);
+    doc.setDrawColor(200, 200, 200);
+    doc.line(startX + internalMargin, currentY, startX + labelWidth - internalMargin, currentY);
+    currentY += 5;
+
+    // Campos da Etiqueta
+    const rowHeightText = 4;
+    const labelXPosition = startX + internalMargin;
+    const valueXPosition = startX + internalMargin + 18;
+    const fieldWidthVal = contentWidth - 18;
+
+    const drawField = (label: string, value: string) => {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.text(label, labelXPosition, currentY);
+      
+      doc.setFont('helvetica', 'normal');
+      const valText = value || 'N/A';
+      const splitVal = doc.splitTextToSize(valText, fieldWidthVal);
+      doc.text(splitVal, valueXPosition, currentY);
+      currentY += (splitVal.length * rowHeightText);
+    };
+
+    drawField('Cliente:', os.clientName);
+    drawField('Eqp:', os.equipment);
+    drawField('Modelo/SN:', os.brandModelSN);
+    drawField('Técnico:', os.technicianName || 'N/A');
+    drawField('Status:', os.status);
+
+    // Anotações (Deixando campo em branco conforme solicitado pelo usuário anteriormente, 
+    // mas agora preenchendo com o novo campo notes se existir)
+    doc.setFont('helvetica', 'bold');
+    doc.text('Anotações:', startX + internalMargin, currentY);
+    currentY += 3;
+    doc.setFont('helvetica', 'normal');
+    const noteText = os.notes || '';
+    const splitNote = doc.splitTextToSize(noteText, contentWidth);
+    const visibleNote = splitNote.slice(0, 2);
+    doc.text(visibleNote, startX + internalMargin, currentY);
+  });
+
+  doc.save(`etiquetas_os_A4_${new Date().getTime()}.pdf`);
+};
+
 interface ServiceOrder {
   id: string;
   number?: number;
@@ -720,6 +823,7 @@ interface ServiceOrder {
     safetyCheck: boolean;
     additional?: string;
   };
+  notes?: string;
   
   // Time and Values
   startDateTime: any;
@@ -854,7 +958,7 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
   // 1. Header
   if (appSettings.logoUrl) {
     try {
-      doc.addImage(appSettings.logoUrl, 'PNG', 20, 10, 25, 25);
+      doc.addImage(appSettings.logoUrl, 'PNG', 20, 10, 18, 18);
     } catch (e) {
       console.error("Erro ao adicionar logo ao PDF:", e);
     }
@@ -863,14 +967,14 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
   doc.setFontSize(16);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(0, 0, 0);
-  doc.text(appSettings.companyName || 'André Fonseca', appSettings.logoUrl ? 50 : 20, 20);
+  doc.text(appSettings.companyName || 'André Fonseca', appSettings.logoUrl ? 42 : 20, 18);
   
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
   // Removed duplicate company name on the right
   
   doc.setFontSize(9);
-  doc.text('(91)98722-3092   (91)98995-8066   afsistseg.me@gmail.com', appSettings.logoUrl ? 50 : 20, 30);
+  doc.text('(91)98722-3092   (91)98995-8066   afsistseg.me@gmail.com', appSettings.logoUrl ? 42 : 20, 26);
   
   // 2. Title Bar
   doc.setFillColor(245, 245, 245);
@@ -6429,11 +6533,75 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
               Ver Todas
             </span>
           </CardHeader>
-          <CardContent className="p-6 h-[300px]">
+          <CardContent className="p-6 h-[320px]">
             <VisitsChart 
               data={visitsByDay.data} 
               onBarClick={(date) => onNavigate('visits', { date })}
             />
+          </CardContent>
+        </Card>
+
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden h-[400px]">
+          <CardHeader className="border-b border-[#2d3139] px-6 py-4">
+            <CardTitle className="text-[15px] font-semibold text-white">Distribuição por Tipo</CardTitle>
+          </CardHeader>
+          <CardContent className="p-6 flex flex-col items-center justify-center h-[320px]">
+            <div className="h-full w-full min-h-[250px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={typeData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {typeData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
+                    itemStyle={{ color: '#fff' }}
+                  />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden col-span-full h-[400px]">
+          <CardHeader className="border-b border-[#2d3139] px-6 py-4">
+            <CardTitle className="text-[15px] font-semibold text-white">Fluxo Financeiro (Últimos 7 dias)</CardTitle>
+          </CardHeader>
+          <CardContent className="p-6 h-[320px]">
+            <div className="h-full w-full min-h-[250px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <defs>
+                    <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorExpense" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="name" stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `R$ ${value}`} />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
+                    itemStyle={{ color: '#fff' }}
+                  />
+                  <Area type="monotone" dataKey="receita" stroke="#10b981" fillOpacity={1} fill="url(#colorIncome)" />
+                  <Area type="monotone" dataKey="despesa" stroke="#ef4444" fillOpacity={1} fill="url(#colorExpense)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           </CardContent>
         </Card>
 
@@ -6715,24 +6883,25 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
     // Header
     if (appSettings.logoUrl) {
       try {
-        doc.addImage(appSettings.logoUrl, 'PNG', 20, 10, 30, 30);
+        doc.addImage(appSettings.logoUrl, 'PNG', 20, 10, 18, 18);
       } catch (e) {
         console.error("Erro ao adicionar logo ao PDF:", e);
       }
     }
 
-    doc.setFontSize(18);
+    doc.setFontSize(16);
     doc.setFont('helvetica', 'bold');
-    doc.text(appSettings.companyName || 'AF Sistemas de Segurança e Informática', 105, 25, { align: 'center' });
+    const headerX = appSettings.logoUrl ? 42 : 20;
+    doc.text(appSettings.companyName || 'AF Sistemas de Segurança e Informática', headerX, 18);
     
-    doc.setFontSize(14);
-    doc.text(`RELATÓRIO DE VISITA TÉCNICA ${formatRecordNumber(visit.number, visit.date)}`, 105, 35, { align: 'center' });
+    doc.setFontSize(12);
+    doc.text(`RELATÓRIO DE VISITA TÉCNICA ${formatRecordNumber(visit.number, visit.date)}`, headerX, 26);
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Data Agendada: ${dateStr}${visit.scheduledTime ? ` às ${visit.scheduledTime}` : ''}`, 20, 50);
+    doc.text(`Data Agendada: ${dateStr}${visit.scheduledTime ? ` às ${visit.scheduledTime}` : ''}`, 20, 42);
     
-    let currentY = 58;
+    let currentY = 50;
 
     if (visit.expectedDate) {
       const expDateStr = format(visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate), 'dd/MM/yyyy');
@@ -7836,6 +8005,7 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
   const [editingOS, setEditingOS] = useState<Partial<ServiceOrder> | null>(null);
   const [osToDelete, setOSToDelete] = useState<ServiceOrder | null>(null);
   const [clientSearch, setClientSearch] = useState('');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [newOS, setNewOS] = useState<Partial<ServiceOrder>>({
     serviceType: 'Corretiva',
     parts: [],
@@ -7954,7 +8124,39 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
           <h2 className="text-2xl font-bold tracking-tight text-white">Ordens de Serviço</h2>
           <p className="text-[#71717a]">Gerencie ordens de serviço técnicas e vistorias.</p>
         </div>
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+        <div className="flex items-center gap-3">
+          {serviceOrders.length > 0 && selectedIds.length === 0 && (
+            <Button 
+              variant="outline" 
+              className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-xs h-9"
+              onClick={() => setSelectedIds(serviceOrders.map(os => os.id))}
+            >
+              Selecionar Todas
+            </Button>
+          )}
+          {selectedIds.length > 0 && (
+            <Button 
+              variant="outline" 
+              className="border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10 text-xs h-9"
+              onClick={() => setSelectedIds([])}
+            >
+              Limpar Seleção
+            </Button>
+          )}
+          {selectedIds.length > 0 && (
+            <Button 
+              className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+              onClick={() => {
+                const selectedOS = serviceOrders.filter(os => selectedIds.includes(os.id));
+                generateOSLabelsPDF(selectedOS, appSettings);
+                setSelectedIds([]);
+              }}
+            >
+              <Printer size={18} />
+              Etiquetas ({selectedIds.length})
+            </Button>
+          )}
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
           <DialogTrigger render={
             <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
               <Plus size={18} />
@@ -8077,6 +8279,16 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                     placeholder="O que foi executado..."
                   />
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Anotações Adicionais (para Etiqueta)</Label>
+                <textarea 
+                  className="w-full min-h-[80px] bg-[#0f1115] border-[#2d3139] rounded-md p-3 text-sm focus:ring-1 focus:ring-[#3b82f6]" 
+                  value={newOS.notes || ''} 
+                  onChange={e => setNewOS({...newOS, notes: e.target.value})}
+                  placeholder="Observações que serão impressas na etiqueta..."
+                />
               </div>
 
               {/* Parts */}
@@ -8215,12 +8427,27 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {serviceOrders.map(os => (
-          <Card key={os.id} className="border-[#2d3139] bg-[#1a1d23] hover:border-[#3b82f6]/40 transition-all overflow-hidden group">
-            <CardHeader className="pb-3 border-b border-[#2d3139]/30">
+          <Card key={os.id} className={`border-[#2d3139] bg-[#1a1d23] hover:border-[#3b82f6]/40 transition-all overflow-hidden group ${selectedIds.includes(os.id) ? 'ring-2 ring-[#3b82f6] border-transparent' : ''}`}>
+            <CardHeader className="pb-3 border-b border-[#2d3139]/30 relative pt-10">
+              <div className="absolute top-4 left-4 z-10 flex items-center gap-2">
+                <Checkbox 
+                  checked={selectedIds.includes(os.id)}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      setSelectedIds(prev => [...prev, os.id]);
+                    } else {
+                      setSelectedIds(prev => prev.filter(id => id !== os.id));
+                    }
+                  }}
+                  className="bg-[#0f1115] border-[#2d3139] data-[state=checked]:bg-[#3b82f6]"
+                />
+                <span className="text-[10px] text-[#71717a] uppercase font-bold tracking-wider">Selecionar</span>
+              </div>
               <div className="flex justify-between items-start">
                 <Badge className="bg-emerald-500/10 text-emerald-500 font-normal">{os.status}</Badge>
                 <span className="text-[10px] font-mono text-[#3b82f6]">{formatRecordNumber(os.number, os.date)}</span>
@@ -8381,6 +8608,16 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                       onChange={e => setEditingOS({...editingOS, performedServices: e.target.value})}
                     />
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Anotações Adicionais (para Etiqueta)</Label>
+                  <textarea 
+                    className="w-full min-h-[80px] bg-[#0f1115] border-[#2d3139] rounded-md p-3 text-sm focus:ring-1 focus:ring-[#3b82f6]" 
+                    value={editingOS.notes || ''} 
+                    onChange={e => setEditingOS({...editingOS, notes: e.target.value})}
+                    placeholder="Observações que serão impressas na etiqueta..."
+                  />
                 </div>
 
                 <div className="space-y-3">
@@ -8591,22 +8828,23 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
     // Logo
     if (appSettings.logoUrl) {
       try {
-        doc.addImage(appSettings.logoUrl, 'PNG', 20, 10, 30, 30);
+        doc.addImage(appSettings.logoUrl, 'PNG', 20, 10, 18, 18);
       } catch (e) {
         console.error("Erro ao adicionar logo ao PDF:", e);
       }
     }
 
-    doc.setFontSize(18);
+    doc.setFontSize(16);
     doc.setFont('helvetica', 'bold');
-    doc.text(appSettings.companyName || 'AF Sistemas de Segurança e Informática', 105, 25, { align: 'center' });
+    const budgetHeaderX = appSettings.logoUrl ? 42 : 20;
+    doc.text(appSettings.companyName || 'AF Sistemas de Segurança e Informática', budgetHeaderX, 18);
     
-    doc.setFontSize(14);
-    doc.text(`ORÇAMENTO DE SERVIÇOS ${formatRecordNumber(budget.number, budget.createdAt)}`, 105, 35, { align: 'center' });
+    doc.setFontSize(12);
+    doc.text(`ORÇAMENTO DE SERVIÇOS ${formatRecordNumber(budget.number, budget.createdAt)}`, budgetHeaderX, 26);
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Data: ${dateStr}`, 20, 50);
+    doc.text(`Data: ${dateStr}`, 20, 42);
     doc.text(`Cliente: ${budget.clientName || 'Cliente Sem Nome'}`, 20, 57);
     doc.text(`WhatsApp: ${budget.clientPhone || 'N/A'}`, 20, 64);
     doc.text(`Endereço: ${budget.address || 'N/A'}`, 20, 71);
