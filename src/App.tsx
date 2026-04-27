@@ -27,6 +27,7 @@ import {
   Menu,
   X,
   Shield,
+  PenTool,
   Database,
   RefreshCw,
   Upload,
@@ -132,6 +133,46 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { cn } from '@/lib/utils';
 
 // --- Helpers ---
+
+const handleGenerateSignatureLink = async (
+  documentId: string, 
+  type: 'visit' | 'contract' | 'service-order', 
+  clientName: string,
+  companyId: string
+) => {
+  try {
+    const token = doc(collection(db, 'signature_requests')).id;
+    await setDoc(doc(db, 'signature_requests', token), {
+      documentId,
+      type,
+      clientName,
+      companyId,
+      status: 'pending',
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now()
+    });
+
+    const url = `${window.location.origin}${window.location.pathname}?signerToken=${token}`;
+    const message = `Olá ${clientName}, por favor utilize o link abaixo para realizar a sua assinatura digital referente ao nosso serviço:\n\n${url}\n\n*Assinatura Única após o uso será excluída*`;
+    
+    // Copy to clipboard
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success('Link copiado para a área de transferência!');
+    } catch (err) {
+      console.warn('Clipboard fallback', err);
+    }
+
+    // Open WhatsApp if possible
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+    
+    return url;
+  } catch (error) {
+    console.error("Erro ao gerar link de assinatura:", error);
+    toast.error("Erro ao gerar link de assinatura.");
+    return null;
+  }
+};
 
 function valorPorExtenso(valor: number = 0) {
   const unidades = ["", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove"];
@@ -460,6 +501,14 @@ const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettin
   doc.text(cityDateContract, pageWidth / 2, currentY, { align: 'center' });
   
   currentY += 25;
+
+  if (client.clientSignature) {
+    try {
+      doc.addImage(client.clientSignature, 'PNG', margin + 20, currentY - 20, 40, 15);
+    } catch (e) {
+      console.error("Erro ao adicionar assinatura do cliente:", e);
+    }
+  }
 
   if (appSettings.signatureUrl) {
     try {
@@ -972,6 +1021,8 @@ interface TechnicalVisit {
   technicianName: string;
   responsibleName?: string;
   totalValue: number;
+  clientSignature?: string;
+  technicianSignature?: string;
   createdAt: any;
   number?: number;
 }
@@ -1002,6 +1053,7 @@ interface Budget {
   status: 'Pendente' | 'Aprovado' | 'Rejeitado';
   pixAccountId?: string;
   observations?: string;
+  clientSignature?: string;
   createdAt: any;
   number?: number;
 }
@@ -1024,6 +1076,7 @@ interface Client {
   paymentMethods?: string[];
   paymentDay?: string;
   pixAccountId?: string;
+  clientSignature?: string;
   createdAt: any;
 }
 
@@ -1378,8 +1431,9 @@ function SignaturePad({ value, onChange }: { value?: string, onChange: (val: str
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
     
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    // Support multi-touch but take first one
+    const clientX = 'touches' in e && e.touches.length > 0 ? e.touches[0].clientX : (e as any).clientX;
+    const clientY = 'touches' in e && e.touches.length > 0 ? e.touches[0].clientY : (e as any).clientY;
 
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
@@ -1396,28 +1450,31 @@ function SignaturePad({ value, onChange }: { value?: string, onChange: (val: str
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    if (e.cancelable) e.preventDefault();
     const { x, y } = getCoordinates(e);
     ctx.beginPath();
     ctx.moveTo(x, y);
     setIsDrawing(true);
   };
 
-  const stopDrawing = () => {
+  const stopDrawing = (e?: React.MouseEvent | React.TouchEvent) => {
     if (!isDrawing) return;
+    if (e?.cancelable) e.preventDefault();
     setIsDrawing(false);
     if (canvasRef.current) {
-      onChange(canvasRef.current.toDataURL());
+      onChange(canvasRef.current.toDataURL('image/png'));
     }
   };
 
   const draw = (e: React.MouseEvent | React.TouchEvent) => {
     if (!isDrawing || !canvasRef.current) return;
+    if (e.cancelable) e.preventDefault();
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     const { x, y } = getCoordinates(e);
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 3;
     ctx.lineCap = 'round';
     ctx.strokeStyle = '#000';
     ctx.lineTo(x, y);
@@ -1429,7 +1486,7 @@ function SignaturePad({ value, onChange }: { value?: string, onChange: (val: str
       const ctx = canvasRef.current.getContext('2d');
       if (ctx) {
         ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-        ctx.beginPath(); // Reset current path
+        ctx.beginPath();
         onChange('');
       }
     }
@@ -1454,36 +1511,196 @@ function SignaturePad({ value, onChange }: { value?: string, onChange: (val: str
   }, [value]);
 
   return (
-    <div className="space-y-2">
-      <div className="relative bg-white rounded-lg border border-[#2d3139] overflow-hidden cursor-crosshair">
+    <div className="space-y-3">
+      <div className="relative bg-white rounded-xl border-2 border-dashed border-gray-200 overflow-hidden cursor-crosshair shadow-inner min-h-[180px]">
         <canvas
           ref={canvasRef}
-          width={400}
-          height={150}
+          width={800}
+          height={300}
           onMouseDown={startDrawing}
           onMouseUp={stopDrawing}
-          onMouseOut={stopDrawing}
+          onMouseLeave={stopDrawing}
           onMouseMove={draw}
           onTouchStart={startDrawing}
           onTouchEnd={stopDrawing}
           onTouchMove={draw}
-          className="w-full h-[150px] touch-none"
+          className="w-full h-full touch-none"
         />
         {(!isDrawing && !value) && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-gray-300">
-            Assine aqui
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-gray-400/50 select-none">
+            <Pencil className="mb-2 h-6 w-6 opacity-20" />
+            <span className="text-sm font-medium">Assine aqui</span>
           </div>
         )}
       </div>
-      <Button 
-        type="button" 
-        variant="outline" 
-        size="sm" 
-        onClick={clear}
-        className="w-full border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]"
-      >
-        Limpar Assinatura
-      </Button>
+      <div className="flex gap-2">
+        <Button 
+          type="button" 
+          variant="outline" 
+          size="sm" 
+          onClick={clear}
+          className="flex-1 border-[#2d3139] text-[#71717a] hover:bg-gray-100 dark:hover:bg-[#2d3139] transition-all"
+        >
+          Limpar
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ExternalSignaturePage({ token }: { token: string }) {
+  const [request, setRequest] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [signature, setSignature] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchRequest = async () => {
+      try {
+        const docSnap = await getDoc(doc(db, 'signature_requests', token));
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.status !== 'pending') {
+            setError('Este link de assinatura já foi utilizado ou expirou.');
+          } else {
+            setRequest({ id: docSnap.id, ...data });
+          }
+        } else {
+          setError('Link de assinatura inválido ou não encontrado.');
+        }
+      } catch (err) {
+        setError('Erro ao carregar solicitação de assinatura.');
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchRequest();
+  }, [token]);
+
+  const handleSave = async () => {
+    if (!signature) {
+      toast.error('Por favor, faça a sua assinatura antes de salvar.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      // 1. Update the signature request
+      await updateDoc(doc(db, 'signature_requests', token), {
+        signature,
+        status: 'signed',
+        signedAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
+      });
+
+      // 2. Update the document itself (Visit, Contract or OS)
+      const collectionName = request.type === 'visit' ? 'visits' : (request.type === 'contract' ? 'clients' : 'service-orders');
+      
+      // We send the token as well so the security rules can verify it
+      await updateDoc(doc(db, collectionName, request.documentId), {
+        clientSignature: signature,
+        clientSignatureToken: token, // This is key for security rules to allow unauthenticated update
+        updatedAt: Timestamp.now()
+      });
+
+      setIsSuccess(true);
+      toast.success('Assinatura salva com sucesso!');
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao salvar assinatura. Tente novamente.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0f1115] flex items-center justify-center p-6">
+        <div className="flex flex-col items-center gap-4">
+          <RefreshCw className="animate-spin text-blue-500" size={40} />
+          <p className="text-[#a0a0a0] font-medium">Carregando formulário...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || isSuccess) {
+    return (
+      <div className="min-h-screen bg-[#0f1115] flex items-center justify-center p-6">
+        <Card className="w-full max-w-md border-[#2d3139] bg-[#1a1d23] shadow-2xl overflow-hidden">
+          <div className="h-2 bg-gradient-to-r from-blue-500 to-indigo-500" />
+          <CardHeader className="text-center pt-8">
+            <div className={`mx-auto w-16 h-16 rounded-full flex items-center justify-center mb-4 ${isSuccess ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}>
+              {isSuccess ? <CheckCircle2 className="text-emerald-500" size={32} /> : <AlertCircle className="text-red-500" size={32} />}
+            </div>
+            <CardTitle className="text-white text-2xl">{isSuccess ? 'Sucesso!' : 'Aviso'}</CardTitle>
+            <CardDescription className="text-[#a0a0a0] text-base mt-2">
+              {isSuccess ? 'Sua assinatura foi registrada com sucesso. Você já pode fechar esta tela.' : error}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pb-8 text-center">
+            {isSuccess && (
+              <p className="text-[10px] text-[#71717a] uppercase font-bold tracking-widest mt-4">Documento Assinado Digitalmente</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#0f1115] p-4 flex flex-col items-center">
+      <div className="w-full max-w-lg space-y-6 pt-8">
+        <div className="text-center space-y-2">
+          <div className="mx-auto w-12 h-12 bg-blue-500/10 rounded-xl flex items-center justify-center mb-4 border border-blue-500/20">
+            <Lock className="text-blue-500" size={24} />
+          </div>
+          <h1 className="text-2xl font-bold text-white">Assinatura Digital</h1>
+          <p className="text-[#a0a0a0] text-sm">Olá, <span className="text-white font-semibold">{request.clientName}</span>! Por favor, faça sua assinatura no quadro abaixo para confirmar o documento.</p>
+        </div>
+
+        <Card className="border-[#2d3139] bg-[#1a1d23] shadow-xl">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-lg text-white flex items-center gap-2">
+              <Pencil size={18} className="text-blue-500" />
+              Sua Assinatura
+            </CardTitle>
+            <CardDescription className="text-xs text-amber-500 font-medium">
+              Assinatura Única após o uso será excluída
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="bg-white p-2 rounded-xl">
+              <SignaturePad value={signature} onChange={setSignature} />
+            </div>
+            
+            <div className="bg-[#0f1115] p-4 rounded-lg border border-[#2d3139] space-y-2">
+              <p className="text-[11px] text-[#71717a] leading-relaxed">
+                Ao clicar em "Confirmar", você concorda que esta assinatura digital possui validade jurídica para fins de confirmação da prestação de serviços ou aceite contratual relacionado ao documento <span className="text-[#3b82f6]">#{request.documentId.slice(-6)}</span>.
+              </p>
+            </div>
+
+            <Button 
+              onClick={handleSave} 
+              disabled={isSubmitting || !signature}
+              className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-bold text-base shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98]"
+            >
+              {isSubmitting ? (
+                <>
+                  <RefreshCw className="mr-2 animate-spin" size={20} />
+                  Processando...
+                </>
+              ) : 'Confirmar Assinatura'}
+            </Button>
+          </CardContent>
+        </Card>
+        
+        <p className="text-center text-[10px] text-[#555] uppercase font-bold tracking-widest">Plataforma Segura SegurPro</p>
+      </div>
+      <Toaster position="top-center" theme="dark" />
     </div>
   );
 }
@@ -1569,6 +1786,12 @@ export default function MainApp() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
   const [loading, setLoading] = useState(true);
+
+  const signerToken = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('signerToken');
+  }, []);
+
   const [activeTab, setActiveTab] = useState('dashboard');
   const [visits, setVisits] = useState<TechnicalVisit[]>([]);
   const [serviceOrders, setServiceOrders] = useState<ServiceOrder[]>([]);
@@ -2248,6 +2471,10 @@ export default function MainApp() {
       console.error(error);
     }
   };
+
+  if (signerToken) {
+    return <ExternalSignaturePage token={signerToken} />;
+  }
 
   if (loading) {
     return (
@@ -3829,6 +4056,11 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
                       }}>
                         <Pencil size={14} />
                       </Button>
+                      {client.type === 'Contrato' && (
+                        <Button variant="outline" size="icon" title="Solicitar Assinatura Contrato" className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => handleGenerateSignatureLink(client.id, 'contract', (client.name || 'Cliente'), companyId)}>
+                          <PenTool size={14} />
+                        </Button>
+                      )}
                       <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
                         setClientToDelete(client);
                         setIsDeleteConfirmOpen(true);
@@ -7020,12 +7252,6 @@ function VisitsChart({ data, onBarClick }: { data: any[], onBarClick?: (date: Da
       <ResponsiveContainer width="100%" height="100%">
         <BarChart 
           data={data}
-          onClick={(state: any) => {
-            if (state && state.activePayload && state.activePayload.length > 0 && onBarClick) {
-              const date = state.activePayload[0].payload.fullDate;
-              if (date) onBarClick(date);
-            }
-          }}
           className="cursor-pointer"
         >
           <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
@@ -7058,6 +7284,11 @@ function VisitsChart({ data, onBarClick }: { data: any[], onBarClick?: (date: Da
             radius={[4, 4, 0, 0]} 
             barSize={40}
             style={{ cursor: 'pointer' }}
+            onClick={(props: any) => {
+              if (onBarClick && props && props.fullDate) {
+                onBarClick(props.fullDate);
+              }
+            }}
           />
         </BarChart>
       </ResponsiveContainer>
@@ -7794,7 +8025,13 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
     
     // Signatures
     doc.setLineWidth(0.3);
-    if (appSettings.signatureUrl) {
+    if (visit.technicianSignature) {
+      try {
+        doc.addImage(visit.technicianSignature, 'PNG', 35, signatureY - 8, 40, 15);
+      } catch (e) {
+        console.error("Erro ao adicionar assinatura técnica:", e);
+      }
+    } else if (appSettings.signatureUrl) {
       try {
         doc.addImage(appSettings.signatureUrl, 'PNG', 35, signatureY - 8, 40, 15);
       } catch (e) {
@@ -7805,6 +8042,13 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
     doc.text('Assinatura do Técnico', 57.5, signatureY + 15, { align: 'center' });
     doc.text(visit.technicianName, 57.5, signatureY + 20, { align: 'center' });
     
+    if (visit.clientSignature) {
+      try {
+        doc.addImage(visit.clientSignature, 'PNG', 130, signatureY - 8, 40, 15);
+      } catch (e) {
+        console.error("Erro ao adicionar assinatura do cliente:", e);
+      }
+    }
     doc.line(120, signatureY + 10, 185, signatureY + 10);
     doc.text('Assinatura do Cliente', 152.5, signatureY + 15, { align: 'center' });
     doc.text(visit.responsibleName || visit.clientName, 152.5, signatureY + 20, { align: 'center' });
@@ -8052,6 +8296,9 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
                     </Button>
                     <Button variant="outline" size="icon" title="Gerar PDF" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => generateVisitPDF(visit)}>
                       <Share2 size={14} />
+                    </Button>
+                    <Button variant="outline" size="icon" title="Solicitar Assinatura Externa" className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => handleGenerateSignatureLink(visit.id, 'visit', visit.clientName, companyId)}>
+                      <PenTool size={14} />
                     </Button>
                     <Button variant="outline" size="icon" title="Excluir" className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
                       setVisitToDelete(visit);
@@ -9323,6 +9570,9 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                 <div className="flex items-center justify-between">
                   <p className="text-lg font-bold text-white">R$ {(os.totalValue || 0).toFixed(2)}</p>
                   <div className="flex gap-1">
+                    <Button variant="ghost" size="icon" title="Solicitar Assinatura Externa" className="h-8 w-8 text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => handleGenerateSignatureLink(os.id, 'service-order', os.clientName, companyId)}>
+                      <PenTool size={14} />
+                    </Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-[#a0a0a0] hover:text-white" onClick={() => {
                       setEditingOS({
                         ...os,
@@ -9761,17 +10011,25 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
 
     finalY += 20;
 
-    if (appSettings.signatureUrl) {
+    if (budget.clientSignature) {
       try {
-        doc.addImage(appSettings.signatureUrl, 'PNG', 80, finalY - 15, 50, 15);
+        doc.addImage(budget.clientSignature, 'PNG', 20, finalY - 15, 50, 15);
       } catch (e) {
-        console.error("Erro ao adicionar assinatura ao orçamento:", e);
+        console.error("Erro ao adicionar assinatura do cliente ao orçamento:", e);
       }
     }
-    doc.line(70, finalY, 140, finalY);
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(appSettings.responsible || appSettings.companyName, 105, finalY + 5, { align: 'center' });
+    doc.line(20, finalY, 70, finalY);
+    doc.text('Assinatura do Cliente', 45, finalY + 5, { align: 'center' });
+
+    if (appSettings.signatureUrl) {
+      try {
+        doc.addImage(appSettings.signatureUrl, 'PNG', 130, finalY - 15, 50, 15);
+      } catch (e) {
+        console.error("Erro ao adicionar assinatura da empresa ao orçamento:", e);
+      }
+    }
+    doc.line(120, finalY, 190, finalY);
+    doc.text(appSettings.responsible || appSettings.companyName, 155, finalY + 5, { align: 'center' });
 
     const nameForFilename = (budget.clientName || 'Cliente_Sem_Nome').replace(/\s/g, '_');
     doc.save(`orcamento_${nameForFilename}.pdf`);
@@ -9972,6 +10230,9 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white text-[11px]" onClick={() => generateBudgetPDF(budget)}>
                     PDF
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10 text-[11px]" title="Solicitar Assinatura Externa" onClick={() => handleGenerateSignatureLink(budget.id, 'contract', budget.clientName, companyId)}>
+                    <PenTool size={14} />
                   </Button>
                   <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#10b981] hover:bg-[#10b981]/10 text-[11px]" onClick={() => {
                     generateBudgetPDF(budget);
