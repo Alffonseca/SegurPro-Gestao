@@ -34,7 +34,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Printer,
-  ShieldAlert
+  ShieldAlert,
+  Lock
 } from 'lucide-react';
 import { 
   collection, 
@@ -197,12 +198,11 @@ const formatRecordNumber = (number?: number | string, date?: any) => {
   return `${numStr.padStart(5, '0')}/${year}`;
 };
 
-const ALL_ROLES = [
-  { id: 'admin', label: 'Administrador' },
-  { id: 'tecnico', label: 'Técnico' },
-  { id: 'secretaria', label: 'Secretaria' },
-  { id: 'auxiliar', label: 'Auxiliar' }
-];
+const formatFullDateWithCity = (date: any, appSettings: AppSettings) => {
+  const d = date instanceof Timestamp ? date.toDate() : (date instanceof Date ? date : new Date(date));
+  const cityStr = appSettings.city || 'Sua Cidade';
+  return `${cityStr} ${format(d, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}`;
+};
 
 const ALL_MENU_ITEMS = [
   { id: 'dashboard', label: 'Painel Geral' },
@@ -216,6 +216,19 @@ const ALL_MENU_ITEMS = [
   { id: 'service-orders', label: 'Ordens de Serviço' },
   { id: 'users', label: 'Gerenciar Equipe' },
   { id: 'settings', label: 'Configurações' }
+];
+
+interface UserRole {
+  id: string;
+  label: string;
+  isCustom?: boolean;
+}
+
+const DEFAULT_ROLES: UserRole[] = [
+  { id: 'admin', label: 'Administrador' },
+  { id: 'tecnico', label: 'Técnico' },
+  { id: 'secretaria', label: 'Secretaria' },
+  { id: 'auxiliar', label: 'Auxiliar' }
 ];
 
 const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettings: PixSettings) => {
@@ -439,8 +452,14 @@ const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettin
 
   // Signature Section
   checkPageBreak(60);
-  doc.text(`${appSettings.city || 'Cidade-UF'}, ${dateStr}.`, margin, currentY);
-  currentY += 35;
+  currentY += 10;
+  
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  const cityDateContract = formatFullDateWithCity(new Date(), appSettings);
+  doc.text(cityDateContract, pageWidth / 2, currentY, { align: 'center' });
+  
+  currentY += 25;
 
   if (appSettings.signatureUrl) {
     try {
@@ -558,54 +577,81 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, inc
   currentY += Math.max(20, 7 + (companyNameLines.length * 5) + (addressLines.length * 4) + 5);
   drawLine();
 
-  // 1 & 2. DADOS DO CLIENTE E EQUIPAMENTO (LADO A LADO)
-  const colWidth = contentWidth / 2 - 5;
+  // 1 & 2. DADOS DO CLIENTE E EQUIPAMENTO (BOX LAYOUT)
+  const boxWidth = (contentWidth / 2) - 3;
+  const boxHeight = 35;
   const startY = currentY;
 
-  // 1. Dados do Cliente
+  // Draw Box 1: Client Data
+  doc.setDrawColor(200, 200, 200);
+  doc.setLineWidth(0.2);
+  doc.rect(margin, currentY, boxWidth, boxHeight);
+  
   doc.setFillColor(240, 240, 240);
-  doc.rect(margin, currentY, colWidth, 7, 'F');
+  doc.rect(margin, currentY, boxWidth, 7, 'F');
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(50, 50, 50);
-  doc.text('1. DADOS DO CLIENTE', margin + 2, currentY + 5);
-  currentY += 8;
-
-  doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-  doc.setTextColor(0, 0, 0);
+  doc.text('1. DADOS DO CLIENTE', margin + 2, currentY + 5);
   
-  const clientInfoText = `Nome: ${os.clientName}\n` +
-    `Endereço: ${os.address}\n` +
-    `Contato: ${os.contactName || ''}\n` +
-    `Fone: ${os.contact}`;
-  
-  const clientLines = doc.splitTextToSize(clientInfoText, colWidth);
-  doc.text(clientLines, margin, currentY);
-  const clientHeight = (clientLines.length * 5) + 3;
-  
-  // 2. Informações do Equipamento
-  currentY = startY;
-  const col2X = margin + colWidth + 10;
-  doc.setFillColor(240, 240, 240);
-  doc.rect(col2X, currentY, colWidth, 7, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.text('2. EQUIPAMENTO / SERVIÇO', col2X + 2, currentY + 5);
-  currentY += 8;
-
   doc.setFont('helvetica', 'normal');
-  const equipInfoText = `Equipamento: ${os.equipment}\n` +
-    `Marca/Modelo: ${os.brandModelSN}\n` +
-    `Tipo: ${os.serviceType}`;
+  doc.setFontSize(8);
+  let clientY = currentY + 12;
   
-  const equipLines = doc.splitTextToSize(equipInfoText, colWidth);
-  doc.text(equipLines, col2X, currentY);
-  const equipHeight = (equipLines.length * 5) + 3;
+  doc.setFont('helvetica', 'bold');
+  doc.text('NOME:', margin + 2, clientY);
+  doc.setFont('helvetica', 'normal');
+  const clientNameLines = doc.splitTextToSize(os.clientName || 'N/A', boxWidth - 18);
+  doc.text(clientNameLines, margin + 15, clientY);
+  clientY += (clientNameLines.length * 4);
 
-  currentY = startY + Math.max(clientHeight, equipHeight) + 8;
+  doc.setFont('helvetica', 'bold');
+  doc.text('ENDEREÇO:', margin + 2, clientY);
+  doc.setFont('helvetica', 'normal');
+  const addressLinesBox = doc.splitTextToSize(os.address || 'N/A', boxWidth - 22);
+  doc.text(addressLinesBox, margin + 20, clientY);
+  clientY += (addressLinesBox.length * 4);
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('FONE:', margin + 2, clientY);
+  doc.setFont('helvetica', 'normal');
+  doc.text(os.contact || 'N/A', margin + 15, clientY);
+
+  // Draw Box 2: Equipment/Service
+  const col2X = margin + boxWidth + 6;
+  doc.rect(col2X, startY, boxWidth, boxHeight);
+  
+  doc.setFillColor(240, 240, 240);
+  doc.rect(col2X, startY, boxWidth, 7, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.text('2. EQUIPAMENTO/SERVIÇO', col2X + 2, startY + 5);
+  
+  let equipY = startY + 12;
+  doc.setFontSize(8);
+  
+  doc.setFont('helvetica', 'bold');
+  doc.text('EQUIP:', col2X + 2, equipY);
+  doc.setFont('helvetica', 'normal');
+  const equipLinesBox = doc.splitTextToSize(os.equipment || 'N/A', boxWidth - 18);
+  doc.text(equipLinesBox, col2X + 15, equipY);
+  equipY += (equipLinesBox.length * 4);
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('MARCA:', col2X + 2, equipY);
+  doc.setFont('helvetica', 'normal');
+  const brandLinesBox = doc.splitTextToSize(os.brandModelSN || 'N/A', boxWidth - 18);
+  doc.text(brandLinesBox, col2X + 15, equipY);
+  equipY += (brandLinesBox.length * 4);
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('TIPO:', col2X + 2, equipY);
+  doc.setFont('helvetica', 'normal');
+  doc.text(os.serviceType || 'N/A', col2X + 15, equipY);
+
+  currentY = startY + boxHeight + 8;
 
   // 3. PROBLEMA RELATADO
   doc.setDrawColor(200, 200, 200);
+  doc.setLineWidth(0.3);
   doc.line(margin, currentY - 4, pageWidth - margin, currentY - 4);
   
   doc.setFont('helvetica', 'bold');
@@ -694,25 +740,32 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, inc
   currentY += 5;
 
   // 5. ASSINATURAS
-  checkPageBreak(30);
-  currentY += 5;
+  checkPageBreak(40);
+  currentY += 10;
+
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  const cityDateOS = formatFullDateWithCity(os.date, appSettings);
+  doc.text(cityDateOS, pageWidth / 2, currentY, { align: 'center' });
+  
+  currentY += 20;
   
   doc.setLineWidth(0.3);
-  doc.line(margin + 10, currentY + 12, margin + 80, currentY + 12);
-  doc.line(pageWidth - margin - 80, currentY + 12, pageWidth - margin - 10, currentY + 12);
+  doc.line(margin + 10, currentY, margin + 80, currentY);
+  doc.line(pageWidth - margin - 80, currentY, pageWidth - margin - 10, currentY);
   
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
-  doc.text('Assinatura do Técnico', margin + 45, currentY + 17, { align: 'center' });
-  doc.text('Assinatura do Cliente (Ciente)', pageWidth - margin - 45, currentY + 17, { align: 'center' });
+  doc.text('Assinatura do Técnico', margin + 45, currentY + 5, { align: 'center' });
+  doc.text('Assinatura do Cliente (Ciente)', pageWidth - margin - 45, currentY + 5, { align: 'center' });
   
   if (os.technicianSignature) {
-    try { doc.addImage(os.technicianSignature, 'PNG', margin + 25, currentY - 6, 40, 16); } catch(e) {}
+    try { doc.addImage(os.technicianSignature, 'PNG', margin + 25, currentY - 18, 40, 16); } catch(e) {}
   } else if (appSettings.signatureUrl) {
-    try { doc.addImage(appSettings.signatureUrl, 'PNG', margin + 25, currentY - 6, 40, 16); } catch(e) {}
+    try { doc.addImage(appSettings.signatureUrl, 'PNG', margin + 25, currentY - 18, 40, 16); } catch(e) {}
   }
   if (os.clientSignature) {
-    try { doc.addImage(os.clientSignature, 'PNG', pageWidth - margin - 65, currentY - 6, 40, 16); } catch(e) {}
+    try { doc.addImage(os.clientSignature, 'PNG', pageWidth - margin - 65, currentY - 18, 40, 16); } catch(e) {}
   }
 
   doc.save(`OS_${formatRecordNumber(os.number, os.date).replace('/', '-')}.pdf`);
@@ -756,6 +809,7 @@ const generateOSLabelsPDF = (selectedOSs: ServiceOrder[], appSettings: AppSettin
     let currentY = startY + 7;
 
     // Logo & Cabeçalho
+    doc.setFontSize(9);
     if (appSettings.logoUrl) {
       try {
         doc.addImage(appSettings.logoUrl, 'PNG', startX + internalMargin, currentY - 3, 12, 12);
@@ -827,7 +881,7 @@ const generateOSLabelsPDF = (selectedOSs: ServiceOrder[], appSettings: AppSettin
 
     drawField('Cliente:', os.clientName);
     drawField('Início:', formatDateSafe(os.startDateTime));
-    drawField('Fim:', formatDateSafe(os.endDateTime));
+    drawField('Fim:', os.status === 'Concluído' ? formatDateSafe(os.updatedAt || os.endDateTime) : formatDateSafe(os.endDateTime));
     drawField('Eqp/Mod:', `${os.equipment} ${os.brandModelSN}`);
     drawField('Técnico:', os.technicianName || 'N/A');
     drawField('Status:', os.status);
@@ -841,6 +895,9 @@ const generateOSLabelsPDF = (selectedOSs: ServiceOrder[], appSettings: AppSettin
     const splitNote = doc.splitTextToSize(noteText, contentWidth);
     const visibleNote = splitNote.slice(0, 2);
     doc.text(visibleNote, startX + internalMargin, currentY);
+
+    // Reset line width for next label
+    doc.setLineWidth(0.3);
   });
 
   doc.save(`etiquetas_os_A4_${new Date().getTime()}.pdf`);
@@ -1085,7 +1142,7 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
   doc.setTextColor(0, 0, 0);
   doc.setFont('helvetica', 'normal');
   const serviceText = receipt.serviceSpecification || 'Serviços prestados';
-  const splitService = doc.splitTextToSize(serviceText, isContract ? 130 : 90);
+  const splitService = doc.splitTextToSize(serviceText, isContract ? 130 : 65);
   doc.text(splitService, 25, servicesY + 18);
   
   const formattedVal = `R$ ${Number(receipt.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
@@ -1149,20 +1206,24 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
     currentY += 20; // Space before signature
   }
 
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  const cityFullDate = formatFullDateWithCity(receipt.date, appSettings);
+  doc.text(cityFullDate, 105, currentY, { align: 'center' });
+
+  currentY += 15;
+
   if (appSettings.signatureUrl) {
     try {
-      doc.addImage(appSettings.signatureUrl, 'PNG', 80, currentY, 50, 20);
+      doc.addImage(appSettings.signatureUrl, 'PNG', 80, currentY - 5, 50, 15);
     } catch (e) {
       console.error("Erro ao adicionar assinatura ao recibo:", e);
     }
   }
 
-  doc.setTextColor(0, 0, 0);
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.text(dateStr, 105, currentY + 25, { align: 'center' });
-  doc.line(70, currentY + 30, 140, currentY + 30);
-  doc.text(appSettings.companyName || 'André Fonseca', 105, currentY + 35, { align: 'center' });
+  doc.line(70, currentY + 12, 140, currentY + 12);
+  doc.text(appSettings.companyName || 'André Fonseca', 105, currentY + 17, { align: 'center' });
   
   const fileName = `recibo_${receipt.clientName.replace(/\s/g, '_')}.pdf`;
 
@@ -1539,6 +1600,7 @@ export default function MainApp() {
     accounts: []
   });
   const [rolePermissions, setRolePermissions] = useState<any>(null);
+  const [customRoles, setCustomRoles] = useState<UserRole[]>([]);
   const [appSettings, setAppSettings] = useState<AppSettings>({
     logoUrl: '',
     companyName: '',
@@ -1628,7 +1690,7 @@ export default function MainApp() {
         }
       } else {
         // Initial setup for new user
-        const isSuper = user.email === 'emailparasiteslixo@gmail.com';
+        const isSuper = user.email === 'emailparasiteslixo@gmail.com' || user.email === 'alffonseca42@gmail.com';
         try {
           const initialData = {
             uid: user.uid,
@@ -1673,8 +1735,21 @@ export default function MainApp() {
       setLoading(false);
     });
 
-    return () => unsubscribeCompany();
+    const unsubRoles = onSnapshot(doc(db, 'companies', currentUserData.companyId, 'settings', 'roles'), (docSnap) => {
+      if (docSnap.exists()) {
+        setCustomRoles(docSnap.data().roles || []);
+      } else {
+        setCustomRoles([]);
+      }
+    });
+
+    return () => {
+      unsubscribeCompany();
+      unsubRoles();
+    };
   }, [currentUserData?.companyId]);
+
+  const userRoles = useMemo(() => [...DEFAULT_ROLES, ...customRoles], [customRoles]);
 
   // Redirect technicians if they land on dashboard
   useEffect(() => {
@@ -1683,7 +1758,9 @@ export default function MainApp() {
     }
   }, [currentUserData, activeTab]);
 
-  const isSuperAdmin = user?.email?.toLowerCase().trim() === 'emailparasiteslixo@gmail.com' || currentUserData?.role === 'super_admin';
+  const isSuperAdmin = user?.email?.toLowerCase().trim() === 'emailparasiteslixo@gmail.com' || 
+                       user?.email?.toLowerCase().trim() === 'alffonseca42@gmail.com' || 
+                       currentUserData?.role === 'super_admin';
 
   // Access Helper for Sidebar
   const canAccess = (tabName: string) => {
@@ -1740,8 +1817,8 @@ export default function MainApp() {
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
 
       const tabs = [
-        'dashboard', 'visits', 'financial', 'budgets', 'service-orders',
-        'clients', 'suppliers', 'receipts', 'users', 'settings', 'reports', 'super-admin'
+        'dashboard', 'visits', 'service-orders', 'budgets', 'financial', 
+        'receipts', 'clients', 'suppliers', 'reports', 'users', 'settings', 'super-admin'
       ].filter(canAccess);
 
       const currentIndex = tabs.indexOf(activeTab);
@@ -2006,10 +2083,12 @@ export default function MainApp() {
   const handleCreateCompany = async (name: string) => {
     if (!user) return;
     try {
+      const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
       const companyRef = await addDoc(collection(db, 'companies'), {
         name,
         ownerId: user.uid,
         status: 'active', // Default status
+        inviteCode,
         createdAt: Timestamp.now()
       });
       
@@ -2068,18 +2147,45 @@ export default function MainApp() {
 
   const handleJoinCompany = async (code: string) => {
     if (!user) return;
+    const cleanCode = code.trim().toUpperCase();
     try {
-      const companyRef = doc(db, 'companies', code.trim());
-      const companySnap = await getDoc(companyRef);
+      // First try joining by the new inviteCode
+      const companiesRef = collection(db, 'companies');
+      const q = query(companiesRef, where('inviteCode', '==', cleanCode));
+      const querySnap = await getDocs(q);
       
-      if (companySnap.exists()) {
+      let targetCompanyId = '';
+      let isInviteCode = false;
+
+      if (!querySnap.empty) {
+        targetCompanyId = querySnap.docs[0].id;
+        isInviteCode = true;
+      } else {
+        // Fallback to joining by companyId (legacy or persistent)
+        const companyRef = doc(db, 'companies', code.trim());
+        const companySnap = await getDoc(companyRef);
+        if (companySnap.exists()) {
+          targetCompanyId = companySnap.id;
+        }
+      }
+      
+      if (targetCompanyId) {
         await updateDoc(doc(db, 'users', user.uid), {
-          companyId: companyRef.id,
-          role: 'technician'
+          companyId: targetCompanyId,
+          role: 'tecnico'
         });
+
+        // If it was an invite code, regenerate it to make it "single use" or rotate it
+        if (isInviteCode) {
+          const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+          await updateDoc(doc(db, 'companies', targetCompanyId), {
+            inviteCode: newCode
+          });
+        }
+
         toast.success("Você entrou na empresa com sucesso!");
       } else {
-        toast.error("Código de empresa inválido.");
+        toast.error("Código de acesso inválido.");
       }
     } catch (error) {
       console.error("Erro ao entrar na empresa:", error);
@@ -2341,77 +2447,12 @@ export default function MainApp() {
         </div>
         <ScrollArea className="flex-1 px-4 py-4 overflow-y-auto">
           <nav className="space-y-1">
-            {isSuperAdmin && allCompanies.length > 0 && (
-              <div className="px-4 py-2 mb-4">
-                <p className="text-[10px] text-[#71717a] font-medium uppercase mb-2">Visão da Empresa</p>
-                <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
-                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-xs h-9 text-white">
-                    <SelectValue>
-                      {allCompanies.find(c => c.id === selectedCompanyId)?.name || 'Empresa S/N'}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                    {allCompanies.map(c => (
-                      <SelectItem key={c.id} value={c.id}>{c.name || 'Empresa S/N'}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
             {canAccess('dashboard') && (
               <SidebarItem 
                 icon={<LayoutDashboard size={18} />} 
                 label="Painel Geral" 
                 active={activeTab === 'dashboard'} 
                 onClick={() => setActiveTab('dashboard')} 
-              />
-            )}
-            {canAccess('clients') && (
-              <SidebarItem 
-                icon={<UserIcon size={18} />} 
-                label="Clientes" 
-                active={activeTab === 'clients'} 
-                onClick={() => setActiveTab('clients')} 
-              />
-            )}
-            {canAccess('suppliers') && (
-              <SidebarItem 
-                icon={<Database size={18} />} 
-                label="Fornecedores" 
-                active={activeTab === 'suppliers'} 
-                onClick={() => setActiveTab('suppliers')} 
-              />
-            )}
-            {canAccess('financial') && (
-              <SidebarItem 
-                icon={<DollarSign size={18} />} 
-                label="Financeiro" 
-                active={activeTab === 'financial'} 
-                onClick={() => setActiveTab('financial')} 
-              />
-            )}
-            {canAccess('receipts') && (
-              <SidebarItem 
-                icon={<ReceiptIcon size={18} />} 
-                label="Recibos" 
-                active={activeTab === 'receipts'} 
-                onClick={() => setActiveTab('receipts')} 
-              />
-            )}
-            {canAccess('reports') && (
-              <SidebarItem 
-                icon={<FileText size={18} />} 
-                label="Relatórios" 
-                active={activeTab === 'reports'} 
-                onClick={() => setActiveTab('reports')} 
-              />
-            )}
-            {canAccess('budgets') && (
-              <SidebarItem 
-                icon={<FileText size={18} />} 
-                label="Orçamentos" 
-                active={activeTab === 'budgets'} 
-                onClick={() => setActiveTab('budgets')} 
               />
             )}
             {canAccess('visits') && (
@@ -2430,10 +2471,58 @@ export default function MainApp() {
                 onClick={() => setActiveTab('service-orders')} 
               />
             )}
+            {canAccess('budgets') && (
+              <SidebarItem 
+                icon={<FileText size={18} />} 
+                label="Orçamentos" 
+                active={activeTab === 'budgets'} 
+                onClick={() => setActiveTab('budgets')} 
+              />
+            )}
+            {canAccess('financial') && (
+              <SidebarItem 
+                icon={<DollarSign size={18} />} 
+                label="Financeiro" 
+                active={activeTab === 'financial'} 
+                onClick={() => setActiveTab('financial')} 
+              />
+            )}
+            {canAccess('receipts') && (
+              <SidebarItem 
+                icon={<ReceiptIcon size={18} />} 
+                label="Recibos" 
+                active={activeTab === 'receipts'} 
+                onClick={() => setActiveTab('receipts')} 
+              />
+            )}
+            {canAccess('clients') && (
+              <SidebarItem 
+                icon={<UserIcon size={18} />} 
+                label="Clientes" 
+                active={activeTab === 'clients'} 
+                onClick={() => setActiveTab('clients')} 
+              />
+            )}
+            {canAccess('suppliers') && (
+              <SidebarItem 
+                icon={<Database size={18} />} 
+                label="Fornecedores" 
+                active={activeTab === 'suppliers'} 
+                onClick={() => setActiveTab('suppliers')} 
+              />
+            )}
+            {canAccess('reports') && (
+              <SidebarItem 
+                icon={<FileText size={18} />} 
+                label="Relatórios" 
+                active={activeTab === 'reports'} 
+                onClick={() => setActiveTab('reports')} 
+              />
+            )}
             {canAccess('users') && (
               <SidebarItem 
                 icon={<Users size={18} />} 
-                label="Gerenciar Equipe" 
+                label="Equipe" 
                 active={activeTab === 'users'} 
                 onClick={() => setActiveTab('users')} 
               />
@@ -2494,7 +2583,9 @@ export default function MainApp() {
               <Shield size={18} />
             </div>
           )}
-          <span className="font-bold tracking-tight text-white truncate max-w-[180px]">{currentCompany?.name || appSettings.companyName || 'SegurPro Gestão'}</span>
+          <span className="font-bold tracking-tight text-white truncate max-w-[180px]">
+            {appSettings?.companyName || currentCompany?.companyName || currentCompany?.name || 'SegurPro Gestão'}
+          </span>
         </div>
         <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="text-white">
           {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
@@ -2513,20 +2604,28 @@ export default function MainApp() {
                 onClick={() => { setActiveTab('dashboard'); setIsMobileMenuOpen(false); }} 
               />
             )}
-            {canAccess('clients') && (
+            {canAccess('visits') && (
               <SidebarItem 
-                icon={<UserIcon size={20} />} 
-                label="Clientes" 
-                active={activeTab === 'clients'} 
-                onClick={() => { setActiveTab('clients'); setIsMobileMenuOpen(false); }} 
+                icon={<CalendarIcon size={20} />} 
+                label="Visitas Técnicas" 
+                active={activeTab === 'visits'} 
+                onClick={() => { setActiveTab('visits'); setIsMobileMenuOpen(false); }} 
               />
             )}
-            {canAccess('suppliers') && (
+            {canAccess('service-orders') && (
               <SidebarItem 
-                icon={<Database size={20} />} 
-                label="Fornecedores" 
-                active={activeTab === 'suppliers'} 
-                onClick={() => { setActiveTab('suppliers'); setIsMobileMenuOpen(false); }} 
+                icon={<CheckCircle2 size={20} />} 
+                label="Ordens de Serviço" 
+                active={activeTab === 'service-orders'} 
+                onClick={() => { setActiveTab('service-orders'); setIsMobileMenuOpen(false); }} 
+              />
+            )}
+            {canAccess('budgets') && (
+              <SidebarItem 
+                icon={<FileText size={20} />} 
+                label="Orçamentos" 
+                active={activeTab === 'budgets'} 
+                onClick={() => { setActiveTab('budgets'); setIsMobileMenuOpen(false); }} 
               />
             )}
             {canAccess('financial') && (
@@ -2545,6 +2644,22 @@ export default function MainApp() {
                 onClick={() => { setActiveTab('receipts'); setIsMobileMenuOpen(false); }} 
               />
             )}
+            {canAccess('clients') && (
+              <SidebarItem 
+                icon={<UserIcon size={20} />} 
+                label="Clientes" 
+                active={activeTab === 'clients'} 
+                onClick={() => { setActiveTab('clients'); setIsMobileMenuOpen(false); }} 
+              />
+            )}
+            {canAccess('suppliers') && (
+              <SidebarItem 
+                icon={<Database size={20} />} 
+                label="Fornecedores" 
+                active={activeTab === 'suppliers'} 
+                onClick={() => { setActiveTab('suppliers'); setIsMobileMenuOpen(false); }} 
+              />
+            )}
             {canAccess('reports') && (
               <SidebarItem 
                 icon={<FileText size={20} />} 
@@ -2553,34 +2668,10 @@ export default function MainApp() {
                 onClick={() => { setActiveTab('reports'); setIsMobileMenuOpen(false); }} 
               />
             )}
-            {canAccess('budgets') && (
-              <SidebarItem 
-                icon={<FileText size={20} />} 
-                label="Orçamentos" 
-                active={activeTab === 'budgets'} 
-                onClick={() => { setActiveTab('budgets'); setIsMobileMenuOpen(false); }} 
-              />
-            )}
-            {canAccess('visits') && (
-              <SidebarItem 
-                icon={<CalendarIcon size={20} />} 
-                label="Visitas Técnicas" 
-                active={activeTab === 'visits'} 
-                onClick={() => { setActiveTab('visits'); setIsMobileMenuOpen(false); }} 
-              />
-            )}
-            {canAccess('service-orders') && (
-              <SidebarItem 
-                icon={<CheckCircle2 size={20} />} 
-                label="Ordens de Serviço" 
-                active={activeTab === 'service-orders'} 
-                onClick={() => { setActiveTab('service-orders'); setIsMobileMenuOpen(false); }} 
-              />
-            )}
             {canAccess('users') && (
               <SidebarItem 
                 icon={<Users size={20} />} 
-                label="Gerenciar Equipe" 
+                label="Equipe" 
                 active={activeTab === 'users'} 
                 onClick={() => { setActiveTab('users'); setIsMobileMenuOpen(false); }} 
               />
@@ -2616,7 +2707,7 @@ export default function MainApp() {
         <header className="hidden md:flex h-24 items-center justify-center px-10 border-b border-[#2d3139] bg-[#1a1d23]">
           <div className="text-center">
             <p className="text-sm font-bold text-[#3b82f6] uppercase tracking-[0.2em] mb-1">
-              {currentCompany?.name || appSettings.companyName || 'SegurPro Gestão'}
+              {appSettings?.companyName || currentCompany?.companyName || currentCompany?.name || 'SegurPro Gestão'}
             </p>
             <p className="text-[10px] text-[#71717a] uppercase tracking-widest mb-1">
               {format(new Date(), "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })}
@@ -2628,6 +2719,7 @@ export default function MainApp() {
                activeTab === 'budgets' ? 'Orçamentos' :
                activeTab === 'service-orders' ? 'Ordens de Serviço' :
                activeTab === 'clients' ? 'Gestão de Clientes' :
+               activeTab === 'suppliers' ? 'Gestão de Fornecedores' :
                activeTab === 'receipts' ? 'Recibos Emitidos' :
                activeTab === 'reports' ? 'Relatórios Gerais' :
                activeTab === 'users' ? 'Controle de Equipe' :
@@ -2699,7 +2791,7 @@ export default function MainApp() {
               showList={canViewList('reports')}
             />
           )}
-          {activeTab === 'users' && <UsersManager users={users} currentUserData={currentUserData} showList={canViewList('users')} />}
+          {activeTab === 'users' && <UsersManager users={users} currentUserData={currentUserData} showList={canViewList('users')} userRoles={userRoles} />}
           {activeTab === 'super-admin' && (
             <SuperAdminPanel 
               companies={allCompanies} 
@@ -2710,14 +2802,29 @@ export default function MainApp() {
               setSelectedCompanyId={setSelectedCompanyId}
             />
           )}
-          {activeTab === 'settings' && <SettingsManager pixSettings={pixSettings} appSettings={appSettings} user={user!} companyId={currentUserData?.companyId || ''} currentUserData={currentUserData} />}
+          {activeTab === 'settings' && (
+            <SettingsManager 
+              pixSettings={pixSettings} 
+              appSettings={appSettings} 
+              user={user!} 
+              companyId={currentUserData?.companyId || ''} 
+              currentUserData={currentUserData}
+              allCompanies={allCompanies}
+              selectedCompanyId={selectedCompanyId}
+              setSelectedCompanyId={setSelectedCompanyId}
+              isSuperAdmin={isSuperAdmin}
+              currentCompany={currentCompany}
+              customRoles={customRoles}
+              userRoles={userRoles}
+            />
+          )}
         </div>
       </main>
     </div>
   );
 }
 
-function UsersManager({ users = [], currentUserData, showList }: { users?: any[], currentUserData: any, showList: boolean }) {
+function UsersManager({ users = [], currentUserData, showList, userRoles }: { users?: any[], currentUserData: any, showList: boolean, userRoles: UserRole[] }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'tecnico' });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -2939,13 +3046,13 @@ function UsersManager({ users = [], currentUserData, showList }: { users?: any[]
                   <Select value={newUser.role} onValueChange={(val: any) => setNewUser({...newUser, role: val})}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
                       <SelectValue>
-                        {newUser.role === 'admin' ? 'Administrador' : newUser.role === 'secretaria' ? 'Secretaria' : newUser.role === 'tecnico' ? 'Técnico' : 'Selecione o nível'}
+                      {userRoles.find(r => r.id === newUser.role)?.label || 'Selecione o nível'}
                       </SelectValue>
                     </SelectTrigger>
-                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      <SelectItem value="admin">Administrador</SelectItem>
-                      <SelectItem value="secretaria">Secretaria</SelectItem>
-                      <SelectItem value="tecnico">Técnico</SelectItem>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-[#e0e0e0]">
+                      {userRoles.map(role => (
+                        <SelectItem key={role.id} value={role.id}>{role.label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -3012,9 +3119,10 @@ function UsersManager({ users = [], currentUserData, showList }: { users?: any[]
                       "font-normal text-[10px] uppercase tracking-wider",
                       u.role === 'admin' ? "bg-purple-500/10 text-purple-500" : 
                       u.role === 'secretaria' ? "bg-pink-500/10 text-pink-500" : 
-                      "bg-blue-500/10 text-blue-500"
+                      u.role === 'tecnico' ? "bg-blue-500/10 text-blue-500" :
+                      "bg-yellow-500/10 text-yellow-500"
                     )}>
-                      {u.role === 'admin' ? 'Administrador' : u.role === 'secretaria' ? 'Secretaria' : 'Técnico'}
+                      {userRoles.find(r => r.id === u.role)?.label || u.role}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-[12px] text-[#71717a]">
@@ -3054,13 +3162,13 @@ function UsersManager({ users = [], currentUserData, showList }: { users?: any[]
                   <Select value={editingUser.role} onValueChange={(val: any) => setEditingUser({...editingUser, role: val})}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
                       <SelectValue>
-                        {editingUser.role === 'admin' ? 'Administrador' : editingUser.role === 'secretaria' ? 'Secretaria' : editingUser.role === 'tecnico' ? 'Técnico' : 'Selecione o nível'}
+                      {userRoles.find(r => r.id === editingUser.role)?.label || 'Selecione o nível'}
                       </SelectValue>
                     </SelectTrigger>
-                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      <SelectItem value="admin">Administrador</SelectItem>
-                      <SelectItem value="secretaria">Secretaria</SelectItem>
-                      <SelectItem value="tecnico">Técnico</SelectItem>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-[#e0e0e0]">
+                      {userRoles.map(role => (
+                        <SelectItem key={role.id} value={role.id}>{role.label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -3982,7 +4090,7 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
             <TableHeader>
               <TableRow className="border-[#2d3139] hover:bg-transparent">
                 <TableHead className="w-[100px] text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ações</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">N.º Cadastro</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[80px]">N.º Cadastro</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Fornecedor</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Contato</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Telefone</TableHead>
@@ -5607,12 +5715,12 @@ function SuperAdminPanel({ companies = [], financials = [], saasSettings, user, 
   );
 }
 
-function RolePermissionManager({ companyId, user }: { companyId: string, user: FirebaseUser }) {
+function RolePermissionManager({ companyId, user, userRoles }: { companyId: string, user: FirebaseUser, userRoles: UserRole[] }) {
   const [rolePermissions, setRolePermissions] = useState<any>({});
   const [selectedRole, setSelectedRole] = useState<string>('tecnico');
   const [loading, setLoading] = useState(true);
 
-  const isMaster = user?.email?.toLowerCase().trim() === 'emailparasiteslixo@gmail.com';
+  const isMaster = user?.email?.toLowerCase().trim() === 'emailparasiteslixo@gmail.com' || user?.email?.toLowerCase().trim() === 'alffonseca42@gmail.com';
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'companies', companyId, 'settings', 'permissions'), (docSnap) => {
@@ -5698,8 +5806,8 @@ function RolePermissionManager({ companyId, user }: { companyId: string, user: F
               <SelectTrigger className="w-[180px] bg-transparent border-none h-8 text-xs font-bold text-white focus:ring-0">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                {ALL_ROLES.map(role => (
+              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-[#e0e0e0]">
+                {userRoles.map(role => (
                   <SelectItem key={role.id} value={role.id} className="text-xs">{role.label}</SelectItem>
                 ))}
               </SelectContent>
@@ -5772,7 +5880,164 @@ function RolePermissionManager({ companyId, user }: { companyId: string, user: F
   );
 }
 
-function SettingsManager({ pixSettings, appSettings, user, companyId, currentUserData }: { pixSettings: PixSettings, appSettings: AppSettings, user: FirebaseUser, companyId: string, currentUserData: any }) {
+function RoleSettings({ 
+  companyId, 
+  customRoles, 
+  userRoles 
+}: { 
+  companyId: string, 
+  customRoles: UserRole[], 
+  userRoles: UserRole[] 
+}) {
+  const [newRoleLabel, setNewRoleLabel] = useState('');
+  const [isAdding, setIsAdding] = useState(false);
+
+  const handleAddRole = async () => {
+    if (!newRoleLabel.trim()) return;
+    const roleId = newRoleLabel.toLowerCase()
+      .trim()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, '_')
+      .replace(/[^a-z0-9_]/g, '');
+    
+    if (userRoles.some(r => r.id === roleId)) {
+      toast.error('Este nível de acesso já existe.');
+      return;
+    }
+
+    const newRole: UserRole = {
+      id: roleId,
+      label: newRoleLabel.trim(),
+      isCustom: true
+    };
+
+    try {
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'roles'), {
+        roles: [...customRoles, newRole]
+      });
+      setNewRoleLabel('');
+      setIsAdding(false);
+      toast.success('Nível de acesso criado!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `companies/${companyId}/settings/roles`);
+    }
+  };
+
+  const handleDeleteRole = async (roleId: string) => {
+    if (!window.confirm('Tem certeza que deseja excluir este nível de acesso? Isso pode afetar usuários vinculados a ele.')) return;
+    
+    const updated = customRoles.filter(r => r.id !== roleId);
+    try {
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'roles'), {
+        roles: updated
+      });
+      toast.success('Nível de acesso removido!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `companies/${companyId}/settings/roles`);
+    }
+  };
+
+  return (
+    <Card className="bg-[#1a1d23] border-[#2d3139] overflow-hidden">
+      <CardHeader className="bg-gradient-to-r from-purple-500/10 to-transparent border-b border-[#2d3139]">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-purple-500/20 rounded-lg">
+              <Shield className="text-purple-500" size={20} />
+            </div>
+            <div>
+              <CardTitle className="text-white text-lg">Níveis de Acesso Personalizados</CardTitle>
+              <CardDescription className="text-[#a0a0a0] text-xs">Crie e gerencie cargos personalizados para sua equipe.</CardDescription>
+            </div>
+          </div>
+          <Button 
+            size="sm" 
+            variant="outline" 
+            className="border-purple-500/50 text-purple-500 hover:bg-purple-500/10"
+            onClick={() => setIsAdding(!isAdding)}
+          >
+            {isAdding ? <X size={16} /> : <Plus size={16} />}
+            <span className="ml-2">{isAdding ? 'Cancelar' : 'Novo Nível'}</span>
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="p-6 space-y-6">
+        {isAdding && (
+          <div className="flex gap-2 animate-in fade-in slide-in-from-top-2">
+            <Input 
+              value={newRoleLabel}
+              onChange={e => setNewRoleLabel(e.target.value)}
+              placeholder="Ex: Supervisor, Estagiário..."
+              className="bg-[#0f1115] border-[#2d3139] text-white"
+            />
+            <Button onClick={handleAddRole} className="bg-purple-500 hover:bg-purple-600 text-white">Criar</Button>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {DEFAULT_ROLES.map(role => (
+            <div key={role.id} className="flex items-center justify-between p-3 rounded-xl bg-[#0f1115] border border-[#2d3139] opacity-70">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">
+                  <Lock size={14} className="text-[#71717a]" />
+                </div>
+                <span className="text-sm font-medium text-white">{role.label}</span>
+              </div>
+              <Badge variant="outline" className="text-[9px] border-[#2d3139] text-[#71717a]">PADRÃO</Badge>
+            </div>
+          ))}
+          {customRoles.map(role => (
+            <div key={role.id} className="flex items-center justify-between p-3 rounded-xl bg-[#0f1115] border border-[#3b82f6]/20 hover:border-[#3b82f6]/50 transition-all group">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-[#3b82f6]/10 flex items-center justify-center">
+                  <Shield size={14} className="text-[#3b82f6]" />
+                </div>
+                <span className="text-sm font-medium text-white">{role.label}</span>
+              </div>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-8 w-8 text-[#ef4444] hover:bg-[#ef4444]/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={() => handleDeleteRole(role.id)}
+              >
+                <Trash2 size={14} />
+              </Button>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SettingsManager({ 
+  pixSettings, 
+  appSettings, 
+  user, 
+  companyId, 
+  currentUserData,
+  allCompanies = [],
+  selectedCompanyId,
+  setSelectedCompanyId,
+  isSuperAdmin = false,
+  currentCompany,
+  customRoles,
+  userRoles
+}: { 
+  pixSettings: PixSettings, 
+  appSettings: AppSettings, 
+  user: FirebaseUser, 
+  companyId: string, 
+  currentUserData: any,
+  allCompanies?: any[],
+  selectedCompanyId?: string,
+  setSelectedCompanyId?: (id: string) => void,
+  isSuperAdmin?: boolean,
+  currentCompany?: any,
+  customRoles: UserRole[],
+  userRoles: UserRole[]
+}) {
   const [localApp, setLocalApp] = useState<AppSettings>(appSettings || {
     logoUrl: '',
     companyName: '',
@@ -5805,9 +6070,26 @@ function SettingsManager({ pixSettings, appSettings, user, companyId, currentUse
   const handleSaveApp = async () => {
     try {
       await setDoc(doc(db, 'companies', companyId, 'settings', 'general'), localApp);
+      // Also update the main company document for better reactivity in the header
+      await updateDoc(doc(db, 'companies', companyId), {
+        name: localApp.companyName,
+        companyName: localApp.companyName
+      });
       toast.success('Configurações gerais salvas!');
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `companies/${companyId}/settings/general`);
+    }
+  };
+
+  const handleRotateInviteCode = async () => {
+    try {
+      const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      await updateDoc(doc(db, 'companies', companyId), {
+        inviteCode: newCode
+      });
+      toast.success('Código de convite alterado com sucesso!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `companies/${companyId}`);
     }
   };
 
@@ -6028,28 +6310,71 @@ function SettingsManager({ pixSettings, appSettings, user, companyId, currentUse
         <p className="text-[#71717a]">Gerencie os dados globais do sistema e seu perfil.</p>
       </div>
 
+      {isSuperAdmin && allCompanies.length > 0 && (
+        <Card className="bg-[#3b82f6]/5 border border-[#3b82f6]/20 p-6 rounded-xl mb-8">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="space-y-1">
+              <h3 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+                <Database className="text-[#3b82f6]" size={20} />
+                Visão da Empresa (Super Admin)
+              </h3>
+              <p className="text-sm text-[#71717a]">Selecione qual empresa você deseja visualizar e gerenciar no momento.</p>
+            </div>
+            <div className="w-full md:w-64">
+              <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
+                <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                  <SelectValue>
+                    {allCompanies.find(c => c.id === selectedCompanyId)?.name || 'Empresa S/N'}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-[#e0e0e0]">
+                  {allCompanies.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name || 'Empresa S/N'}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      <RoleSettings companyId={companyId} customRoles={customRoles} userRoles={userRoles} />
+
       <div className="flex flex-col md:flex-row justify-between items-center bg-[#3b82f6]/10 border border-[#3b82f6]/20 p-6 rounded-xl gap-4">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <h3 className="text-lg font-bold text-white tracking-tight">Código de Convite</h3>
+            <h3 className="text-lg font-bold text-white tracking-tight">Código de Acesso Técnico</h3>
             <Badge className="bg-[#3b82f6] text-white">Ativo</Badge>
           </div>
-          <p className="text-sm text-[#71717a]">Novos técnicos podem entrar na sua empresa usando este código único.</p>
+          <p className="text-sm text-[#71717a]">Novos técnicos podem entrar na sua empresa usando este código único. Ele muda automaticamente após o primeiro uso.</p>
         </div>
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <div className="bg-[#0f1115] px-4 py-2.5 rounded-lg border border-[#2d3139] text-[#3b82f6] font-mono font-bold text-lg flex-1 md:flex-none text-center">
-            {companyId}
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+          <div className="bg-[#0f1115] px-4 py-2.5 rounded-lg border border-[#2d3139] text-[#3b82f6] font-mono font-bold text-xl w-full md:w-auto text-center">
+            {currentCompany?.inviteCode || '...'}
           </div>
-          <Button 
-            variant="default" 
-            className="bg-[#3b82f6] hover:bg-[#2563eb] text-white whitespace-nowrap"
-            onClick={() => {
-              navigator.clipboard.writeText(companyId);
-              toast.success('Código copiado com sucesso!');
-            }}
-          >
-            Copiar Código
-          </Button>
+          <div className="flex gap-2 w-full sm:w-auto">
+            <Button 
+              variant="default" 
+              className="bg-[#3b82f6] hover:bg-[#2563eb] text-white flex-1 sm:flex-none"
+              onClick={() => {
+                const code = currentCompany?.inviteCode || '';
+                if (code) {
+                  navigator.clipboard.writeText(code);
+                  toast.success('Código copiado!');
+                }
+              }}
+            >
+              Copiar
+            </Button>
+            <Button 
+              variant="outline" 
+              className="border-[#2d3139] text-[#a0a0a0] hover:text-white flex-1 sm:flex-none"
+              onClick={handleRotateInviteCode}
+            >
+              <RefreshCw size={16} className="mr-2" />
+              Mudar código
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -6166,123 +6491,125 @@ function SettingsManager({ pixSettings, appSettings, user, companyId, currentUse
           </CardContent>
         </Card>
 
-        <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <UserIcon className="text-[#3b82f6]" size={20} />
-              Perfil do Usuário
-            </CardTitle>
-            <CardDescription className="text-[#71717a]">
-              Atualize seu nome de exibição e senha de acesso.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="profileName" className="text-[#a0a0a0]">Nome de Exibição</Label>
-              <Input 
-                id="profileName" 
-                value={newDisplayName} 
-                onChange={e => setNewDisplayName(e.target.value)} 
-                className="bg-[#0f1115] border-[#2d3139] text-white" 
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="profileEmail" className="text-[#a0a0a0]">E-mail (Apenas leitura)</Label>
-              <Input 
-                id="profileEmail" 
-                value={user.email || ''} 
-                disabled
-                className="bg-[#0f1115] border-[#2d3139] text-[#71717a] cursor-not-allowed" 
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="profilePass" className="text-[#a0a0a0]">Nova Senha (Deixe em branco para não alterar)</Label>
-              <Input 
-                id="profilePass" 
-                type="password"
-                value={newPassword} 
-                onChange={e => setNewPassword(e.target.value)} 
-                placeholder="Mínimo 6 caracteres"
-                className="bg-[#0f1115] border-[#2d3139] text-white" 
-              />
-            </div>
-            <Button 
-              onClick={handleUpdateProfile} 
-              disabled={isUpdatingProfile}
-              className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white"
-            >
-              {isUpdatingProfile ? 'Atualizando...' : 'Salvar Perfil'}
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Database className="text-[#3b82f6]" size={20} />
-              Backup e Restauração
-            </CardTitle>
-            <CardDescription className="text-[#71717a]">
-              Gerencie a segurança dos seus dados.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-xs text-[#a0a0a0]">
-              O backup inclui todos os clientes, visitas técnicas, orçamentos e registros financeiros vinculados à sua empresa.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Button 
-                onClick={handleDownloadBackup} 
-                disabled={isBackingUp || isRestoring}
-                variant="outline"
-                className="border-blue-500/30 text-blue-400 hover:bg-blue-500 hover:text-white h-11"
-              >
-                {isBackingUp ? (
-                  <>
-                    <RefreshCw size={16} className="mr-2 animate-spin" />
-                    Gerando...
-                  </>
-                ) : (
-                  <>
-                    <Download size={16} className="mr-2" />
-                    GERAR BACKUP
-                  </>
-                )}
-              </Button>
-
-              <div className="relative">
-                <input 
-                  type="file" 
-                  ref={fileInputRef}
-                  onChange={handleRestoreBackup}
-                  accept=".json,application/json"
-                  className="hidden"
+        <div className="space-y-8">
+          <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <UserIcon className="text-[#3b82f6]" size={20} />
+                Perfil do Usuário
+              </CardTitle>
+              <CardDescription className="text-[#71717a]">
+                Atualize seu nome de exibição e senha de acesso.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="profileName" className="text-[#a0a0a0]">Nome de Exibição</Label>
+                <Input 
+                  id="profileName" 
+                  value={newDisplayName} 
+                  onChange={e => setNewDisplayName(e.target.value)} 
+                  className="bg-[#0f1115] border-[#2d3139] text-white" 
                 />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="profileEmail" className="text-[#a0a0a0]">E-mail (Apenas leitura)</Label>
+                <Input 
+                  id="profileEmail" 
+                  value={user.email || ''} 
+                  disabled
+                  className="bg-[#0f1115] border-[#2d3139] text-[#71717a] cursor-not-allowed" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="profilePass" className="text-[#a0a0a0]">Nova Senha (Deixe em branco para não alterar)</Label>
+                <Input 
+                  id="profilePass" 
+                  type="password"
+                  value={newPassword} 
+                  onChange={e => setNewPassword(e.target.value)} 
+                  placeholder="Mínimo 6 caracteres"
+                  className="bg-[#0f1115] border-[#2d3139] text-white" 
+                />
+              </div>
+              <Button 
+                onClick={handleUpdateProfile} 
+                disabled={isUpdatingProfile}
+                className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white"
+              >
+                {isUpdatingProfile ? 'Atualizando...' : 'Salvar Perfil'}
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Database className="text-[#3b82f6]" size={20} />
+                Backup e Restauração
+              </CardTitle>
+              <CardDescription className="text-[#71717a]">
+                Gerencie a segurança dos seus dados.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-xs text-[#a0a0a0]">
+                O backup inclui todos os clientes, visitas técnicas, orçamentos e registros financeiros vinculados à sua empresa.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Button 
-                  onClick={() => fileInputRef.current?.click()} 
+                  onClick={handleDownloadBackup} 
                   disabled={isBackingUp || isRestoring}
                   variant="outline"
-                  className="w-full border-yellow-500/30 text-yellow-400 hover:bg-yellow-500 hover:text-white h-11"
+                  className="border-blue-500/30 text-blue-400 hover:bg-blue-500 hover:text-white h-11"
                 >
-                  {isRestoring ? (
+                  {isBackingUp ? (
                     <>
                       <RefreshCw size={16} className="mr-2 animate-spin" />
-                      Restaurando...
+                      Gerando...
                     </>
                   ) : (
                     <>
-                      <Upload size={16} className="mr-2" />
-                      RESTAURAR BACKUP
+                      <Download size={16} className="mr-2" />
+                      GERAR BACKUP
                     </>
                   )}
                 </Button>
+
+                <div className="relative">
+                  <input 
+                    type="file" 
+                    ref={fileInputRef}
+                    onChange={handleRestoreBackup}
+                    accept=".json,application/json"
+                    className="hidden"
+                  />
+                  <Button 
+                    onClick={() => fileInputRef.current?.click()} 
+                    disabled={isBackingUp || isRestoring}
+                    variant="outline"
+                    className="w-full border-yellow-500/30 text-yellow-400 hover:bg-yellow-500 hover:text-white h-11"
+                  >
+                    {isRestoring ? (
+                      <>
+                        <RefreshCw size={16} className="mr-2 animate-spin" />
+                        Restaurando...
+                      </>
+                    ) : (
+                      <>
+                        <Upload size={16} className="mr-2" />
+                        RESTAURAR BACKUP
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
-            </div>
-            <p className="text-[10px] text-[#71717a] italic text-center">
-              A restauração substituirá dados existentes com o mesmo identificador.
-            </p>
-          </CardContent>
-        </Card>
+              <p className="text-[10px] text-[#71717a] italic text-center">
+                A restauração substituirá dados existentes com o mesmo identificador.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
 
         <Card className="bg-[#1a1d23] border-[#2d3139] text-white lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between">
@@ -6404,7 +6731,7 @@ function SettingsManager({ pixSettings, appSettings, user, companyId, currentUse
           </CardContent>
         </Card>
 
-        <RolePermissionManager companyId={companyId} user={user} />
+        <RolePermissionManager companyId={companyId} user={user} userRoles={userRoles} />
       </div>
     </div>
   );
@@ -6699,6 +7026,7 @@ function VisitsChart({ data, onBarClick }: { data: any[], onBarClick?: (date: Da
               if (date) onBarClick(date);
             }
           }}
+          className="cursor-pointer"
         >
           <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
           <XAxis 
@@ -6959,7 +7287,7 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
           </CardHeader>
           <CardContent className="p-6 flex flex-col items-center justify-center h-[320px]">
             <div className="h-full w-full min-h-[250px]">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <PieChart>
                   <Pie
                     data={typeData}
@@ -6991,7 +7319,7 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
           </CardHeader>
           <CardContent className="p-6 h-[320px]">
             <div className="h-full w-full min-h-[250px]">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <AreaChart data={chartData}>
                   <defs>
                     <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
@@ -7138,10 +7466,15 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
   const [editingVisit, setEditingVisit] = useState<TechnicalVisit | null>(null);
   const [viewingVisit, setViewingVisit] = useState<TechnicalVisit | null>(null);
 
+  const [isReceiptPromptOpen, setIsReceiptPromptOpen] = useState(false);
+  const [visitForReceipt, setVisitForReceipt] = useState<{ id: string, status: TechnicalVisit['status'] } | null>(null);
+
   // Sync date filter if initialFilter changes
   useEffect(() => {
     if (initialFilter?.date) {
       setDateFilter(format(initialFilter.date, 'yyyy-MM-dd'));
+    } else {
+      setDateFilter('');
     }
   }, [initialFilter]);
 
@@ -7213,7 +7546,7 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
     }
   };
 
-  const updateStatus = async (id: string, status: TechnicalVisit['status']) => {
+  const executeStatusUpdate = async (id: string, status: TechnicalVisit['status'], generateReceipt: boolean) => {
     try {
       const visit = visits.find(v => v.id === id);
       if (!visit) return;
@@ -7221,7 +7554,7 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
       const oldStatus = visit.status;
       await updateDoc(doc(db, 'visits', id), { status });
       
-      if (status === 'Concluída' && oldStatus !== 'Concluída') {
+      if (status === 'Concluída' && oldStatus !== 'Concluída' && generateReceipt) {
         const client = visit.clientId ? clients.find(c => c.id === visit.clientId) : clients.find(c => c.name === visit.clientName);
         
         // 1. Create Receipt Data
@@ -7233,7 +7566,7 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
           paymentMethod: 'PIX' as const, 
           date: Timestamp.now(),
           companyId,
-          status: 'Recebido' as const,
+          status: 'Aguardando Pagamento' as const,
           createdAt: Timestamp.now(),
           visitId: id,
           clientId: visit.clientId || client?.id || null
@@ -7244,27 +7577,29 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
         // 2. Automatically generate PDF for the automated receipt
         const fullReceipt = { id: receiptRef.id, ...receiptData } as Receipt;
         generateReceiptPDF(fullReceipt, appSettings, pixSettings);
-
-        // 3. Create Financial Record
-        await addDoc(collection(db, 'financial'), {
-          type: 'Receita',
-          category: 'Visita Técnica',
-          description: `Serviço Concluído ${formatRecordNumber(visit.number, visit.date)} - ${visit.clientName} (${visit.type})`,
-          value: visit.totalValue || 0,
-          date: Timestamp.now(),
-          serviceType: 'Serviço Normal',
-          visitId: id,
-          clientId: visit.clientId || client?.id || null,
-          companyId,
-          createdAt: Timestamp.now()
-        });
         
-        toast.success('Recibo emitido e financeiro atualizado!');
+        toast.success('Recibo emitido aguardando recebimento!');
+      } else if (status === 'Concluída' && oldStatus !== 'Concluída' && !generateReceipt && visit.totalValue > 0) {
+        // Even if no receipt is generated, we might want to record the income?
+        // The user asked "se é para gerar recibo", usually implies financial record too in this system.
+        // But I will follow the prompt strictly: if they say NO, we just update status.
       }
       
       toast.success(`Status atualizado para ${status}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'visits');
+    }
+  };
+
+  const updateStatus = async (id: string, status: TechnicalVisit['status']) => {
+    const visit = visits.find(v => v.id === id);
+    if (!visit) return;
+
+    if (status === 'Concluída' && visit.status !== 'Concluída' && (visit.totalValue || 0) > 0) {
+      setVisitForReceipt({ id, status });
+      setIsReceiptPromptOpen(true);
+    } else {
+      await executeStatusUpdate(id, status, false);
     }
   };
 
@@ -7276,14 +7611,31 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
 
     try {
       const { id, ...data } = editingVisit;
-      await updateDoc(doc(db, 'visits', id), {
-        ...data,
-        date: editingVisit.date instanceof Date ? Timestamp.fromDate(editingVisit.date) : editingVisit.date,
-        expectedDate: editingVisit.expectedDate instanceof Date ? Timestamp.fromDate(editingVisit.expectedDate) : editingVisit.expectedDate
-      });
-      setEditingVisit(null);
-      setIsEditOpen(false);
-      toast.success('Visita atualizada com sucesso!');
+      const oldVisit = visits.find(v => v.id === id);
+      const isFinishing = data.status === 'Concluída' && oldVisit?.status !== 'Concluída' && (data.totalValue || 0) > 0;
+
+      if (isFinishing) {
+        setVisitForReceipt({ id, status: 'Concluída' });
+        // We update the data except status or just update everything and then ask?
+        // Better: update everything and if status is becoming closed and there is value, ask.
+        await updateDoc(doc(db, 'visits', id), {
+          ...data,
+          date: editingVisit.date instanceof Date ? Timestamp.fromDate(editingVisit.date) : editingVisit.date,
+          expectedDate: editingVisit.expectedDate instanceof Date ? Timestamp.fromDate(editingVisit.expectedDate) : editingVisit.expectedDate
+        });
+        setEditingVisit(null);
+        setIsEditOpen(false);
+        setIsReceiptPromptOpen(true);
+      } else {
+        await updateDoc(doc(db, 'visits', id), {
+          ...data,
+          date: editingVisit.date instanceof Date ? Timestamp.fromDate(editingVisit.date) : editingVisit.date,
+          expectedDate: editingVisit.expectedDate instanceof Date ? Timestamp.fromDate(editingVisit.expectedDate) : editingVisit.expectedDate
+        });
+        setEditingVisit(null);
+        setIsEditOpen(false);
+        toast.success('Visita atualizada com sucesso!');
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `visits/${editingVisit?.id}`);
     }
@@ -7313,45 +7665,86 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Data Agendada: ${dateStr}${visit.scheduledTime ? ` às ${visit.scheduledTime}` : ''}`, 20, 42);
-    
-    let currentY = 50;
 
-    if (visit.expectedDate) {
-      const expDateStr = format(visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate), 'dd/MM/yyyy');
-      doc.text(`Data Prevista: ${expDateStr}${visit.expectedTime ? ` às ${visit.expectedTime}` : ''}`, 20, currentY);
-      currentY += 8;
-    }
+    let currentY = 40;
+
+    const drawSectionTitle = (title: string) => {
+      doc.setFillColor(240, 240, 240);
+      doc.rect(20, currentY, 170, 8, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.text(title, 25, currentY + 5.5);
+      doc.setFont('helvetica', 'normal');
+      currentY += 12;
+    };
+
+    // 2. DADOS DO CLIENTE & AGENDAMENTO
+    drawSectionTitle('1. Dados do Cliente e Agendamento');
+    const boxWidth = 82;
+    const boxHeight = 35;
     
-    doc.text(`Técnico Responsável: ${visit.technicianName}`, 20, currentY);
-    currentY += 8;
+    // Draw Box for Client Data
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.2);
+    doc.rect(20, currentY - 2, boxWidth, boxHeight);
     
+    // Left Column: Client Data
+    doc.setFont('helvetica', 'bold');
+    doc.text('CLIENTE:', 23, currentY + 5);
+    doc.setFont('helvetica', 'normal');
+    const clientNameSplitted = doc.splitTextToSize(visit.clientName, boxWidth - 28);
+    doc.text(clientNameSplitted, 48, currentY + 5);
+    
+    let clientDataY = currentY + 5 + (clientNameSplitted.length * 5);
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text('ENDEREÇO:', 23, clientDataY);
+    doc.setFont('helvetica', 'normal');
+    const addressLines = doc.splitTextToSize(visit.address || 'N/A', boxWidth - 28);
+    doc.text(addressLines, 48, clientDataY);
+    
+    clientDataY += (addressLines.length * 5);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('FONE:', 23, clientDataY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`${visit.clientPhone || 'N/A'}`, 48, clientDataY);
+
+    // Right Column: Scheduling Data Box
+    const rightColX = 108;
+    doc.rect(rightColX, currentY - 2, boxWidth, boxHeight);
+    
+    let schedY = currentY + 5;
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text('AGENDADO:', rightColX + 3, schedY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`${dateStr}${visit.scheduledTime ? ` às ${visit.scheduledTime}` : ''}`, rightColX + 35, schedY);
+    
+    schedY += 7;
+    doc.setFont('helvetica', 'bold');
+    doc.text('PREVISÃO:', rightColX + 3, schedY);
+    doc.setFont('helvetica', 'normal');
+    const expDateStr = visit.expectedDate ? format(visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate), 'dd/MM/yyyy') : '--/--/----';
+    doc.text(`${expDateStr}${visit.expectedTime ? ` às ${visit.expectedTime}` : ''}`, rightColX + 35, schedY);
+
+    schedY += 7;
+    doc.setFont('helvetica', 'bold');
+    doc.text('TÉCNICO:', rightColX + 3, schedY);
+    doc.setFont('helvetica', 'normal');
+    const technicianSplitted = doc.splitTextToSize(visit.technicianName, boxWidth - 38);
+    doc.text(technicianSplitted, rightColX + 35, schedY);
+
+    currentY += boxHeight + 5;
+    
+    doc.setDrawColor(0, 0, 0);
     doc.line(20, currentY, 190, currentY);
     currentY += 10;
     
-    // Client Info
-    doc.setFont('helvetica', 'bold');
-    doc.text('DADOS DO CLIENTE', 20, currentY);
+    // 3. DETALHES DO SERVIÇO
+    drawSectionTitle('2. Detalhes do Serviço');
     doc.setFont('helvetica', 'normal');
-    currentY += 7;
-    doc.text(`Cliente: ${visit.clientName}`, 20, currentY);
-    currentY += 7;
-    doc.text(`Endereço: ${visit.address}`, 20, currentY);
-    currentY += 7;
-    doc.text(`Telefone: ${visit.clientPhone || 'N/A'}`, 20, currentY);
-    currentY += 7;
-    doc.text(`Responsável no Local: ${visit.responsibleName || 'N/A'}`, 20, currentY);
-    currentY += 6;
-    
-    doc.line(20, currentY, 190, currentY);
-    currentY += 10;
-    
-    // Service Info
-    doc.setFont('helvetica', 'bold');
-    doc.text('DETALHES DO SERVIÇO', 20, currentY);
-    doc.setFont('helvetica', 'normal');
-    currentY += 7;
-    doc.text(`Tipo de Sistema: ${visit.type}`, 20, currentY);
+    doc.text(`Tipo de Serviço: ${visit.type}`, 20, currentY);
     currentY += 7;
     doc.text(`Status: ${visit.status}`, 20, currentY);
     currentY += 10;
@@ -7386,34 +7779,35 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
     doc.setFont('helvetica', 'bold');
     doc.text(`VALOR DO SERVIÇO: R$ ${(visit.totalValue || 0).toFixed(2)}`, 20, currentY);
     
-    // Signatures - Make them dynamic based on currentY
-    let signatureY = currentY + 35;
+    // Signatures
+    let signatureY = currentY + 30;
     
-    // If not enough space for signatures at the current position, move to next page
-    if (signatureY > 280) {
+    if (signatureY > 270) {
       doc.addPage();
       signatureY = 40;
     }
     
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
+    doc.setFontSize(10);
+    const cityDate = formatFullDateWithCity(visit.date, appSettings);
+    doc.text(cityDate, 105, signatureY - 10, { align: 'center' });
     
-    // Technician Signature
+    // Signatures
+    doc.setLineWidth(0.3);
     if (appSettings.signatureUrl) {
       try {
-        doc.addImage(appSettings.signatureUrl, 'PNG', 35, signatureY - 20, 40, 15);
+        doc.addImage(appSettings.signatureUrl, 'PNG', 35, signatureY - 8, 40, 15);
       } catch (e) {
         console.error("Erro ao adicionar assinatura à visita:", e);
       }
     }
-    doc.line(25, signatureY, 90, signatureY);
-    doc.text('Assinatura do Técnico', 57.5, signatureY + 5, { align: 'center' });
-    doc.text(visit.technicianName, 57.5, signatureY + 10, { align: 'center' });
+    doc.line(25, signatureY + 10, 90, signatureY + 10);
+    doc.text('Assinatura do Técnico', 57.5, signatureY + 15, { align: 'center' });
+    doc.text(visit.technicianName, 57.5, signatureY + 20, { align: 'center' });
     
-    // Client Signature
-    doc.line(120, signatureY, 185, signatureY);
-    doc.text('Assinatura do Cliente', 152.5, signatureY + 5, { align: 'center' });
-    doc.text(visit.responsibleName || visit.clientName, 152.5, signatureY + 10, { align: 'center' });
+    doc.line(120, signatureY + 10, 185, signatureY + 10);
+    doc.text('Assinatura do Cliente', 152.5, signatureY + 15, { align: 'center' });
+    doc.text(visit.responsibleName || visit.clientName, 152.5, signatureY + 20, { align: 'center' });
     
     doc.save(`visita_${visit.clientName.replace(/\s/g, '_')}.pdf`);
   };
@@ -7553,18 +7947,16 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label className="text-[#a0a0a0]">Data e Hora Agendamento</Label>
-                    <Popover>
-                      <PopoverTrigger render={
-                        <Button variant="outline" className={cn("w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white", !newVisit.date && "text-muted-foreground")}>
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {newVisit.date ? format(newVisit.date, "PPP", { locale: ptBR }) : <span>Selecione</span>}
-                        </Button>
-                      } />
-                      <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
-                        <Calendar mode="single" selected={newVisit.date} onSelect={(date) => setNewVisit({...newVisit, date})} initialFocus className="bg-[#1a1d23] text-white" />
-                      </PopoverContent>
-                    </Popover>
+                    <Label className="text-[#a0a0a0]">Data Agendamento</Label>
+                    <Input 
+                      type="date" 
+                      value={newVisit.date ? format(newVisit.date, 'yyyy-MM-dd') : ''} 
+                      onChange={e => {
+                        const val = e.target.value;
+                        setNewVisit({...newVisit, date: val ? new Date(val + 'T12:00:00') : new Date()});
+                      }} 
+                      className="bg-[#0f1115] border-[#2d3139] text-white" 
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="scheduledTime" className="text-[#a0a0a0]">Hora Agendamento</Label>
@@ -7574,17 +7966,15 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Data Prevista Visita</Label>
-                    <Popover>
-                      <PopoverTrigger render={
-                        <Button variant="outline" className={cn("w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white", !newVisit.expectedDate && "text-muted-foreground")}>
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {newVisit.expectedDate ? format(newVisit.expectedDate, "PPP", { locale: ptBR }) : <span>Selecione</span>}
-                        </Button>
-                      } />
-                      <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
-                        <Calendar mode="single" selected={newVisit.expectedDate} onSelect={(date) => setNewVisit({...newVisit, expectedDate: date})} initialFocus className="bg-[#1a1d23] text-white" />
-                      </PopoverContent>
-                    </Popover>
+                    <Input 
+                      type="date" 
+                      value={newVisit.expectedDate ? format(newVisit.expectedDate, 'yyyy-MM-dd') : ''} 
+                      onChange={e => {
+                        const val = e.target.value;
+                        setNewVisit({...newVisit, expectedDate: val ? new Date(val + 'T12:00:00') : new Date()});
+                      }} 
+                      className="bg-[#0f1115] border-[#2d3139] text-white" 
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="expectedTime" className="text-[#a0a0a0]">Hora Prevista Visita</Label>
@@ -7768,11 +8158,11 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
                 <p className="text-[11px] text-[#71717a] uppercase">Endereço</p>
                 <p className="text-sm font-medium">{viewingVisit.address}</p>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <p className="text-[11px] text-[#71717a] uppercase">Tipo</p>
-                  <Badge className="bg-[#2d3139] text-[#e0e0e0] font-normal">{viewingVisit.type}</Badge>
-                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <p className="text-[11px] text-[#71717a] uppercase">Tipo de Serviço</p>
+                    <Badge className="bg-[#2d3139] text-[#e0e0e0] font-normal">{viewingVisit.type}</Badge>
+                  </div>
                 <div className="space-y-1">
                   <p className="text-[11px] text-[#71717a] uppercase">Status</p>
                   <Badge className={cn(
@@ -7880,18 +8270,16 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label className="text-[#a0a0a0]">Data e Hora Agendamento</Label>
-                    <Popover>
-                      <PopoverTrigger render={
-                        <Button variant="outline" className="w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white">
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {editingVisit.date ? format(editingVisit.date as Date, "PPP", { locale: ptBR }) : <span>Selecione</span>}
-                        </Button>
-                      } />
-                      <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
-                        <Calendar mode="single" selected={editingVisit.date as Date} onSelect={(date) => setEditingVisit({...editingVisit, date})} initialFocus className="bg-[#1a1d23] text-white" />
-                      </PopoverContent>
-                    </Popover>
+                    <Label className="text-[#a0a0a0]">Data Agendamento</Label>
+                    <Input 
+                      type="date" 
+                      value={editingVisit.date ? format(editingVisit.date as Date, 'yyyy-MM-dd') : ''} 
+                      onChange={e => {
+                        const val = e.target.value;
+                        setEditingVisit({...editingVisit, date: val ? new Date(val + 'T12:00:00') : new Date()});
+                      }} 
+                      className="bg-[#0f1115] border-[#2d3139] text-white" 
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="editScheduledTime" className="text-[#a0a0a0]">Hora Agendamento</Label>
@@ -7901,17 +8289,15 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Data Prevista Visita</Label>
-                    <Popover>
-                      <PopoverTrigger render={
-                        <Button variant="outline" className="w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white">
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {editingVisit.expectedDate ? format(editingVisit.expectedDate as Date, "PPP", { locale: ptBR }) : <span>Selecione</span>}
-                        </Button>
-                      } />
-                      <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
-                        <Calendar mode="single" selected={editingVisit.expectedDate as Date} onSelect={(date) => setEditingVisit({...editingVisit, expectedDate: date})} initialFocus className="bg-[#1a1d23] text-white" />
-                      </PopoverContent>
-                    </Popover>
+                    <Input 
+                      type="date" 
+                      value={editingVisit.expectedDate ? format(editingVisit.expectedDate as Date, 'yyyy-MM-dd') : ''} 
+                      onChange={e => {
+                        const val = e.target.value;
+                        setEditingVisit({...editingVisit, expectedDate: val ? new Date(val + 'T12:00:00') : new Date()});
+                      }} 
+                      className="bg-[#0f1115] border-[#2d3139] text-white" 
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="editExpectedTime" className="text-[#a0a0a0]">Hora Prevista Visita</Label>
@@ -7960,6 +8346,45 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
           <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23]">
             <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
             <Button onClick={handleUpdateVisit} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Salvar Alterações</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Receipt Generation Prompt */}
+      <Dialog open={isReceiptPromptOpen} onOpenChange={setIsReceiptPromptOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Gerar Recibo?</DialogTitle>
+            <DialogDescription className="text-[#71717a]">
+              A visita foi concluída com um valor de R$ {(visits.find(v => v.id === visitForReceipt?.id)?.totalValue || 0).toFixed(2)}. Deseja gerar o recibo e registrar no financeiro automaticamente?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-1">
+            <Button 
+              variant="outline" 
+              onClick={async () => {
+                if (visitForReceipt) {
+                  await executeStatusUpdate(visitForReceipt.id, visitForReceipt.status, false);
+                  setIsReceiptPromptOpen(false);
+                  setVisitForReceipt(null);
+                }
+              }} 
+              className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white"
+            >
+              Não, apenas concluir
+            </Button>
+            <Button 
+              onClick={async () => {
+                if (visitForReceipt) {
+                  await executeStatusUpdate(visitForReceipt.id, visitForReceipt.status, true);
+                  setIsReceiptPromptOpen(false);
+                  setVisitForReceipt(null);
+                }
+              }} 
+              className="bg-[#3b82f6] hover:bg-[#2563eb] text-white"
+            >
+              Sim, gerar recibo
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -9324,22 +9749,29 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
       finalY += (splitObs.length * 5) + 10;
     }
 
-    if (finalY > 250) {
+    if (finalY > 240) {
       doc.addPage();
       finalY = 20;
     }
 
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    const cityDateBudget = formatFullDateWithCity(budget.createdAt || new Date(), appSettings);
+    doc.text(cityDateBudget, 105, finalY + 5, { align: 'center' });
+
+    finalY += 20;
+
     if (appSettings.signatureUrl) {
       try {
-        doc.addImage(appSettings.signatureUrl, 'PNG', 80, finalY + 10, 50, 20);
+        doc.addImage(appSettings.signatureUrl, 'PNG', 80, finalY - 15, 50, 15);
       } catch (e) {
         console.error("Erro ao adicionar assinatura ao orçamento:", e);
       }
     }
-    doc.line(70, finalY + 30, 140, finalY + 30);
+    doc.line(70, finalY, 140, finalY);
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(appSettings.responsible || appSettings.companyName, 105, finalY + 35, { align: 'center' });
+    doc.text(appSettings.responsible || appSettings.companyName, 105, finalY + 5, { align: 'center' });
 
     const nameForFilename = (budget.clientName || 'Cliente_Sem_Nome').replace(/\s/g, '_');
     doc.save(`orcamento_${nameForFilename}.pdf`);
