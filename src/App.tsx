@@ -39,7 +39,8 @@ import {
   Lock,
   History,
   UserCog,
-  Activity
+  Activity,
+  Percent
 } from 'lucide-react';
 import { 
   collection, 
@@ -56,7 +57,8 @@ import {
   Timestamp,
   setDoc,
   getDoc,
-  getDocFromServer
+  getDocFromServer,
+  serverTimestamp
 } from 'firebase/firestore';
 import { 
   signInWithPopup, 
@@ -142,6 +144,7 @@ const handleGenerateSignatureLink = async (
   type: 'visit' | 'contract' | 'service-order' | 'budget', 
   clientName: string,
   companyId: string,
+  displayInfo?: { title?: string, value?: string, details?: string },
   logAction?: any
 ) => {
   try {
@@ -151,6 +154,9 @@ const handleGenerateSignatureLink = async (
       type,
       clientName,
       companyId,
+      displayTitle: displayInfo?.title || `Documento ${type}`,
+      displayValue: displayInfo?.value || '',
+      displayDetails: displayInfo?.details || '',
       status: 'pending',
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now()
@@ -1618,8 +1624,8 @@ function ExternalSignaturePage({ token }: { token: string }) {
       await updateDoc(doc(db, 'signature_requests', token), {
         signature,
         status: 'signed',
-        signedAt: Timestamp.now(),
-        updatedAt: Timestamp.now()
+        signedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
       });
 
       // 2. Update the document itself (Visit, Contract or OS)
@@ -1635,12 +1641,12 @@ function ExternalSignaturePage({ token }: { token: string }) {
       const updateData: any = {
         clientSignature: signature,
         clientSignatureToken: token, 
-        updatedAt: Timestamp.now()
+        updatedAt: serverTimestamp()
       };
       
       // For visits, also set the signature date
       if (request.type === 'visit') {
-        updateData.clientSignatureDate = Timestamp.now();
+        updateData.clientSignatureDate = serverTimestamp();
       }
       
       await updateDoc(doc(db, collectionName, request.documentId), updateData);
@@ -1699,6 +1705,11 @@ function ExternalSignaturePage({ token }: { token: string }) {
           </div>
           <h1 className="text-2xl font-bold text-white">Assinatura Digital</h1>
           <p className="text-[#a0a0a0] text-sm">Olá, <span className="text-white font-semibold">{request.clientName}</span>! Por favor, faça sua assinatura no quadro abaixo para confirmar o documento.</p>
+          {request.displayTitle && (
+            <div className="mt-2 text-[#3b82f6] text-xs font-bold uppercase tracking-wider bg-blue-500/10 px-3 py-1 rounded-full inline-block">
+              {request.displayTitle} {request.displayValue ? ` - R$ ${request.displayValue}` : ''}
+            </div>
+          )}
         </div>
 
         <Card className="border-[#2d3139] bg-[#1a1d23] shadow-xl">
@@ -4307,7 +4318,7 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
                         <Pencil size={14} />
                       </Button>
                       {client.type === 'Contrato' && (
-                        <Button variant="outline" size="icon" title="Solicitar Assinatura Contrato" className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => handleGenerateSignatureLink(client.id, 'contract', (client.name || 'Cliente'), companyId, logAction)}>
+                        <Button variant="outline" size="icon" title="Solicitar Assinatura Contrato" className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => handleGenerateSignatureLink(client.id, 'contract', (client.name || 'Cliente'), companyId, { title: 'Contrato de Prestação de Serviços' }, logAction)}>
                           <PenTool size={14} />
                         </Button>
                       )}
@@ -6542,7 +6553,12 @@ function SettingsManager({
 
   // Keep state in sync with props
   useEffect(() => {
-    setLocalApp(appSettings);
+    if (appSettings && Object.keys(appSettings).length > 0) {
+      setLocalApp(prev => ({
+        ...prev,
+        ...appSettings
+      }));
+    }
   }, [appSettings]);
 
   useEffect(() => {
@@ -6785,11 +6801,18 @@ function SettingsManager({
     }
   };
 
-  if (!localApp || !companyId) {
+  const isLoading = !companyId || (isSuperAdmin ? !selectedCompanyId : !currentUserData);
+
+  if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
-        <RefreshCw className="h-8 w-8 animate-spin text-[#3b82f6]" />
-        <p className="text-[#a0a0a0]">Carregando configurações...</p>
+      <div className="flex flex-col items-center justify-center min-h-[400px] w-full bg-[#1a1d23]/50 rounded-xl border border-dashed border-[#2d3139]">
+        <div className="relative">
+          <RefreshCw className="h-10 w-10 animate-spin text-blue-500/50" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Settings className="h-4 w-4 text-blue-500" />
+          </div>
+        </div>
+        <p className="text-[#a0a0a0] mt-4 font-medium">Sincronizando configurações...</p>
       </div>
     );
   }
@@ -8579,7 +8602,7 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
                     <Button variant="outline" size="icon" title="Gerar PDF" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => generateVisitPDF(visit)}>
                       <Share2 size={14} />
                     </Button>
-                    <Button variant="outline" size="icon" title="Solicitar Assinatura Externa" className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => handleGenerateSignatureLink(visit.id, 'visit', visit.clientName, companyId, logAction)}>
+                    <Button variant="outline" size="icon" title="Solicitar Assinatura Externa" className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => handleGenerateSignatureLink(visit.id, 'visit', visit.clientName, companyId, { title: 'Relatório de Visita Técnica', details: visit.serviceDescription }, logAction)}>
                       <PenTool size={14} />
                     </Button>
                     <Button variant="outline" size="icon" title="Excluir" className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
@@ -9852,7 +9875,7 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                 <div className="flex items-center justify-between">
                   <p className="text-lg font-bold text-white">R$ {(os.totalValue || 0).toFixed(2)}</p>
                   <div className="flex gap-1">
-                    <Button variant="ghost" size="icon" title="Solicitar Assinatura Externa" className="h-8 w-8 text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => handleGenerateSignatureLink(os.id, 'service-order', os.clientName, companyId, logAction)}>
+                    <Button variant="ghost" size="icon" title="Solicitar Assinatura Externa" className="h-8 w-8 text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => handleGenerateSignatureLink(os.id, 'service-order', os.clientName, companyId, { title: `Ordem de Serviço #${formatRecordNumber(os.number, os.date)}`, value: os.totalValue?.toString() }, logAction)}>
                       <PenTool size={14} />
                     </Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-[#a0a0a0] hover:text-white" onClick={() => {
@@ -10143,12 +10166,27 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
 
 function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, companyId, showList, logAction }: { budgets?: Budget[], clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, showList: boolean, logAction?: any }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [budgetToDelete, setBudgetToDelete] = useState<Budget | null>(null);
+  const [editingBudget, setEditingBudget] = useState<Partial<Budget>>({});
   const [clientSearch, setClientSearch] = useState('');
   const [newBudget, setNewBudget] = useState<Partial<Budget>>({
     items: [{ description: '', quantity: 1, price: 0 }],
     status: 'Pendente',
     observations: ''
   });
+  
+  const [profitMargin, setProfitMargin] = useState<number>(0);
+  const [editProfitMargin, setEditProfitMargin] = useState<number>(0);
+
+  const applyProfitMargin = (items: { description: string, quantity: number, price: number }[], margin: number) => {
+    if (margin <= 0) return items;
+    return items.map(item => ({
+      ...item,
+      price: Number((item.price * (1 + margin / 100)).toFixed(2))
+    }));
+  };
 
   const filteredClientsForSelect = useMemo(() => {
     return clients.filter(c => (c.name || '').toLowerCase().includes(clientSearch.toLowerCase()));
@@ -10166,18 +10204,70 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
     try {
       const nextNumber = (budgets || []).length > 0 ? Math.max(...(budgets || []).map(b => b.number || 0)) + 1 : 1;
       
-      await addDoc(collection(db, 'budgets'), {
+      const itemsToSave = applyProfitMargin(newBudget.items || [], profitMargin);
+      const finalTotal = itemsToSave.reduce((acc, item) => acc + (item.quantity * item.price), 0);
+
+      const savedDoc = await addDoc(collection(db, 'budgets'), {
         ...newBudget,
+        items: itemsToSave,
         number: nextNumber,
-        total,
+        total: finalTotal,
         companyId,
         createdAt: Timestamp.now()
       });
+      
+      if (logAction) {
+        logAction('Criação', `Orçamento #${nextNumber} criado para ${newBudget.clientName}`, savedDoc.id, 'Orçamentos');
+      }
+
       setNewBudget({ items: [{ description: '', quantity: 1, price: 0 }], status: 'Pendente', observations: '', clientName: '', clientPhone: '', address: '' });
+      setProfitMargin(0);
       setIsAddOpen(false);
       toast.success('Orçamento criado!');
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'budgets');
+    }
+  };
+
+  const handleUpdateBudget = async () => {
+    if (!editingBudget.id) return;
+    
+    // Apply margin if any
+    const itemsToSave = applyProfitMargin(editingBudget.items || [], editProfitMargin);
+    const finalTotal = itemsToSave.reduce((acc, item) => acc + (item.quantity * item.price), 0);
+
+    try {
+      await updateDoc(doc(db, 'budgets', editingBudget.id), {
+        ...editingBudget,
+        items: itemsToSave,
+        total: finalTotal,
+        updatedAt: Timestamp.now()
+      });
+      
+      if (logAction) {
+        logAction('Edição', `Orçamento #${editingBudget.number} atualizado`, editingBudget.id, 'Orçamentos');
+      }
+
+      setIsEditOpen(false);
+      setEditProfitMargin(0);
+      toast.success('Orçamento atualizado!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'budgets');
+    }
+  };
+
+  const handleDeleteBudget = async () => {
+    if (!budgetToDelete) return;
+    try {
+      await deleteDoc(doc(db, 'budgets', budgetToDelete.id));
+      if (logAction) {
+        logAction('Exclusão', `Orçamento #${budgetToDelete.number} excluído`, budgetToDelete.id, 'Orçamentos');
+      }
+      setIsDeleteConfirmOpen(false);
+      setBudgetToDelete(null);
+      toast.success('Orçamento excluído!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'budgets');
     }
   };
 
@@ -10416,6 +10506,43 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
                 </div>
 
                 <Separator className="bg-[#2d3139]" />
+                
+                <div className="bg-[#3b82f6]/5 p-4 rounded-lg border border-[#3b82f6]/20 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-[#3b82f6] font-bold flex items-center gap-2">
+                      <Percent size={16} /> Margem de Lucro Global
+                    </Label>
+                    <span className="text-[10px] text-[#71717a] lowercase italic">Aplica sobre os preços digitados abaixo</span>
+                  </div>
+                  <div className="flex gap-2 items-center">
+                    <div className="relative flex-1">
+                      <Input 
+                        type="number" 
+                        value={profitMargin} 
+                        onChange={e => setProfitMargin(Number(e.target.value))} 
+                        className="bg-[#0f1115] border-[#2d3139] text-[#3b82f6] font-bold" 
+                        placeholder="0"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#3b82f6] font-bold">%</span>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="border-[#3b82f6]/30 text-[#3b82f6] hover:bg-[#3b82f6] hover:text-white"
+                      onClick={() => {
+                        if (profitMargin > 0 && newBudget.items) {
+                          const updated = applyProfitMargin(newBudget.items, profitMargin);
+                          setNewBudget({...newBudget, items: updated});
+                          setProfitMargin(0); // Reset after apply
+                          toast.success('Markup aplicado aos itens!');
+                        }
+                      }}
+                    >
+                      Aplicar Agora
+                    </Button>
+                  </div>
+                </div>
+
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <Label className="text-[#a0a0a0]">Itens do Orçamento</Label>
@@ -10509,20 +10636,28 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
               <Separator className="my-4 bg-[#2d3139]" />
               <div className="flex items-center justify-between">
                 <p className="text-lg font-bold text-white">R$ {(budget.total || 0).toFixed(2)}</p>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white text-[11px]" onClick={() => generateBudgetPDF(budget)}>
-                    PDF
-                  </Button>
-                  <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10 text-[11px]" title="Solicitar Assinatura Externa" onClick={() => handleGenerateSignatureLink(budget.id, 'budget', budget.clientName, companyId, logAction)}>
-                    <PenTool size={14} />
-                  </Button>
-                  <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#10b981] hover:bg-[#10b981]/10 text-[11px]" onClick={() => {
-                    generateBudgetPDF(budget);
+                <div className="flex gap-1">
+                  <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white" title="Editar" onClick={() => {
+                    setEditingBudget(budget);
+                    setEditProfitMargin(0);
+                    setIsEditOpen(true);
                   }}>
+                    <Pencil size={14} />
+                  </Button>
+                  <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white" title="Gerar PDF" onClick={() => generateBudgetPDF(budget)}>
                     <Share2 size={14} />
                   </Button>
+                  <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" title="Solicitar Assinatura Externa" onClick={() => handleGenerateSignatureLink(budget.id, 'budget', budget.clientName, companyId, { title: `Orçamento #${formatRecordNumber(budget.number, budget.createdAt)}`, value: budget.total?.toString() }, logAction)}>
+                    <PenTool size={14} />
+                  </Button>
+                  <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" title="Excluir" onClick={() => {
+                    setBudgetToDelete(budget);
+                    setIsDeleteConfirmOpen(true);
+                  }}>
+                    <Trash2 size={14} />
+                  </Button>
                   {budget.status === 'Pendente' && (
-                    <Button size="sm" className="h-8 bg-[#3b82f6] hover:bg-[#2563eb] text-white text-[11px]" onClick={() => handleApproveBudget(budget)}>
+                    <Button size="sm" className="h-8 bg-[#3b82f6] hover:bg-[#2563eb] text-white text-[11px] px-2" onClick={() => handleApproveBudget(budget)}>
                       Aprovar
                     </Button>
                   )}
@@ -10542,6 +10677,135 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
     ) : (
       <NoAccessList title="Orçamentos" />
     )}
+
+      {/* Edit Budget Dialog */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[700px]">
+          <DialogHeader className="p-6 pb-2 flex-shrink-0">
+            <DialogTitle>Editar Orçamento #{editingBudget.number}</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2">
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Cliente</Label>
+                  <Input value={editingBudget.clientName || ''} onChange={e => setEditingBudget({...editingBudget, clientName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">WhatsApp/Celular</Label>
+                  <Input value={editingBudget.clientPhone || ''} onChange={e => setEditingBudget({...editingBudget, clientPhone: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0]">Endereço</Label>
+                <Input value={editingBudget.address || ''} onChange={e => setEditingBudget({...editingBudget, address: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+              </div>
+
+              <div className="bg-[#3b82f6]/5 p-4 rounded-lg border border-[#3b82f6]/20 space-y-3">
+                <Label className="text-[#3b82f6] font-bold flex items-center gap-2">
+                  <Percent size={16} /> Atualizar Margem de Lucro (%)
+                </Label>
+                <div className="flex gap-2 items-center">
+                  <div className="relative flex-1">
+                    <Input 
+                      type="number" 
+                      value={editProfitMargin} 
+                      onChange={e => setEditProfitMargin(Number(e.target.value))} 
+                      className="bg-[#0f1115] border-[#2d3139] text-[#3b82f6]" 
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#3b82f6] font-bold">%</span>
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="border-[#3b82f6]/30 text-[#3b82f6]"
+                    onClick={() => {
+                      if (editProfitMargin > 0 && editingBudget.items) {
+                        const updated = applyProfitMargin(editingBudget.items, editProfitMargin);
+                        setEditingBudget({...editingBudget, items: updated});
+                        setEditProfitMargin(0);
+                        toast.success('Markup aplicado!');
+                      }
+                    }}
+                  >
+                    Aplicar
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[#a0a0a0]">Itens do Orçamento</Label>
+                  <Button variant="outline" size="sm" onClick={() => setEditingBudget({...editingBudget, items: [...(editingBudget.items || []), { description: '', quantity: 1, price: 0 }]})} className="border-[#2d3139]">Adicionar Item</Button>
+                </div>
+                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
+                  {(editingBudget.items || []).map((item, idx) => (
+                    <div key={idx} className="grid grid-cols-12 gap-2 mb-2">
+                      <div className="col-span-6">
+                        <Input value={item.description} onChange={e => {
+                          const items = [...(editingBudget.items || [])];
+                          items[idx].description = e.target.value;
+                          setEditingBudget({...editingBudget, items});
+                        }} className="bg-[#0f1115] border-[#2d3139]" placeholder="Descrição" />
+                      </div>
+                      <div className="col-span-2">
+                        <Input type="number" value={item.quantity} onChange={e => {
+                          const items = [...(editingBudget.items || [])];
+                          items[idx].quantity = Number(e.target.value);
+                          setEditingBudget({...editingBudget, items});
+                        }} className="bg-[#0f1115] border-[#2d3139]" />
+                      </div>
+                      <div className="col-span-3">
+                        <Input type="number" value={item.price} onChange={e => {
+                          const items = [...(editingBudget.items || [])];
+                          items[idx].price = Number(e.target.value);
+                          setEditingBudget({...editingBudget, items});
+                        }} className="bg-[#0f1115] border-[#2d3139]" />
+                      </div>
+                      <div className="col-span-1">
+                        <Button variant="ghost" size="icon" className="text-red-500" onClick={() => setEditingBudget({...editingBudget, items: editingBudget.items?.filter((_, i) => i !== idx)})}><Trash2 size={14} /></Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0]">Observações</Label>
+                <textarea 
+                  className="w-full min-h-[80px] bg-[#0f1115] border-[#2d3139] rounded-md p-3 text-sm focus:ring-1 focus:ring-[#3b82f6]" 
+                  value={editingBudget.observations || ''} 
+                  onChange={e => setEditingBudget({...editingBudget, observations: e.target.value})} 
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="p-6 border-t border-[#2d3139] flex justify-between items-center sm:justify-between">
+            <div className="text-lg font-bold text-white">
+              Total: R$ {(editingBudget.items || []).reduce((acc, item) => acc + (item.quantity * item.price), 0).toFixed(2)}
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139]">Cancelar</Button>
+              <Button onClick={handleUpdateBudget} className="bg-[#3b82f6] hover:bg-[#2563eb]">Salvar Alterações</Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Budget Confirmation */}
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Confirmar Exclusão</DialogTitle>
+            <DialogDescription className="text-[#71717a]">
+              Tem certeza que deseja excluir o orçamento #{budgetToDelete?.number}? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)} className="border-[#2d3139]">Cancelar</Button>
+            <Button variant="destructive" onClick={handleDeleteBudget} className="bg-red-500 hover:bg-red-600">Excluir</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
