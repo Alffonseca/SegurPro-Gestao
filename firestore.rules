@@ -1,8 +1,128 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // helpers
+    function isSignedIn() { return request.auth != null; }
+    
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email.lower() == 'emailparasiteslixo@gmail.com' || 
+        request.auth.token.email.lower() == 'alffonseca42@gmail.com'
+      );
+    }
+
+    function isMemberOf(companyId) {
+      return isSignedIn() && (
+        isSuperAdmin() || 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId
+      );
+    }
+
+    function isAdminOf(companyId) {
+      return isSignedIn() && (
+        isSuperAdmin() || (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        )
+      );
+    }
+
+    // Signature Requests - PUBLIC GET/UPDATE
+    // Must be before catch-all and outside companies to be truly public
+    match /signature_requests/{token} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update: if 
+        (resource.data.status == 'pending' && request.resource.data.status == 'signed') ||
+        (isSignedIn() && (isSuperAdmin() || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == resource.data.companyId));
+      allow delete: if isSignedIn() && (isSuperAdmin() || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == resource.data.companyId);
+    }
+
+    // Main Collections
+    match /companies/{companyId} {
+      allow read: if isMemberOf(companyId);
+      allow write: if isSuperAdmin() || (isMemberOf(companyId) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+      
+      match /{allSubcollections=**} {
+        allow read, write: if isMemberOf(companyId);
+      }
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSuperAdmin() || 
+                    request.auth.uid == userId || 
+                    (isSignedIn() && isAdminOf(get(/databases/$(database)/documents/users/$(userId)).data.companyId));
+      allow delete: if isSuperAdmin() || 
+                    (isSignedIn() && isAdminOf(get(/databases/$(database)/documents/users/$(userId)).data.companyId));
+    }
+
+    // Main Collections
+    match /clients/{id} {
+      allow read, delete: if isMemberOf(resource.data.companyId);
+      allow create: if isMemberOf(request.resource.data.companyId);
+      allow update: if isMemberOf(resource.data.companyId) || (
+                    request.resource.data.clientSignatureToken != null && 
+                    get(/databases/$(database)/documents/signature_requests/$(request.resource.data.clientSignatureToken)).data.documentId == id &&
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clientSignature', 'clientSignatureToken', 'updatedAt'])
+                   );
+    }
+
+    match /visits/{id} {
+      allow read, delete: if isMemberOf(resource.data.companyId);
+      allow create: if isMemberOf(request.resource.data.companyId);
+      allow update: if isMemberOf(resource.data.companyId) || (
+                    request.resource.data.clientSignatureToken != null && 
+                    get(/databases/$(database)/documents/signature_requests/$(request.resource.data.clientSignatureToken)).data.documentId == id &&
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clientSignature', 'clientSignatureToken', 'updatedAt', 'clientSignatureDate'])
+                   );
+    }
+
+    match /serviceOrders/{id} {
+      allow read, delete: if isMemberOf(resource.data.companyId);
+      allow create: if isMemberOf(request.resource.data.companyId);
+      allow update: if isMemberOf(resource.data.companyId) || (
+                    request.resource.data.clientSignatureToken != null && 
+                    get(/databases/$(database)/documents/signature_requests/$(request.resource.data.clientSignatureToken)).data.documentId == id &&
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clientSignature', 'clientSignatureToken', 'updatedAt'])
+                   );
+    }
+
+    match /budgets/{id} {
+      allow read, delete: if isMemberOf(resource.data.companyId);
+      allow create: if isMemberOf(request.resource.data.companyId);
+      allow update: if isMemberOf(resource.data.companyId) || (
+                    request.resource.data.clientSignatureToken != null && 
+                    get(/databases/$(database)/documents/signature_requests/$(request.resource.data.clientSignatureToken)).data.documentId == id &&
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clientSignature', 'clientSignatureToken', 'updatedAt'])
+                   );
+    }
+
+    match /financial/{id} {
+      allow read, delete: if isMemberOf(resource.data.companyId);
+      allow create: if isMemberOf(request.resource.data.companyId);
+      allow update: if isMemberOf(resource.data.companyId);
+    }
+    match /receipts/{id} {
+      allow read, delete: if isMemberOf(resource.data.companyId);
+      allow create: if isMemberOf(request.resource.data.companyId);
+      allow update: if isMemberOf(resource.data.companyId);
+    }
+    match /suppliers/{id} {
+      allow read, delete: if isMemberOf(resource.data.companyId);
+      allow create: if isMemberOf(request.resource.data.companyId);
+      allow update: if isMemberOf(resource.data.companyId);
+    }
+
+    match /logs/{id} {
+      allow read: if isSignedIn() && (isSuperAdmin() || isAdminOf(resource.data.companyId));
+      allow create: if isSignedIn();
+      allow update, delete: if isSuperAdmin();
+    }
+
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if false;
     }
   }
 }

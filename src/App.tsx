@@ -36,7 +36,10 @@ import {
   ChevronRight,
   Printer,
   ShieldAlert,
-  Lock
+  Lock,
+  History,
+  UserCog,
+  Activity
 } from 'lucide-react';
 import { 
   collection, 
@@ -136,9 +139,10 @@ import { cn } from '@/lib/utils';
 
 const handleGenerateSignatureLink = async (
   documentId: string, 
-  type: 'visit' | 'contract' | 'service-order', 
+  type: 'visit' | 'contract' | 'service-order' | 'budget', 
   clientName: string,
-  companyId: string
+  companyId: string,
+  logAction?: any
 ) => {
   try {
     const token = doc(collection(db, 'signature_requests')).id;
@@ -151,6 +155,10 @@ const handleGenerateSignatureLink = async (
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now()
     });
+
+    if (logAction) {
+      await logAction('create', 'signature_request', `Gerou link de assinatura para ${clientName}`, token);
+    }
 
     const url = `${window.location.origin}${window.location.pathname}?signerToken=${token}`;
     const message = `Olá ${clientName}, por favor utilize o link abaixo para realizar a sua assinatura digital referente ao nosso serviço:\n\n${url}\n\n*Assinatura Única após o uso será excluída*`;
@@ -256,6 +264,7 @@ const ALL_MENU_ITEMS = [
   { id: 'visits', label: 'Visitas Técnicas' },
   { id: 'service-orders', label: 'Ordens de Serviço' },
   { id: 'users', label: 'Gerenciar Equipe' },
+  { id: 'logs', label: 'Logs do Sistema' },
   { id: 'settings', label: 'Configurações' }
 ];
 
@@ -610,7 +619,7 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, inc
   const addressLines = doc.splitTextToSize(addressLine, contentWidth / 2);
   const headerTextY = currentY + 6 + (companyNameLines.length * 5);
   doc.text(addressLines, appSettings.logoUrl ? margin + 22 : margin, headerTextY);
-  doc.text(`${appSettings.city || ''} - Documento: ${appSettings.document || ''}`, appSettings.logoUrl ? margin + 22 : margin, headerTextY + (addressLines.length * 4));
+  doc.text(`${appSettings.city || ''} - CEP: ${appSettings.cep || ''}`, appSettings.logoUrl ? margin + 22 : margin, headerTextY + (addressLines.length * 4));
 
   // OS Number and Date on the right
   doc.setFontSize(12);
@@ -1138,7 +1147,8 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
   // Removed duplicate company name on the right
   
   doc.setFontSize(9);
-  doc.text('(91)98722-3092   (91)98995-8066   afsistseg.me@gmail.com', appSettings.logoUrl ? 42 : 20, 26);
+  const contactInfo = `${appSettings.companyPhone || '(91)98722-3092'}   ${appSettings.companyEmail || 'afsistseg.me@gmail.com'}`;
+  doc.text(contactInfo, appSettings.logoUrl ? 42 : 20, 26);
   
   // 2. Title Bar
   doc.setFillColor(245, 245, 245);
@@ -1319,7 +1329,22 @@ interface AppSettings {
   city: string;
   cep: string;
   document: string;
+  companyPhone?: string;
+  companyEmail?: string;
   signatureUrl?: string;
+}
+
+interface LogRecord {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  action: string; 
+  resourceType: string;
+  resourceId?: string;
+  details: string;
+  timestamp: Timestamp;
+  companyId: string;
 }
 
 // --- Components ---
@@ -1558,8 +1583,9 @@ function ExternalSignaturePage({ token }: { token: string }) {
 
   useEffect(() => {
     const fetchRequest = async () => {
+      const path = `signature_requests/${token}`;
       try {
-        const docSnap = await getDoc(doc(db, 'signature_requests', token));
+        const docSnap = await getDocFromServer(doc(db, 'signature_requests', token));
         if (docSnap.exists()) {
           const data = docSnap.data();
           if (data.status !== 'pending') {
@@ -1571,8 +1597,8 @@ function ExternalSignaturePage({ token }: { token: string }) {
           setError('Link de assinatura inválido ou não encontrado.');
         }
       } catch (err) {
-        setError('Erro ao carregar solicitação de assinatura.');
-        console.error(err);
+        setError('Erro de permissão ou de servidor ao carregar assinatura.');
+        handleFirestoreError(err, OperationType.GET, path);
       } finally {
         setLoading(false);
       }
@@ -1597,14 +1623,27 @@ function ExternalSignaturePage({ token }: { token: string }) {
       });
 
       // 2. Update the document itself (Visit, Contract or OS)
-      const collectionName = request.type === 'visit' ? 'visits' : (request.type === 'contract' ? 'clients' : 'service-orders');
+      let collectionName = '';
+      if (request.type === 'visit') collectionName = 'visits';
+      else if (request.type === 'contract') collectionName = 'clients';
+      else if (request.type === 'budget') collectionName = 'budgets';
+      else if (request.type === 'service-order') collectionName = 'serviceOrders';
+      
+      if (!collectionName) throw new Error('Tipo de documento inválido');
       
       // We send the token as well so the security rules can verify it
-      await updateDoc(doc(db, collectionName, request.documentId), {
+      const updateData: any = {
         clientSignature: signature,
-        clientSignatureToken: token, // This is key for security rules to allow unauthenticated update
+        clientSignatureToken: token, 
         updatedAt: Timestamp.now()
-      });
+      };
+      
+      // For visits, also set the signature date
+      if (request.type === 'visit') {
+        updateData.clientSignatureDate = Timestamp.now();
+      }
+      
+      await updateDoc(doc(db, collectionName, request.documentId), updateData);
 
       setIsSuccess(true);
       toast.success('Assinatura salva com sucesso!');
@@ -1727,13 +1766,12 @@ const getFinalEmail = (input: string) => {
   if (!clean) return '';
   
   if (clean.includes('@')) {
-    // Basic validation for manual emails
-    if (clean.endsWith('@') || !clean.includes('.') || clean.startsWith('@')) return '';
+    // Basic validation for manual emails - Allow anything that looks like an email
+    if (clean.startsWith('@') || !clean.includes('.')) return '';
     return clean;
   }
   
   // Sanitize username: only letters, numbers, dots, underscores, dashes
-  // This prevents invalid-email errors from weird characters
   clean = clean.replace(/[^a-z0-9._-]/g, '');
   if (!clean) return '';
   
@@ -1801,6 +1839,7 @@ export default function MainApp() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [logs, setLogs] = useState<LogRecord[]>([]);
   const [allCompanies, setAllCompanies] = useState<any[]>([]);
   const [allFinancials, setAllFinancials] = useState<any[]>([]); // New state for global metrics
   const [saasSettings, setSaasSettings] = useState<any>({
@@ -1836,14 +1875,54 @@ export default function MainApp() {
     signatureUrl: ''
   });
 
+  // Log system
+  const logAction = async (action: string, resourceType: string, details: string, resourceId?: string) => {
+    if (!user || !currentUserData?.companyId) return;
+    try {
+      await addDoc(collection(db, 'logs'), {
+        userId: user.uid,
+        userName: currentUserData.displayName || user.displayName || 'Usuário',
+        userEmail: user.email,
+        action,
+        resourceType,
+        resourceId: resourceId || '',
+        details,
+        timestamp: Timestamp.now(),
+        companyId: currentUserData.companyId
+      });
+    } catch (err) {
+      console.error('Erro ao registrar log:', err);
+    }
+  };
+
+  // User Heartbeat (Online Status)
+  useEffect(() => {
+    if (!user || !currentUserData?.companyId) return;
+
+    const updateStatus = async () => {
+      try {
+        await updateDoc(doc(db, 'users', user.uid), {
+          lastSeen: Timestamp.now()
+        });
+      } catch (err) {
+        console.error('Erro ao atualizar status online:', err);
+      }
+    };
+
+    updateStatus();
+    const interval = setInterval(updateStatus, 60000); // 1 minute heartbeat
+    return () => clearInterval(interval);
+  }, [user, currentUserData?.companyId]);
+
   // 1. Auth Listener
   useEffect(() => {
-    const titleText = currentCompany?.name || appSettings.companyName || 'SegurPro Gestão';
+    const titleText = currentCompany?.name || appSettings?.companyName || 'SegurPro Gestão';
     document.title = titleText;
-  }, [currentCompany?.name, appSettings.companyName]);
+  }, [currentCompany?.name, appSettings?.companyName]);
 
   useEffect(() => {
     async function testConnection() {
+      if (signerToken) return; // Se for página de assinatura externa, não testa conexão que exige auth
       try {
         await getDocFromServer(doc(db, 'test', 'connection'));
       } catch (error: any) {
@@ -1875,6 +1954,12 @@ export default function MainApp() {
       clearTimeout(loadingTimeout);
     };
   }, []);
+
+  useEffect(() => {
+    if (activeTab && user && currentUserData) {
+      logAction('page_view', 'menu', `Acessou menu: ${activeTab}`);
+    }
+  }, [activeTab]);
 
   // 1.1. Role Permissions Listener
   useEffect(() => {
@@ -1996,7 +2081,7 @@ export default function MainApp() {
     }
 
     if (role === 'secretaria') {
-      return ['dashboard', 'financial', 'budgets', 'clients', 'suppliers', 'receipts', 'users', 'reports', 'settings'].includes(tabName);
+      return ['dashboard', 'financial', 'budgets', 'clients', 'suppliers', 'receipts', 'users', 'reports', 'settings', 'logs'].includes(tabName);
     }
     
     if (role === 'tecnico') {
@@ -2148,10 +2233,22 @@ export default function MainApp() {
     let suppliersUnsubscribe = () => {};
     let receiptsUnsubscribe = () => {};
     let usersUnsubscribe = () => {};
+    let logsUnsubscribe = () => {};
     let pixUnsubscribe = () => {};
     let appSettingsUnsubscribe = () => {};
 
     if (companyId) {
+      // Existing subscriptions...
+      // I'll add logs here
+      if (canAccess('logs')) {
+        logsUnsubscribe = onSnapshot(
+          query(collection(db, 'logs'), where('companyId', '==', companyId), limit(500)),
+          (snapshot) => {
+            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LogRecord));
+            setLogs(data.sort((a, b) => b.timestamp.seconds - a.timestamp.seconds));
+          }
+        );
+      }
       visitsUnsubscribe = onSnapshot(
         query(collection(db, 'visits'), where('companyId', '==', companyId)),
         (snapshot) => {
@@ -2278,6 +2375,7 @@ export default function MainApp() {
       suppliersUnsubscribe();
       receiptsUnsubscribe();
       usersUnsubscribe();
+      logsUnsubscribe();
       pixUnsubscribe();
       appSettingsUnsubscribe();
       if (allCompaniesUnsubscribe) allCompaniesUnsubscribe();
@@ -2432,8 +2530,9 @@ export default function MainApp() {
     setIsAuthLoading(true);
 
     try {
+      const cleanPassword = password.trim();
       if (authMode === 'login') {
-        const userCredential = await signInWithEmailAndPassword(auth, finalEmail, password);
+        const userCredential = await signInWithEmailAndPassword(auth, finalEmail, cleanPassword);
         toast.success(`Bem-vindo, ${userCredential.user.displayName || 'usuário'}!`);
       } else {
         if (!displayName) {
@@ -2441,7 +2540,7 @@ export default function MainApp() {
           setIsAuthLoading(false);
           return;
         }
-        const userCredential = await createUserWithEmailAndPassword(auth, finalEmail, password);
+        const userCredential = await createUserWithEmailAndPassword(auth, finalEmail, cleanPassword);
         await updateProfile(userCredential.user, { displayName });
         toast.success('Sua conta foi criada! Bem-vindo.');
       }
@@ -2478,7 +2577,7 @@ export default function MainApp() {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#07080a]">
+      <div className="min-h-screen bg-[#0f1115] flex flex-col items-center justify-center p-4">
         <Toaster position="top-right" theme="dark" />
         <div className="flex flex-col items-center gap-6">
           <div className="relative">
@@ -2543,9 +2642,10 @@ export default function MainApp() {
                     type="text" 
                     value={email} 
                     onChange={e => setEmail(e.target.value)} 
-                    placeholder="Seu usuário ou e-mail"
+                    placeholder="Seu usuário ou e-mail registrado"
                     className="bg-[#0f1115] border-[#2d3139] text-white" 
                   />
+                  <p className="text-[10px] text-[#555] mt-1 italic">Dica: Se não for e-mail, usaremos @segurpro.com</p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="auth-pass" className="text-[#a0a0a0]">Senha</Label>
@@ -2746,14 +2846,18 @@ export default function MainApp() {
                 onClick={() => setActiveTab('reports')} 
               />
             )}
-            {canAccess('users') && (
-              <SidebarItem 
-                icon={<Users size={18} />} 
-                label="Equipe" 
-                active={activeTab === 'users'} 
-                onClick={() => setActiveTab('users')} 
-              />
-            )}
+            {canAccess('users') && <SidebarItem 
+              icon={<Users size={18} />} 
+              label="Equipe" 
+              active={activeTab === 'users'} 
+              onClick={() => setActiveTab('users')} 
+            />}
+            {canAccess('logs') && <SidebarItem 
+              icon={<History size={18} />} 
+              label="Logs do Sistema" 
+              active={activeTab === 'logs'} 
+              onClick={() => setActiveTab('logs')} 
+            />}
             {canAccess('settings') && (
               <SidebarItem 
                 icon={<Settings size={18} />} 
@@ -2903,6 +3007,14 @@ export default function MainApp() {
                 onClick={() => { setActiveTab('users'); setIsMobileMenuOpen(false); }} 
               />
             )}
+            {canAccess('logs') && (
+              <SidebarItem 
+                icon={<History size={20} />} 
+                label="Logs do Sistema" 
+                active={activeTab === 'logs'} 
+                onClick={() => { setActiveTab('logs'); setIsMobileMenuOpen(false); }} 
+              />
+            )}
             {canAccess('settings') && (
               <SidebarItem 
                 icon={<Settings size={20} />} 
@@ -2950,6 +3062,7 @@ export default function MainApp() {
                activeTab === 'receipts' ? 'Recibos Emitidos' :
                activeTab === 'reports' ? 'Relatórios Gerais' :
                activeTab === 'users' ? 'Controle de Equipe' :
+               activeTab === 'logs' ? 'Logs do Sistema' :
                activeTab === 'settings' ? 'Configurações do Sistema' :
                activeTab.replace('-', ' ')}
             </h2>
@@ -2990,7 +3103,7 @@ export default function MainApp() {
             />
           )}
           {activeTab === 'financial' && <FinancialManager financials={financials} visits={visits} clients={clients} companyId={currentUserData?.companyId || ''} showList={canViewList('financial')} />}
-          {activeTab === 'budgets' && <BudgetsManager budgets={budgets} clients={clients} appSettings={appSettings} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} showList={canViewList('budgets')} />}
+          {activeTab === 'budgets' && <BudgetsManager budgets={budgets} clients={clients} appSettings={appSettings} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} showList={canViewList('budgets')} logAction={logAction} />}
           {activeTab === 'service-orders' && (
             <ServiceOrdersManager 
               serviceOrders={serviceOrders} 
@@ -2999,9 +3112,10 @@ export default function MainApp() {
               appSettings={appSettings} 
               companyId={currentUserData?.companyId || ''} 
               showList={canViewList('service-orders')}
+              logAction={logAction}
             />
           )}
-          {activeTab === 'clients' && <ClientsManager clients={clients} appSettings={appSettings} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} showList={canViewList('clients')} />}
+          {activeTab === 'clients' && <ClientsManager clients={clients} appSettings={appSettings} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} showList={canViewList('clients')} logAction={logAction} />}
           {activeTab === 'suppliers' && <SuppliersManager suppliers={suppliers} companyId={currentUserData?.companyId || ''} showList={canViewList('suppliers')} />}
           {activeTab === 'receipts' && <ReceiptsManager receipts={receipts} clients={clients} pixSettings={pixSettings} appSettings={appSettings} companyId={currentUserData?.companyId || ''} currentUserData={currentUserData} showList={canViewList('receipts')} />}
           {activeTab === 'reports' && (
@@ -3018,7 +3132,127 @@ export default function MainApp() {
               showList={canViewList('reports')}
             />
           )}
-          {activeTab === 'users' && <UsersManager users={users} currentUserData={currentUserData} showList={canViewList('users')} userRoles={userRoles} />}
+          {activeTab === 'users' && <UsersManager users={users} currentUserData={currentUserData} showList={canViewList('users')} userRoles={userRoles} logAction={logAction} />}
+          {activeTab === 'visits' && (
+            <VisitsManager 
+              visits={visits} 
+              user={user!} 
+              clients={clients} 
+              appSettings={appSettings} 
+              pixSettings={pixSettings} 
+              companyId={currentUserData?.companyId || ''}
+              showList={canViewList('visits')}
+              logAction={logAction}
+            />
+          )}
+          
+          {activeTab === 'logs' && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                    <History className="text-blue-500" />
+                    Logs do Sistema
+                  </h2>
+                  <div className="flex items-center gap-3 mt-1">
+                    <p className="text-[#a0a0a0] text-sm">Histórico de ações e acessos dos usuários da empresa.</p>
+                    {(() => {
+                      const onlineCount = users.filter(u => u.lastSeen && Date.now() - u.lastSeen.toDate().getTime() < 300000).length;
+                      return (
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <span className="text-[10px] font-bold text-emerald-500 uppercase">{onlineCount} Online</span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 bg-[#1a1d23] p-1 rounded-lg border border-[#2d3139]">
+                  <div className="flex -space-x-2 mr-2 px-2 border-r border-[#2d3139]">
+                    {users.filter(u => u.lastSeen && Date.now() - u.lastSeen.toDate().getTime() < 300000).slice(0, 5).map(u => (
+                      <div key={u.id} className="w-7 h-7 rounded-full border-2 border-[#1a1d23] bg-[#2d3139] flex items-center justify-center text-[10px] font-bold text-white overflow-hidden shadow-lg" title={u.displayName}>
+                        {u.photoURL ? <img src={u.photoURL} alt="" /> : (u.displayName?.[0] || '?')}
+                      </div>
+                    ))}
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => {
+                    // Refetching is handled by onSnapshot, but we can force a toast showing it's live
+                    toast.info('Sincronizado em tempo real');
+                  }} className="text-[#a0a0a0] hover:text-white">
+                    <RefreshCw size={16} className="mr-2" /> Atualizar
+                  </Button>
+                </div>
+              </div>
+
+              <Card className="border-[#2d3139] bg-[#1a1d23] overflow-hidden shadow-xl">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-[#0f1115] border-b border-[#2d3139]">
+                        <th className="p-4 text-xs font-bold text-[#71717a] uppercase tracking-wider">Data/Hora</th>
+                        <th className="p-4 text-xs font-bold text-[#71717a] uppercase tracking-wider">Usuário</th>
+                        <th className="p-4 text-xs font-bold text-[#71717a] uppercase tracking-wider">Ação</th>
+                        <th className="p-4 text-xs font-bold text-[#71717a] uppercase tracking-wider">Recurso</th>
+                        <th className="p-4 text-xs font-bold text-[#71717a] uppercase tracking-wider">Detalhes</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#2d3139]">
+                      {logs.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="p-12 text-center">
+                            <div className="flex flex-col items-center gap-2">
+                              <History size={40} className="text-[#2d3139]" />
+                              <p className="text-[#a0a0a0] font-medium">Nenhum log registrado ainda.</p>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : (
+                        logs.map((log) => (
+                          <tr key={log.id} className="hover:bg-white/[0.02] transition-colors group">
+                            <td className="p-4 whitespace-nowrap">
+                              <div className="text-white text-sm font-medium">
+                                {format(log.timestamp.toDate(), 'dd/MM/yy HH:mm')}
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              <div className="flex flex-col">
+                                <span className="text-white text-sm font-bold group-hover:text-blue-400 transition-colors">{log.userName}</span>
+                                <span className="text-[#71717a] text-[10px] font-mono">{log.userEmail}</span>
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                log.action === 'login' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' :
+                                log.action === 'delete' ? 'bg-red-500/10 text-red-500 border border-red-500/20' :
+                                log.action === 'create' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' :
+                                log.action === 'update' ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' :
+                                'bg-[#2d3139] text-[#a0a0a0]'
+                              }`}>
+                                {log.action === 'login' ? 'LOGIN' :
+                                 log.action === 'page_view' ? 'VISUALIZAÇÃO' :
+                                 log.action === 'create' ? 'CRIAÇÃO' :
+                                 log.action === 'update' ? 'EDIÇÃO' :
+                                 log.action === 'delete' ? 'EXCLUSÃO' : log.action.toUpperCase()}
+                              </span>
+                            </td>
+                            <td className="p-4">
+                              <div className="text-[#a0a0a0] text-sm flex items-center gap-1.5">
+                                <span className="capitalize">{log.resourceType}</span>
+                                {log.resourceId && <span className="text-[10px] bg-[#0f1115] px-1.5 py-0.5 rounded border border-[#2d3139] font-mono">#{log.resourceId.slice(-6)}</span>}
+                              </div>
+                            </td>
+                            <td className="p-4 text-sm text-[#71717a] italic">
+                              {log.details}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </div>
+          )}
           {activeTab === 'super-admin' && (
             <SuperAdminPanel 
               companies={allCompanies} 
@@ -3051,7 +3285,7 @@ export default function MainApp() {
   );
 }
 
-function UsersManager({ users = [], currentUserData, showList, userRoles }: { users?: any[], currentUserData: any, showList: boolean, userRoles: UserRole[] }) {
+function UsersManager({ users = [], currentUserData, showList, userRoles, logAction }: { users?: any[], currentUserData: any, showList: boolean, userRoles: UserRole[], logAction?: any }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'tecnico' });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -3077,7 +3311,8 @@ function UsersManager({ users = [], currentUserData, showList, userRoles }: { us
       const secondaryAuth = getAuth(secondaryApp);
       
       const finalEmail = getFinalEmail(newUser.email);
-      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, finalEmail, newUser.password);
+      const cleanPassword = newUser.password.trim();
+      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, finalEmail, cleanPassword);
       await updateProfile(userCredential.user, { displayName: newUser.name });
       
       // Add to Firestore
@@ -3089,6 +3324,8 @@ function UsersManager({ users = [], currentUserData, showList, userRoles }: { us
         companyId: currentUserData.companyId,
         createdAt: Timestamp.now()
       });
+
+      await logAction('create', 'user', `Cadastrou usuário ${newUser.name} (${newUser.role})`, userCredential.user.uid);
 
       await secondaryAuth.signOut();
       await deleteApp(secondaryApp);
@@ -3112,6 +3349,8 @@ function UsersManager({ users = [], currentUserData, showList, userRoles }: { us
         displayName: editingUser.displayName,
         role: editingUser.role
       });
+
+      await logAction('update', 'user', `Atualizou dados do usuário ${editingUser.displayName}`, editingUser.id);
 
       if (newPassword) {
         if (newPassword.length < 6) {
@@ -3164,6 +3403,7 @@ function UsersManager({ users = [], currentUserData, showList, userRoles }: { us
     try {
       // Delete from Firestore
       await deleteDoc(doc(db, 'users', userToDelete.id));
+      await logAction('delete', 'user', `Removeu o usuário ${userToDelete.displayName}`, userToDelete.id);
       
       // Delete from Auth via server
       try {
@@ -3339,7 +3579,16 @@ function UsersManager({ users = [], currentUserData, showList, userRoles }: { us
                       </Button>
                     </div>
                   </TableCell>
-                  <TableCell className="font-medium text-white text-[13px]">{u.displayName}</TableCell>
+                  <TableCell className="font-medium text-white text-[13px]">
+                    <div className="flex items-center gap-2">
+                       <div className={`w-2.5 h-2.5 rounded-full ${
+                          (u.lastSeen && Date.now() - u.lastSeen.toDate().getTime() < 300000) 
+                            ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' 
+                            : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'
+                        }`} title={u.lastSeen ? `Visto em: ${format(u.lastSeen.toDate(), 'dd/MM/yy HH:mm')}` : 'Nunca entrou'} />
+                       {u.displayName}
+                    </div>
+                  </TableCell>
                   <TableCell className="text-[12px] text-[#e0e0e0]">{u.email}</TableCell>
                   <TableCell>
                     <Badge className={cn(
@@ -3494,7 +3743,7 @@ const PAYMENT_METHODS = [
   "Boleto"
 ];
 
-function ClientsManager({ clients = [], appSettings, pixSettings, companyId, showList }: { clients: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, showList: boolean }) {
+function ClientsManager({ clients = [], appSettings, pixSettings, companyId, showList, logAction }: { clients: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, showList: boolean, logAction?: any }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -3574,6 +3823,7 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
         createdAt: Timestamp.now()
       };
       const docRef = await addDoc(collection(db, 'clients'), clientData);
+      await logAction('create', 'client', `Cadastrou cliente ${clientData.name}`, docRef.id);
       
       setNewClient({ type: 'Avulso' });
       setIsAddOpen(false);
@@ -4057,7 +4307,7 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
                         <Pencil size={14} />
                       </Button>
                       {client.type === 'Contrato' && (
-                        <Button variant="outline" size="icon" title="Solicitar Assinatura Contrato" className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => handleGenerateSignatureLink(client.id, 'contract', (client.name || 'Cliente'), companyId)}>
+                        <Button variant="outline" size="icon" title="Solicitar Assinatura Contrato" className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => handleGenerateSignatureLink(client.id, 'contract', (client.name || 'Cliente'), companyId, logAction)}>
                           <PenTool size={14} />
                         </Button>
                       )}
@@ -6535,8 +6785,17 @@ function SettingsManager({
     }
   };
 
+  if (!localApp || !companyId) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
+        <RefreshCw className="h-8 w-8 animate-spin text-[#3b82f6]" />
+        <p className="text-[#a0a0a0]">Carregando configurações...</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 animate-in fade-in duration-500">
       <div>
         <h2 className="text-2xl font-bold tracking-tight text-white">Configurações do Sistema</h2>
         <p className="text-[#71717a]">Gerencie os dados globais do sistema e seu perfil.</p>
@@ -6649,6 +6908,28 @@ function SettingsManager({
                   value={localApp.responsible || ''} 
                   onChange={e => setLocalApp({ ...localApp, responsible: e.target.value })} 
                   className="bg-[#0f1115] border-[#2d3139] text-white" 
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="companyPhone" className="text-[#a0a0a0]">Telefone de Contato</Label>
+                <Input 
+                  id="companyPhone" 
+                  value={localApp.companyPhone || ''} 
+                  onChange={e => setLocalApp({ ...localApp, companyPhone: e.target.value })} 
+                  className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  placeholder="(00) 00000-0000"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="companyEmail" className="text-[#a0a0a0]">E-mail de Contato</Label>
+                <Input 
+                  id="companyEmail" 
+                  value={localApp.companyEmail || ''} 
+                  onChange={e => setLocalApp({ ...localApp, companyEmail: e.target.value })} 
+                  className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  placeholder="empresa@exemplo.com"
                 />
               </div>
             </div>
@@ -7685,7 +7966,7 @@ function StatCard({ title, value, icon, trend, isBalance, isCount, onClick }: { 
 
 // --- Visits Manager Component ---
 
-function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettings, companyId, initialFilter, onClearFilter, showList }: { visits?: TechnicalVisit[], user: FirebaseUser, clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, initialFilter?: { date: Date | null }, onClearFilter?: () => void, showList: boolean }) {
+function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettings, companyId, initialFilter, onClearFilter, showList, logAction }: { visits?: TechnicalVisit[], user: FirebaseUser, clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, initialFilter?: { date: Date | null }, onClearFilter?: () => void, showList: boolean, logAction?: any }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
   const [dateFilter, setDateFilter] = useState<string>(initialFilter?.date ? format(initialFilter.date, 'yyyy-MM-dd') : '');
@@ -7749,7 +8030,7 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
     try {
       const nextNumber = visits.length > 0 ? Math.max(...visits.map(v => v.number || 0)) + 1 : 1;
       
-      await addDoc(collection(db, 'visits'), {
+      const docRef = await addDoc(collection(db, 'visits'), {
         ...newVisit,
         number: nextNumber,
         date: Timestamp.fromDate(newVisit.date instanceof Date ? newVisit.date : new Date()),
@@ -7759,6 +8040,7 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
         companyId,
         createdAt: Timestamp.now()
       });
+      await logAction('create', 'visit', `Agendou visita para ${newVisit.clientName}`, docRef.id);
       setNewVisit({ 
         type: 'CFTV', 
         status: 'Agendada', 
@@ -8297,7 +8579,7 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
                     <Button variant="outline" size="icon" title="Gerar PDF" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => generateVisitPDF(visit)}>
                       <Share2 size={14} />
                     </Button>
-                    <Button variant="outline" size="icon" title="Solicitar Assinatura Externa" className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => handleGenerateSignatureLink(visit.id, 'visit', visit.clientName, companyId)}>
+                    <Button variant="outline" size="icon" title="Solicitar Assinatura Externa" className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => handleGenerateSignatureLink(visit.id, 'visit', visit.clientName, companyId, logAction)}>
                       <PenTool size={14} />
                     </Button>
                     <Button variant="outline" size="icon" title="Excluir" className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
@@ -9089,7 +9371,7 @@ function FinancialManager({ financials = [], visits = [], clients = [], companyI
 
 // --- Budgets Manager Component ---
 
-function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], appSettings, companyId, showList }: { serviceOrders?: ServiceOrder[], clients?: Client[], users?: any[], appSettings: AppSettings, companyId: string, showList: boolean }) {
+function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], appSettings, companyId, showList, logAction }: { serviceOrders?: ServiceOrder[], clients?: Client[], users?: any[], appSettings: AppSettings, companyId: string, showList: boolean, logAction?: any }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -9570,7 +9852,7 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                 <div className="flex items-center justify-between">
                   <p className="text-lg font-bold text-white">R$ {(os.totalValue || 0).toFixed(2)}</p>
                   <div className="flex gap-1">
-                    <Button variant="ghost" size="icon" title="Solicitar Assinatura Externa" className="h-8 w-8 text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => handleGenerateSignatureLink(os.id, 'service-order', os.clientName, companyId)}>
+                    <Button variant="ghost" size="icon" title="Solicitar Assinatura Externa" className="h-8 w-8 text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => handleGenerateSignatureLink(os.id, 'service-order', os.clientName, companyId, logAction)}>
                       <PenTool size={14} />
                     </Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-[#a0a0a0] hover:text-white" onClick={() => {
@@ -9859,7 +10141,7 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
   );
 }
 
-function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, companyId, showList }: { budgets?: Budget[], clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, showList: boolean }) {
+function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, companyId, showList, logAction }: { budgets?: Budget[], clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, showList: boolean, logAction?: any }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
   const [newBudget, setNewBudget] = useState<Partial<Budget>>({
@@ -10231,7 +10513,7 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
                   <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white text-[11px]" onClick={() => generateBudgetPDF(budget)}>
                     PDF
                   </Button>
-                  <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10 text-[11px]" title="Solicitar Assinatura Externa" onClick={() => handleGenerateSignatureLink(budget.id, 'contract', budget.clientName, companyId)}>
+                  <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10 text-[11px]" title="Solicitar Assinatura Externa" onClick={() => handleGenerateSignatureLink(budget.id, 'budget', budget.clientName, companyId, logAction)}>
                     <PenTool size={14} />
                   </Button>
                   <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#10b981] hover:bg-[#10b981]/10 text-[11px]" onClick={() => {
