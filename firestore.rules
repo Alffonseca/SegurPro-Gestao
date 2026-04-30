@@ -27,21 +27,20 @@ service cloud.firestore {
       );
     }
 
-    // Signature Requests - PUBLIC GET/UPDATE
+    // Main Collections
+    function canUpdateWithToken(id) {
+       let token = request.resource.data.clientSignatureToken;
+       return token != null && 
+              get(/databases/$(database)/documents/signature_requests/$(token)).data.documentId == id &&
+              get(/databases/$(database)/documents/signature_requests/$(token)).data.status == 'signed';
+    }
+
     match /signature_requests/{token} {
       allow read: if true;
       allow create: if isSignedIn();
-      allow update: if 
-        (resource.data.status == 'pending' && request.resource.data.status == 'signed') ||
-        (isSignedIn() && (isSuperAdmin() || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == resource.data.companyId));
+      allow update: if (resource.data.status == 'pending' && request.resource.data.status == 'signed') || 
+                    (isSignedIn() && (isSuperAdmin() || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == resource.data.companyId));
       allow delete: if isSignedIn() && (isSuperAdmin() || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == resource.data.companyId);
-    }
-
-    // Main Collections
-    function canUpdateWithToken(id) {
-       return request.resource.data.clientSignatureToken != null && 
-              get(/databases/$(database)/documents/signature_requests/$(request.resource.data.clientSignatureToken)).data.documentId == id &&
-              get(/databases/$(database)/documents/signature_requests/$(request.resource.data.clientSignatureToken)).data.status == 'signed';
     }
 
     match /companies/{companyId} {

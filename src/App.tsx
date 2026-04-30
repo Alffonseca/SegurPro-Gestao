@@ -255,8 +255,8 @@ const formatRecordNumber = (number?: number | string, date?: any) => {
 
 const formatFullDateWithCity = (date: any, appSettings: AppSettings) => {
   const d = date instanceof Timestamp ? date.toDate() : (date instanceof Date ? date : new Date(date));
-  const cityStr = appSettings.city || 'Sua Cidade';
-  return `${cityStr} ${format(d, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}`;
+  const cityStr = appSettings.city || '';
+  return `${cityStr}${cityStr ? ', ' : ''}${format(d, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}`;
 };
 
 const ALL_MENU_ITEMS = [
@@ -614,7 +614,7 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, inc
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(0, 0, 0);
-  const companyName = appSettings.companyName || 'SegurPro';
+  const companyName = appSettings.companyName || '';
   const companyNameLines = doc.splitTextToSize(companyName, contentWidth / 2);
   doc.text(companyNameLines, appSettings.logoUrl ? margin + 22 : margin, currentY + 6);
   
@@ -821,11 +821,21 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, inc
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.text('Assinatura do Técnico', margin + 45, currentY + 5, { align: 'center' });
+  
+  const techName = os.technicianName || '';
+  const isAndre = techName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes('andre');
+  
+  if (isAndre) {
+    doc.text(appSettings.responsible || techName, margin + 45, currentY + 9, { align: 'center' });
+  } else {
+    doc.text(techName, margin + 45, currentY + 9, { align: 'center' });
+  }
+
   doc.text('Assinatura do Cliente (Ciente)', pageWidth - margin - 45, currentY + 5, { align: 'center' });
   
   if (os.technicianSignature) {
     try { doc.addImage(os.technicianSignature, 'PNG', margin + 25, currentY - 18, 40, 16); } catch(e) {}
-  } else if (appSettings.signatureUrl) {
+  } else if (isAndre && appSettings.signatureUrl) {
     try { doc.addImage(appSettings.signatureUrl, 'PNG', margin + 25, currentY - 18, 40, 16); } catch(e) {}
   }
   if (os.clientSignature) {
@@ -1067,6 +1077,8 @@ interface Budget {
   total: number;
   status: 'Pendente' | 'Aprovado' | 'Rejeitado';
   pixAccountId?: string;
+  paymentMethod?: 'Dinheiro' | 'Cartão' | 'PIX';
+  installments?: number;
   observations?: string;
   clientSignature?: string;
   createdAt: any;
@@ -1153,8 +1165,8 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
   // Removed duplicate company name on the right
   
   doc.setFontSize(9);
-  const contactInfo = `${appSettings.companyPhone || '(91)98722-3092'}   ${appSettings.companyEmail || 'afsistseg.me@gmail.com'}`;
-  doc.text(contactInfo, appSettings.logoUrl ? 42 : 20, 26);
+  const contactInfo = `${appSettings.companyPhone || ''}   ${appSettings.companyEmail || ''}`;
+  doc.text(contactInfo.trim(), appSettings.logoUrl ? 42 : 20, 26);
   
   // 2. Title Bar
   doc.setFillColor(245, 245, 245);
@@ -1162,9 +1174,6 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
   doc.text(`Recibo Nº ${formatRecordNumber(receipt.number, receipt.date)}`, 105, 47, { align: 'center' });
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.text(dateStr, 185, 47, { align: 'right' });
   
   // 3. Declaration
   doc.setFontSize(11);
@@ -1173,7 +1182,7 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
   const valorNumerico = Number(receipt.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
   const valorExtenso = valorPorExtenso(Number(receipt.value));
   
-  const declarationText = `Declaro que recebi na data de ${fullDateStr}, o valor de R$ ${valorNumerico} (${valorExtenso}), de ${receipt.clientName}, referente aos seguintes serviços:`;
+  const declarationText = `Declaro que recebi na data de ${fullDateStr}, o valor de R$ ${valorNumerico} (${valorExtenso}), de ${receipt.clientName}, via ${receipt.paymentMethod || 'PIX'}, referente aos seguintes serviços:`;
   
   const splitDeclaration = doc.splitTextToSize(declarationText, 170);
   doc.text(splitDeclaration, 20, declarationY);
@@ -1210,7 +1219,10 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
   doc.rect(20, servicesY + 13, 170, rowH, 'F');
   doc.setTextColor(0, 0, 0);
   doc.setFont('helvetica', 'normal');
-  const serviceText = receipt.serviceSpecification || 'Serviços prestados';
+  let serviceText = receipt.serviceSpecification || 'Serviços prestados';
+  if (receipt.referenceMonth && receipt.clientType !== 'Avulso') {
+    serviceText += `\nReferente a: ${receipt.referenceMonth}`;
+  }
   const splitService = doc.splitTextToSize(serviceText, isContract ? 130 : 65);
   doc.text(splitService, 25, servicesY + 18);
   
@@ -1237,22 +1249,30 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
   
   currentY += 20;
   
-  // PIX Info
-  const selectedPix = pixSettings.accounts.find(a => a.id === receipt.pixAccountId) || pixSettings.accounts[0];
-  if (selectedPix && selectedPix.key) {
+  // PIX Info (Only if payment method is PIX)
+  if (receipt.paymentMethod === 'PIX') {
+    const selectedPix = pixSettings.accounts.find(a => a.id === receipt.pixAccountId) || pixSettings.accounts[0];
+    if (selectedPix && selectedPix.key) {
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Dados para Pagamento (PIX):', 20, currentY);
+      currentY += 6;
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Chave: ${selectedPix.key}`, 20, currentY);
+      currentY += 5;
+      doc.text(`Banco: ${selectedPix.bank}`, 20, currentY);
+      currentY += 5;
+      doc.text(`Favorecido: ${selectedPix.favored}`, 20, currentY);
+      currentY += 5;
+      doc.text(`CPF/CNPJ: ${selectedPix.document}`, 20, currentY);
+      currentY += 15;
+    }
+  } else if (receipt.paymentMethod) {
     doc.setTextColor(0, 0, 0);
-    doc.setFontSize(9);
+    doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
-    doc.text('Dados para Pagamento (PIX):', 20, currentY);
-    currentY += 6;
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Chave: ${selectedPix.key}`, 20, currentY);
-    currentY += 5;
-    doc.text(`Banco: ${selectedPix.bank}`, 20, currentY);
-    currentY += 5;
-    doc.text(`Favorecido: ${selectedPix.favored}`, 20, currentY);
-    currentY += 5;
-    doc.text(`CPF/CNPJ: ${selectedPix.document}`, 20, currentY);
+    doc.text(`Forma de Pagamento: ${receipt.paymentMethod}`, 20, currentY);
     currentY += 15;
   }
 
@@ -1283,7 +1303,10 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
 
   currentY += 15;
 
-  if (appSettings.signatureUrl) {
+  const isAndre = appSettings.responsible && 
+                  appSettings.responsible.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes('andre');
+
+  if (isAndre && appSettings.signatureUrl) {
     try {
       doc.addImage(appSettings.signatureUrl, 'PNG', 80, currentY - 5, 50, 15);
     } catch (e) {
@@ -1292,7 +1315,8 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
   }
 
   doc.line(70, currentY + 12, 140, currentY + 12);
-  doc.text(appSettings.companyName || 'André Fonseca', 105, currentY + 17, { align: 'center' });
+  doc.text(appSettings.responsible || appSettings.companyName || '', 105, currentY + 17, { align: 'center' });
+  doc.text('Emitente', 105, currentY + 22, { align: 'center' });
   
   const fileName = `recibo_${receipt.clientName.replace(/\s/g, '_')}.pdf`;
 
@@ -4734,13 +4758,14 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
   const [receiptToDelete, setReceiptToDelete] = useState<Receipt | null>(null);
   const [isReceiptConfirmOpen, setIsReceiptConfirmOpen] = useState(false);
   const [pendingReceiptForPdf, setPendingReceiptForPdf] = useState<Receipt | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'Todos' | 'Aguardando Pagamento' | 'Recebido'>('Todos');
   const [newReceipt, setNewReceipt] = useState<Partial<Receipt>>({
     date: new Date(),
     value: 0,
     paymentMethod: 'PIX',
     clientType: 'Avulso',
     status: 'Aguardando Pagamento',
-    referenceMonth: format(new Date(), 'MMMM/yyyy', { locale: ptBR }),
+    referenceMonth: '',
     observations: ''
   });
 
@@ -4788,6 +4813,11 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
       handleFirestoreError(error, OperationType.UPDATE, `receipts/${id}`);
     }
   };
+
+  const filteredReceipts = useMemo(() => {
+    if (statusFilter === 'Todos') return receipts;
+    return receipts.filter(r => r.status === statusFilter);
+  }, [receipts, statusFilter]);
 
   const handleAddReceipt = async () => {
     if (!newReceipt.clientName || !newReceipt.value || !newReceipt.paymentMethod) {
@@ -5232,6 +5262,22 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
         </div>
       ) : (
         <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
+          <div className="p-4 border-b border-[#2d3139] flex justify-between items-center bg-[#1a1d23] sticky top-0 z-20">
+            <span className="text-sm text-[#71717a] font-medium uppercase tracking-wider">Filtro de Status</span>
+            <div className="flex gap-2">
+              {(['Todos', 'Aguardando Pagamento', 'Recebido'] as const).map((s) => (
+                <Button
+                  key={s}
+                  variant={statusFilter === s ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setStatusFilter(s)}
+                  className={statusFilter === s ? "bg-[#3b82f6] text-white" : "border-[#2d3139] text-[#71717a] hover:bg-[#2d3139]"}
+                >
+                  {s}
+                </Button>
+              ))}
+            </div>
+          </div>
           <Table>
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
@@ -5245,7 +5291,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
               </TableRow>
             </TableHeader>
             <TableBody>
-              {receipts.map((receipt) => (
+              {filteredReceipts.map((receipt) => (
                 <TableRow key={receipt.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
                   <TableCell>
                     <div className="flex gap-2">
@@ -8194,7 +8240,7 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
     doc.setFontSize(16);
     doc.setFont('helvetica', 'bold');
     const headerX = appSettings.logoUrl ? 42 : 20;
-    doc.text(appSettings.companyName || 'AF Sistemas de Segurança e Informática', headerX, 18);
+    doc.text(appSettings.companyName || '', headerX, 18);
     
     doc.setFontSize(12);
     doc.text(`RELATÓRIO DE VISITA TÉCNICA ${formatRecordNumber(visit.number, visit.date)}`, headerX, 26);
@@ -8329,6 +8375,9 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
     doc.text(cityDate, 105, signatureY - 10, { align: 'center' });
     
     // Signatures
+    const techName = visit.technicianName || '';
+    const isAndre = techName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes('andre');
+
     doc.setLineWidth(0.3);
     if (visit.technicianSignature) {
       try {
@@ -8336,7 +8385,7 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
       } catch (e) {
         console.error("Erro ao adicionar assinatura técnica:", e);
       }
-    } else if (appSettings.signatureUrl) {
+    } else if (isAndre && appSettings.signatureUrl) {
       try {
         doc.addImage(appSettings.signatureUrl, 'PNG', 35, signatureY - 8, 40, 15);
       } catch (e) {
@@ -8345,7 +8394,7 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
     }
     doc.line(25, signatureY + 10, 90, signatureY + 10);
     doc.text('Assinatura do Técnico', 57.5, signatureY + 15, { align: 'center' });
-    doc.text(visit.technicianName, 57.5, signatureY + 20, { align: 'center' });
+    doc.text(isAndre ? (appSettings.responsible || techName) : techName, 57.5, signatureY + 20, { align: 'center' });
     
     if (visit.clientSignature) {
       try {
@@ -8569,7 +8618,7 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Cliente</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Status</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Serviço</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Agendamento</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">Visita para</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Valor</TableHead>
             </TableRow>
           </TableHeader>
@@ -8640,8 +8689,14 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
                   <Badge className="bg-[#2d3139] text-[#e0e0e0] font-normal text-[10px] uppercase tracking-wider">{visit.type}</Badge>
                 </TableCell>
                 <TableCell className="text-[12px] text-[#e0e0e0]">
-                  <div>{format(visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date), 'dd/MM/yyyy')}</div>
+                  <div className="font-medium text-[#3b82f6]">{format(visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date), 'dd/MM/yyyy')}</div>
                   {visit.scheduledTime && <div className="text-[10px] text-[#71717a]">{visit.scheduledTime}</div>}
+                  {visit.expectedDate && (
+                    <div className="text-[10px] text-[#10b981] mt-1 italic">
+                      Prev: {format(visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate), 'dd/MM/yyyy')} {visit.expectedTime}
+                    </div>
+                  )}
+                  <div className="text-[9px] text-[#71717a] mt-1 font-mono italic">Reg: {format(visit.createdAt instanceof Timestamp ? visit.createdAt.toDate() : new Date(visit.createdAt), 'dd/MM/yyyy')}</div>
                 </TableCell>
                 <TableCell className="text-[12px] font-semibold text-white">
                   R$ {(visit.totalValue || 0).toFixed(2)}
@@ -9404,6 +9459,8 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
   const [editingOS, setEditingOS] = useState<Partial<ServiceOrder> | null>(null);
   const [osToDelete, setOSToDelete] = useState<ServiceOrder | null>(null);
   const [clientSearch, setClientSearch] = useState('');
+  const [filterClient, setFilterClient] = useState('');
+  const [filterDate, setFilterDate] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [newOS, setNewOS] = useState<Partial<ServiceOrder>>({
     serviceType: 'Corretiva',
@@ -9515,6 +9572,42 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
       handleFirestoreError(err, OperationType.DELETE, 'serviceOrders');
     }
   };
+
+  const availableDates = useMemo(() => {
+    const orders = filterClient && filterClient !== 'all' 
+      ? serviceOrders.filter(os => (os.clientName || '').toLowerCase() === filterClient.toLowerCase())
+      : serviceOrders;
+      
+    const dates = orders.map(os => {
+      if (!os.startDateTime) return null;
+      const d = os.startDateTime instanceof Timestamp ? os.startDateTime.toDate() : new Date(os.startDateTime);
+      return d.toLocaleDateString('pt-BR');
+    }).filter((d): d is string => !!d);
+    
+    return Array.from(new Set(dates)).sort((a,b) => {
+       const [da, ma, ya] = a.split('/').map(Number);
+       const [db, mb, yb] = b.split('/').map(Number);
+       return new Date(yb, mb-1, db).getTime() - new Date(ya, ma-1, da).getTime(); // Descending
+    });
+  }, [serviceOrders, filterClient]);
+
+  const filteredServiceOrders = useMemo(() => {
+    let filtered = serviceOrders;
+    
+    if (filterClient && filterClient !== 'all') {
+      filtered = filtered.filter(os => (os.clientName || '').toLowerCase() === filterClient.toLowerCase());
+    }
+    
+    if (filterDate && filterDate !== 'all') {
+      filtered = filtered.filter(os => {
+        if (!os.startDateTime) return false;
+        const d = os.startDateTime instanceof Timestamp ? os.startDateTime.toDate() : new Date(os.startDateTime);
+        return d.toLocaleDateString('pt-BR') === filterDate;
+      });
+    }
+    
+    return filtered;
+  }, [serviceOrders, filterClient, filterDate]);
 
   return (
     <div className="space-y-8">
@@ -9830,8 +9923,49 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
       </div>
 
       {showList ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {serviceOrders.map(os => (
+        <div className="space-y-6">
+          <div className="flex flex-col gap-4 bg-[#1a1d23] p-6 rounded-xl border border-[#2d3139]">
+            <div className="space-y-4 w-full">
+              <div className="space-y-2">
+                <Label className="text-xs text-[#71717a] uppercase tracking-wider font-semibold">Filtrar por Cliente</Label>
+                <Select value={filterClient} onValueChange={(val) => { setFilterClient(val); setFilterDate('all'); }}>
+                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white w-full">
+                    <SelectValue placeholder="Selecione um cliente..." />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                    <SelectItem value="all">Todos os Clientes</SelectItem>
+                    {clients.map(client => (
+                      <SelectItem key={client.id} value={client.name}>{client.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs text-[#71717a] uppercase tracking-wider font-semibold">Filtrar por Data de Atendimento</Label>
+                <Select value={filterDate} onValueChange={setFilterDate}>
+                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white w-full">
+                    <SelectValue placeholder="Selecione uma data..." />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                    <SelectItem value="all">Todas as Datas</SelectItem>
+                    {availableDates.map(date => (
+                      <SelectItem key={date} value={date}>{date}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            
+            <div className="pt-2 border-t border-[#2d3139] flex items-center justify-between">
+              <span className="text-xs text-[#71717a] uppercase tracking-wider font-medium">Resultado da busca:</span>
+              <span className="text-sm text-[#3b82f6] font-bold">
+                {filteredServiceOrders.length} {filteredServiceOrders.length === 1 ? 'ordem encontrada' : 'ordens encontradas'}
+              </span>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredServiceOrders.map(os => (
             <Card key={os.id} className={`border-[#2d3139] bg-[#1a1d23] hover:border-[#3b82f6]/40 transition-all overflow-hidden group ${selectedIds.includes(os.id) ? 'ring-2 ring-[#3b82f6] border-transparent' : ''}`}>
               <CardHeader className="pb-3 border-b border-[#2d3139]/30 relative pt-10">
                 <div className="absolute top-4 left-4 z-10 flex items-center gap-2">
@@ -9913,9 +10047,10 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
             </div>
           )}
         </div>
-      ) : (
-        <NoAccessList title="Ordens de Serviço" />
-      )}
+      </div>
+    ) : (
+      <NoAccessList title="Ordens de Serviço" />
+    )}
 
       {/* Edit Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
@@ -10174,11 +10309,14 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
   const [newBudget, setNewBudget] = useState<Partial<Budget>>({
     items: [{ description: '', quantity: 1, price: 0 }],
     status: 'Pendente',
-    observations: ''
+    observations: '',
+    paymentMethod: 'Dinheiro'
   });
   
   const [profitMargin, setProfitMargin] = useState<number>(0);
   const [editProfitMargin, setEditProfitMargin] = useState<number>(0);
+  const [prevItems, setPrevItems] = useState<any[] | null>(null);
+  const [prevEditItems, setPrevEditItems] = useState<any[] | null>(null);
 
   const applyProfitMargin = (items: { description: string, quantity: number, price: number }[], margin: number) => {
     if (margin <= 0) return items;
@@ -10222,6 +10360,7 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
 
       setNewBudget({ items: [{ description: '', quantity: 1, price: 0 }], status: 'Pendente', observations: '', clientName: '', clientPhone: '', address: '' });
       setProfitMargin(0);
+      setPrevItems(null);
       setIsAddOpen(false);
       toast.success('Orçamento criado!');
     } catch (error) {
@@ -10250,6 +10389,7 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
 
       setIsEditOpen(false);
       setEditProfitMargin(0);
+      setPrevEditItems(null);
       toast.success('Orçamento atualizado!');
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'budgets');
@@ -10310,7 +10450,7 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
     doc.setFontSize(16);
     doc.setFont('helvetica', 'bold');
     const budgetHeaderX = appSettings.logoUrl ? 42 : 20;
-    doc.text(appSettings.companyName || 'AF Sistemas de Segurança e Informática', budgetHeaderX, 18);
+    doc.text(appSettings.companyName || '', budgetHeaderX, 18);
     
     doc.setFontSize(12);
     doc.text(`ORÇAMENTO DE SERVIÇOS ${formatRecordNumber(budget.number, budget.createdAt)}`, budgetHeaderX, 26);
@@ -10347,7 +10487,28 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
     doc.setFontSize(12);
     doc.text(`VALOR TOTAL: R$ ${(budget.total || 0).toFixed(2)}`, 190, finalY, { align: 'right' });
 
-    if (budget.pixAccountId) {
+    if (budget.paymentMethod) {
+      finalY += 10;
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Forma de Pagamento: ${budget.paymentMethod}`, 20, finalY);
+      
+      if (budget.paymentMethod === 'Cartão' && budget.installments) {
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Pagamento em até ${budget.installments}x sem juros no cartão`, 20, finalY + 7);
+        finalY += 12;
+      } else if (budget.paymentMethod === 'PIX' && budget.pixAccountId) {
+        const selectedPix = pixSettings.accounts.find(a => a.id === budget.pixAccountId);
+        if (selectedPix) {
+          doc.setFont('helvetica', 'normal');
+          doc.text(`Chave PIX: ${selectedPix.key} - Banco: ${selectedPix.bank}`, 20, finalY + 7);
+          doc.text(`Favorecido: ${selectedPix.favored}`, 20, finalY + 12);
+          finalY += 17;
+        }
+      } else {
+        finalY += 7;
+      }
+    } else if (budget.pixAccountId) {
       const selectedPix = pixSettings.accounts.find(a => a.id === budget.pixAccountId);
       if (selectedPix) {
         finalY += 10;
@@ -10382,6 +10543,9 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
     doc.text(cityDateBudget, 105, finalY + 5, { align: 'center' });
 
     finalY += 20;
+    
+    const isAndre = appSettings.responsible && 
+                   appSettings.responsible.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes('andre');
 
     if (budget.clientSignature) {
       try {
@@ -10393,7 +10557,7 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
     doc.line(20, finalY, 70, finalY);
     doc.text('Assinatura do Cliente', 45, finalY + 5, { align: 'center' });
 
-    if (appSettings.signatureUrl) {
+    if (isAndre && appSettings.signatureUrl) {
       try {
         doc.addImage(appSettings.signatureUrl, 'PNG', 130, finalY - 15, 50, 15);
       } catch (e) {
@@ -10484,26 +10648,56 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
                   <Input value={newBudget.address || ''} onChange={e => setNewBudget({...newBudget, address: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
                 
-                <div className="space-y-2">
-                  <Label className="text-[#a0a0a0]">Conta PIX (Para exibir no orçamento)</Label>
-                  <Select value={newBudget.pixAccountId} onValueChange={(val) => setNewBudget({...newBudget, pixAccountId: val})}>
-                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue placeholder="Selecione a conta PIX">
-                        {pixSettings.accounts?.find(a => a.id === newBudget.pixAccountId) 
-                          ? `${pixSettings.accounts.find(a => a.id === newBudget.pixAccountId)?.label} (${pixSettings.accounts.find(a => a.id === newBudget.pixAccountId)?.bank})`
-                          : null}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      {pixSettings.accounts?.map(acc => (
-                        <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank})</SelectItem>
-                      ))}
-                      {(!pixSettings.accounts || pixSettings.accounts.length === 0) && (
-                        <SelectItem value="none" disabled>Nenhuma conta cadastrada</SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Forma de Pagamento</Label>
+                    <Select value={newBudget.paymentMethod || 'Dinheiro'} onValueChange={(val: any) => setNewBudget({...newBudget, paymentMethod: val})}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue placeholder="Selecione..." />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="Dinheiro">Dinheiro</SelectItem>
+                        <SelectItem value="Cartão">Cartão</SelectItem>
+                        <SelectItem value="PIX">PIX</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {newBudget.paymentMethod === 'Cartão' && (
+                    <div className="space-y-2">
+                      <Label className="text-[#a0a0a0]">Parcelas sem juros</Label>
+                      <Input 
+                        type="number" 
+                        value={newBudget.installments || 1} 
+                        onChange={e => setNewBudget({...newBudget, installments: Number(e.target.value)})} 
+                        className="bg-[#0f1115] border-[#2d3139] text-white" 
+                        min={1}
+                      />
+                    </div>
+                  )}
                 </div>
+
+                {newBudget.paymentMethod === 'PIX' && (
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Conta PIX (Para exibir no orçamento)</Label>
+                    <Select value={newBudget.pixAccountId} onValueChange={(val) => setNewBudget({...newBudget, pixAccountId: val})}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue placeholder="Selecione a conta PIX">
+                          {pixSettings.accounts?.find(a => a.id === newBudget.pixAccountId) 
+                            ? `${pixSettings.accounts.find(a => a.id === newBudget.pixAccountId)?.label} (${pixSettings.accounts.find(a => a.id === newBudget.pixAccountId)?.bank})`
+                            : null}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        {pixSettings.accounts?.map(acc => (
+                          <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank})</SelectItem>
+                        ))}
+                        {(!pixSettings.accounts || pixSettings.accounts.length === 0) && (
+                          <SelectItem value="none" disabled>Nenhuma conta cadastrada</SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 <Separator className="bg-[#2d3139]" />
                 
@@ -10512,7 +10706,7 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
                     <Label className="text-[#3b82f6] font-bold flex items-center gap-2">
                       <Percent size={16} /> Margem de Lucro Global
                     </Label>
-                    <span className="text-[10px] text-[#71717a] lowercase italic">Aplica sobre os preços digitados abaixo</span>
+                    <span className="text-[10px] text-[#71717a] lowercase italic">Aplica sobre os preços unitários</span>
                   </div>
                   <div className="flex gap-2 items-center">
                     <div className="relative flex-1">
@@ -10522,24 +10716,40 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
                         onChange={e => setProfitMargin(Number(e.target.value))} 
                         className="bg-[#0f1115] border-[#2d3139] text-[#3b82f6] font-bold" 
                         placeholder="0"
+                        disabled={!!prevItems}
                       />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#3b82f6] font-bold">%</span>
                     </div>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="border-[#3b82f6]/30 text-[#3b82f6] hover:bg-[#3b82f6] hover:text-white"
-                      onClick={() => {
-                        if (profitMargin > 0 && newBudget.items) {
-                          const updated = applyProfitMargin(newBudget.items, profitMargin);
-                          setNewBudget({...newBudget, items: updated});
-                          setProfitMargin(0); // Reset after apply
-                          toast.success('Markup aplicado aos itens!');
-                        }
-                      }}
-                    >
-                      Aplicar Agora
-                    </Button>
+                    {prevItems ? (
+                      <Button 
+                        variant="destructive" 
+                        size="sm" 
+                        className="bg-red-500 hover:bg-red-600 text-white"
+                        onClick={() => {
+                          setNewBudget({...newBudget, items: prevItems});
+                          setPrevItems(null);
+                          toast.info('Margem de lucro removida.');
+                        }}
+                      >
+                        Retirar Margem
+                      </Button>
+                    ) : (
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="border-[#3b82f6]/30 text-[#3b82f6] hover:bg-[#3b82f6] hover:text-white"
+                        onClick={() => {
+                          if (profitMargin > 0 && newBudget.items) {
+                            setPrevItems([...newBudget.items]);
+                            const updated = applyProfitMargin(newBudget.items, profitMargin);
+                            setNewBudget({...newBudget, items: updated});
+                            toast.success('Markup aplicado aos itens!');
+                          }
+                        }}
+                      >
+                        Aplicar Agora
+                      </Button>
+                    )}
                   </div>
                 </div>
 
@@ -10701,6 +10911,57 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
                 <Input value={editingBudget.address || ''} onChange={e => setEditingBudget({...editingBudget, address: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
               </div>
 
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Forma de Pagamento</Label>
+                  <Select value={editingBudget.paymentMethod || 'Dinheiro'} onValueChange={(val: any) => setEditingBudget({...editingBudget, paymentMethod: val})}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                      <SelectValue placeholder="Selecione..." />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="Dinheiro">Dinheiro</SelectItem>
+                      <SelectItem value="Cartão">Cartão</SelectItem>
+                      <SelectItem value="PIX">PIX</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {editingBudget.paymentMethod === 'Cartão' && (
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Parcelas sem juros</Label>
+                    <Input 
+                      type="number" 
+                      value={editingBudget.installments || 1} 
+                      onChange={e => setEditingBudget({...editingBudget, installments: Number(e.target.value)})} 
+                      className="bg-[#0f1115] border-[#2d3139] text-white" 
+                      min={1}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {editingBudget.paymentMethod === 'PIX' && (
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Conta PIX (Para exibir no orçamento)</Label>
+                  <Select value={editingBudget.pixAccountId} onValueChange={(val) => setEditingBudget({...editingBudget, pixAccountId: val})}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                      <SelectValue placeholder="Selecione a conta PIX">
+                        {pixSettings.accounts?.find(a => a.id === editingBudget.pixAccountId) 
+                          ? `${pixSettings.accounts.find(a => a.id === editingBudget.pixAccountId)?.label} (${pixSettings.accounts.find(a => a.id === editingBudget.pixAccountId)?.bank})`
+                          : null}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      {pixSettings.accounts?.map(acc => (
+                        <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank})</SelectItem>
+                      ))}
+                      {(!pixSettings.accounts || pixSettings.accounts.length === 0) && (
+                        <SelectItem value="none" disabled>Nenhuma conta cadastrada</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
               <div className="bg-[#3b82f6]/5 p-4 rounded-lg border border-[#3b82f6]/20 space-y-3">
                 <Label className="text-[#3b82f6] font-bold flex items-center gap-2">
                   <Percent size={16} /> Atualizar Margem de Lucro (%)
@@ -10712,24 +10973,41 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
                       value={editProfitMargin} 
                       onChange={e => setEditProfitMargin(Number(e.target.value))} 
                       className="bg-[#0f1115] border-[#2d3139] text-[#3b82f6]" 
+                      disabled={!!prevEditItems}
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#3b82f6] font-bold">%</span>
                   </div>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="border-[#3b82f6]/30 text-[#3b82f6]"
-                    onClick={() => {
-                      if (editProfitMargin > 0 && editingBudget.items) {
-                        const updated = applyProfitMargin(editingBudget.items, editProfitMargin);
-                        setEditingBudget({...editingBudget, items: updated});
+                  {prevEditItems ? (
+                    <Button 
+                      variant="destructive" 
+                      size="sm" 
+                      className="bg-red-500 hover:bg-red-600 text-white"
+                      onClick={() => {
+                        setEditingBudget({...editingBudget, items: prevEditItems});
+                        setPrevEditItems(null);
                         setEditProfitMargin(0);
-                        toast.success('Markup aplicado!');
-                      }
-                    }}
-                  >
-                    Aplicar
-                  </Button>
+                        toast.info('Margem removida.');
+                      }}
+                    >
+                      Retirar
+                    </Button>
+                  ) : (
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="border-[#3b82f6]/30 text-[#3b82f6]"
+                      onClick={() => {
+                        if (editProfitMargin > 0 && editingBudget.items) {
+                          setPrevEditItems([...editingBudget.items]);
+                          const updated = applyProfitMargin(editingBudget.items, editProfitMargin);
+                          setEditingBudget({...editingBudget, items: updated});
+                          toast.success('Markup aplicado!');
+                        }
+                      }}
+                    >
+                      Aplicar
+                    </Button>
+                  )}
                 </div>
               </div>
 
