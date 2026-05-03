@@ -12,6 +12,7 @@ import {
   FileText, 
   LogOut, 
   Search,
+  Check,
   CheckCircle2,
   Clock,
   AlertCircle,
@@ -40,7 +41,8 @@ import {
   History,
   UserCog,
   Activity,
-  Percent
+  Percent,
+  Loader2
 } from 'lucide-react';
 import { 
   collection, 
@@ -136,6 +138,13 @@ import { Separator } from '@/components/ui/separator';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+import { 
+  Command, 
+  CommandEmpty, 
+  CommandGroup, 
+  CommandInput, 
+  CommandItem 
+} from '@/components/ui/command';
 
 // --- Helpers ---
 
@@ -1063,6 +1072,8 @@ interface FinancialRecord {
   visitId?: string;
   clientId?: string;
   receiptId?: string;
+  pixAccountId?: string;
+  paymentMethod?: 'Dinheiro' | 'PIX' | 'Cartão';
   serviceType?: 'Contrato' | 'Serviço Normal';
   createdAt?: any;
 }
@@ -1874,6 +1885,7 @@ export default function MainApp() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
   const [logs, setLogs] = useState<LogRecord[]>([]);
   const [allCompanies, setAllCompanies] = useState<any[]>([]);
   const [allFinancials, setAllFinancials] = useState<any[]>([]); // New state for global metrics
@@ -2166,10 +2178,10 @@ export default function MainApp() {
 
       const currentIndex = tabs.indexOf(activeTab);
 
-      if (e.key === 'ArrowDown') {
+      if (e.altKey && e.key === 'ArrowDown') {
         const nextIndex = (currentIndex + 1) % tabs.length;
         setActiveTab(tabs[nextIndex]);
-      } else if (e.key === 'ArrowUp') {
+      } else if (e.altKey && e.key === 'ArrowUp') {
         const nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
         setActiveTab(tabs[nextIndex]);
       }
@@ -3127,6 +3139,7 @@ export default function MainApp() {
           {activeTab === 'visits' && (
             <VisitsManager 
               visits={visits} 
+              receipts={receipts}
               user={user!} 
               clients={clients} 
               appSettings={appSettings} 
@@ -3135,9 +3148,10 @@ export default function MainApp() {
               initialFilter={visitsFilter}
               onClearFilter={() => setVisitsFilter({ date: null })}
               showList={canViewList('visits')}
+              logAction={logAction}
             />
           )}
-          {activeTab === 'financial' && <FinancialManager financials={financials} visits={visits} clients={clients} companyId={currentUserData?.companyId || ''} showList={canViewList('financial')} />}
+          {activeTab === 'financial' && <FinancialManager financials={financials} visits={visits} clients={clients} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} showList={canViewList('financial')} />}
           {activeTab === 'budgets' && <BudgetsManager budgets={budgets} clients={clients} appSettings={appSettings} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} showList={canViewList('budgets')} logAction={logAction} />}
           {activeTab === 'service-orders' && (
             <ServiceOrdersManager 
@@ -3168,18 +3182,6 @@ export default function MainApp() {
             />
           )}
           {activeTab === 'users' && <UsersManager users={users} currentUserData={currentUserData} showList={canViewList('users')} userRoles={userRoles} logAction={logAction} />}
-          {activeTab === 'visits' && (
-            <VisitsManager 
-              visits={visits} 
-              user={user!} 
-              clients={clients} 
-              appSettings={appSettings} 
-              pixSettings={pixSettings} 
-              companyId={currentUserData?.companyId || ''}
-              showList={canViewList('visits')}
-              logAction={logAction}
-            />
-          )}
           
           {activeTab === 'logs' && (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -3219,7 +3221,25 @@ export default function MainApp() {
                 </div>
               </div>
 
-              <Card className="border-[#2d3139] bg-[#1a1d23] overflow-hidden shadow-xl">
+              <Card 
+                className="border-[#2d3139] bg-[#1a1d23] overflow-hidden shadow-xl focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (!logs.length) return;
+                  const currentIndex = logs.findIndex(l => l.id === selectedLogId);
+                  if (e.key === 'ArrowDown') {
+                    const nextIndex = Math.min(currentIndex + 1, logs.length - 1);
+                    setSelectedLogId(logs[nextIndex].id);
+                    e.preventDefault();
+                    document.getElementById(`log-${logs[nextIndex].id}`)?.scrollIntoView({ block: 'nearest' });
+                  } else if (e.key === 'ArrowUp') {
+                    const nextIndex = Math.max(currentIndex - 1, 0);
+                    setSelectedLogId(logs[nextIndex].id);
+                    e.preventDefault();
+                    document.getElementById(`log-${logs[nextIndex].id}`)?.scrollIntoView({ block: 'nearest' });
+                  }
+                }}
+              >
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
@@ -3243,7 +3263,15 @@ export default function MainApp() {
                         </tr>
                       ) : (
                         logs.map((log) => (
-                          <tr key={log.id} className="hover:bg-white/[0.02] transition-colors group">
+                          <tr 
+                            key={log.id}
+                            id={`log-${log.id}`}
+                            onClick={() => setSelectedLogId(log.id)}
+                            className={cn(
+                              "transition-colors group cursor-pointer",
+                              selectedLogId === log.id ? "bg-blue-500/10" : "hover:bg-white/[0.02]"
+                            )}
+                          >
                             <td className="p-4 whitespace-nowrap">
                               <div className="text-white text-sm font-medium">
                                 {format(log.timestamp.toDate(), 'dd/MM/yy HH:mm')}
@@ -4750,8 +4778,8 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
 // --- Receipts Manager Component ---
 
 function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings, companyId, currentUserData, showList }: { receipts: Receipt[], clients: Client[], pixSettings: PixSettings, appSettings: AppSettings, companyId: string, currentUserData: any, showList: boolean }) {
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [clientSearch, setClientSearch] = useState('');
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingReceipt, setEditingReceipt] = useState<Receipt | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -4759,6 +4787,11 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
   const [isReceiptConfirmOpen, setIsReceiptConfirmOpen] = useState(false);
   const [pendingReceiptForPdf, setPendingReceiptForPdf] = useState<Receipt | null>(null);
   const [statusFilter, setStatusFilter] = useState<'Todos' | 'Aguardando Pagamento' | 'Recebido'>('Todos');
+  const [dateFilter, setDateFilter] = useState('all');
+  const [pixFilter, setPixFilter] = useState('all');
+  const [selectedClientFilter, setSelectedClientFilter] = useState<string | 'all'>('all');
+  const [clientSearch, setClientSearch] = useState('');
+  const [isClientFilterOpen, setIsClientFilterOpen] = useState(false);
   const [newReceipt, setNewReceipt] = useState<Partial<Receipt>>({
     date: new Date(),
     value: 0,
@@ -4768,6 +4801,23 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
     referenceMonth: '',
     observations: ''
   });
+
+  const clientsWithReceipts = useMemo(() => {
+    const clientsWithDataIds = Array.from(new Set(receipts.map(r => r.clientId).filter(Boolean)));
+    return clients.filter(c => clientsWithDataIds.includes(c.id));
+  }, [clients, receipts]);
+
+  const availableDates = useMemo(() => {
+    let filtered = receipts;
+    if (selectedClientFilter !== 'all') {
+      filtered = filtered.filter(r => r.clientId === selectedClientFilter);
+    }
+    const dates = filtered.map(r => {
+      const d = r.date instanceof Timestamp ? r.date.toDate() : new Date(r.date);
+      return format(d, 'yyyy-MM-dd');
+    });
+    return Array.from(new Set(dates)).sort().reverse();
+  }, [receipts, selectedClientFilter]);
 
   const filteredClientsForSelect = useMemo(() => {
     return (clients || []).filter(c => (c.name || '').toLowerCase().includes(clientSearch.toLowerCase()));
@@ -4786,9 +4836,11 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
           type: 'Receita',
           category: receiptData.clientType === 'Contrato' ? 'Mensalidade Contrato' : 'Serviço Avulso',
           description: `Recebimento Recibo: ${receiptData.clientName} - ${receiptData.referenceMonth || format(new Date(), 'MMMM/yyyy', { locale: ptBR })}`,
-          origin: receiptData.number ? `Recibo Nº ${formatRecordNumber(receiptData.number, receiptData.date)}` : 'Recibo',
+          origin: receiptData.number ? formatRecordNumber(receiptData.number, receiptData.date) : 'Recibo',
           value: Number(receiptData.value),
           date: receiptData.date || Timestamp.now(),
+          paymentMethod: receiptData.paymentMethod || 'PIX',
+          pixAccountId: receiptData.pixAccountId || null,
           serviceType: receiptData.clientType === 'Contrato' ? 'Contrato' : 'Serviço Normal',
           clientId: receiptData.clientId || null,
           receiptId: receiptId,
@@ -4814,10 +4866,31 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
     }
   };
 
+  useEffect(() => {
+    if (dateFilter !== 'all' && !availableDates.includes(dateFilter)) {
+      setDateFilter('all');
+    }
+  }, [selectedClientFilter, availableDates, dateFilter]);
+
   const filteredReceipts = useMemo(() => {
-    if (statusFilter === 'Todos') return receipts;
-    return receipts.filter(r => r.status === statusFilter);
-  }, [receipts, statusFilter]);
+    let filtered = receipts;
+    if (selectedClientFilter !== 'all') {
+      filtered = filtered.filter(r => r.clientId === selectedClientFilter);
+    }
+    if (statusFilter !== 'Todos') {
+      filtered = filtered.filter(r => r.status === statusFilter);
+    }
+    if (dateFilter && dateFilter !== 'all') {
+      filtered = filtered.filter(r => {
+        const d = r.date instanceof Timestamp ? r.date.toDate() : new Date(r.date);
+        return format(d, 'yyyy-MM-dd') === dateFilter;
+      });
+    }
+    if (pixFilter !== 'all') {
+      filtered = filtered.filter(r => r.pixAccountId === pixFilter);
+    }
+    return filtered;
+  }, [receipts, statusFilter, dateFilter, pixFilter, selectedClientFilter]);
 
   const handleAddReceipt = async () => {
     if (!newReceipt.clientName || !newReceipt.value || !newReceipt.paymentMethod) {
@@ -4908,7 +4981,117 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
           <h2 className="text-2xl font-bold tracking-tight text-white">Gestão de Recibos</h2>
           <p className="text-[#71717a]">Gere e consulte recibos de pagamentos.</p>
         </div>
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+        <div className="flex flex-wrap items-center gap-3">
+          <Popover open={isClientFilterOpen} onOpenChange={setIsClientFilterOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={isClientFilterOpen}
+                className="w-full sm:w-[250px] justify-between bg-[#1a1d23] border-[#2d3139] text-white hover:bg-[#2d3139] hover:text-white"
+              >
+                {selectedClientFilter === 'all' 
+                  ? "Todos os Clientes" 
+                  : clients.find((client) => client.id === selectedClientFilter)?.name || "Cliente não encontrado"}
+                <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[300px] p-0 bg-[#1a1d23] border-[#2d3139]">
+              <Command className="bg-[#1a1d23] text-white">
+                <CommandInput 
+                  placeholder="Pesquisar cliente..." 
+                  value={clientSearch}
+                  onValueChange={setClientSearch}
+                  className="text-white"
+                />
+                <CommandEmpty>Nenhum cliente encontrado.</CommandEmpty>
+                <CommandGroup className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                  <CommandItem
+                    value="all"
+                    onSelect={() => {
+                      setSelectedClientFilter('all');
+                      setIsClientFilterOpen(false);
+                    }}
+                    className="text-white hover:bg-[#3b82f6] cursor-pointer"
+                  >
+                    <Check
+                      className={cn(
+                        "mr-2 h-4 w-4",
+                        selectedClientFilter === 'all' ? "opacity-100" : "opacity-0"
+                      )}
+                    />
+                    Todos os Clientes
+                  </CommandItem>
+                  {(clientsWithReceipts || []).map((client) => (
+                    <CommandItem
+                      key={client.id}
+                      value={client.name}
+                      onSelect={() => {
+                        setSelectedClientFilter(client.id);
+                        setIsClientFilterOpen(false);
+                      }}
+                      className="text-white hover:bg-[#3b82f6] cursor-pointer"
+                    >
+                      <Check
+                        className={cn(
+                          "mr-2 h-4 w-4",
+                          selectedClientFilter === client.id ? "opacity-100" : "opacity-0"
+                        )}
+                      />
+                      {client.name}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </Command>
+            </PopoverContent>
+          </Popover>
+
+          <Select value={statusFilter} onValueChange={(val: any) => setStatusFilter(val)}>
+            <SelectTrigger className="w-[180px] bg-[#1a1d23] border-[#2d3139] text-white">
+              <SelectValue>
+                {statusFilter}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+              <SelectItem value="Todos">Todos os Status</SelectItem>
+              <SelectItem value="Aguardando Pagamento">Aguardando Pagamento</SelectItem>
+              <SelectItem value="Recebido">Recebido</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={dateFilter} onValueChange={setDateFilter}>
+            <SelectTrigger className="w-[160px] bg-[#1a1d23] border-[#2d3139] text-white">
+              <SelectValue>
+                {(!dateFilter || dateFilter === 'all') 
+                  ? "Todas as Datas" 
+                  : format(new Date(dateFilter + 'T12:00:00'), 'dd/MM/yyyy')}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+              <SelectItem value="all">Todas as Datas</SelectItem>
+              {availableDates.map(date => (
+                <SelectItem key={date} value={date}>{format(new Date(date + 'T12:00:00'), 'dd/MM/yyyy')}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={pixFilter} onValueChange={setPixFilter}>
+            <SelectTrigger className="w-[200px] bg-[#1a1d23] border-[#2d3139] text-white">
+              <SelectValue>
+                {pixFilter === 'all' 
+                  ? "Todas as Contas PIX" 
+                  : pixSettings.accounts?.find(a => a.id === pixFilter)?.label || "Conta PIX"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+              <SelectItem value="all">Todas as Contas PIX</SelectItem>
+              {pixSettings.accounts?.map(acc => (
+                <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank})</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
           <DialogTrigger render={
             <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
               <Plus size={18} />
@@ -5059,11 +5242,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                     <Label className="text-[#a0a0a0]">Conta PIX para Recebimento</Label>
                     <Select value={newReceipt.pixAccountId} onValueChange={(val) => setNewReceipt({...newReceipt, pixAccountId: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                        <SelectValue placeholder="Selecione a conta PIX">
-                          {pixSettings.accounts?.find(a => a.id === newReceipt.pixAccountId) 
-                            ? `${pixSettings.accounts.find(a => a.id === newReceipt.pixAccountId)?.label} (${pixSettings.accounts.find(a => a.id === newReceipt.pixAccountId)?.bank})`
-                            : null}
-                        </SelectValue>
+                        <SelectValue placeholder="Selecione a conta PIX" />
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         {pixSettings.accounts?.map(acc => (
@@ -5093,6 +5272,8 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      </div>
+    </div>
 
         <Dialog open={isReceiptConfirmOpen} onOpenChange={setIsReceiptConfirmOpen}>
           <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[400px]">
@@ -5213,11 +5394,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                       <Label className="text-[#a0a0a0]">Conta PIX para Recebimento</Label>
                       <Select value={editingReceipt.pixAccountId} onValueChange={(val) => setEditingReceipt({...editingReceipt, pixAccountId: val})}>
                         <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                          <SelectValue placeholder="Selecione a conta PIX">
-                            {pixSettings.accounts?.find(a => a.id === editingReceipt.pixAccountId) 
-                              ? `${pixSettings.accounts.find(a => a.id === editingReceipt.pixAccountId)?.label} (${pixSettings.accounts.find(a => a.id === editingReceipt.pixAccountId)?.bank})`
-                              : null}
-                          </SelectValue>
+                          <SelectValue placeholder="Selecione a conta PIX" />
                         </SelectTrigger>
                         <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                           {pixSettings.accounts?.map(acc => (
@@ -5248,7 +5425,6 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
 
       {!showList ? (
         <NoAccessList title="Recibos" />
@@ -5261,7 +5437,25 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
           </p>
         </div>
       ) : (
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
+        <Card 
+          className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (!filteredReceipts.length) return;
+            const currentIndex = filteredReceipts.findIndex(r => r.id === selectedRowId);
+            if (e.key === 'ArrowDown') {
+              const nextIndex = Math.min(currentIndex + 1, filteredReceipts.length - 1);
+              setSelectedRowId(filteredReceipts[nextIndex].id);
+              e.preventDefault();
+              document.getElementById(`receipt-${filteredReceipts[nextIndex].id}`)?.scrollIntoView({ block: 'nearest' });
+            } else if (e.key === 'ArrowUp') {
+              const nextIndex = Math.max(currentIndex - 1, 0);
+              setSelectedRowId(filteredReceipts[nextIndex].id);
+              e.preventDefault();
+              document.getElementById(`receipt-${filteredReceipts[nextIndex].id}`)?.scrollIntoView({ block: 'nearest' });
+            }
+          }}
+        >
           <div className="p-4 border-b border-[#2d3139] flex justify-between items-center bg-[#1a1d23] sticky top-0 z-20">
             <span className="text-sm text-[#71717a] font-medium uppercase tracking-wider">Filtro de Status</span>
             <div className="flex gap-2">
@@ -5284,6 +5478,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[140px]">Ações</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[80px]">Nº</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Status</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Conta PIX</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Cliente</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Serviço</TableHead>
@@ -5292,7 +5487,15 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
             </TableHeader>
             <TableBody>
               {filteredReceipts.map((receipt) => (
-                <TableRow key={receipt.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
+                <TableRow 
+                  key={receipt.id}
+                  id={`receipt-${receipt.id}`}
+                  onClick={() => setSelectedRowId(receipt.id)}
+                  className={cn(
+                    "border-[#2d3139] transition-colors cursor-pointer",
+                    selectedRowId === receipt.id ? "bg-blue-500/10" : "hover:bg-[#25282e]/30"
+                  )}
+                >
                   <TableCell>
                     <div className="flex gap-2">
                       <Button variant="outline" size="icon" title="Baixar PDF" className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => generateReceiptPDF(receipt, appSettings, pixSettings)}>
@@ -5316,7 +5519,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                     </div>
                   </TableCell>
                   <TableCell className="text-[12px] text-[#e0e0e0] font-mono">
-                    {receipt.number ? `Recibo Nº ${formatRecordNumber(receipt.number, receipt.date)}` : '-'}
+                    {receipt.number ? formatRecordNumber(receipt.number, receipt.date) : '-'}
                   </TableCell>
                   <TableCell>
                     <Select 
@@ -5331,6 +5534,9 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                         <SelectItem value="Recebido">Recebido</SelectItem>
                       </SelectContent>
                     </Select>
+                  </TableCell>
+                  <TableCell className="text-[12px] text-[#e0e0e0]">
+                    {pixSettings.accounts?.find(a => a.id === receipt.pixAccountId)?.label || '-'}
                   </TableCell>
                   <TableCell className="text-[12px] text-[#e0e0e0]">
                     {format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), 'dd/MM/yyyy')}
@@ -8035,8 +8241,9 @@ function StatCard({ title, value, icon, trend, isBalance, isCount, onClick }: { 
 
 // --- Visits Manager Component ---
 
-function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettings, companyId, initialFilter, onClearFilter, showList, logAction }: { visits?: TechnicalVisit[], user: FirebaseUser, clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, initialFilter?: { date: Date | null }, onClearFilter?: () => void, showList: boolean, logAction?: any }) {
+function VisitsManager({ visits = [], receipts = [], user, clients = [], appSettings, pixSettings, companyId, initialFilter, onClearFilter, showList, logAction }: { visits?: TechnicalVisit[], receipts?: Receipt[], user: FirebaseUser, clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, initialFilter?: { date: Date | null }, onClearFilter?: () => void, showList: boolean, logAction?: any }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
   const [dateFilter, setDateFilter] = useState<string>(initialFilter?.date ? format(initialFilter.date, 'yyyy-MM-dd') : '');
   const [statusFilter, setStatusFilter] = useState('Todas');
@@ -8096,6 +8303,7 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
       return;
     }
 
+    setIsSubmitting(true);
     try {
       const nextNumber = visits.length > 0 ? Math.max(...visits.map(v => v.number || 0)) + 1 : 1;
       
@@ -8125,10 +8333,13 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
       toast.success('Visita agendada com sucesso!');
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'visits');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const executeStatusUpdate = async (id: string, status: TechnicalVisit['status'], generateReceipt: boolean) => {
+    setIsSubmitting(true);
     try {
       const visit = visits.find(v => v.id === id);
       if (!visit) return;
@@ -8139,8 +8350,22 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
       if (status === 'Concluída' && oldStatus !== 'Concluída' && generateReceipt) {
         const client = visit.clientId ? clients.find(c => c.id === visit.clientId) : clients.find(c => c.name === visit.clientName);
         
+        // 0. Calculate Receipt Number
+        const year = new Date().getFullYear();
+        const currentYearReceipts = (receipts || []).filter(r => {
+          const d = r.date instanceof Timestamp ? r.date.toDate() : new Date(r.date);
+          return d.getFullYear() === year;
+        });
+        
+        let nextReceiptNum = 1;
+        if (currentYearReceipts.length > 0) {
+          const numbers = currentYearReceipts.map(r => Number(r.number) || 0);
+          nextReceiptNum = Math.max(...numbers) + 1;
+        }
+
         // 1. Create Receipt Data
         const receiptData = {
+          number: nextReceiptNum,
           clientName: visit.clientName,
           clientType: client?.type || 'Avulso',
           serviceSpecification: visit.description || visit.type,
@@ -8149,6 +8374,7 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
           date: Timestamp.now(),
           companyId,
           status: 'Aguardando Pagamento' as const,
+          pixAccountId: client?.pixAccountId || null,
           createdAt: Timestamp.now(),
           visitId: id,
           clientId: visit.clientId || client?.id || null
@@ -8156,20 +8382,35 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
 
         const receiptRef = await addDoc(collection(db, 'receipts'), receiptData);
 
-        // 2. Automatically generate PDF for the automated receipt
+        // 2. Add to Financials
+        await addDoc(collection(db, 'financial'), {
+          type: 'Receita',
+          category: 'Serviço Avulso',
+          description: `Recebimento Visita: ${visit.clientName} - ${visit.description || visit.type}`,
+          origin: `Recibo Nº ${formatRecordNumber(nextReceiptNum, new Date())}`,
+          value: Number(visit.totalValue),
+          date: Timestamp.now(),
+          pixAccountId: client?.pixAccountId || null,
+          serviceType: 'Serviço Normal',
+          clientId: visit.clientId || null,
+          visitId: id,
+          receiptId: receiptRef.id,
+          companyId,
+          createdAt: Timestamp.now()
+        });
+
+        // 3. Automatically generate PDF for the automated receipt
         const fullReceipt = { id: receiptRef.id, ...receiptData } as Receipt;
         generateReceiptPDF(fullReceipt, appSettings, pixSettings);
         
-        toast.success('Recibo emitido aguardando recebimento!');
-      } else if (status === 'Concluída' && oldStatus !== 'Concluída' && !generateReceipt && visit.totalValue > 0) {
-        // Even if no receipt is generated, we might want to record the income?
-        // The user asked "se é para gerar recibo", usually implies financial record too in this system.
-        // But I will follow the prompt strictly: if they say NO, we just update status.
+        toast.success('Recibo emitido e financeiro registrado!');
       }
       
       toast.success(`Status atualizado para ${status}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'visits');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -8186,11 +8427,12 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
   };
 
   const handleUpdateVisit = async () => {
-    if (!editingVisit || !editingVisit.clientName || !editingVisit.address) {
+    if (!editingVisit || !editingVisit.id || !editingVisit.clientName || !editingVisit.address) {
       toast.error('Preencha os campos obrigatórios.');
       return;
     }
 
+    setIsSubmitting(true);
     try {
       const { id, ...data } = editingVisit;
       const oldVisit = visits.find(v => v.id === id);
@@ -8198,12 +8440,11 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
 
       if (isFinishing) {
         setVisitForReceipt({ id, status: 'Concluída' });
-        // We update the data except status or just update everything and then ask?
-        // Better: update everything and if status is becoming closed and there is value, ask.
         await updateDoc(doc(db, 'visits', id), {
           ...data,
           date: editingVisit.date instanceof Date ? Timestamp.fromDate(editingVisit.date) : editingVisit.date,
-          expectedDate: editingVisit.expectedDate instanceof Date ? Timestamp.fromDate(editingVisit.expectedDate) : editingVisit.expectedDate
+          expectedDate: editingVisit.expectedDate instanceof Date ? Timestamp.fromDate(editingVisit.expectedDate) : editingVisit.expectedDate,
+          updatedAt: Timestamp.now()
         });
         setEditingVisit(null);
         setIsEditOpen(false);
@@ -8212,7 +8453,8 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
         await updateDoc(doc(db, 'visits', id), {
           ...data,
           date: editingVisit.date instanceof Date ? Timestamp.fromDate(editingVisit.date) : editingVisit.date,
-          expectedDate: editingVisit.expectedDate instanceof Date ? Timestamp.fromDate(editingVisit.expectedDate) : editingVisit.expectedDate
+          expectedDate: editingVisit.expectedDate instanceof Date ? Timestamp.fromDate(editingVisit.expectedDate) : editingVisit.expectedDate,
+          updatedAt: Timestamp.now()
         });
         setEditingVisit(null);
         setIsEditOpen(false);
@@ -8220,6 +8462,8 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
       }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `visits/${editingVisit?.id}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -8600,8 +8844,10 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
               </div>
             </div>
             <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23]">
-              <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
-              <Button onClick={handleAddVisit} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Agendar</Button>
+              <Button variant="outline" onClick={() => setIsAddOpen(false)} disabled={isSubmitting} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+              <Button onClick={handleAddVisit} disabled={isSubmitting} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+                {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : 'Agendar'}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -8951,8 +9197,10 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
             )}
           </div>
           <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23]">
-            <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
-            <Button onClick={handleUpdateVisit} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Salvar Alterações</Button>
+            <Button variant="outline" onClick={() => setIsEditOpen(false)} disabled={isSubmitting} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+            <Button onClick={handleUpdateVisit} disabled={isSubmitting} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+              {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : 'Salvar Alterações'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -8969,6 +9217,7 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
           <DialogFooter className="gap-2 sm:gap-1">
             <Button 
               variant="outline" 
+              disabled={isSubmitting}
               onClick={async () => {
                 if (visitForReceipt) {
                   await executeStatusUpdate(visitForReceipt.id, visitForReceipt.status, false);
@@ -8981,6 +9230,7 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
               Não, apenas concluir
             </Button>
             <Button 
+              disabled={isSubmitting}
               onClick={async () => {
                 if (visitForReceipt) {
                   await executeStatusUpdate(visitForReceipt.id, visitForReceipt.status, true);
@@ -8990,7 +9240,7 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
               }} 
               className="bg-[#3b82f6] hover:bg-[#2563eb] text-white"
             >
-              Sim, gerar recibo
+              {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : 'Sim, gerar recibo'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -9001,19 +9251,62 @@ function VisitsManager({ visits = [], user, clients = [], appSettings, pixSettin
 
 // --- Financial Manager Component ---
 
-function FinancialManager({ financials = [], visits = [], clients = [], companyId, showList }: { financials?: FinancialRecord[], visits?: TechnicalVisit[], clients?: Client[], companyId: string, showList: boolean }) {
+function FinancialManager({ financials = [], visits = [], clients = [], pixSettings, companyId, showList }: { financials?: FinancialRecord[], visits?: TechnicalVisit[], clients?: Client[], pixSettings: PixSettings, companyId: string, showList: boolean }) {
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<FinancialRecord | null>(null);
   const [recordToDelete, setRecordToDelete] = useState<FinancialRecord | null>(null);
+  const [selectedClientFilter, setSelectedClientFilter] = useState<string | 'all'>('all');
   const [clientSearch, setClientSearch] = useState('');
+  const [isClientFilterOpen, setIsClientFilterOpen] = useState(false);
   const [financialTypeFilter, setFinancialTypeFilter] = useState<'todos' | 'Receita' | 'Despesa'>('todos');
+  const [dateFilter, setDateFilter] = useState('all');
+  const [pixFilter, setPixFilter] = useState('all');
+
+  const clientsWithFinancials = useMemo(() => {
+    const clientsWithDataIds = Array.from(new Set(financials.map(f => f.clientId).filter(Boolean)));
+    return clients.filter(c => clientsWithDataIds.includes(c.id));
+  }, [clients, financials]);
+
+  const availableDates = useMemo(() => {
+    let filtered = financials;
+    if (selectedClientFilter !== 'all') {
+      filtered = filtered.filter(f => f.clientId === selectedClientFilter);
+    }
+    const dates = filtered.map(f => {
+      const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
+      return format(d, 'yyyy-MM-dd');
+    });
+    return Array.from(new Set(dates)).sort().reverse();
+  }, [financials, selectedClientFilter]);
+
+  useEffect(() => {
+    if (dateFilter !== 'all' && !availableDates.includes(dateFilter)) {
+      setDateFilter('all');
+    }
+  }, [selectedClientFilter, availableDates, dateFilter]);
 
   const filteredFinancials = useMemo(() => {
-    if (financialTypeFilter === 'todos') return financials;
-    return financials.filter(f => f.type === financialTypeFilter);
-  }, [financials, financialTypeFilter]);
+    let filtered = financials;
+    if (selectedClientFilter !== 'all') {
+      filtered = filtered.filter(f => f.clientId === selectedClientFilter);
+    }
+    if (financialTypeFilter !== 'todos') {
+      filtered = filtered.filter(f => f.type === financialTypeFilter);
+    }
+    if (dateFilter && dateFilter !== 'all') {
+      filtered = filtered.filter(f => {
+        const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
+        return format(d, 'yyyy-MM-dd') === dateFilter;
+      });
+    }
+    if (pixFilter !== 'all') {
+      filtered = filtered.filter(f => f.pixAccountId === pixFilter);
+    }
+    return filtered;
+  }, [financials, financialTypeFilter, dateFilter, pixFilter, selectedClientFilter]);
 
   const financialStats = useMemo(() => {
     const income = financials.filter(f => f.type === 'Receita').reduce((acc, f) => acc + f.value, 0);
@@ -9071,7 +9364,9 @@ function FinancialManager({ financials = [], visits = [], clients = [], companyI
         type: editingRecord.type,
         category: editingRecord.category || '',
         date: editingRecord.date instanceof Date ? Timestamp.fromDate(editingRecord.date) : editingRecord.date,
-        serviceType: editingRecord.serviceType || ''
+        serviceType: editingRecord.serviceType || '',
+        paymentMethod: editingRecord.paymentMethod || null,
+        pixAccountId: editingRecord.pixAccountId || null
       });
       setEditingRecord(null);
       setIsEditOpen(false);
@@ -9103,7 +9398,9 @@ function FinancialManager({ financials = [], visits = [], clients = [], companyI
         clientId: client.id,
         description: client.type === 'Contrato' ? `${client.serviceSpecification || 'Serviço de Contrato'} - ${client.name}` : `Serviço - ${client.name}`,
         serviceType: client.type === 'Contrato' ? 'Contrato' : 'Serviço Normal',
-        value: client.type === 'Contrato' ? (client.contractValue || 0) : newRecord.value
+        value: client.type === 'Contrato' ? (client.contractValue || 0) : newRecord.value,
+        paymentMethod: client.type === 'Contrato' ? 'PIX' : newRecord.paymentMethod,
+        pixAccountId: client.pixAccountId || newRecord.pixAccountId
       });
     }
   };
@@ -9115,17 +9412,116 @@ function FinancialManager({ financials = [], visits = [], clients = [], companyI
           <h2 className="text-2xl font-bold tracking-tight text-white">Gestão Financeira</h2>
           <p className="text-[#71717a]">Controle suas entradas e saídas.</p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <Popover open={isClientFilterOpen} onOpenChange={setIsClientFilterOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={isClientFilterOpen}
+                className="w-full sm:w-[250px] justify-between bg-[#1a1d23] border-[#2d3139] text-white hover:bg-[#2d3139] hover:text-white"
+              >
+                {selectedClientFilter === 'all' 
+                  ? "Todos os Clientes" 
+                  : clients.find((client) => client.id === selectedClientFilter)?.name || "Cliente não encontrado"}
+                <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[300px] p-0 bg-[#1a1d23] border-[#2d3139]">
+              <Command className="bg-[#1a1d23] text-white">
+                <CommandInput 
+                  placeholder="Pesquisar cliente..." 
+                  value={clientSearch}
+                  onValueChange={setClientSearch}
+                  className="text-white"
+                />
+                <CommandEmpty>Nenhum cliente encontrado.</CommandEmpty>
+                <CommandGroup className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                  <CommandItem
+                    value="all"
+                    onSelect={() => {
+                      setSelectedClientFilter('all');
+                      setIsClientFilterOpen(false);
+                    }}
+                    className="text-white hover:bg-[#3b82f6] cursor-pointer"
+                  >
+                    <Check
+                      className={cn(
+                        "mr-2 h-4 w-4",
+                        selectedClientFilter === 'all' ? "opacity-100" : "opacity-0"
+                      )}
+                    />
+                    Todos os Clientes
+                  </CommandItem>
+                  {(clientsWithFinancials || []).map((client) => (
+                    <CommandItem
+                      key={client.id}
+                      value={client.name}
+                      onSelect={() => {
+                        setSelectedClientFilter(client.id);
+                        setIsClientFilterOpen(false);
+                      }}
+                      className="text-white hover:bg-[#3b82f6] cursor-pointer"
+                    >
+                      <Check
+                        className={cn(
+                          "mr-2 h-4 w-4",
+                          selectedClientFilter === client.id ? "opacity-100" : "opacity-0"
+                        )}
+                      />
+                      {client.name}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </Command>
+            </PopoverContent>
+          </Popover>
+
           <Select value={financialTypeFilter} onValueChange={(val: any) => setFinancialTypeFilter(val)}>
-            <SelectTrigger className="w-[180px] bg-[#1a1d23] border-[#2d3139] text-white">
-              <SelectValue placeholder="Filtrar por tipo" />
+            <SelectTrigger className="w-[170px] bg-[#1a1d23] border-[#2d3139] text-white">
+              <SelectValue>
+                {financialTypeFilter === 'todos' ? "Todos os Tipos" : financialTypeFilter === 'Receita' ? "Receitas" : "Despesas"}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-              <SelectItem value="todos">Todos os Lançamentos</SelectItem>
+              <SelectItem value="todos">Todos os Tipos</SelectItem>
               <SelectItem value="Receita">Apenas Receitas</SelectItem>
               <SelectItem value="Despesa">Apenas Despesas</SelectItem>
             </SelectContent>
           </Select>
+
+          <Select value={dateFilter} onValueChange={setDateFilter}>
+            <SelectTrigger className="w-[160px] bg-[#1a1d23] border-[#2d3139] text-white">
+              <SelectValue>
+                {(!dateFilter || dateFilter === 'all') 
+                  ? "Todas as Datas" 
+                  : format(new Date(dateFilter + 'T12:00:00'), 'dd/MM/yyyy')}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+              <SelectItem value="all">Todas as Datas</SelectItem>
+              {availableDates.map(date => (
+                <SelectItem key={date} value={date}>{format(new Date(date + 'T12:00:00'), 'dd/MM/yyyy')}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={pixFilter} onValueChange={setPixFilter}>
+            <SelectTrigger className="w-[190px] bg-[#1a1d23] border-[#2d3139] text-white">
+              <SelectValue>
+                {pixFilter === 'all' 
+                  ? "Todas as Contas PIX" 
+                  : pixSettings.accounts?.find(a => a.id === pixFilter)?.label || "Conta PIX"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+              <SelectItem value="all">Todas as Contas PIX</SelectItem>
+              {pixSettings.accounts?.map(acc => (
+                <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank})</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger render={
               <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
@@ -9156,6 +9552,37 @@ function FinancialManager({ financials = [], visits = [], clients = [], companyI
                     <Label htmlFor="val" className="text-[#a0a0a0]">Valor (R$)</Label>
                     <Input id="val" type="number" value={newRecord.value || ''} onChange={e => setNewRecord({...newRecord, value: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                   </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Forma de Pagto</Label>
+                    <Select value={newRecord.paymentMethod} onValueChange={(val: any) => setNewRecord({...newRecord, paymentMethod: val})}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue placeholder="Selecione" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="Dinheiro">Dinheiro</SelectItem>
+                        <SelectItem value="PIX">PIX</SelectItem>
+                        <SelectItem value="Cartão">Cartão</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {newRecord.paymentMethod === 'PIX' && (
+                    <div className="space-y-2">
+                      <Label className="text-[#a0a0a0]">Conta PIX</Label>
+                      <Select value={newRecord.pixAccountId} onValueChange={(val) => setNewRecord({...newRecord, pixAccountId: val})}>
+                        <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                          <SelectValue placeholder="Conta" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                          {pixSettings.accounts?.map(acc => (
+                            <SelectItem key={acc.id} value={acc.id}>{acc.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
 
                 {newRecord.type === 'Receita' && (
@@ -9244,7 +9671,25 @@ function FinancialManager({ financials = [], visits = [], clients = [], companyI
     </div>
 
     {showList ? (
-      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
+      <Card 
+        className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (!filteredFinancials.length) return;
+          const currentIndex = filteredFinancials.findIndex(r => r.id === selectedRowId);
+          if (e.key === 'ArrowDown') {
+            const nextIndex = Math.min(currentIndex + 1, filteredFinancials.length - 1);
+            setSelectedRowId(filteredFinancials[nextIndex].id);
+            e.preventDefault();
+            document.getElementById(`fin-${filteredFinancials[nextIndex].id}`)?.scrollIntoView({ block: 'nearest' });
+          } else if (e.key === 'ArrowUp') {
+            const nextIndex = Math.max(currentIndex - 1, 0);
+            setSelectedRowId(filteredFinancials[nextIndex].id);
+            e.preventDefault();
+            document.getElementById(`fin-${filteredFinancials[nextIndex].id}`)?.scrollIntoView({ block: 'nearest' });
+          }
+        }}
+      >
         <Table>
           <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
@@ -9252,6 +9697,7 @@ function FinancialManager({ financials = [], visits = [], clients = [], companyI
               <TableHead className="text-left text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Valor</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Descrição</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Origem</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Conta PIX</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Tipo</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Categoria</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data</TableHead>
@@ -9259,7 +9705,15 @@ function FinancialManager({ financials = [], visits = [], clients = [], companyI
           </TableHeader>
           <TableBody>
             {filteredFinancials.map((record) => (
-              <TableRow key={record.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
+              <TableRow 
+                key={record.id}
+                id={`fin-${record.id}`}
+                onClick={() => setSelectedRowId(record.id)}
+                className={cn(
+                  "border-[#2d3139] transition-colors cursor-pointer",
+                  selectedRowId === record.id ? "bg-blue-500/10" : "hover:bg-[#25282e]/30"
+                )}
+              >
                 <TableCell>
                   <div className="flex gap-2">
                     <Button variant="outline" size="icon" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
@@ -9296,7 +9750,9 @@ function FinancialManager({ financials = [], visits = [], clients = [], companyI
                 <TableCell>
                   <div className="flex flex-col gap-1">
                     {record.origin && (
-                      <span className="text-[11px] text-blue-400 font-medium">{record.origin}</span>
+                      <span className="text-[11px] text-blue-400 font-medium">
+                        {record.origin.replace('Recibo Nº ', '')}
+                      </span>
                     )}
                     {record.serviceType && (
                       <Badge className={cn(
@@ -9307,6 +9763,9 @@ function FinancialManager({ financials = [], visits = [], clients = [], companyI
                       </Badge>
                     )}
                   </div>
+                </TableCell>
+                <TableCell className="text-[12px] text-[#e0e0e0]">
+                  {pixSettings.accounts?.find(a => a.id === record.pixAccountId)?.label || '-'}
                 </TableCell>
                 <TableCell>
                   <Badge className={cn(
@@ -9393,6 +9852,37 @@ function FinancialManager({ financials = [], visits = [], clients = [], companyI
                   </div>
                 </div>
                 
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Forma de Pagto</Label>
+                    <Select value={editingRecord.paymentMethod} onValueChange={(val: any) => setEditingRecord({...editingRecord, paymentMethod: val})}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue placeholder="Selecione" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="Dinheiro">Dinheiro</SelectItem>
+                        <SelectItem value="PIX">PIX</SelectItem>
+                        <SelectItem value="Cartão">Cartão</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {editingRecord.paymentMethod === 'PIX' && (
+                    <div className="space-y-2">
+                      <Label className="text-[#a0a0a0]">Conta PIX</Label>
+                      <Select value={editingRecord.pixAccountId} onValueChange={(val) => setEditingRecord({...editingRecord, pixAccountId: val})}>
+                        <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                          <SelectValue placeholder="Conta" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                          {pixSettings.accounts?.map(acc => (
+                            <SelectItem key={acc.id} value={acc.id}>{acc.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="edit-desc" className="text-[#a0a0a0]">Descrição</Label>
                   <Input id="edit-desc" value={editingRecord.description || ''} onChange={e => setEditingRecord({...editingRecord, description: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
@@ -9450,7 +9940,9 @@ function FinancialManager({ financials = [], visits = [], clients = [], companyI
 // --- Budgets Manager Component ---
 
 function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], appSettings, companyId, showList, logAction }: { serviceOrders?: ServiceOrder[], clients?: Client[], users?: any[], appSettings: AppSettings, companyId: string, showList: boolean, logAction?: any }) {
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isPrintConfirmOpen, setIsPrintConfirmOpen] = useState(false);
@@ -9459,9 +9951,15 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
   const [editingOS, setEditingOS] = useState<Partial<ServiceOrder> | null>(null);
   const [osToDelete, setOSToDelete] = useState<ServiceOrder | null>(null);
   const [clientSearch, setClientSearch] = useState('');
-  const [filterClient, setFilterClient] = useState('');
-  const [filterDate, setFilterDate] = useState('');
+  const [filterClient, setFilterClient] = useState('all');
+  const [filterDate, setFilterDate] = useState('all');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isClientFilterOpen, setIsClientFilterOpen] = useState(false);
+
+  const clientsWithOrders = useMemo(() => {
+    const clientsNames = Array.from(new Set(serviceOrders.map(os => os.clientName).filter(Boolean)));
+    return clients.filter(c => clientsNames.includes(c.name));
+  }, [clients, serviceOrders]);
   const [newOS, setNewOS] = useState<Partial<ServiceOrder>>({
     serviceType: 'Corretiva',
     parts: [],
@@ -9493,6 +9991,7 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
   };
 
   const handleOSSave = async () => {
+    setIsSubmitting(true);
     try {
       const nextNumber = (serviceOrders || []).length > 0 ? Math.max(...(serviceOrders || []).map(o => o.number || 0)) + 1 : 1;
       const finalPartsValue = (newOS.parts || []).reduce((acc, p) => acc + (p.quantity * p.price), 0);
@@ -9532,11 +10031,14 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
       setIsPrintConfirmOpen(true);
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'serviceOrders');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleUpdateOS = async () => {
     if (!editingOS?.id) return;
+    setIsSubmitting(true);
     try {
       const finalPartsValue = (editingOS.parts || []).reduce((acc, p) => acc + (p.quantity * p.price), 0);
       const finalTotal = (editingOS.laborValue || 0) + finalPartsValue;
@@ -9559,6 +10061,8 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
       setIsPrintConfirmOpen(true);
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, 'serviceOrders');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -9913,8 +10417,10 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                   <p className="text-[10px] text-[#71717a] uppercase">Valor Estimado</p>
                   <p className="text-xl font-bold text-[#3b82f6]">R$ {((newOS.laborValue || 0) + (newOS.parts || []).reduce((acc, p) => acc + (p.quantity * p.price), 0)).toFixed(2)}</p>
                 </div>
-                <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139]">Cancelar</Button>
-                <Button className="bg-[#3b82f6] hover:bg-[#2563eb]" onClick={handleOSSave}>Gravar & Finalizar</Button>
+                <Button variant="outline" onClick={() => setIsAddOpen(false)} disabled={isSubmitting} className="border-[#2d3139]">Cancelar</Button>
+                <Button className="bg-[#3b82f6] hover:bg-[#2563eb]" disabled={isSubmitting} onClick={handleOSSave}>
+                  {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : 'Gravar & Finalizar'}
+                </Button>
               </div>
             </DialogFooter>
           </DialogContent>
@@ -9928,24 +10434,78 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
             <div className="space-y-4 w-full">
               <div className="space-y-2">
                 <Label className="text-xs text-[#71717a] uppercase tracking-wider font-semibold">Filtrar por Cliente</Label>
-                <Select value={filterClient} onValueChange={(val) => { setFilterClient(val); setFilterDate('all'); }}>
-                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white w-full">
-                    <SelectValue placeholder="Selecione um cliente..." />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                    <SelectItem value="all">Todos os Clientes</SelectItem>
-                    {clients.map(client => (
-                      <SelectItem key={client.id} value={client.name}>{client.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Popover open={isClientFilterOpen} onOpenChange={setIsClientFilterOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={isClientFilterOpen}
+                      className="w-full justify-between bg-[#0f1115] border-[#2d3139] text-white hover:bg-[#2d3139] hover:text-white"
+                    >
+                      {filterClient === 'all' 
+                        ? "Todos os Clientes" 
+                        : filterClient}
+                      <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[300px] p-0 bg-[#1a1d23] border-[#2d3139]">
+                    <Command className="bg-[#1a1d23] text-white">
+                      <CommandInput 
+                        placeholder="Pesquisar cliente..." 
+                        value={clientSearch}
+                        onValueChange={setClientSearch}
+                        className="text-white"
+                      />
+                      <CommandEmpty>Nenhum cliente encontrado.</CommandEmpty>
+                      <CommandGroup className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                        <CommandItem
+                          value="all"
+                          onSelect={() => {
+                            setFilterClient('all');
+                            setIsClientFilterOpen(false);
+                          }}
+                          className="text-white hover:bg-[#3b82f6] cursor-pointer"
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4",
+                              filterClient === 'all' ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          Todos os Clientes
+                        </CommandItem>
+                        {(clientsWithOrders || []).map((client) => (
+                          <CommandItem
+                            key={client.id}
+                            value={client.name}
+                            onSelect={() => {
+                              setFilterClient(client.name);
+                              setIsClientFilterOpen(false);
+                            }}
+                            className="text-white hover:bg-[#3b82f6] cursor-pointer"
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                filterClient === client.name ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            {client.name}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
 
               <div className="space-y-2">
                 <Label className="text-xs text-[#71717a] uppercase tracking-wider font-semibold">Filtrar por Data de Atendimento</Label>
                 <Select value={filterDate} onValueChange={setFilterDate}>
                   <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white w-full">
-                    <SelectValue placeholder="Selecione uma data..." />
+                    <SelectValue>
+                      {(!filterDate || filterDate === 'all') ? "Todas as Datas" : filterDate}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                     <SelectItem value="all">Todas as Datas</SelectItem>
@@ -9964,9 +10524,44 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
               </span>
             </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div 
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 focus:outline-none focus:ring-1 focus:ring-blue-500/50 p-1"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (!filteredServiceOrders.length) return;
+              const currentIndex = filteredServiceOrders.findIndex(os => os.id === selectedRowId);
+              let nextIndex = currentIndex;
+              
+              const cols = window.innerWidth >= 1024 ? 3 : window.innerWidth >= 768 ? 2 : 1;
+
+              if (e.key === 'ArrowDown') {
+                nextIndex = Math.min(currentIndex + cols, filteredServiceOrders.length - 1);
+              } else if (e.key === 'ArrowUp') {
+                nextIndex = Math.max(currentIndex - cols, 0);
+              } else if (e.key === 'ArrowRight') {
+                nextIndex = Math.min(currentIndex + 1, filteredServiceOrders.length - 1);
+              } else if (e.key === 'ArrowLeft') {
+                nextIndex = Math.max(currentIndex - 1, 0);
+              } else {
+                return;
+              }
+              
+              setSelectedRowId(filteredServiceOrders[nextIndex].id);
+              e.preventDefault();
+              document.getElementById(`os-${filteredServiceOrders[nextIndex].id}`)?.scrollIntoView({ block: 'nearest' });
+            }}
+          >
             {filteredServiceOrders.map(os => (
-            <Card key={os.id} className={`border-[#2d3139] bg-[#1a1d23] hover:border-[#3b82f6]/40 transition-all overflow-hidden group ${selectedIds.includes(os.id) ? 'ring-2 ring-[#3b82f6] border-transparent' : ''}`}>
+            <Card 
+              key={os.id} 
+              id={`os-${os.id}`}
+              onClick={() => setSelectedRowId(os.id)}
+              className={cn(
+                "border-[#2d3139] bg-[#1a1d23] hover:border-[#3b82f6]/40 transition-all overflow-hidden group relative",
+                selectedIds.includes(os.id) ? 'ring-2 ring-[#3b82f6] border-transparent' : '',
+                selectedRowId === os.id ? 'ring-1 ring-blue-500 bg-blue-500/5' : ''
+              )}
+            >
               <CardHeader className="pb-3 border-b border-[#2d3139]/30 relative pt-10">
                 <div className="absolute top-4 left-4 z-10 flex items-center gap-2">
                   <Checkbox 
@@ -10226,8 +10821,10 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
             )}
           </div>
           <DialogFooter className="p-6 border-t border-[#2d3139] bg-[#1a1d23]">
-            <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139]">Cancelar</Button>
-            <Button className="bg-[#3b82f6] hover:bg-[#2563eb]" onClick={handleUpdateOS}>Atualizar O.S.</Button>
+            <Button variant="outline" onClick={() => setIsEditOpen(false)} disabled={isSubmitting} className="border-[#2d3139]">Cancelar</Button>
+            <Button className="bg-[#3b82f6] hover:bg-[#2563eb]" disabled={isSubmitting} onClick={handleUpdateOS}>
+              {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : 'Atualizar O.S.'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
