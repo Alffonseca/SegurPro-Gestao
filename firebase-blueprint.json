@@ -16,12 +16,30 @@
         "signature": { "type": "string", "description": "Base64 signature image" }
       },
       "required": ["companyId", "documentId", "type", "status", "clientName", "createdAt"]
+    },
+    "RegistrationCode": {
+      "title": "Registration Code",
+      "description": "A one-time unique code to allow new company registration.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "used"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "usedAt": { "type": "string", "format": "date-time" },
+        "usedBy": { "type": "string", "description": "User UID who used the code" }
+      },
+      "required": ["code", "status", "createdAt"]
     }
   },
   "firestore": {
     "signature_requests": {
       "schema": "SignatureRequest",
       "description": "Collection of external signature requests."
+    },
+    "registration_codes": {
+      "schema": "RegistrationCode",
+      "description": "Collection of codes for new company registration."
     }
   }
 }

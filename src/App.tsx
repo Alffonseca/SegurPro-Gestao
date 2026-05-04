@@ -42,7 +42,8 @@ import {
   UserCog,
   Activity,
   Percent,
-  Loader2
+  Loader2,
+  Ticket
 } from 'lucide-react';
 import { 
   collection, 
@@ -1393,7 +1394,91 @@ interface LogRecord {
 function CompanyWizard({ onCreate, onJoin }: { onCreate: (name: string) => void, onJoin: (code: string) => void }) {
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
-  const [mode, setMode] = useState<'selection' | 'create' | 'join'>('selection');
+  const [regCode, setRegCode] = useState('');
+  const [isValidated, setIsValidated] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
+  const [mode, setMode] = useState<'selection' | 'create' | 'join' | 'validate_registration'>('selection');
+
+  const validateRegistrationCode = async () => {
+    if (!regCode.trim()) {
+      toast.error("Por favor, digite o código de liberação.");
+      return;
+    }
+    
+    setIsValidating(true);
+    try {
+      const q = query(
+        collection(db, 'registration_codes'), 
+        where('code', '==', regCode.trim().toUpperCase()),
+        where('status', '==', 'active')
+      );
+      
+      const querySnap = await getDocs(q);
+      
+      if (!querySnap.empty) {
+        const codeDoc = querySnap.docs[0];
+        // We don't mark as used here yet, only after the company is actually created
+        // But we store the ID to mark it later
+        setIsValidated(true);
+        setMode('create');
+        (window as any)._validatedRegCodeId = codeDoc.id;
+        toast.success("Código validado! Agora você pode cadastrar sua empresa.");
+      } else {
+        toast.error("Código inválido ou já utilizado.");
+      }
+    } catch (error) {
+      console.error("Erro ao validar código:", error);
+      toast.error("Erro ao validar código de segurança.");
+    } finally {
+      setIsValidating(false);
+    }
+  };
+
+  const handleFinalCreate = (companyName: string) => {
+    onCreate(companyName);
+    // Note: The actual marking of the code as 'used' should happen in the parent's handleCreateCompany
+  };
+
+  if (mode === 'validate_registration') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0f1115] p-6">
+        <Card className="w-full max-w-md border-[#2d3139] bg-[#1a1d23]">
+          <CardHeader>
+            <CardTitle className="text-white flex items-center gap-2">
+              <Shield className="text-blue-500" size={20} />
+              Liberação de Cadastro
+            </CardTitle>
+            <CardDescription className="text-[#71717a]">
+              Para sua segurança, insira o código de liberação enviado por nossa equipe para cadastrar uma nova empresa.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-[#a0a0a0]">Código de Liberação</Label>
+              <Input 
+                value={regCode} 
+                onChange={e => setRegCode(e.target.value.toUpperCase())} 
+                placeholder="DIGITE SEU CÓDIGO AQUI" 
+                className="bg-[#0f1115] border-[#2d3139] text-white text-center font-bold tracking-[0.3em] h-12" 
+              />
+            </div>
+            <Button 
+              onClick={validateRegistrationCode} 
+              disabled={isValidating}
+              className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white h-11"
+            >
+              {isValidating ? <RefreshCw className="animate-spin mr-2" size={16} /> : null}
+              Validar e Continuar
+            </Button>
+            <Button variant="ghost" onClick={() => setMode('selection')} className="w-full text-[#71717a]">Voltar</Button>
+          </CardContent>
+          <div className="p-4 border-t border-[#2d3139]/30 text-center">
+             <p className="text-[10px] text-[#555] italic">Este procedimento garante que apenas parceiros autorizados cadastrem novas empresas no ecossistema.</p>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   if (mode === 'create') {
     return (
@@ -1459,7 +1544,7 @@ function CompanyWizard({ onCreate, onJoin }: { onCreate: (name: string) => void,
         </div>
         
         <div className="grid md:grid-cols-2 gap-6">
-          <Card className="border-[#2d3139] bg-[#1a1d23] hover:border-[#3b82f6]/50 transition-all cursor-pointer group" onClick={() => setMode('create')}>
+          <Card className="border-[#2d3139] bg-[#1a1d23] hover:border-[#3b82f6]/50 transition-all cursor-pointer group" onClick={() => setMode('validate_registration')}>
             <CardHeader>
               <div className="w-12 h-12 rounded-lg bg-blue-500/10 flex items-center justify-center mb-4 group-hover:bg-blue-500/20 transition-colors">
                 <Plus className="text-[#3b82f6]" size={24} />
@@ -1886,6 +1971,8 @@ export default function MainApp() {
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
+  const [logSearchUser, setLogSearchUser] = useState<string>('all');
+  const [logSearchDate, setLogSearchDate] = useState<string>('');
   const [logs, setLogs] = useState<LogRecord[]>([]);
   const [allCompanies, setAllCompanies] = useState<any[]>([]);
   const [allFinancials, setAllFinancials] = useState<any[]>([]); // New state for global metrics
@@ -2045,7 +2132,8 @@ export default function MainApp() {
         }
       } else {
         // Initial setup for new user
-        const isSuper = user.email === 'emailparasiteslixo@gmail.com' || user.email === 'alffonseca42@gmail.com';
+        const normalizedEmail = user.email?.toLowerCase().trim();
+        const isSuper = normalizedEmail === 'emailparasiteslixo@gmail.com' || normalizedEmail === 'alffonseca42@gmail.com';
         try {
           const initialData = {
             uid: user.uid,
@@ -2450,6 +2538,14 @@ export default function MainApp() {
 
   const handleCreateCompany = async (name: string) => {
     if (!user) return;
+    
+    // Check for the validated registration code
+    const regCodeId = (window as any)._validatedRegCodeId;
+    if (!regCodeId) {
+      toast.error("Ocorreu um erro na autenticação do código de liberação.");
+      return;
+    }
+
     try {
       const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
       const companyRef = await addDoc(collection(db, 'companies'), {
@@ -2461,6 +2557,15 @@ export default function MainApp() {
       });
       
       const newCompanyId = companyRef.id;
+
+      // Mark the registration code as used
+      await updateDoc(doc(db, 'registration_codes', regCodeId), {
+        status: 'used',
+        usedAt: Timestamp.now(),
+        usedBy: user.uid
+      });
+      
+      delete (window as any)._validatedRegCodeId;
 
       // Initialize company settings
       await setDoc(doc(db, 'companies', newCompanyId, 'settings', 'general'), {
@@ -3204,18 +3309,41 @@ export default function MainApp() {
                     })()}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 bg-[#1a1d23] p-1 rounded-lg border border-[#2d3139]">
-                  <div className="flex -space-x-2 mr-2 px-2 border-r border-[#2d3139]">
-                    {users.filter(u => u.lastSeen && Date.now() - u.lastSeen.toDate().getTime() < 300000).slice(0, 5).map(u => (
-                      <div key={u.id} className="w-7 h-7 rounded-full border-2 border-[#1a1d23] bg-[#2d3139] flex items-center justify-center text-[10px] font-bold text-white overflow-hidden shadow-lg" title={u.displayName}>
-                        {u.photoURL ? <img src={u.photoURL} alt="" /> : (u.displayName?.[0] || '?')}
-                      </div>
-                    ))}
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-lg">
+                    <span className="text-[10px] text-[#71717a] font-medium uppercase min-w-fit">Filtros:</span>
+                    <Select value={logSearchUser} onValueChange={setLogSearchUser}>
+                      <SelectTrigger className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[120px]">
+                        <SelectValue placeholder="Usuário" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="all">Todos Usuários</SelectItem>
+                        {users.map(u => (
+                          <SelectItem key={u.id || u.uid} value={u.uid || u.displayName}>{u.displayName || u.email}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
+                    <Input 
+                      type="date" 
+                      className="h-7 bg-transparent border-none text-[12px] w-[110px] p-0 focus-visible:ring-0" 
+                      value={logSearchDate}
+                      onChange={e => setLogSearchDate(e.target.value)}
+                    />
+                    { (logSearchUser !== 'all' || logSearchDate !== '') && (
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-5 w-5 text-[#71717a] hover:text-[#ef4444]" 
+                        onClick={() => { setLogSearchUser('all'); setLogSearchDate(''); }}
+                      >
+                        <X size={12} />
+                      </Button>
+                    )}
                   </div>
                   <Button variant="ghost" size="sm" onClick={() => {
-                    // Refetching is handled by onSnapshot, but we can force a toast showing it's live
                     toast.info('Sincronizado em tempo real');
-                  }} className="text-[#a0a0a0] hover:text-white">
+                  }} className="text-[#a0a0a0] hover:text-white bg-[#1a1d23] border-[#2d3139] border">
                     <RefreshCw size={16} className="mr-2" /> Atualizar
                   </Button>
                 </div>
@@ -3225,25 +3353,34 @@ export default function MainApp() {
                 className="border-[#2d3139] bg-[#1a1d23] overflow-hidden shadow-xl focus:outline-none focus:ring-1 focus:ring-blue-500/50"
                 tabIndex={0}
                 onKeyDown={(e) => {
-                  if (!logs.length) return;
-                  const currentIndex = logs.findIndex(l => l.id === selectedLogId);
+                  const filteredLogs = logs.filter(log => {
+                    const userMatch = logSearchUser === 'all' || log.userId === logSearchUser || log.userName === logSearchUser;
+                    const logDate = log.timestamp instanceof Timestamp ? log.timestamp.toDate() : new Date(log.timestamp.seconds * 1000);
+                    const dateMatch = logSearchDate === '' || format(logDate, 'yyyy-MM-dd') === logSearchDate;
+                    return userMatch && dateMatch;
+                  });
+                  if (!filteredLogs.length) return;
+                  const currentIndex = filteredLogs.findIndex(l => l.id === selectedLogId);
+                  
                   if (e.key === 'ArrowDown') {
-                    const nextIndex = Math.min(currentIndex + 1, logs.length - 1);
-                    setSelectedLogId(logs[nextIndex].id);
                     e.preventDefault();
-                    document.getElementById(`log-${logs[nextIndex].id}`)?.scrollIntoView({ block: 'nearest' });
+                    e.stopPropagation();
+                    const nextIndex = Math.min(currentIndex + 1, filteredLogs.length - 1);
+                    setSelectedLogId(filteredLogs[nextIndex].id);
+                    document.getElementById(`log-${filteredLogs[nextIndex].id}`)?.scrollIntoView({ block: 'nearest' });
                   } else if (e.key === 'ArrowUp') {
-                    const nextIndex = Math.max(currentIndex - 1, 0);
-                    setSelectedLogId(logs[nextIndex].id);
                     e.preventDefault();
-                    document.getElementById(`log-${logs[nextIndex].id}`)?.scrollIntoView({ block: 'nearest' });
+                    e.stopPropagation();
+                    const nextIndex = Math.max(currentIndex - 1, 0);
+                    setSelectedLogId(filteredLogs[nextIndex].id);
+                    document.getElementById(`log-${filteredLogs[nextIndex].id}`)?.scrollIntoView({ block: 'nearest' });
                   }
                 }}
               >
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
+                <div className="overflow-x-auto overflow-y-auto max-h-[600px] custom-scrollbar">
+                  <table className="w-full text-left border-collapse min-w-[850px]">
                     <thead>
-                      <tr className="bg-[#0f1115] border-b border-[#2d3139]">
+                      <tr className="bg-[#0f1115] border-b border-[#2d3139] sticky top-0 z-20">
                         <th className="p-4 text-xs font-bold text-[#71717a] uppercase tracking-wider">Data/Hora</th>
                         <th className="p-4 text-xs font-bold text-[#71717a] uppercase tracking-wider">Usuário</th>
                         <th className="p-4 text-xs font-bold text-[#71717a] uppercase tracking-wider">Ação</th>
@@ -3252,63 +3389,102 @@ export default function MainApp() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#2d3139]">
-                      {logs.length === 0 ? (
+                      {logs.filter(log => {
+                        const userMatch = logSearchUser === 'all' || log.userId === logSearchUser || log.userName === logSearchUser;
+                        const logDate = log.timestamp instanceof Timestamp ? log.timestamp.toDate() : new Date(log.timestamp.seconds * 1000);
+                        const dateMatch = logSearchDate === '' || format(logDate, 'yyyy-MM-dd') === logSearchDate;
+                        return userMatch && dateMatch;
+                      }).length === 0 ? (
                         <tr>
                           <td colSpan={5} className="p-12 text-center">
                             <div className="flex flex-col items-center gap-2">
                               <History size={40} className="text-[#2d3139]" />
-                              <p className="text-[#a0a0a0] font-medium">Nenhum log registrado ainda.</p>
+                              <p className="text-[#a0a0a0] font-medium">Nenhum log encontrado para os filtros selecionados.</p>
                             </div>
                           </td>
                         </tr>
                       ) : (
-                        logs.map((log) => (
-                          <tr 
-                            key={log.id}
-                            id={`log-${log.id}`}
-                            onClick={() => setSelectedLogId(log.id)}
-                            className={cn(
-                              "transition-colors group cursor-pointer",
-                              selectedLogId === log.id ? "bg-blue-500/10" : "hover:bg-white/[0.02]"
-                            )}
-                          >
-                            <td className="p-4 whitespace-nowrap">
-                              <div className="text-white text-sm font-medium">
-                                {format(log.timestamp.toDate(), 'dd/MM/yy HH:mm')}
-                              </div>
-                            </td>
-                            <td className="p-4">
-                              <div className="flex flex-col">
-                                <span className="text-white text-sm font-bold group-hover:text-blue-400 transition-colors">{log.userName}</span>
-                                <span className="text-[#71717a] text-[10px] font-mono">{log.userEmail}</span>
-                              </div>
-                            </td>
-                            <td className="p-4">
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                                log.action === 'login' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' :
-                                log.action === 'delete' ? 'bg-red-500/10 text-red-500 border border-red-500/20' :
-                                log.action === 'create' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' :
-                                log.action === 'update' ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' :
-                                'bg-[#2d3139] text-[#a0a0a0]'
-                              }`}>
-                                {log.action === 'login' ? 'LOGIN' :
-                                 log.action === 'page_view' ? 'VISUALIZAÇÃO' :
-                                 log.action === 'create' ? 'CRIAÇÃO' :
-                                 log.action === 'update' ? 'EDIÇÃO' :
-                                 log.action === 'delete' ? 'EXCLUSÃO' : log.action.toUpperCase()}
-                              </span>
-                            </td>
-                            <td className="p-4">
-                              <div className="text-[#a0a0a0] text-sm flex items-center gap-1.5">
-                                <span className="capitalize">{log.resourceType}</span>
-                                {log.resourceId && <span className="text-[10px] bg-[#0f1115] px-1.5 py-0.5 rounded border border-[#2d3139] font-mono">#{log.resourceId.slice(-6)}</span>}
-                              </div>
-                            </td>
-                            <td className="p-4 text-sm text-[#71717a] italic">
-                              {log.details}
-                            </td>
-                          </tr>
-                        ))
+                        logs.filter(log => {
+                          const userMatch = logSearchUser === 'all' || log.userId === logSearchUser || log.userName === logSearchUser;
+                          const logDate = log.timestamp instanceof Timestamp ? log.timestamp.toDate() : new Date(log.timestamp.seconds * 1000);
+                          const dateMatch = logSearchDate === '' || format(logDate, 'yyyy-MM-dd') === logSearchDate;
+                          return userMatch && dateMatch;
+                        }).map((log) => {
+                          const translateDetails = (details: string) => {
+                            if (!details) return '';
+                            let d = details;
+                            d = d.replace(/Agendou visita para/g, 'Agendou visita para');
+                            d = d.replace(/Created/g, 'Criou');
+                            d = d.replace(/Updated/g, 'Editou');
+                            d = d.replace(/Deleted/g, 'Excluiu');
+                            d = d.replace(/viewed/g, 'visualizou');
+                            d = d.replace(/logged in/g, 'entrou no sistema');
+                            d = d.replace(/Status updated to/g, 'Status atualizado para');
+                            d = d.replace(/Financial record created/g, 'Registro financeiro criado');
+                            d = d.replace(/visit/g, 'visita');
+                            d = d.replace(/budget/g, 'orçamento');
+                            d = d.replace(/financial/g, 'financeiro');
+                            d = d.replace(/client/g, 'cliente');
+                            d = d.replace(/receipt/g, 'recibo');
+                            d = d.replace(/service order/g, 'ordem de serviço');
+                            return d;
+                          };
+
+                          return (
+                            <tr 
+                              key={log.id}
+                              id={`log-${log.id}`}
+                              onClick={() => setSelectedLogId(log.id)}
+                              className={cn(
+                                "transition-colors group cursor-pointer border-b border-[#2d3139]",
+                                selectedLogId === log.id ? "bg-blue-500/10" : "hover:bg-white/[0.02]"
+                              )}
+                            >
+                              <td className="p-4 whitespace-nowrap">
+                                <div className="text-white text-sm font-medium">
+                                  {format(log.timestamp instanceof Timestamp ? log.timestamp.toDate() : new Date(log.timestamp.seconds * 1000), 'dd/MM/yy HH:mm')}
+                                </div>
+                              </td>
+                              <td className="p-4">
+                                <div className="flex flex-col">
+                                  <span className="text-white text-sm font-bold group-hover:text-blue-400 transition-colors">{log.userName}</span>
+                                  <span className="text-[#71717a] text-[10px] font-mono">{log.userEmail}</span>
+                                </div>
+                              </td>
+                              <td className="p-4">
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                  log.action === 'login' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' :
+                                  log.action === 'delete' ? 'bg-red-500/10 text-red-500 border border-red-500/20' :
+                                  log.action === 'create' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' :
+                                  log.action === 'update' ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' :
+                                  'bg-blue-500/10 text-blue-500 border border-blue-500/20'
+                                }`}>
+                                  {log.action === 'login' ? 'LOGIN' :
+                                   log.action === 'page_view' ? 'VISUALIZAÇÃO' :
+                                   log.action === 'create' ? 'CRIAÇÃO' :
+                                   log.action === 'update' ? 'EDIÇÃO' :
+                                   log.action === 'delete' ? 'EXCLUSÃO' : log.action.toUpperCase()}
+                                </span>
+                              </td>
+                              <td className="p-4">
+                                <div className="text-[#a0a0a0] text-sm flex items-center gap-1.5">
+                                  <span className="capitalize">{
+                                    log.resourceType === 'visit' ? 'Visita' : 
+                                    log.resourceType === 'financial' ? 'Financeiro' :
+                                    log.resourceType === 'budget' ? 'Orçamento' :
+                                    log.resourceType === 'client' ? 'Cliente' :
+                                    log.resourceType === 'receipt' ? 'Recibo' :
+                                    log.resourceType === 'service_order' ? 'O.S.' : log.resourceType
+                                  }</span>
+                                  {log.resourceId && <span className="text-[10px] bg-[#0f1115] px-1.5 py-0.5 rounded border border-[#2d3139] font-mono">#{log.resourceId.slice(-6)}</span>}
+                                </div>
+                              </td>
+                              <td className="p-4 text-sm text-[#71717a] italic">
+                                {translateDetails(log.details)}
+                              </td>
+                            </tr>
+                          )
+                        })
                       )}
                     </tbody>
                   </table>
@@ -4982,52 +5158,38 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
           <p className="text-[#71717a]">Gere e consulte recibos de pagamentos.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <Popover open={isClientFilterOpen} onOpenChange={setIsClientFilterOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                role="combobox"
-                aria-expanded={isClientFilterOpen}
-                className="w-full sm:w-[250px] justify-between bg-[#1a1d23] border-[#2d3139] text-white hover:bg-[#2d3139] hover:text-white"
-              >
-                {selectedClientFilter === 'all' 
-                  ? "Todos os Clientes" 
-                  : clients.find((client) => client.id === selectedClientFilter)?.name || "Cliente não encontrado"}
-                <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-[300px] p-0 bg-[#1a1d23] border-[#2d3139]">
-              <Command className="bg-[#1a1d23] text-white">
-                <CommandInput 
-                  placeholder="Pesquisar cliente..." 
-                  value={clientSearch}
-                  onValueChange={setClientSearch}
-                  className="text-white"
-                />
-                <CommandEmpty>Nenhum cliente encontrado.</CommandEmpty>
-                <CommandGroup className="max-h-[300px] overflow-y-auto custom-scrollbar">
-                  <CommandItem
-                    value="all"
-                    onSelect={() => {
-                      setSelectedClientFilter('all');
-                      setIsClientFilterOpen(false);
-                    }}
-                    className="text-white hover:bg-[#3b82f6] cursor-pointer"
-                  >
-                    <Check
-                      className={cn(
-                        "mr-2 h-4 w-4",
-                        selectedClientFilter === 'all' ? "opacity-100" : "opacity-0"
-                      )}
-                    />
-                    Todos os Clientes
-                  </CommandItem>
-                  {(clientsWithReceipts || []).map((client) => (
+          <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-lg">
+            <span className="text-[10px] text-[#71717a] font-medium uppercase min-w-fit">Filtros:</span>
+            
+            <Popover open={isClientFilterOpen} onOpenChange={setIsClientFilterOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[150px] justify-between font-normal"
+                >
+                  <span className="truncate">
+                    {selectedClientFilter === 'all' 
+                      ? "Todos Clientes" 
+                      : clients.find((client) => client.id === selectedClientFilter)?.name || "Cliente"}
+                  </span>
+                  <Search className="h-3 w-3 opacity-50 shrink-0" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[250px] p-0 bg-[#1a1d23] border-[#2d3139]">
+                <Command className="bg-[#1a1d23] text-white">
+                  <CommandInput 
+                    placeholder="Buscar cliente..." 
+                    value={clientSearch}
+                    onValueChange={setClientSearch}
+                    className="text-white"
+                  />
+                  <CommandEmpty>Nenhum cliente.</CommandEmpty>
+                  <CommandGroup className="max-h-[300px] overflow-y-auto custom-scrollbar">
                     <CommandItem
-                      key={client.id}
-                      value={client.name}
+                      value="all"
                       onSelect={() => {
-                        setSelectedClientFilter(client.id);
+                        setSelectedClientFilter('all');
                         setIsClientFilterOpen(false);
                       }}
                       className="text-white hover:bg-[#3b82f6] cursor-pointer"
@@ -5035,62 +5197,102 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                       <Check
                         className={cn(
                           "mr-2 h-4 w-4",
-                          selectedClientFilter === client.id ? "opacity-100" : "opacity-0"
+                          selectedClientFilter === 'all' ? "opacity-100" : "opacity-0"
                         )}
                       />
-                      {client.name}
+                      Todos Clientes
                     </CommandItem>
-                  ))}
-                </CommandGroup>
-              </Command>
-            </PopoverContent>
-          </Popover>
+                    {(clientsWithReceipts || []).map((client) => (
+                      <CommandItem
+                        key={client.id}
+                        value={client.name}
+                        onSelect={() => {
+                          setSelectedClientFilter(client.id);
+                          setIsClientFilterOpen(false);
+                        }}
+                        className="text-white hover:bg-[#3b82f6] cursor-pointer"
+                      >
+                        <Check
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            selectedClientFilter === client.id ? "opacity-100" : "opacity-0"
+                          )}
+                        />
+                        {client.name}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </Command>
+              </PopoverContent>
+            </Popover>
 
-          <Select value={statusFilter} onValueChange={(val: any) => setStatusFilter(val)}>
-            <SelectTrigger className="w-[180px] bg-[#1a1d23] border-[#2d3139] text-white">
-              <SelectValue>
-                {statusFilter}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-              <SelectItem value="Todos">Todos os Status</SelectItem>
-              <SelectItem value="Aguardando Pagamento">Aguardando Pagamento</SelectItem>
-              <SelectItem value="Recebido">Recebido</SelectItem>
-            </SelectContent>
-          </Select>
+            <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
 
-          <Select value={dateFilter} onValueChange={setDateFilter}>
-            <SelectTrigger className="w-[160px] bg-[#1a1d23] border-[#2d3139] text-white">
-              <SelectValue>
-                {(!dateFilter || dateFilter === 'all') 
-                  ? "Todas as Datas" 
-                  : format(new Date(dateFilter + 'T12:00:00'), 'dd/MM/yyyy')}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-              <SelectItem value="all">Todas as Datas</SelectItem>
-              {availableDates.map(date => (
-                <SelectItem key={date} value={date}>{format(new Date(date + 'T12:00:00'), 'dd/MM/yyyy')}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            <Select value={statusFilter} onValueChange={(val: any) => setStatusFilter(val)}>
+              <SelectTrigger className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[110px]">
+                <SelectValue>
+                  {statusFilter === 'Todos' ? "Status: Todos" : statusFilter}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                <SelectItem value="Todos">Status: Todos</SelectItem>
+                <SelectItem value="Aguardando Pagamento">Aguardando Pagamento</SelectItem>
+                <SelectItem value="Recebido">Recebido</SelectItem>
+              </SelectContent>
+            </Select>
 
-          <Select value={pixFilter} onValueChange={setPixFilter}>
-            <SelectTrigger className="w-[200px] bg-[#1a1d23] border-[#2d3139] text-white">
-              <SelectValue>
-                {pixFilter === 'all' 
-                  ? "Todas as Contas PIX" 
-                  : pixSettings.accounts?.find(a => a.id === pixFilter)?.label || "Conta PIX"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-              <SelectItem value="all">Todas as Contas PIX</SelectItem>
-              {pixSettings.accounts?.map(acc => (
-                <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank})</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
 
+            <Select value={dateFilter} onValueChange={setDateFilter}>
+              <SelectTrigger className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[100px]">
+                <SelectValue>
+                  {(!dateFilter || dateFilter === 'all') 
+                    ? "Datas: Todas" 
+                    : format(new Date(dateFilter + 'T12:00:00'), 'dd/MM')}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                <SelectItem value="all">Todas as Datas</SelectItem>
+                {availableDates.map(date => (
+                  <SelectItem key={date} value={date}>{format(new Date(date + 'T12:00:00'), 'dd/MM/yyyy')}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
+
+            <Select value={pixFilter} onValueChange={setPixFilter}>
+              <SelectTrigger className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[100px]">
+                <SelectValue>
+                  {pixFilter === 'all' 
+                    ? "PIX: Todos" 
+                    : pixSettings.accounts?.find(a => a.id === pixFilter)?.label || "Conta PIX"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                <SelectItem value="all">Todas Contas PIX</SelectItem>
+                {pixSettings.accounts?.map(acc => (
+                  <SelectItem key={acc.id} value={acc.id}>{acc.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {(dateFilter !== 'all' || statusFilter !== 'Todos' || selectedClientFilter !== 'all' || pixFilter !== 'all') && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-5 w-5 text-[#71717a] hover:text-[#ef4444] ml-1" 
+                onClick={() => { 
+                  setDateFilter('all'); 
+                  setStatusFilter('Todos');
+                  setSelectedClientFilter('all');
+                  setPixFilter('all');
+                }}
+              >
+                <X size={12} />
+              </Button>
+            )}
+          </div>
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
           <DialogTrigger render={
             <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
@@ -5603,6 +5805,47 @@ function SuperAdminPanel({ companies = [], financials = [], saasSettings, user, 
   const [deepSearchResults, setDeepSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
+  const [regCodes, setRegCodes] = useState<any[]>([]);
+  const [isGeneratingCode, setIsGeneratingCode] = useState(false);
+
+  useEffect(() => {
+    const q = query(collection(db, 'registration_codes'), orderBy('createdAt', 'desc'), limit(100));
+    return onSnapshot(q, (snapshot) => {
+      const codes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setRegCodes(codes);
+    });
+  }, []);
+
+  const handleGenerateRegCode = async () => {
+    setIsGeneratingCode(true);
+    try {
+      // Generate a friendly 8-character code
+      const code = Math.random().toString(36).substring(2, 10).toUpperCase();
+      await addDoc(collection(db, 'registration_codes'), {
+        code,
+        status: 'active',
+        createdAt: Timestamp.now(),
+        createdBy: user?.email
+      });
+      toast.success(`Código ${code} gerado com sucesso!`);
+    } catch (error) {
+      console.error("Erro ao gerar código:", error);
+      toast.error("Erro ao gerar código de registro.");
+    } finally {
+      setIsGeneratingCode(false);
+    }
+  };
+
+  const handleDeleteRegCode = async (id: string) => {
+    if (!window.confirm("Deseja realmente excluir este código?")) return;
+    try {
+      await deleteDoc(doc(db, 'registration_codes', id));
+      toast.success("Código removido.");
+    } catch (error) {
+      toast.error("Erro ao remover código.");
+    }
+  };
+
   const handleDeepSearchRescue = async () => {
     if (!deepSearchQuery || deepSearchQuery.length < 3) {
       toast.error("Digite pelo menos 3 caracteres para buscar.");
@@ -6016,99 +6259,108 @@ function SuperAdminPanel({ companies = [], financials = [], saasSettings, user, 
         </Card>
       </div>
 
-      {(isMigrating || isMigrationFinished) && (
-        <Card className="bg-[#1a1d23] border-[#2d3139] p-6 mb-6">
-          <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <Card className="lg:col-span-1 bg-[#1a1d23] border-[#2d3139] overflow-hidden flex flex-col">
+          <CardHeader className="bg-blue-500/5 border-b border-[#2d3139]">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                {isMigrating ? (
-                  <RefreshCw className="animate-spin text-yellow-500" size={32} />
-                ) : (
-                  <Database className="text-green-500" size={32} />
-                )}
-                <div>
-                  <p className="text-white font-medium">
-                    {isMigrating ? "Recuperação Estrutural em Andamento..." : "Recuperação Finalizada"}
-                  </p>
-                  <p className="text-[#a0a0a0] text-sm">
-                    {isMigrating 
-                      ? `Vinculando toda a base de dados à empresa "${lastMigrationTargetName}".`
-                      : `O processo de vinculação para "${lastMigrationTargetName}" terminou. Verifique os resultados abaixo.`
-                    }
-                  </p>
-                </div>
+              <div className="flex items-center gap-2">
+                <Ticket className="text-blue-500" size={18} />
+                <CardTitle className="text-sm font-bold text-white uppercase tracking-wider">Códigos de Registro</CardTitle>
               </div>
-              {isMigrationFinished && (
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => setIsMigrationFinished(false)}
-                  className="border-[#2d3139] text-[#a0a0a0] hover:text-white"
-                >
-                  Fechar Relatório
-                </Button>
+              <Button 
+                size="sm" 
+                onClick={handleGenerateRegCode} 
+                disabled={isGeneratingCode}
+                className="h-8 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px]"
+              >
+                {isGeneratingCode ? <RefreshCw className="animate-spin h-3 w-3 mr-2" /> : <Plus className="h-3 w-3 mr-2" />}
+                GERAR NOVO
+              </Button>
+            </div>
+            <CardDescription className="text-[10px]">Códigos únicos para liberar o cadastro de novas empresas.</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0 flex-1 overflow-auto max-h-[400px] custom-scrollbar">
+            <div className="divide-y divide-[#2d3139]">
+              {regCodes.length === 0 ? (
+                <div className="p-12 text-center text-[#71717a] text-xs">Nenhum código gerado.</div>
+              ) : (
+                regCodes.map((c) => (
+                  <div key={c.id} className="p-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <code className="text-[13px] font-bold text-white tracking-widest bg-[#0f1115] px-2 py-0.5 rounded border border-[#2d3139] select-all">
+                          {c.code}
+                        </code>
+                        <Badge className={cn(
+                          "text-[9px] uppercase font-bold",
+                          c.status === 'active' ? "bg-emerald-500/10 text-emerald-500" : "bg-[#2d3139] text-[#71717a]"
+                        )}>
+                          {c.status === 'active' ? 'Ativo' : 'Usado'}
+                        </Badge>
+                      </div>
+                      <div className="text-[10px] text-[#71717a] flex flex-col">
+                        <span>Gerado em: {c.createdAt instanceof Timestamp ? format(c.createdAt.toDate(), 'dd/MM/yy HH:mm') : '-'}</span>
+                        {c.status === 'used' && (
+                          <span className="text-blue-400">Usado em: {c.usedAt instanceof Timestamp ? format(c.usedAt.toDate(), 'dd/MM/yy HH:mm') : '-'}</span>
+                        )}
+                      </div>
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-8 w-8 text-[#71717a] hover:text-red-500"
+                      onClick={() => handleDeleteRegCode(c.id)}
+                    >
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
+                ))
               )}
             </div>
-            
-            <div className="bg-[#0f1115] rounded-lg p-3 border border-[#2d3139] font-mono text-[10px] space-y-1 max-h-[300px] overflow-y-auto">
-              {migrationLogs.map((log, i) => (
-                <div key={i} className={cn(
-                  "flex gap-2",
-                  log.startsWith('ERRO') ? "text-red-500" : log.startsWith('CONCLUÍDO') ? "text-green-500" : "text-[#71717a]"
-                )}>
-                  <span className="opacity-30">[{new Date().toLocaleTimeString()}]</span>
-                  <span>{log}</span>
-                </div>
-              ))}
-              <div ref={logEndRef} />
-            </div>
+          </CardContent>
+          <div className="p-3 bg-[#0f1115] border-t border-[#2d3139] text-[9px] text-[#555] italic text-center">
+            Passe este código para o cliente que deseja cadastrar uma nova empresa.
           </div>
         </Card>
-      )}
 
-      {!isMigrating && (
-        <div className="space-y-4 mb-6">
-          <div className="bg-[#1a1d23] border border-[#2d3139] p-4 rounded-xl flex flex-col md:flex-row items-center gap-4">
-            <div className="flex items-center gap-3 text-yellow-500 min-w-fit">
-              <Database size={20} />
-              <span className="text-sm font-bold uppercase tracking-wider">Recuperação Estrutural:</span>
-            </div>
-            <div className="flex-1 w-full">
-              <select 
-                value={selectedCompanyId}
-                onChange={(e) => setSelectedCompanyId(e.target.value)}
-                className="w-full bg-[#0f1115] border-[#2d3139] text-white rounded-md h-10 px-3 text-sm focus:border-yellow-500 outline-none"
-              >
-                <option value="">Selecione a empresa de destino (AF Sistemas ou outra)...</option>
-                {companies.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} {c.document ? `(CNPJ: ${c.document})` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
+        <Card className="lg:col-span-2 bg-[#1a1d23] border-[#2d3139] p-4 flex flex-col">
+          <div className="flex items-center gap-3 text-yellow-500 mb-4 min-w-fit">
+            <Database size={20} />
+            <span className="text-sm font-bold uppercase tracking-wider">Recuperação Estrutural (Vincular tudo):</span>
+          </div>
+          <div className="flex flex-col gap-4">
+            <select 
+              value={selectedCompanyId}
+              onChange={(e) => setSelectedCompanyId(e.target.value)}
+              className="w-full bg-[#0f1115] border-[#2d3139] text-white rounded-md h-10 px-3 text-sm focus:border-yellow-500 outline-none"
+            >
+              <option value="">Selecione a empresa de destino...</option>
+              {companies.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.name} {c.document ? `(CNPJ: ${c.document})` : ''}
+                </option>
+              ))}
+            </select>
             <Button 
               onClick={handleMigrateOrphanedData}
-              disabled={!selectedCompanyId || companies.length === 0}
-              className="w-full md:w-auto bg-yellow-500 hover:bg-yellow-600 text-black font-bold h-10 shadow-sm"
+              disabled={!selectedCompanyId || companies.length === 0 || isMigrating}
+              className="h-10 bg-yellow-500 hover:bg-yellow-600 text-black font-bold shadow-sm"
             >
               Vincular TUDO o que existe no Banco
             </Button>
           </div>
-
-          <Card className="bg-[#1a1d23] border-[#2d3139] p-4 border-dashed">
-            <div className="flex flex-col md:flex-row gap-4 items-end">
-              <div className="flex-1 space-y-2">
-                <Label className="text-[10px] text-[#71717a] uppercase font-bold">Busca e Resgate Manual (Deep Search)</Label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#71717a]" size={16} />
-                  <Input 
-                    placeholder="Busque por 'AF', nome do cliente, placa, etc..." 
-                    className="pl-10 bg-[#0f1115] border-[#2d3139]" 
-                    value={deepSearchQuery}
-                    onChange={e => setDeepSearchQuery(e.target.value)}
-                  />
-                </div>
+          
+          <div className="mt-6 pt-6 border-t border-[#2d3139]">
+            <Label className="text-[10px] text-[#71717a] uppercase font-bold mb-2 block tracking-widest">Busca e Resgate Manual (Deep Search)</Label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#71717a]" size={16} />
+                <Input 
+                  placeholder="Busque por 'AF', nome do cliente, placa, etc..." 
+                  className="pl-10 bg-[#0f1115] border-[#2d3139] h-10" 
+                  value={deepSearchQuery}
+                  onChange={e => setDeepSearchQuery(e.target.value)}
+                />
               </div>
               <Button 
                 onClick={handleDeepSearchRescue} 
@@ -6116,39 +6368,38 @@ function SuperAdminPanel({ companies = [], financials = [], saasSettings, user, 
                 className="bg-blue-600 hover:bg-blue-700 text-white h-10 px-6 font-bold"
               >
                 {isSearching ? <RefreshCw className="animate-spin mr-2" size={16} /> : <Search className="mr-2" size={16} />}
-                Rastrear Registros
+                Rastrear
               </Button>
             </div>
             
             {deepSearchResults.length > 0 && (
-              <div className="mt-4 border-t border-[#2d3139] pt-4">
-                <p className="text-[11px] text-blue-400 mb-2 font-bold uppercase tracking-widest">Registros Encontrados ({deepSearchResults.length})</p>
-                <div className="max-h-[300px] overflow-y-auto space-y-2 pr-2">
+              <div className="mt-4 bg-[#0f1115]/50 rounded-lg p-2 border border-[#2d3139]">
+                <p className="text-[10px] text-blue-400 mb-2 font-bold uppercase tracking-widest px-2">Resultados ({deepSearchResults.length})</p>
+                <div className="max-h-[200px] overflow-y-auto space-y-1 pr-2 custom-scrollbar">
                   {deepSearchResults.map((res, i) => (
-                    <div key={i} className="flex items-center justify-between p-3 bg-[#0f1115] rounded-lg border border-[#2d3139] group">
+                    <div key={i} className="flex items-center justify-between p-2 hover:bg-white/5 rounded transition-colors group">
                       <div className="flex flex-col">
                         <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="text-[9px] uppercase">{res.col}</Badge>
-                          <span className="text-xs font-bold text-white">{res.name || res.description || res.clientName || 'Registro Sem Nome'}</span>
+                          <Badge variant="outline" className="text-[8px] uppercase h-4 px-1">{res.col}</Badge>
+                          <span className="text-[11px] font-bold text-white truncate max-w-[150px]">{res.name || res.description || res.clientName || 'Registro'}</span>
                         </div>
-                        <span className="text-[10px] text-[#71717a] mt-1 font-mono">ID: {res.id}</span>
                       </div>
                       <Button 
                         size="sm" 
                         variant="ghost" 
                         onClick={() => relinkResult(res)}
-                        className="text-emerald-500 hover:bg-emerald-500 hover:text-white text-[10px] h-8 font-bold"
+                        className="text-emerald-500 hover:bg-emerald-500 hover:text-white text-[9px] h-6 px-2 font-bold"
                       >
-                        VINCULAR AGORA
+                        VINCULAR
                       </Button>
                     </div>
                   ))}
                 </div>
               </div>
             )}
-          </Card>
-        </div>
-      )}
+          </div>
+        </Card>
+      </div>
 
       <Card className="bg-[#1a1d23] border-[#2d3139] rounded-xl overflow-hidden">
         <Table>
@@ -8253,6 +8504,8 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
   const [visitToDelete, setVisitToDelete] = useState<TechnicalVisit | null>(null);
   const [editingVisit, setEditingVisit] = useState<TechnicalVisit | null>(null);
   const [viewingVisit, setViewingVisit] = useState<TechnicalVisit | null>(null);
+  const [clientFilter, setClientFilter] = useState('all');
+  const [isClientFilterOpen, setIsClientFilterOpen] = useState(false);
 
   const [isReceiptPromptOpen, setIsReceiptPromptOpen] = useState(false);
   const [visitForReceipt, setVisitForReceipt] = useState<{ id: string, status: TechnicalVisit['status'] } | null>(null);
@@ -8266,14 +8519,27 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
     }
   }, [initialFilter]);
 
+  const clientsWithVisits = useMemo(() => {
+    const visitedClientNames = Array.from(new Set(visits.map(v => v.clientName).filter(Boolean)));
+    return clients.filter(c => visitedClientNames.includes(c.name));
+  }, [clients, visits]);
+
   const filteredVisits = useMemo(() => {
-    return (visits || []).filter(v => {
+    const uniqueIds = new Set();
+    const uniqueVisits = (visits || []).filter(v => {
+      if (uniqueIds.has(v.id)) return false;
+      uniqueIds.add(v.id);
+      return true;
+    });
+    
+    return uniqueVisits.filter(v => {
       const d = safeParseDate(v.expectedDate || v.date);
       const dateMatch = dateFilter ? format(d, 'yyyy-MM-dd') === dateFilter : true;
       const statusMatch = statusFilter === 'Todas' ? true : v.status === statusFilter;
-      return dateMatch && statusMatch;
+      const clientMatch = clientFilter === 'all' || v.clientName === clientFilter;
+      return dateMatch && statusMatch && clientMatch;
     });
-  }, [visits, dateFilter, statusFilter]);
+  }, [visits, dateFilter, statusFilter, clientFilter]);
   const [newVisit, setNewVisit] = useState<Partial<TechnicalVisit>>({
     type: 'CFTV',
     status: 'Agendada',
@@ -8661,29 +8927,79 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
           <h2 className="text-2xl font-bold tracking-tight text-white">Visitas Técnicas</h2>
           <p className="text-[#71717a]">Gerencie seus agendamentos e ordens de serviço.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-lg">
-            <span className="text-[10px] text-[#71717a] font-medium uppercase">Filtrar:</span>
+            <span className="text-[10px] text-[#71717a] font-medium uppercase min-w-fit">Filtros:</span>
+            
+            <Popover open={isClientFilterOpen} onOpenChange={setIsClientFilterOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[150px] justify-between font-normal"
+                >
+                  <span className="truncate">
+                    {clientFilter === 'all' ? "Todos Clientes" : clientFilter}
+                  </span>
+                  <Search className="h-3 w-3 opacity-50 shrink-0" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[250px] p-0 bg-[#1a1d23] border-[#2d3139]">
+                <Command className="bg-[#1a1d23] text-white">
+                  <CommandInput 
+                    placeholder="Buscar cliente..." 
+                    value={clientSearch}
+                    onValueChange={setClientSearch}
+                    className="text-white"
+                  />
+                  <CommandEmpty>Nenhum cliente.</CommandEmpty>
+                  <CommandGroup className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                    <CommandItem
+                      value="all"
+                      onSelect={() => {
+                        setClientFilter('all');
+                        setIsClientFilterOpen(false);
+                      }}
+                      className="text-white hover:bg-[#3b82f6] cursor-pointer"
+                    >
+                      <Check className={cn("mr-2 h-4 w-4", clientFilter === 'all' ? "opacity-100" : "opacity-0")} />
+                      Todos Clientes
+                    </CommandItem>
+                    {clientsWithVisits.map((client) => (
+                      <CommandItem
+                        key={client.id}
+                        value={client.name}
+                        onSelect={() => {
+                          setClientFilter(client.name);
+                          setIsClientFilterOpen(false);
+                        }}
+                        className="text-white hover:bg-[#3b82f6] cursor-pointer"
+                      >
+                        <Check className={cn("mr-2 h-4 w-4", clientFilter === client.name ? "opacity-100" : "opacity-0")} />
+                        {client.name}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </Command>
+              </PopoverContent>
+            </Popover>
+
+            <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
+            
             <Input 
               type="date" 
-              className="h-7 bg-transparent border-none text-[12px] w-auto p-0 focus-visible:ring-0" 
+              className="h-7 bg-transparent border-none text-[12px] w-[110px] p-0 focus-visible:ring-0" 
               value={dateFilter} 
               onChange={e => setDateFilter(e.target.value)} 
             />
-            {dateFilter && (
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="h-5 w-5 text-[#71717a] hover:text-[#ef4444]" 
-                onClick={() => { setDateFilter(''); if (onClearFilter) onClearFilter(); }}
-              >
-                <X size={12} />
-              </Button>
-            )}
+            
             <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
+
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 min-w-[90px]">
-                <SelectValue placeholder="Status" />
+              <SelectTrigger className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[100px]">
+                <SelectValue>
+                  {statusFilter === 'Todas' ? "Status: Todos" : statusFilter}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                 <SelectItem value="Todas">Status: Todos</SelectItem>
@@ -8693,6 +9009,22 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
                 <SelectItem value="Cancelada">Cancelada</SelectItem>
               </SelectContent>
             </Select>
+
+            {(dateFilter !== '' || statusFilter !== 'Todas' || clientFilter !== 'all') && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-5 w-5 text-[#71717a] hover:text-[#ef4444] ml-1" 
+                onClick={() => { 
+                  setDateFilter(''); 
+                  setStatusFilter('Todas');
+                  setClientFilter('all');
+                  if (onClearFilter) onClearFilter(); 
+                }}
+              >
+                <X size={12} />
+              </Button>
+            )}
           </div>
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger render={
@@ -9413,52 +9745,38 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
           <p className="text-[#71717a]">Controle suas entradas e saídas.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <Popover open={isClientFilterOpen} onOpenChange={setIsClientFilterOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                role="combobox"
-                aria-expanded={isClientFilterOpen}
-                className="w-full sm:w-[250px] justify-between bg-[#1a1d23] border-[#2d3139] text-white hover:bg-[#2d3139] hover:text-white"
-              >
-                {selectedClientFilter === 'all' 
-                  ? "Todos os Clientes" 
-                  : clients.find((client) => client.id === selectedClientFilter)?.name || "Cliente não encontrado"}
-                <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-[300px] p-0 bg-[#1a1d23] border-[#2d3139]">
-              <Command className="bg-[#1a1d23] text-white">
-                <CommandInput 
-                  placeholder="Pesquisar cliente..." 
-                  value={clientSearch}
-                  onValueChange={setClientSearch}
-                  className="text-white"
-                />
-                <CommandEmpty>Nenhum cliente encontrado.</CommandEmpty>
-                <CommandGroup className="max-h-[300px] overflow-y-auto custom-scrollbar">
-                  <CommandItem
-                    value="all"
-                    onSelect={() => {
-                      setSelectedClientFilter('all');
-                      setIsClientFilterOpen(false);
-                    }}
-                    className="text-white hover:bg-[#3b82f6] cursor-pointer"
-                  >
-                    <Check
-                      className={cn(
-                        "mr-2 h-4 w-4",
-                        selectedClientFilter === 'all' ? "opacity-100" : "opacity-0"
-                      )}
-                    />
-                    Todos os Clientes
-                  </CommandItem>
-                  {(clientsWithFinancials || []).map((client) => (
+          <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-lg">
+            <span className="text-[10px] text-[#71717a] font-medium uppercase min-w-fit">Filtros:</span>
+            
+            <Popover open={isClientFilterOpen} onOpenChange={setIsClientFilterOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[150px] justify-between font-normal"
+                >
+                  <span className="truncate">
+                    {selectedClientFilter === 'all' 
+                      ? "Todos Clientes" 
+                      : clients.find((client) => client.id === selectedClientFilter)?.name || "Cliente"}
+                  </span>
+                  <Search className="h-3 w-3 opacity-50 shrink-0" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[250px] p-0 bg-[#1a1d23] border-[#2d3139]">
+                <Command className="bg-[#1a1d23] text-white">
+                  <CommandInput 
+                    placeholder="Buscar cliente..." 
+                    value={clientSearch}
+                    onValueChange={setClientSearch}
+                    className="text-white"
+                  />
+                  <CommandEmpty>Nenhum cliente.</CommandEmpty>
+                  <CommandGroup className="max-h-[300px] overflow-y-auto custom-scrollbar">
                     <CommandItem
-                      key={client.id}
-                      value={client.name}
+                      value="all"
                       onSelect={() => {
-                        setSelectedClientFilter(client.id);
+                        setSelectedClientFilter('all');
                         setIsClientFilterOpen(false);
                       }}
                       className="text-white hover:bg-[#3b82f6] cursor-pointer"
@@ -9466,62 +9784,102 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
                       <Check
                         className={cn(
                           "mr-2 h-4 w-4",
-                          selectedClientFilter === client.id ? "opacity-100" : "opacity-0"
+                          selectedClientFilter === 'all' ? "opacity-100" : "opacity-0"
                         )}
                       />
-                      {client.name}
+                      Todos Clientes
                     </CommandItem>
-                  ))}
-                </CommandGroup>
-              </Command>
-            </PopoverContent>
-          </Popover>
+                    {(clientsWithFinancials || []).map((client) => (
+                      <CommandItem
+                        key={client.id}
+                        value={client.name}
+                        onSelect={() => {
+                          setSelectedClientFilter(client.id);
+                          setIsClientFilterOpen(false);
+                        }}
+                        className="text-white hover:bg-[#3b82f6] cursor-pointer"
+                      >
+                        <Check
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            selectedClientFilter === client.id ? "opacity-100" : "opacity-0"
+                          )}
+                        />
+                        {client.name}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </Command>
+              </PopoverContent>
+            </Popover>
 
-          <Select value={financialTypeFilter} onValueChange={(val: any) => setFinancialTypeFilter(val)}>
-            <SelectTrigger className="w-[170px] bg-[#1a1d23] border-[#2d3139] text-white">
-              <SelectValue>
-                {financialTypeFilter === 'todos' ? "Todos os Tipos" : financialTypeFilter === 'Receita' ? "Receitas" : "Despesas"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-              <SelectItem value="todos">Todos os Tipos</SelectItem>
-              <SelectItem value="Receita">Apenas Receitas</SelectItem>
-              <SelectItem value="Despesa">Apenas Despesas</SelectItem>
-            </SelectContent>
-          </Select>
+            <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
 
-          <Select value={dateFilter} onValueChange={setDateFilter}>
-            <SelectTrigger className="w-[160px] bg-[#1a1d23] border-[#2d3139] text-white">
-              <SelectValue>
-                {(!dateFilter || dateFilter === 'all') 
-                  ? "Todas as Datas" 
-                  : format(new Date(dateFilter + 'T12:00:00'), 'dd/MM/yyyy')}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-              <SelectItem value="all">Todas as Datas</SelectItem>
-              {availableDates.map(date => (
-                <SelectItem key={date} value={date}>{format(new Date(date + 'T12:00:00'), 'dd/MM/yyyy')}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            <Select value={financialTypeFilter} onValueChange={(val: any) => setFinancialTypeFilter(val)}>
+              <SelectTrigger className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[100px]">
+                <SelectValue>
+                  {financialTypeFilter === 'todos' ? "Tipos: Todos" : financialTypeFilter === 'Receita' ? "Receitas" : "Despesas"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                <SelectItem value="todos">Todos os Tipos</SelectItem>
+                <SelectItem value="Receita">Receitas</SelectItem>
+                <SelectItem value="Despesa">Despesas</SelectItem>
+              </SelectContent>
+            </Select>
 
-          <Select value={pixFilter} onValueChange={setPixFilter}>
-            <SelectTrigger className="w-[190px] bg-[#1a1d23] border-[#2d3139] text-white">
-              <SelectValue>
-                {pixFilter === 'all' 
-                  ? "Todas as Contas PIX" 
-                  : pixSettings.accounts?.find(a => a.id === pixFilter)?.label || "Conta PIX"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-              <SelectItem value="all">Todas as Contas PIX</SelectItem>
-              {pixSettings.accounts?.map(acc => (
-                <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank})</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
 
+            <Select value={dateFilter} onValueChange={setDateFilter}>
+              <SelectTrigger className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[100px]">
+                <SelectValue>
+                  {(!dateFilter || dateFilter === 'all') 
+                    ? "Datas: Todas" 
+                    : format(new Date(dateFilter + 'T12:00:00'), 'dd/MM')}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                <SelectItem value="all">Todas as Datas</SelectItem>
+                {availableDates.map(date => (
+                  <SelectItem key={date} value={date}>{format(new Date(date + 'T12:00:00'), 'dd/MM/yyyy')}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
+
+            <Select value={pixFilter} onValueChange={setPixFilter}>
+              <SelectTrigger className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[100px]">
+                <SelectValue>
+                  {pixFilter === 'all' 
+                    ? "PIX: Todos" 
+                    : pixSettings.accounts?.find(a => a.id === pixFilter)?.label || "Conta PIX"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                <SelectItem value="all">Todas as Contas PIX</SelectItem>
+                {pixSettings.accounts?.map(acc => (
+                  <SelectItem key={acc.id} value={acc.id}>{acc.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {(dateFilter !== 'all' || financialTypeFilter !== 'todos' || selectedClientFilter !== 'all' || pixFilter !== 'all') && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-5 w-5 text-[#71717a] hover:text-[#ef4444] ml-1" 
+                onClick={() => { 
+                  setDateFilter('all'); 
+                  setFinancialTypeFilter('todos');
+                  setSelectedClientFilter('all');
+                  setPixFilter('all');
+                }}
+              >
+                <X size={12} />
+              </Button>
+            )}
+          </div>
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger render={
               <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
@@ -10121,6 +10479,93 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
           <p className="text-[#71717a]">Gerencie ordens de serviço técnicas e vistorias.</p>
         </div>
         <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-lg">
+            <span className="text-[10px] text-[#71717a] font-medium uppercase min-w-fit">Filtros:</span>
+            
+            <Popover open={isClientFilterOpen} onOpenChange={setIsClientFilterOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[150px] justify-between font-normal"
+                >
+                  <span className="truncate">
+                    {filterClient === 'all' ? "Todos Clientes" : filterClient}
+                  </span>
+                  <Search className="h-3 w-3 opacity-50 shrink-0" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[250px] p-0 bg-[#1a1d23] border-[#2d3139]">
+                <Command className="bg-[#1a1d23] text-white">
+                  <CommandInput 
+                    placeholder="Buscar cliente..." 
+                    value={clientSearch}
+                    onValueChange={setClientSearch}
+                    className="text-white"
+                  />
+                  <CommandEmpty>Nenhum cliente encontrados.</CommandEmpty>
+                  <CommandGroup className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                    <CommandItem
+                      value="all"
+                      onSelect={() => {
+                        setFilterClient('all');
+                        setIsClientFilterOpen(false);
+                      }}
+                      className="text-white hover:bg-[#3b82f6] cursor-pointer"
+                    >
+                      <Check className={cn("mr-2 h-4 w-4", filterClient === 'all' ? "opacity-100" : "opacity-0")} />
+                      Todos Clientes
+                    </CommandItem>
+                    {clientsWithOrders.map((client) => (
+                      <CommandItem
+                        key={client.id}
+                        value={client.name}
+                        onSelect={() => {
+                          setFilterClient(client.name);
+                          setIsClientFilterOpen(false);
+                        }}
+                        className="text-white hover:bg-[#3b82f6] cursor-pointer"
+                      >
+                        <Check className={cn("mr-2 h-4 w-4", filterClient === client.name ? "opacity-100" : "opacity-0")} />
+                        {client.name}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </Command>
+              </PopoverContent>
+            </Popover>
+
+            <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
+            
+            <Select value={filterDate} onValueChange={setFilterDate}>
+              <SelectTrigger className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[110px]">
+                <SelectValue>
+                  {(!filterDate || filterDate === 'all') ? "Todas Datas" : filterDate}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                <SelectItem value="all">Todas Datas</SelectItem>
+                {availableDates.map(date => (
+                  <SelectItem key={date} value={date}>{date}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {(filterDate !== 'all' || filterClient !== 'all') && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-5 w-5 text-[#71717a] hover:text-[#ef4444] ml-1" 
+                onClick={() => { 
+                  setFilterDate('all'); 
+                  setFilterClient('all');
+                }}
+              >
+                <X size={12} />
+              </Button>
+            )}
+          </div>
+
           {serviceOrders.length > 0 && selectedIds.length === 0 && (
             <Button 
               variant="outline" 
@@ -10430,100 +10875,6 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
 
       {showList ? (
         <div className="space-y-6">
-          <div className="flex flex-col gap-4 bg-[#1a1d23] p-6 rounded-xl border border-[#2d3139]">
-            <div className="space-y-4 w-full">
-              <div className="space-y-2">
-                <Label className="text-xs text-[#71717a] uppercase tracking-wider font-semibold">Filtrar por Cliente</Label>
-                <Popover open={isClientFilterOpen} onOpenChange={setIsClientFilterOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      role="combobox"
-                      aria-expanded={isClientFilterOpen}
-                      className="w-full justify-between bg-[#0f1115] border-[#2d3139] text-white hover:bg-[#2d3139] hover:text-white"
-                    >
-                      {filterClient === 'all' 
-                        ? "Todos os Clientes" 
-                        : filterClient}
-                      <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[300px] p-0 bg-[#1a1d23] border-[#2d3139]">
-                    <Command className="bg-[#1a1d23] text-white">
-                      <CommandInput 
-                        placeholder="Pesquisar cliente..." 
-                        value={clientSearch}
-                        onValueChange={setClientSearch}
-                        className="text-white"
-                      />
-                      <CommandEmpty>Nenhum cliente encontrado.</CommandEmpty>
-                      <CommandGroup className="max-h-[300px] overflow-y-auto custom-scrollbar">
-                        <CommandItem
-                          value="all"
-                          onSelect={() => {
-                            setFilterClient('all');
-                            setIsClientFilterOpen(false);
-                          }}
-                          className="text-white hover:bg-[#3b82f6] cursor-pointer"
-                        >
-                          <Check
-                            className={cn(
-                              "mr-2 h-4 w-4",
-                              filterClient === 'all' ? "opacity-100" : "opacity-0"
-                            )}
-                          />
-                          Todos os Clientes
-                        </CommandItem>
-                        {(clientsWithOrders || []).map((client) => (
-                          <CommandItem
-                            key={client.id}
-                            value={client.name}
-                            onSelect={() => {
-                              setFilterClient(client.name);
-                              setIsClientFilterOpen(false);
-                            }}
-                            className="text-white hover:bg-[#3b82f6] cursor-pointer"
-                          >
-                            <Check
-                              className={cn(
-                                "mr-2 h-4 w-4",
-                                filterClient === client.name ? "opacity-100" : "opacity-0"
-                              )}
-                            />
-                            {client.name}
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-xs text-[#71717a] uppercase tracking-wider font-semibold">Filtrar por Data de Atendimento</Label>
-                <Select value={filterDate} onValueChange={setFilterDate}>
-                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white w-full">
-                    <SelectValue>
-                      {(!filterDate || filterDate === 'all') ? "Todas as Datas" : filterDate}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                    <SelectItem value="all">Todas as Datas</SelectItem>
-                    {availableDates.map(date => (
-                      <SelectItem key={date} value={date}>{date}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            
-            <div className="pt-2 border-t border-[#2d3139] flex items-center justify-between">
-              <span className="text-xs text-[#71717a] uppercase tracking-wider font-medium">Resultado da busca:</span>
-              <span className="text-sm text-[#3b82f6] font-bold">
-                {filteredServiceOrders.length} {filteredServiceOrders.length === 1 ? 'ordem encontrada' : 'ordens encontradas'}
-              </span>
-            </div>
-          </div>
           <div 
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 focus:outline-none focus:ring-1 focus:ring-blue-500/50 p-1"
             tabIndex={0}
@@ -10903,6 +11254,11 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
   const [budgetToDelete, setBudgetToDelete] = useState<Budget | null>(null);
   const [editingBudget, setEditingBudget] = useState<Partial<Budget>>({});
   const [clientSearch, setClientSearch] = useState('');
+  const [clientFilter, setClientFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('Todas');
+  const [isClientFilterOpen, setIsClientFilterOpen] = useState(false);
+  
   const [newBudget, setNewBudget] = useState<Partial<Budget>>({
     items: [{ description: '', quantity: 1, price: 0 }],
     status: 'Pendente',
@@ -10926,6 +11282,21 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
   const filteredClientsForSelect = useMemo(() => {
     return clients.filter(c => (c.name || '').toLowerCase().includes(clientSearch.toLowerCase()));
   }, [clients, clientSearch]);
+
+  const clientsWithBudgets = useMemo(() => {
+    const clientsNames = Array.from(new Set(budgets.map(b => b.clientName).filter(Boolean)));
+    return clients.filter(c => clientsNames.includes(c.name));
+  }, [clients, budgets]);
+
+  const filteredBudgets = useMemo(() => {
+    return budgets.filter(budget => {
+      const clientMatch = clientFilter === 'all' ? true : budget.clientName === clientFilter;
+      const d = budget.createdAt instanceof Timestamp ? budget.createdAt.toDate() : new Date(budget.createdAt);
+      const dateMatch = dateFilter ? format(d, 'yyyy-MM-dd') === dateFilter : true;
+      const statusMatch = statusFilter === 'Todas' ? true : budget.status === statusFilter;
+      return clientMatch && dateMatch && statusMatch;
+    });
+  }, [budgets, clientFilter, dateFilter, statusFilter]);
 
   const handleAddItem = () => {
     setNewBudget({
@@ -11175,7 +11546,103 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
           <h2 className="text-2xl font-bold tracking-tight text-white">Orçamentos</h2>
           <p className="text-[#71717a]">Gere orçamentos profissionais para seus clientes.</p>
         </div>
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-lg">
+            <span className="text-[10px] text-[#71717a] font-medium uppercase min-w-fit">Filtros:</span>
+            
+            <Popover open={isClientFilterOpen} onOpenChange={setIsClientFilterOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[150px] justify-between font-normal"
+                >
+                  <span className="truncate">
+                    {clientFilter === 'all' ? "Todos Clientes" : clientFilter}
+                  </span>
+                  <Search className="h-3 w-3 opacity-50 shrink-0" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[250px] p-0 bg-[#1a1d23] border-[#2d3139]">
+                <Command className="bg-[#1a1d23] text-white">
+                  <CommandInput 
+                    placeholder="Buscar cliente..." 
+                    value={clientSearch}
+                    onValueChange={setClientSearch}
+                    className="text-white"
+                  />
+                  <CommandEmpty>Nenhum cliente.</CommandEmpty>
+                  <CommandGroup className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                    <CommandItem
+                      value="all"
+                      onSelect={() => {
+                        setClientFilter('all');
+                        setIsClientFilterOpen(false);
+                      }}
+                      className="text-white hover:bg-[#3b82f6] cursor-pointer"
+                    >
+                      <Check className={cn("mr-2 h-4 w-4", clientFilter === 'all' ? "opacity-100" : "opacity-0")} />
+                      Todos Clientes
+                    </CommandItem>
+                    {clientsWithBudgets.map((client) => (
+                      <CommandItem
+                        key={client.id}
+                        value={client.name}
+                        onSelect={() => {
+                          setClientFilter(client.name);
+                          setIsClientFilterOpen(false);
+                        }}
+                        className="text-white hover:bg-[#3b82f6] cursor-pointer"
+                      >
+                        <Check className={cn("mr-2 h-4 w-4", clientFilter === client.name ? "opacity-100" : "opacity-0")} />
+                        {client.name}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </Command>
+              </PopoverContent>
+            </Popover>
+
+            <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
+            
+            <Input 
+              type="date" 
+              className="h-7 bg-transparent border-none text-[12px] w-[110px] p-0 focus-visible:ring-0" 
+              value={dateFilter} 
+              onChange={e => setDateFilter(e.target.value)} 
+            />
+            
+            <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
+
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[100px]">
+                <SelectValue>
+                  {statusFilter === 'Todas' ? "Status: Todos" : statusFilter}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                <SelectItem value="Todas">Status: Todos</SelectItem>
+                <SelectItem value="Pendente">Pendente</SelectItem>
+                <SelectItem value="Aprovado">Aprovado</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {(dateFilter !== '' || statusFilter !== 'Todas' || clientFilter !== 'all') && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-5 w-5 text-[#71717a] hover:text-[#ef4444] ml-1" 
+                onClick={() => { 
+                  setDateFilter(''); 
+                  setStatusFilter('Todas');
+                  setClientFilter('all');
+                }}
+              >
+                <X size={12} />
+              </Button>
+            )}
+          </div>
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
           <DialogTrigger render={
             <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
               <Plus size={18} />
@@ -11409,10 +11876,11 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
           </DialogContent>
         </Dialog>
       </div>
+    </div>
 
-      {showList ? (
+    {showList ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {budgets.map((budget) => (
+        {filteredBudgets.map((budget) => (
           <Card key={budget.id} className="border-[#2d3139] bg-[#1a1d23] rounded-xl hover:border-[#3b82f6]/50 transition-all group">
             <CardHeader className="pb-2">
               <div className="flex justify-between items-start">

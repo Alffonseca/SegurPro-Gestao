@@ -121,6 +121,17 @@ service cloud.firestore {
       allow update, delete: if isSuperAdmin();
     }
 
+    match /registration_codes/{id} {
+      allow read: if isSignedIn();
+      allow create, delete: if isSuperAdmin();
+      allow update: if isSuperAdmin() || (
+        isSignedIn() && 
+        resource.data.status == 'active' && 
+        request.resource.data.status == 'used' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'usedAt', 'usedBy'])
+      );
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
