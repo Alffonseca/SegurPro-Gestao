@@ -8199,7 +8199,12 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#71717a'];
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-6">
+      <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
+        <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest text-[#3b82f6]">Painel de Controle</h2>
+        <p className="text-[#a0a0a0] text-sm">Visão geral das atividades e performance da sua empresa.</p>
+      </div>
+
       {!showList ? (
         <div className="flex flex-col items-center justify-center p-12 bg-[#1a1d23] border border-[#2d3139] rounded-xl text-center">
           <Database className="h-12 w-12 text-[#3b82f6] mb-4 opacity-50" />
@@ -10427,9 +10432,9 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2 mb-6">
-        <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest">Ordens de Serviço</h2>
-        <p className="text-[#a0a0a0] text-sm">Gerencie ordens de serviço técnicas e vistorias.</p>
+      <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
+        <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest text-[#3b82f6]">Ordens de Serviço</h2>
+        <p className="text-[#a0a0a0] text-sm">Gerencie ordens de serviço técnicas e atendimentos em campo.</p>
       </div>
 
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
@@ -10830,22 +10835,16 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
       {showList ? (
         <div className="space-y-6">
           <div 
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 focus:outline-none focus:ring-1 focus:ring-blue-500/50 p-1"
+            className="grid grid-cols-1 gap-6 focus:outline-none focus:ring-1 focus:ring-blue-500/50 p-1"
             tabIndex={0}
             onKeyDown={(e) => {
               if (!filteredServiceOrders.length) return;
               const currentIndex = filteredServiceOrders.findIndex(os => os.id === selectedRowId);
               let nextIndex = currentIndex;
               
-              const cols = window.innerWidth >= 1024 ? 3 : window.innerWidth >= 768 ? 2 : 1;
-
               if (e.key === 'ArrowDown') {
-                nextIndex = Math.min(currentIndex + cols, filteredServiceOrders.length - 1);
-              } else if (e.key === 'ArrowUp') {
-                nextIndex = Math.max(currentIndex - cols, 0);
-              } else if (e.key === 'ArrowRight') {
                 nextIndex = Math.min(currentIndex + 1, filteredServiceOrders.length - 1);
-              } else if (e.key === 'ArrowLeft') {
+              } else if (e.key === 'ArrowUp') {
                 nextIndex = Math.max(currentIndex - 1, 0);
               } else {
                 return;
@@ -10900,7 +10899,7 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                     "font-normal h-5 text-[9px]",
                     os.status === 'Finalizado' ? "bg-emerald-500/10 text-emerald-500" : "bg-blue-500/10 text-blue-500"
                   )}>{os.status}</Badge>
-                  <span className="text-[9px] font-mono text-[#3b82f6]">{formatRecordNumber(os.number, os.date)}</span>
+                  <span className="text-[9px] font-mono text-[#3b82f6] font-bold">{formatRecordNumber(os.number, os.date)}</span>
                 </div>
                 <CardTitle className="mt-3 text-white flex items-center gap-2">
                   <Shield size={16} className="text-[#3b82f6]" />
@@ -10909,22 +10908,25 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                 <p className="text-xs text-[#71717a]">{os.equipment} - {os.brandModelSN}</p>
               </CardHeader>
               <CardContent className="pt-4">
-                <div className="space-y-2 mb-6">
-                  <div className="flex justify-between text-[11px]">
-                    <span className="text-[#71717a]">Data Atendimento</span>
-                    <span className="text-white font-medium">{format(os.date instanceof Timestamp ? os.date.toDate() : new Date(os.date), 'dd/MM/yyyy')}</span>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                  <div className="flex flex-wrap gap-4 text-[11px]">
+                    <div className="flex flex-col">
+                      <span className="text-[#71717a] text-[10px] uppercase font-bold tracking-wider">Data Atendimento</span>
+                      <span className="text-white font-medium">{format(os.date instanceof Timestamp ? os.date.toDate() : new Date(os.date), 'dd/MM/yyyy')}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[#71717a] text-[10px] uppercase font-bold tracking-wider">Técnico</span>
+                      <span className="text-[#10b981] font-bold">@{os.technicianName?.split(' ')[0] || users.find(u => u.uid === os.technicianId)?.displayName?.split(' ')[0] || 'AF-Sist'}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between text-[11px]">
-                    <span className="text-[#71717a]">Técnico</span>
-                    <span className="text-[#10b981]">{os.technicianName || users.find(u => u.uid === os.technicianId)?.displayName || os.technicianId || 'Consultar Técnico'}</span>
-                  </div>
-                  <div className="mt-4 p-2 bg-[#0f1115] rounded border border-[#2d3139] text-[10px] text-[#a0a0a0] min-h-[40px] italic">
-                    "{(os.performedServices || '').length > 80 ? (os.performedServices || '').substring(0, 80) + '...' : (os.performedServices || '')}"
+                  <div className="flex-1 p-2 bg-[#0f1115] rounded border border-[#2d3139] text-[10px] text-[#a0a0a0] min-h-[40px] italic">
+                    "{(os.performedServices || '').length > 120 ? (os.performedServices || '').substring(0, 120) + '...' : (os.performedServices || '')}"
                   </div>
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t border-[#2d3139]/30">
-                  <div className="flex items-center gap-3 flex-1">
+                  <div className="flex items-center gap-3">
                     <Checkbox 
+                      id={`select-${os.id}`}
                       checked={selectedIds.includes(os.id)}
                       onCheckedChange={(checked) => {
                         if (checked) {
@@ -10935,7 +10937,7 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                       }}
                       className="bg-[#0f1115] border-[#2d3139] h-5 w-5 data-[state=checked]:bg-[#3b82f6] cursor-pointer"
                     />
-                    <span className="text-[10px] text-[#71717a] font-bold uppercase tracking-widest hidden sm:inline">Selecionar</span>
+                    <Label htmlFor={`select-${os.id}`} className="text-[10px] text-[#71717a] font-bold uppercase tracking-widest cursor-pointer hover:text-white">Marcar para imprimir Etiqueta.</Label>
                   </div>
                   <div className="text-right">
                     <p className="text-lg font-black text-white">R$ {(os.totalValue || 0).toFixed(2)}</p>
