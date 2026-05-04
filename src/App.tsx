@@ -43,7 +43,9 @@ import {
   Activity,
   Percent,
   Loader2,
-  Ticket
+  Ticket,
+  Filter,
+  Copy
 } from 'lucide-react';
 import { 
   collection, 
@@ -6259,13 +6261,13 @@ function SuperAdminPanel({ companies = [], financials = [], saasSettings, user, 
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        <Card className="lg:col-span-1 bg-[#1a1d23] border-[#2d3139] overflow-hidden flex flex-col">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
+        <Card className="lg:col-span-2 bg-[#1a1d23] border-[#2d3139] overflow-hidden flex flex-col min-h-[500px]">
           <CardHeader className="bg-blue-500/5 border-b border-[#2d3139]">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Ticket className="text-blue-500" size={18} />
-                <CardTitle className="text-sm font-bold text-white uppercase tracking-wider">Códigos de Registro</CardTitle>
+                <CardTitle className="text-sm font-bold text-white uppercase tracking-wider">Códigos de Registro (Liberação)</CardTitle>
               </div>
               <Button 
                 size="sm" 
@@ -6277,18 +6279,18 @@ function SuperAdminPanel({ companies = [], financials = [], saasSettings, user, 
                 GERAR NOVO
               </Button>
             </div>
-            <CardDescription className="text-[10px]">Códigos únicos para liberar o cadastro de novas empresas.</CardDescription>
+            <CardDescription className="text-[10px]">Códigos únicos para liberar o cadastro de novas empresas por parceiros.</CardDescription>
           </CardHeader>
-          <CardContent className="p-0 flex-1 overflow-auto max-h-[400px] custom-scrollbar">
+          <CardContent className="p-0 flex-1 overflow-auto max-h-[600px] custom-scrollbar">
             <div className="divide-y divide-[#2d3139]">
               {regCodes.length === 0 ? (
                 <div className="p-12 text-center text-[#71717a] text-xs">Nenhum código gerado.</div>
               ) : (
                 regCodes.map((c) => (
-                  <div key={c.id} className="p-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
+                  <div key={c.id} className="p-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors group">
                     <div className="flex flex-col gap-1">
                       <div className="flex items-center gap-2">
-                        <code className="text-[13px] font-bold text-white tracking-widest bg-[#0f1115] px-2 py-0.5 rounded border border-[#2d3139] select-all">
+                        <code className="text-[14px] font-bold text-white tracking-widest bg-[#0f1115] px-3 py-1 rounded border border-[#2d3139] select-all">
                           {c.code}
                         </code>
                         <Badge className={cn(
@@ -6305,14 +6307,44 @@ function SuperAdminPanel({ companies = [], financials = [], saasSettings, user, 
                         )}
                       </div>
                     </div>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-8 w-8 text-[#71717a] hover:text-red-500"
-                      onClick={() => handleDeleteRegCode(c.id)}
-                    >
-                      <Trash2 size={14} />
-                    </Button>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8 text-blue-400 hover:text-blue-300 hover:bg-blue-400/10"
+                        title="Copiar Código"
+                        onClick={() => {
+                          navigator.clipboard.writeText(c.code);
+                          toast.success("Código copiado!");
+                        }}
+                      >
+                        <Copy size={14} />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8 text-yellow-500 hover:text-yellow-400 hover:bg-yellow-500/10"
+                        title="Regerar Código"
+                        disabled={c.status === 'used' || isGeneratingCode}
+                        onClick={async () => {
+                           if (!window.confirm("Deseja invalidar este código e gerar um novo?")) return;
+                           const oldId = c.id;
+                           await handleGenerateRegCode();
+                           await deleteDoc(doc(db, 'registration_codes', oldId));
+                        }}
+                      >
+                        <RefreshCw size={14} />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8 text-[#ef4444]/60 hover:text-red-500 hover:bg-red-500/10"
+                        title="Excluir"
+                        onClick={() => handleDeleteRegCode(c.id)}
+                      >
+                        <Trash2 size={14} />
+                      </Button>
+                    </div>
                   </div>
                 ))
               )}
@@ -6323,7 +6355,7 @@ function SuperAdminPanel({ companies = [], financials = [], saasSettings, user, 
           </div>
         </Card>
 
-        <Card className="lg:col-span-2 bg-[#1a1d23] border-[#2d3139] p-4 flex flex-col">
+        <Card className="lg:col-span-2 bg-[#1a1d23] border-[#2d3139] p-4 flex flex-col min-h-[500px]">
           <div className="flex items-center gap-3 text-yellow-500 mb-4 min-w-fit">
             <Database size={20} />
             <span className="text-sm font-bold uppercase tracking-wider">Recuperação Estrutural (Vincular tudo):</span>
@@ -8440,11 +8472,6 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
             </CardContent>
           </Card>
 
-          <div className="flex gap-4 p-6 bg-[#15181e] rounded-xl border border-dashed border-[#2d3139]">
-            <ActionCard title="Recibo" desc="Gerar PDF rápido" onClick={() => onNavigate('receipts')} />
-            <ActionCard title="Relatório" desc="Fechamento Diário" onClick={() => onNavigate('financial')} />
-            <ActionCard title="Orçamento" desc="Novo Rascunho" onClick={() => onNavigate('budgets')} />
-          </div>
         </div>
       </div>
     </>
@@ -9745,8 +9772,11 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
           <p className="text-[#71717a]">Controle suas entradas e saídas.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-lg">
-            <span className="text-[10px] text-[#71717a] font-medium uppercase min-w-fit">Filtros:</span>
+          <div className="flex flex-wrap items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-lg">
+            <div className="flex items-center gap-2 pr-2 border-r border-[#2d3139]">
+              <Filter className="text-blue-500" size={14} />
+              <span className="text-[10px] text-[#71717a] font-bold uppercase tracking-widest min-w-fit">Filtros</span>
+            </div>
             
             <Popover open={isClientFilterOpen} onOpenChange={setIsClientFilterOpen}>
               <PopoverTrigger asChild>
@@ -10913,23 +10943,56 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                 selectedRowId === os.id ? 'ring-1 ring-blue-500 bg-blue-500/5' : ''
               )}
             >
-              <CardHeader className="pb-3 border-b border-[#2d3139]/30 relative pt-10">
-                <div className="absolute top-4 left-4 z-10 flex items-center gap-2">
-                  <Checkbox 
-                    checked={selectedIds.includes(os.id)}
-                    onCheckedChange={(checked) => {
-                      if (checked) {
-                        setSelectedIds(prev => [...prev, os.id]);
-                      } else {
-                        setSelectedIds(prev => prev.filter(id => id !== os.id));
-                      }
-                    }}
-                    className="bg-[#0f1115] border-[#2d3139] data-[state=checked]:bg-[#3b82f6]"
-                  />
-                  <span className="text-[10px] text-[#71717a] uppercase font-bold tracking-wider">Selecionar</span>
+            <CardHeader className="pb-3 border-b border-[#2d3139]/30 relative pt-12">
+                <div className="absolute top-3 left-4 z-10 flex items-center justify-between w-[calc(100%-24px)]">
+                  <div className="flex items-center gap-2">
+                    <Checkbox 
+                      checked={selectedIds.includes(os.id)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedIds(prev => [...prev, os.id]);
+                        } else {
+                          setSelectedIds(prev => prev.filter(id => id !== os.id));
+                        }
+                      }}
+                      className="bg-[#0f1115] border-[#2d3139] data-[state=checked]:bg-[#3b82f6]"
+                    />
+                    <span className="text-[9px] text-[#71717a] uppercase font-bold tracking-wider">Selecionar</span>
+                  </div>
+
+                  <div className="flex gap-0.5">
+                    <Button variant="ghost" size="icon" title="Assinatura Externa" className="h-7 w-7 text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => handleGenerateSignatureLink(os.id, 'service-order', os.clientName, companyId, { title: `Ordem de Serviço #${formatRecordNumber(os.number, os.date)}`, value: os.totalValue?.toString() }, logAction)}>
+                      <PenTool size={13} />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-[#a0a0a0] hover:text-white" onClick={() => {
+                      setEditingOS({
+                        ...os,
+                        startDateTime: format(os.startDateTime instanceof Timestamp ? os.startDateTime.toDate() : new Date(os.startDateTime as any), "yyyy-MM-dd'T'HH:mm"),
+                        endDateTime: format(os.endDateTime instanceof Timestamp ? os.endDateTime.toDate() : new Date(os.endDateTime as any), "yyyy-MM-dd'T'HH:mm"),
+                      });
+                      setIsEditOpen(true);
+                    }}>
+                      <Pencil size={13} />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-[#ef4444]/60 hover:text-[#ef4444]" onClick={() => {
+                      setOSToDelete(os);
+                      setIsDeleteConfirmOpen(true);
+                    }}>
+                      <Trash2 size={13} />
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-7 px-2 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-[10px] font-bold" onClick={() => {
+                      setSelectedOSForPDF(os);
+                      setIsValuesModalOpen(true);
+                    }}>
+                      PDF
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex justify-between items-start">
-                  <Badge className="bg-emerald-500/10 text-emerald-500 font-normal">{os.status}</Badge>
+                <div className="flex justify-between items-start mt-2">
+                  <Badge className={cn(
+                    "font-normal",
+                    os.status === 'Finalizado' ? "bg-emerald-500/10 text-emerald-500" : "bg-blue-500/10 text-blue-500"
+                  )}>{os.status}</Badge>
                   <span className="text-[10px] font-mono text-[#3b82f6]">{formatRecordNumber(os.number, os.date)}</span>
                 </div>
                 <CardTitle className="mt-3 text-white flex items-center gap-2">
@@ -10954,33 +11017,7 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                 </div>
                 <div className="flex items-center justify-between">
                   <p className="text-lg font-bold text-white">R$ {(os.totalValue || 0).toFixed(2)}</p>
-                  <div className="flex gap-1">
-                    <Button variant="ghost" size="icon" title="Solicitar Assinatura Externa" className="h-8 w-8 text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => handleGenerateSignatureLink(os.id, 'service-order', os.clientName, companyId, { title: `Ordem de Serviço #${formatRecordNumber(os.number, os.date)}`, value: os.totalValue?.toString() }, logAction)}>
-                      <PenTool size={14} />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-[#a0a0a0] hover:text-white" onClick={() => {
-                      setEditingOS({
-                        ...os,
-                        startDateTime: format(os.startDateTime instanceof Timestamp ? os.startDateTime.toDate() : new Date(os.startDateTime as any), "yyyy-MM-dd'T'HH:mm"),
-                        endDateTime: format(os.endDateTime instanceof Timestamp ? os.endDateTime.toDate() : new Date(os.endDateTime as any), "yyyy-MM-dd'T'HH:mm"),
-                      });
-                      setIsEditOpen(true);
-                    }}>
-                      <Pencil size={14} />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-[#ef4444]/60 hover:text-[#ef4444]" onClick={() => {
-                      setOSToDelete(os);
-                      setIsDeleteConfirmOpen(true);
-                    }}>
-                      <Trash2 size={14} />
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-xs" onClick={() => {
-                      setSelectedOSForPDF(os);
-                      setIsValuesModalOpen(true);
-                    }}>
-                      PDF
-                    </Button>
-                  </div>
+                  <div className="text-[10px] text-[#71717a] italic">ID: {os.id?.slice(-8)}</div>
                 </div>
               </CardContent>
             </Card>
