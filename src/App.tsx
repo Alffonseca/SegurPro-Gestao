@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { QRCodeCanvas } from 'qrcode.react';
 import { 
   Plus, 
   LayoutDashboard, 
@@ -45,7 +46,8 @@ import {
   Loader2,
   Ticket,
   Filter,
-  Copy
+  Copy,
+  Key
 } from 'lucide-react';
 import { 
   collection, 
@@ -151,6 +153,10 @@ import {
 
 // --- Helpers ---
 
+const generateSignatureCode = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
 const handleGenerateSignatureLink = async (
   documentId: string, 
   type: 'visit' | 'contract' | 'service-order' | 'budget', 
@@ -161,11 +167,14 @@ const handleGenerateSignatureLink = async (
 ) => {
   try {
     const token = doc(collection(db, 'signature_requests')).id;
+    const accessCode = generateSignatureCode();
+    
     await setDoc(doc(db, 'signature_requests', token), {
       documentId,
       type,
       clientName,
       companyId,
+      accessCode,
       displayTitle: displayInfo?.title || `Documento ${type}`,
       displayValue: displayInfo?.value || '',
       displayDetails: displayInfo?.details || '',
@@ -179,12 +188,17 @@ const handleGenerateSignatureLink = async (
     }
 
     const url = `${window.location.origin}${window.location.pathname}?signerToken=${token}`;
-    const message = `Olá ${clientName}, por favor utilize o link abaixo para realizar a sua assinatura digital referente ao nosso serviço:\n\n${url}\n\n*Assinatura Única após o uso será excluída*`;
+    const portalUrl = `${window.location.origin}${window.location.pathname}?assinatura=portal`;
     
-    // Copy to clipboard
+    const message = `Olá ${clientName},\n\nPara assinar o documento digitalmente, você tem duas opções:\n\n1. Link Direto: ${url}\n2. Portal de Assinatura: ${portalUrl}\n   Código de Acesso: *${accessCode}*\n\n*Assinatura única após o uso será invalidada.*`;
+    
+    // Copy to clipboard (direct link default)
     try {
       await navigator.clipboard.writeText(url);
-      toast.success('Link copiado para a área de transferência!');
+      toast.success(`Link copiado! Código: ${accessCode}`, {
+        description: "O código de acesso também foi gerado para uso no portal.",
+        duration: 5000,
+      });
     } catch (err) {
       console.warn('Clipboard fallback', err);
     }
@@ -192,7 +206,7 @@ const handleGenerateSignatureLink = async (
     // Open WhatsApp if possible
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
     
-    return url;
+    return { url, accessCode };
   } catch (error) {
     console.error("Erro ao gerar link de assinatura:", error);
     toast.error("Erro ao gerar link de assinatura.");
@@ -575,7 +589,7 @@ const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettin
   doc.save(`contrato_${(client.name || 'cliente').replace(/\s/g, '_')}.pdf`);
 };
 
-const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, includeValues = false) => {
+const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, pixSettings: PixSettings, includeValues = false) => {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -800,6 +814,22 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, inc
     doc.text(`VALOR TOTAL: R$ ${(os.totalValue || 0).toFixed(2)}`, margin, currentY);
     doc.setFontSize(9);
     currentY += 10;
+
+    // PIX Info in OS PDF
+    if (os.pixAccountId) {
+      const selectedPix = pixSettings.accounts?.find(a => a.id === os.pixAccountId);
+      if (selectedPix) {
+        checkPageBreak(20);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Dados para Pagamento (PIX):', margin, currentY);
+        currentY += 5;
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Chave: ${selectedPix.key} - Banco: ${selectedPix.bank}`, margin, currentY);
+        currentY += 4;
+        doc.text(`Favorecido: ${selectedPix.favored} - CPF/CNPJ: ${selectedPix.document || ''}`, margin, currentY);
+        currentY += 8;
+      }
+    }
   }
 
   // Checklist
@@ -1013,6 +1043,7 @@ interface ServiceOrder {
   // Technical details
   diagnosis: string;
   performedServices: string;
+  pixAccountId?: string;
   parts: { description: string; quantity: number; price: number }[];
   checklist: { 
     functionalityTest: boolean;
@@ -1701,6 +1732,91 @@ function SignaturePad({ value, onChange }: { value?: string, onChange: (val: str
   );
 }
 
+function SignaturePortalPage({ onVerify }: { onVerify: (token: string) => void }) {
+  const [code, setCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const codeParam = urlParams.get('code');
+    if (codeParam && codeParam.length === 6) {
+      setCode(codeParam);
+    }
+  }, []);
+
+  const handleVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (code.length < 4) {
+      toast.error('Por favor, insira o código de acesso.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const q = query(
+        collection(db, 'signature_requests'), 
+        where('accessCode', '==', code.trim()), 
+        where('status', '==', 'pending')
+      );
+      const querySnap = await getDocs(q);
+      
+      if (!querySnap.empty) {
+        onVerify(querySnap.docs[0].id);
+      } else {
+        setError('Código inválido, expirado ou já utilizado.');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Erro ao validar código. Tente novamente.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0f1115] flex flex-col items-center justify-center p-6 sm:p-12">
+      <div className="w-full max-w-sm space-y-8">
+        <div className="flex flex-col items-center text-center space-y-4">
+          <div className="h-20 w-20 bg-blue-600/10 rounded-2xl flex items-center justify-center text-blue-500 mb-2">
+            <Key size={40} />
+          </div>
+          <h1 className="text-3xl font-bold text-white tracking-tight">Assinatura Digital</h1>
+          <p className="text-[#a0a0a0] text-sm">Insira o código de 6 dígitos que você recebeu para acessar o documento e assinar.</p>
+        </div>
+
+        <form onSubmit={handleVerify} className="space-y-6">
+          <div className="space-y-4">
+            <Input
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              placeholder="Digite o código (ex: 123456)"
+              className="h-16 text-center text-2xl font-mono tracking-[0.5em] bg-[#1a1d23] border-[#2d3139] text-white focus:border-blue-500 focus:ring-blue-500/20 transition-all rounded-xl"
+              maxLength={10}
+            />
+            {error && (
+              <p className="text-red-500 text-xs text-center font-bold uppercase tracking-wider animate-pulse">{error}</p>
+            )}
+          </div>
+
+          <Button 
+            type="submit" 
+            disabled={loading}
+            className="w-full h-14 bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg rounded-xl shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98]"
+          >
+            {loading ? <RefreshCw className="animate-spin mr-2" /> : 'Verificar e Assinar'}
+          </Button>
+        </form>
+
+        <p className="text-center text-[#71717a] text-xs pt-8 border-t border-[#2d3139]/50">
+          Powered by <span className="text-white font-bold tracking-widest text-[10px]">SEGURPRO GESTÃO</span>
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function ExternalSignaturePage({ token }: { token: string }) {
   const [request, setRequest] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -1708,6 +1824,7 @@ function ExternalSignaturePage({ token }: { token: string }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedType, setSelectedType] = useState<string>('');
 
   useEffect(() => {
     const fetchRequest = async () => {
@@ -1720,6 +1837,7 @@ function ExternalSignaturePage({ token }: { token: string }) {
             setError('Este link de assinatura já foi utilizado ou expirou.');
           } else {
             setRequest({ id: docSnap.id, ...data });
+            setSelectedType(data.type || 'service-order');
           }
         } else {
           setError('Link de assinatura inválido ou não encontrado.');
@@ -1740,22 +1858,28 @@ function ExternalSignaturePage({ token }: { token: string }) {
       return;
     }
 
+    if (!selectedType) {
+      toast.error('Por favor, selecione para o que é esta assinatura.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       // 1. Update the signature request
       await updateDoc(doc(db, 'signature_requests', token), {
         signature,
         status: 'signed',
+        type: selectedType, // Update with client confirmation
         signedAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
 
       // 2. Update the document itself (Visit, Contract or OS)
       let collectionName = '';
-      if (request.type === 'visit') collectionName = 'visits';
-      else if (request.type === 'contract') collectionName = 'clients';
-      else if (request.type === 'budget') collectionName = 'budgets';
-      else if (request.type === 'service-order') collectionName = 'serviceOrders';
+      if (selectedType === 'visit') collectionName = 'visits';
+      else if (selectedType === 'contract') collectionName = 'clients';
+      else if (selectedType === 'budget') collectionName = 'budgets';
+      else if (selectedType === 'service-order') collectionName = 'serviceOrders';
       
       if (!collectionName) throw new Error('Tipo de documento inválido');
       
@@ -1767,7 +1891,7 @@ function ExternalSignaturePage({ token }: { token: string }) {
       };
       
       // For visits, also set the signature date
-      if (request.type === 'visit') {
+      if (selectedType === 'visit') {
         updateData.clientSignatureDate = serverTimestamp();
       }
       
@@ -1819,58 +1943,90 @@ function ExternalSignaturePage({ token }: { token: string }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f1115] p-4 flex flex-col items-center">
-      <div className="w-full max-w-lg space-y-6 pt-8">
+    <div className="min-h-screen bg-[#0f1115] p-4 flex flex-col items-center justify-center">
+      <div className="w-full max-w-lg space-y-6">
         <div className="text-center space-y-2">
           <div className="mx-auto w-12 h-12 bg-blue-500/10 rounded-xl flex items-center justify-center mb-4 border border-blue-500/20">
             <Lock className="text-blue-500" size={24} />
           </div>
-          <h1 className="text-2xl font-bold text-white">Assinatura Digital</h1>
-          <p className="text-[#a0a0a0] text-sm">Olá, <span className="text-white font-semibold">{request.clientName}</span>! Por favor, faça sua assinatura no quadro abaixo para confirmar o documento.</p>
-          {request.displayTitle && (
-            <div className="mt-2 text-[#3b82f6] text-xs font-bold uppercase tracking-wider bg-blue-500/10 px-3 py-1 rounded-full inline-block">
-              {request.displayTitle} {request.displayValue ? ` - R$ ${request.displayValue}` : ''}
-            </div>
-          )}
+          <h1 className="text-2xl font-bold text-white tracking-tight">Assinatura Digital</h1>
+          <p className="text-[#a0a0a0] text-sm italic underline underline-offset-4 decoration-blue-500/50">Olá, {request.clientName}!</p>
         </div>
 
-        <Card className="border-[#2d3139] bg-[#1a1d23] shadow-xl">
+        <Card className="border-[#2d3139] bg-[#1a1d23] shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-blue-600" />
           <CardHeader className="pb-4">
-            <CardTitle className="text-lg text-white flex items-center gap-2">
-              <Pencil size={18} className="text-blue-500" />
-              Sua Assinatura
-            </CardTitle>
-            <CardDescription className="text-xs text-amber-500 font-medium">
-              Assinatura Única após o uso será excluída
-            </CardDescription>
+             <CardTitle className="text-lg text-white flex items-center gap-2">
+               <Pencil size={18} className="text-blue-500" />
+               Confirmação e Assinatura
+             </CardTitle>
+             <CardDescription className="text-xs text-[#71717a]">
+                Selecione o tipo de documento e faça sua assinatura.
+             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="bg-white p-2 rounded-xl">
-              <SignaturePad value={signature} onChange={setSignature} />
+            <div className="bg-[#0f1115] p-4 rounded-xl border border-[#2d3139] space-y-4">
+              <div className="space-y-3">
+                <Label className="text-[#71717a] text-[10px] font-black uppercase tracking-widest block px-1">Este documento refere-se a:</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'visit', label: 'Visita Técnica' },
+                    { id: 'service-order', label: 'Ordem de Serviço' },
+                    { id: 'budget', label: 'Orçamento' },
+                    { id: 'contract', label: 'Contrato' }
+                  ].map((t) => (
+                    <Button
+                      key={t.id}
+                      variant="outline"
+                      onClick={() => setSelectedType(t.id)}
+                      className={cn(
+                        "h-10 text-[10px] font-bold uppercase tracking-wider border-[#2d3139] transition-all",
+                        selectedType === t.id 
+                          ? "bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-600/20" 
+                          : "bg-[#1a1d23] text-[#71717a] hover:text-white"
+                      )}
+                    >
+                      {t.id === selectedType && <Check size={12} className="mr-1" />}
+                      {t.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-[#2d3139]/50">
+                <Label className="text-[#71717a] text-[10px] font-black uppercase tracking-widest block px-1">Dados:</Label>
+                <p className="text-white font-bold">{request.displayTitle}</p>
+                {request.displayValue && <p className="text-xl font-mono text-blue-500">{request.displayValue}</p>}
+                {request.displayDetails && <p className="text-[#71717a] text-xs italic mt-1">{request.displayDetails}</p>}
+              </div>
             </div>
-            
-            <div className="bg-[#0f1115] p-4 rounded-lg border border-[#2d3139] space-y-2">
-              <p className="text-[11px] text-[#71717a] leading-relaxed">
-                Ao clicar em "Confirmar", você concorda que esta assinatura digital possui validade jurídica para fins de confirmação da prestação de serviços ou aceite contratual relacionado ao documento <span className="text-[#3b82f6]">#{request.documentId.slice(-6)}</span>.
-              </p>
+
+            <div className="space-y-3">
+              <Label className="text-[#71717a] text-[10px] font-black uppercase tracking-widest block px-1">Desenhe sua assinatura abaixo:</Label>
+              <div className="bg-white p-1 rounded-xl overflow-hidden ring-4 ring-white/5">
+                <SignaturePad value={signature} onChange={setSignature} />
+              </div>
             </div>
 
             <Button 
               onClick={handleSave} 
               disabled={isSubmitting || !signature}
-              className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-bold text-base shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98]"
+              className="w-full h-14 bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98] rounded-xl"
             >
               {isSubmitting ? (
                 <>
                   <RefreshCw className="mr-2 animate-spin" size={20} />
                   Processando...
                 </>
-              ) : 'Confirmar Assinatura'}
+              ) : 'Finalizar Assinatura'}
             </Button>
           </CardContent>
         </Card>
         
-        <p className="text-center text-[10px] text-[#555] uppercase font-bold tracking-widest">Plataforma Segura SegurPro</p>
+        <div className="text-center">
+           <p className="text-[10px] text-[#71717a] uppercase font-bold tracking-[0.2em]">Criptografia de Ponta a Ponta</p>
+           <p className="text-[10px] text-[#333] mt-1 italic">UUID: {token}</p>
+        </div>
       </div>
       <Toaster position="top-center" theme="dark" />
     </div>
@@ -1958,10 +2114,17 @@ export default function MainApp() {
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
   const [loading, setLoading] = useState(true);
 
-  const signerToken = useMemo(() => {
+  const signerTokenUrl = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get('signerToken');
   }, []);
+
+  const signaturePortal = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('assinatura') === 'portal';
+  }, []);
+
+  const [activeSignerToken, setActiveSignerToken] = useState<string | null>(signerTokenUrl);
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [visits, setVisits] = useState<TechnicalVisit[]>([]);
@@ -2011,6 +2174,101 @@ export default function MainApp() {
     signatureUrl: ''
   });
 
+  const [signatureDecision, setSignatureDecision] = useState<{
+    isOpen: boolean;
+    type: 'visit' | 'contract' | 'service-order' | 'budget';
+    data: any;
+  }>({ isOpen: false, type: 'visit', data: null });
+
+  const [generatedSignatureInfo, setGeneratedSignatureInfo] = useState<{
+    isOpen: boolean;
+    token: string;
+    accessCode: string;
+    url: string;
+    portalUrl: string;
+    clientName: string;
+  }>({ isOpen: false, token: '', accessCode: '', url: '', portalUrl: '', clientName: '' });
+
+  const [interpretedEditAction, setInterpretedEditAction] = useState<{type: string, data: any} | null>(null);
+  const onExternalEditHandled = useMemo(() => () => setInterpretedEditAction(null), []);
+
+  // Add the handler for Signature generation
+  const handleGenerateSignatureFinal = async () => {
+    const { type, data } = signatureDecision;
+    if (!data) return;
+
+    let documentId = data.id;
+    let clientName = '';
+    let displayInfo: any = {};
+
+    if (type === 'visit') {
+      clientName = data.clientName;
+      displayInfo = { title: 'Relatório de Visita Técnica', details: data.serviceDescription };
+    } else if (type === 'contract') {
+      clientName = (data.name || 'Cliente');
+      displayInfo = { title: 'Contrato de Prestação de Serviços' };
+    } else if (type === 'service-order') {
+      clientName = data.clientName;
+      displayInfo = { title: `OS #${data.number || data.id.slice(-6)}`, value: data.totalValue?.toString() };
+    } else if (type === 'budget') {
+      clientName = data.clientName;
+      displayInfo = { title: `Orçamento #${data.number || data.id.slice(-6)}`, value: data.total?.toString() };
+    }
+
+    try {
+      const token = doc(collection(db, 'signature_requests')).id;
+      const accessCode = Math.floor(100000 + Math.random() * 900000).toString();
+      
+      await setDoc(doc(db, 'signature_requests', token), {
+        documentId,
+        type,
+        clientName,
+        companyId: currentUserData?.companyId,
+        accessCode,
+        displayTitle: displayInfo?.title || `Documento ${type}`,
+        displayValue: displayInfo?.value || '',
+        displayDetails: displayInfo?.details || '',
+        status: 'pending',
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
+      });
+
+      if (logAction) {
+        await logAction('create', 'signature_request', `Gerou link de assinatura para ${clientName}`, token);
+      }
+
+      const portalUrl = `${window.location.origin}${window.location.pathname}?assinatura=portal`;
+      const directUrl = `${portalUrl}&code=${accessCode}`;
+      
+      setGeneratedSignatureInfo({
+        isOpen: true,
+        token,
+        accessCode,
+        url: directUrl,
+        portalUrl,
+        clientName
+      });
+      setSignatureDecision({ ...signatureDecision, isOpen: false });
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao gerar código de assinatura.');
+    }
+  };
+
+  const openEditFlow = () => {
+    const { type, data } = signatureDecision;
+    setSignatureDecision({ ...signatureDecision, isOpen: false });
+    setInterpretedEditAction({ type, data });
+  };
+
+  const onPencilClick = (type: 'visit' | 'contract' | 'service-order' | 'budget', data: any) => {
+    setSignatureDecision({
+      isOpen: true,
+      type,
+      data
+    });
+  };
+
   // Log system
   const logAction = async (action: string, resourceType: string, details: string, resourceId?: string) => {
     if (!user || !currentUserData?.companyId) return;
@@ -2058,7 +2316,7 @@ export default function MainApp() {
 
   useEffect(() => {
     async function testConnection() {
-      if (signerToken) return; // Se for página de assinatura externa, não testa conexão que exige auth
+      if (signerTokenUrl || signaturePortal) return; // Se for página de assinatura externa, não testa conexão que exige auth
       try {
         await getDocFromServer(doc(db, 'test', 'connection'));
       } catch (error: any) {
@@ -2725,14 +2983,27 @@ export default function MainApp() {
     }
   };
 
-  if (signerToken) {
-    return <ExternalSignaturePage token={signerToken} />;
+  if (activeSignerToken) {
+    return (
+      <>
+        <Toaster position="top-right" theme="dark" />
+        <ExternalSignaturePage token={activeSignerToken} />
+      </>
+    );
+  }
+
+  if (signaturePortal) {
+    return (
+      <>
+        <Toaster position="top-right" theme="dark" />
+        <SignaturePortalPage onVerify={setActiveSignerToken} />
+      </>
+    );
   }
 
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0f1115] flex flex-col items-center justify-center p-4">
-        <Toaster position="top-right" theme="dark" />
         <div className="flex flex-col items-center gap-6">
           <div className="relative">
             <div className="h-20 w-20 animate-spin rounded-full border-4 border-[#3b82f6]/20 border-t-[#3b82f6]"></div>
@@ -2752,7 +3023,6 @@ export default function MainApp() {
   if (!user) {
     return (
       <div className="flex h-screen flex-col items-center justify-center bg-[#0f1115] p-6 overflow-y-auto">
-        <Toaster position="top-right" theme="dark" />
         <div className="w-full max-w-md space-y-8 text-center py-8">
           <div className="space-y-2">
             {appSettings.logoUrl ? (
@@ -2857,6 +3127,16 @@ export default function MainApp() {
                   {authMode === 'login' ? 'Não tem uma conta? Cadastre-se' : 'Já tem uma conta? Faça login'}
                 </button>
               </div>
+
+              <div className="pt-2 border-t border-[#2d3139]/50 mt-4">
+                <a 
+                  href="?assinatura=portal"
+                  className="flex items-center justify-center gap-2 text-xs text-[#71717a] hover:text-white transition-colors py-2"
+                >
+                  <Key size={12} />
+                  Área de Assinatura do Cliente
+                </a>
+              </div>
             </CardContent>
           </Card>
           <p className="text-xs text-[#555]">© 2026 {appSettings.companyName || 'SegurPro Gestão'}. Todos os direitos reservados.</p>
@@ -2869,7 +3149,6 @@ export default function MainApp() {
   if (!currentUserData?.companyId && !isSuperAdmin) {
     return (
       <div className="min-h-screen bg-[#0f1115]">
-        <Toaster position="top-right" theme="dark" />
         <CompanyWizard onCreate={handleCreateCompany} onJoin={handleJoinCompany} />
       </div>
     );
@@ -2879,7 +3158,6 @@ export default function MainApp() {
   if (currentCompany && currentCompany.status === 'blocked' && !isSuperAdmin) {
     return (
       <div className="min-h-screen bg-[#0f1115] flex items-center justify-center p-4">
-        <Toaster position="top-right" theme="dark" />
         <Card className="max-w-md w-full bg-[#1a1d23] border-[#2d3139] text-center p-8">
           <div className="flex justify-center mb-6">
             <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center">
@@ -3256,22 +3534,54 @@ export default function MainApp() {
               onClearFilter={() => setVisitsFilter({ date: null })}
               showList={canViewList('visits')}
               logAction={logAction}
+              onPencilClick={onPencilClick}
+              externalEditAction={interpretedEditAction?.type === 'visit' ? interpretedEditAction.data : null}
+              onExternalEditHandled={() => setInterpretedEditAction(null)}
             />
           )}
           {activeTab === 'financial' && <FinancialManager financials={financials} visits={visits} clients={clients} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} showList={canViewList('financial')} />}
-          {activeTab === 'budgets' && <BudgetsManager budgets={budgets} clients={clients} appSettings={appSettings} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} showList={canViewList('budgets')} logAction={logAction} />}
+          {activeTab === 'budgets' && (
+            <BudgetsManager 
+              budgets={budgets} 
+              clients={clients} 
+              appSettings={appSettings} 
+              pixSettings={pixSettings} 
+              companyId={currentUserData?.companyId || ''} 
+              showList={canViewList('budgets')} 
+              logAction={logAction} 
+              onPencilClick={onPencilClick}
+              externalEditAction={interpretedEditAction?.type === 'budget' ? interpretedEditAction.data : null}
+              onExternalEditHandled={() => setInterpretedEditAction(null)}
+            />
+          )}
           {activeTab === 'service-orders' && (
             <ServiceOrdersManager 
               serviceOrders={serviceOrders} 
               clients={clients} 
               users={users}
               appSettings={appSettings} 
+              pixSettings={pixSettings}
               companyId={currentUserData?.companyId || ''} 
               showList={canViewList('service-orders')}
               logAction={logAction}
+              onPencilClick={onPencilClick}
+              externalEditAction={interpretedEditAction?.type === 'service-order' ? interpretedEditAction.data : null}
+              onExternalEditHandled={() => setInterpretedEditAction(null)}
             />
           )}
-          {activeTab === 'clients' && <ClientsManager clients={clients} appSettings={appSettings} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} showList={canViewList('clients')} logAction={logAction} />}
+          {activeTab === 'clients' && (
+            <ClientsManager 
+              clients={clients} 
+              appSettings={appSettings} 
+              pixSettings={pixSettings} 
+              companyId={currentUserData?.companyId || ''} 
+              showList={canViewList('clients')} 
+              logAction={logAction} 
+              onPencilClick={onPencilClick}
+              externalEditAction={interpretedEditAction?.type === 'contract' ? interpretedEditAction.data : null}
+              onExternalEditHandled={() => setInterpretedEditAction(null)}
+            />
+          )}
           {activeTab === 'suppliers' && <SuppliersManager suppliers={suppliers} companyId={currentUserData?.companyId || ''} showList={canViewList('suppliers')} />}
           {activeTab === 'receipts' && <ReceiptsManager receipts={receipts} clients={clients} pixSettings={pixSettings} appSettings={appSettings} companyId={currentUserData?.companyId || ''} currentUserData={currentUserData} showList={canViewList('receipts')} />}
           {activeTab === 'reports' && (
@@ -3516,6 +3826,84 @@ export default function MainApp() {
             />
           )}
         </div>
+        <Dialog open={signatureDecision.isOpen} onOpenChange={(open) => setSignatureDecision({ ...signatureDecision, isOpen: open })}>
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[400px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Shield size={20} className="text-blue-500" />
+                Opção de Ação
+              </DialogTitle>
+              <DialogDescription className="text-[#71717a] text-xs">
+                O que você deseja fazer com este registro?
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-6 space-y-4">
+              <p className="text-sm text-center font-medium">Deseja gerar um código de assinatura para este documento agora?</p>
+              <div className="grid grid-cols-1 gap-2">
+                 <Button onClick={handleGenerateSignatureFinal} className="bg-blue-600 hover:bg-blue-700 text-white h-12 font-bold uppercase tracking-widest text-[10px]">
+                   <Key size={14} className="mr-2" /> Sim, Gerar Código de Assinatura
+                 </Button>
+                 <Button variant="outline" onClick={openEditFlow} className="border-[#2d3139] text-[#a0a0a0] hover:text-white h-12 font-bold uppercase tracking-widest text-[10px]">
+                   <Pencil size={14} className="mr-2" /> Não, Apenas Editar Registro
+                 </Button>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setSignatureDecision({ ...signatureDecision, isOpen: false })} className="text-[#71717a] text-[10px] uppercase font-bold">Cancelar</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={generatedSignatureInfo.isOpen} onOpenChange={(open) => setGeneratedSignatureInfo({ ...generatedSignatureInfo, isOpen: open })}>
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[450px]">
+            <DialogHeader>
+              <DialogTitle className="text-blue-500 flex items-center gap-2">
+                <CheckCircle2 size={20} />
+                Código Gerado com Sucesso!
+              </DialogTitle>
+              <DialogDescription className="text-[#71717a] text-xs">
+                Peça para o cliente acessar o portal e inserir o código abaixo.
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="py-4 space-y-6 flex flex-col items-center">
+              <div className="bg-white p-4 rounded-2xl shadow-xl shadow-blue-500/10">
+                <QRCodeCanvas 
+                  value={`${generatedSignatureInfo.portalUrl}&code=${generatedSignatureInfo.accessCode}`} 
+                  size={180}
+                  level="H"
+                />
+              </div>
+
+              <div className="w-full space-y-4">
+                <div className="bg-[#0f1115] p-5 rounded-2xl border border-[#2d3139] text-center space-y-2 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-1 h-full bg-blue-500" />
+                  <span className="text-[10px] uppercase font-black tracking-[0.2em] text-[#71717a]">Código de Acesso</span>
+                  <p className="text-4xl font-black text-white tracking-[0.3em] font-mono">{generatedSignatureInfo.accessCode}</p>
+                </div>
+                
+                <div className="space-y-1">
+                   <p className="text-[10px] uppercase font-bold text-[#71717a] px-1">Portal de Assinatura</p>
+                   <div className="flex gap-2">
+                     <Input readOnly value={generatedSignatureInfo.portalUrl} className="bg-[#0f1115] border-[#2d3139] text-[10px] text-[#71717a] h-9" />
+                     <Button size="icon" variant="outline" className="h-9 w-9 border-[#2d3139]" onClick={() => {
+                        navigator.clipboard.writeText(generatedSignatureInfo.portalUrl);
+                        toast.success('Link do portal copiado!');
+                     }}>
+                        <Copy size={14} />
+                     </Button>
+                   </div>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button onClick={() => setGeneratedSignatureInfo({ ...generatedSignatureInfo, isOpen: false })} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold h-11 uppercase tracking-widest text-[11px]">
+                Concluir
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   );
@@ -3978,7 +4366,7 @@ const PAYMENT_METHODS = [
   "Boleto"
 ];
 
-function ClientsManager({ clients = [], appSettings, pixSettings, companyId, showList, logAction }: { clients: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, showList: boolean, logAction?: any }) {
+function ClientsManager({ clients = [], appSettings, pixSettings, companyId, showList, logAction, onPencilClick, externalEditAction, onExternalEditHandled }: { clients: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, showList: boolean, logAction?: any, onPencilClick: (type: 'contract', data: any) => void, externalEditAction: any, onExternalEditHandled: () => void }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -3991,6 +4379,15 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [clientToDelete, setClientToDelete] = useState<Client | null>(null);
+
+  useEffect(() => {
+    if (externalEditAction && onExternalEditHandled) {
+      setEditingClient(externalEditAction);
+      setIsEditOpen(true);
+      onExternalEditHandled();
+    }
+  }, [externalEditAction, onExternalEditHandled]);
+
   const [pendingContractClient, setPendingContractClient] = useState<Client | null>(null);
   const [isContractConfirmOpen, setIsContractConfirmOpen] = useState(false);
 
@@ -4535,8 +4932,12 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
                         </Button>
                       )}
                       <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
-                        setEditingClient(client);
-                        setIsEditOpen(true);
+                        if (onPencilClick) {
+                          onPencilClick('contract', client);
+                        } else {
+                          setEditingClient(client);
+                          setIsEditOpen(true);
+                        }
                       }}>
                         <Pencil size={14} />
                       </Button>
@@ -7611,19 +8012,35 @@ function SettingsManager({
                     <div className="p-4 text-center text-[#71717a] text-[10px] uppercase font-bold bg-[#0f1115] rounded-xl border border-dashed border-[#2d3139]">Nenhuma conta cadastrada</div>
                   ) : (
                     pixSettings.accounts.map(acc => (
-                      <div key={acc.id} className="flex items-center justify-between p-3 bg-[#0f1115] border border-[#2d3139] rounded-xl group">
-                        <div className="flex flex-col">
-                          <span className="text-white font-bold text-xs">{acc.label}</span>
-                          <span className="text-[#71717a] text-[10px] font-mono">{acc.bank} • {acc.favored} • {acc.document}</span>
-                          <span className="text-xs text-[#3b82f6] font-bold">{acc.key}</span>
+                      <div key={acc.id} className="flex flex-col p-4 bg-[#0f1115] border border-[#2d3139] rounded-xl group space-y-3">
+                        <div className="flex items-start justify-between">
+                          <span className="text-white font-bold text-xs uppercase tracking-wider">{acc.label}</span>
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button size="icon" variant="ghost" className="h-7 w-7 text-blue-400" onClick={() => {
+                              setCurrentPix(acc);
+                              setEditingPixId(acc.id);
+                              setIsPixDialogOpen(true);
+                            }}><Settings size={12} /></Button>
+                            <Button size="icon" variant="ghost" className="h-7 w-7 text-red-400" onClick={() => handleDeletePixAccount(acc.id)}><Trash2 size={12} /></Button>
+                          </div>
                         </div>
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Button size="icon" variant="ghost" className="h-7 w-7 text-blue-400" onClick={() => {
-                            setCurrentPix(acc);
-                            setEditingPixId(acc.id);
-                            setIsPixDialogOpen(true);
-                          }}><Settings size={12} /></Button>
-                          <Button size="icon" variant="ghost" className="h-7 w-7 text-red-400" onClick={() => handleDeletePixAccount(acc.id)}><Trash2 size={12} /></Button>
+                        <div className="grid grid-cols-1 gap-2 text-[11px]">
+                          <div className="flex flex-col border-b border-[#2d3139]/30 pb-1">
+                            <span className="text-[#71717a] font-bold uppercase text-[9px]">Instituição / Banco:</span>
+                            <span className="text-[#e0e0e0] font-bold">{acc.bank}</span>
+                          </div>
+                          <div className="flex flex-col border-b border-[#2d3139]/30 pb-1">
+                            <span className="text-[#71717a] font-bold uppercase text-[9px]">Favorecido:</span>
+                            <span className="text-[#e0e0e0] font-bold">{acc.favored}</span>
+                          </div>
+                          <div className="flex flex-col border-b border-[#2d3139]/30 pb-1">
+                            <span className="text-[#71717a] font-bold uppercase text-[9px]">CPF / CNPJ:</span>
+                            <span className="text-[#e0e0e0] font-bold">{acc.document || '---'}</span>
+                          </div>
+                          <div className="flex flex-col pt-1">
+                            <span className="text-[#71717a] font-bold uppercase text-[9px]">Chave PIX:</span>
+                            <span className="text-[#3b82f6] font-bold text-[12px] break-all">{acc.key}</span>
+                          </div>
                         </div>
                       </div>
                     ))
@@ -8384,7 +8801,7 @@ function StatCard({ title, value, icon, trend, isBalance, isCount, onClick }: { 
 
 // --- Visits Manager Component ---
 
-function VisitsManager({ visits = [], receipts = [], user, clients = [], appSettings, pixSettings, companyId, initialFilter, onClearFilter, showList, logAction }: { visits?: TechnicalVisit[], receipts?: Receipt[], user: FirebaseUser, clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, initialFilter?: { date: Date | null }, onClearFilter?: () => void, showList: boolean, logAction?: any }) {
+function VisitsManager({ visits = [], receipts = [], user, clients = [], appSettings, pixSettings, companyId, initialFilter, onClearFilter, showList, logAction, onPencilClick, externalEditAction, onExternalEditHandled }: { visits?: TechnicalVisit[], receipts?: Receipt[], user: FirebaseUser, clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, initialFilter?: { date: Date | null }, onClearFilter?: () => void, showList: boolean, logAction?: any, onPencilClick: (type: 'visit', data: any) => void, externalEditAction: any, onExternalEditHandled: () => void }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
@@ -8401,6 +8818,14 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
 
   const [isReceiptPromptOpen, setIsReceiptPromptOpen] = useState(false);
   const [visitForReceipt, setVisitForReceipt] = useState<{ id: string, status: TechnicalVisit['status'] } | null>(null);
+
+  useEffect(() => {
+    if (externalEditAction) {
+      setEditingVisit(externalEditAction);
+      setIsEditOpen(true);
+      onExternalEditHandled();
+    }
+  }, [externalEditAction, onExternalEditHandled]);
 
   // Sync date filter if initialFilter changes
   useEffect(() => {
@@ -9109,21 +9534,11 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
                     }}>
                       <Eye size={14} />
                     </Button>
-                    <Button variant="outline" size="icon" title="Editar" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
-                      setEditingVisit({
-                        ...visit,
-                        date: visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date),
-                        expectedDate: visit.expectedDate ? (visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate)) : (visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date))
-                      });
-                      setIsEditOpen(true);
-                    }}>
+                    <Button variant="outline" size="icon" title="Editar" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => onPencilClick('visit', visit)}>
                       <Pencil size={14} />
                     </Button>
                     <Button variant="outline" size="icon" title="Gerar PDF" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => generateVisitPDF(visit)}>
                       <Share2 size={14} />
-                    </Button>
-                    <Button variant="outline" size="icon" title="Solicitar Assinatura Externa" className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => handleGenerateSignatureLink(visit.id, 'visit', visit.clientName, companyId, { title: 'Relatório de Visita Técnica', details: visit.serviceDescription }, logAction)}>
-                      <PenTool size={14} />
                     </Button>
                     <Button variant="outline" size="icon" title="Excluir" className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
                       setVisitToDelete(visit);
@@ -10285,7 +10700,31 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
 
 // --- Budgets Manager Component ---
 
-function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], appSettings, companyId, showList, logAction }: { serviceOrders?: ServiceOrder[], clients?: Client[], users?: any[], appSettings: AppSettings, companyId: string, showList: boolean, logAction?: any }) {
+function ServiceOrdersManager({ 
+  serviceOrders = [], 
+  clients = [], 
+  users = [], 
+  appSettings, 
+  pixSettings,
+  companyId, 
+  showList, 
+  logAction, 
+  onPencilClick, 
+  externalEditAction, 
+  onExternalEditHandled 
+}: { 
+  serviceOrders?: ServiceOrder[], 
+  clients?: Client[], 
+  users?: any[], 
+  appSettings: AppSettings, 
+  pixSettings: PixSettings,
+  companyId: string, 
+  showList: boolean, 
+  logAction?: any, 
+  onPencilClick: (type: 'service-order', data: any) => void, 
+  externalEditAction: any, 
+  onExternalEditHandled: () => void 
+}) {
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -10301,6 +10740,18 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
   const [filterDate, setFilterDate] = useState('all');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isClientFilterOpen, setIsClientFilterOpen] = useState(false);
+
+  useEffect(() => {
+    if (externalEditAction) {
+      setEditingOS({
+        ...externalEditAction,
+        startDateTime: format(externalEditAction.startDateTime instanceof Timestamp ? externalEditAction.startDateTime.toDate() : new Date(externalEditAction.startDateTime as any), "yyyy-MM-dd'T'HH:mm"),
+        endDateTime: format(externalEditAction.endDateTime instanceof Timestamp ? externalEditAction.endDateTime.toDate() : new Date(externalEditAction.endDateTime as any), "yyyy-MM-dd'T'HH:mm"),
+      });
+      setIsEditOpen(true);
+      onExternalEditHandled();
+    }
+  }, [externalEditAction, onExternalEditHandled]);
 
   const clientsWithOrders = useMemo(() => {
     const clientsNames = Array.from(new Set(serviceOrders.map(os => os.clientName).filter(Boolean)));
@@ -10888,17 +11339,7 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
             >
             <CardHeader className="pb-3 border-b border-[#2d3139]/30 relative pt-14">
                 <div className="absolute top-3 right-3 z-10 flex gap-1">
-                  <Button variant="ghost" size="icon" title="Assinatura" className="h-7 w-7 text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => handleGenerateSignatureLink(os.id, 'service-order', os.clientName, companyId, { title: `OS #${formatRecordNumber(os.number, os.date)}`, value: os.totalValue?.toString() }, logAction)}>
-                    <PenTool size={13} />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-[#a0a0a0] hover:text-white" onClick={() => {
-                    setEditingOS({
-                      ...os,
-                      startDateTime: format(os.startDateTime instanceof Timestamp ? os.startDateTime.toDate() : new Date(os.startDateTime as any), "yyyy-MM-dd'T'HH:mm"),
-                      endDateTime: format(os.endDateTime instanceof Timestamp ? os.endDateTime.toDate() : new Date(os.endDateTime as any), "yyyy-MM-dd'T'HH:mm"),
-                    });
-                    setIsEditOpen(true);
-                  }}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-[#a0a0a0] hover:text-white" onClick={() => onPencilClick('service-order', os)}>
                     <Pencil size={13} />
                   </Button>
                   <Button variant="outline" size="sm" className="h-7 px-2 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-[10px] font-bold" onClick={() => {
@@ -11205,7 +11646,7 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
             <Button 
               variant="outline" 
               onClick={() => {
-                if (selectedOSForPDF) generateServiceOrderPDF(selectedOSForPDF, appSettings, false);
+                if (selectedOSForPDF) generateServiceOrderPDF(selectedOSForPDF, appSettings, pixSettings, false);
                 setIsValuesModalOpen(false);
               }} 
               className="flex-1 border-[#2d3139] text-white hover:bg-[#2d3139]"
@@ -11214,7 +11655,7 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
             </Button>
             <Button 
               onClick={() => {
-                if (selectedOSForPDF) generateServiceOrderPDF(selectedOSForPDF, appSettings, true);
+                if (selectedOSForPDF) generateServiceOrderPDF(selectedOSForPDF, appSettings, pixSettings, true);
                 setIsValuesModalOpen(false);
               }} 
               className="flex-1 bg-[#3b82f6] hover:bg-[#2563eb] text-white"
@@ -11228,7 +11669,7 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
   );
 }
 
-function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, companyId, showList, logAction }: { budgets?: Budget[], clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, showList: boolean, logAction?: any }) {
+function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, companyId, showList, logAction, onPencilClick, externalEditAction, onExternalEditHandled }: { budgets?: Budget[], clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, showList: boolean, logAction?: any, onPencilClick: (type: 'budget', data: any) => void, externalEditAction: any, onExternalEditHandled: () => void }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -11239,6 +11680,14 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
   const [dateFilter, setDateFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('Todas');
   const [isClientFilterOpen, setIsClientFilterOpen] = useState(false);
+
+  useEffect(() => {
+    if (externalEditAction) {
+      setEditingBudget(externalEditAction);
+      setIsEditOpen(true);
+      onExternalEditHandled();
+    }
+  }, [externalEditAction, onExternalEditHandled]);
   
   const [newBudget, setNewBudget] = useState<Partial<Budget>>({
     items: [{ description: '', quantity: 1, price: 0 }],
@@ -11449,25 +11898,15 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
       } else if (budget.paymentMethod === 'PIX' && budget.pixAccountId) {
         const selectedPix = pixSettings.accounts.find(a => a.id === budget.pixAccountId);
         if (selectedPix) {
+          finalY += 10;
+          doc.setFontSize(10);
+          doc.setFont('helvetica', 'bold');
+          doc.text('Dados para Pagamento (PIX):', 20, finalY);
           doc.setFont('helvetica', 'normal');
-          doc.text(`Chave PIX: ${selectedPix.key} - Banco: ${selectedPix.bank}`, 20, finalY + 7);
-          doc.text(`Favorecido: ${selectedPix.favored}`, 20, finalY + 12);
-          finalY += 17;
+          doc.text(`Chave: ${selectedPix.key} - Banco: ${selectedPix.bank}`, 20, finalY + 7);
+          doc.text(`Favorecido: ${selectedPix.favored} - CPF/CNPJ: ${selectedPix.document || ''}`, 20, finalY + 12);
+          finalY += 15;
         }
-      } else {
-        finalY += 7;
-      }
-    } else if (budget.pixAccountId) {
-      const selectedPix = pixSettings.accounts.find(a => a.id === budget.pixAccountId);
-      if (selectedPix) {
-        finalY += 10;
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'bold');
-        doc.text('Dados para Pagamento (PIX):', 20, finalY);
-        doc.setFont('helvetica', 'normal');
-        doc.text(`Chave: ${selectedPix.key} - Banco: ${selectedPix.bank}`, 20, finalY + 7);
-        doc.text(`Favorecido: ${selectedPix.favored}`, 20, finalY + 12);
-        finalY += 15;
       }
     }
     
@@ -11894,18 +12333,11 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
               <div className="flex items-center justify-between">
                 <p className="text-lg font-bold text-white">R$ {(budget.total || 0).toFixed(2)}</p>
                 <div className="flex gap-1">
-                  <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white" title="Editar" onClick={() => {
-                    setEditingBudget(budget);
-                    setEditProfitMargin(0);
-                    setIsEditOpen(true);
-                  }}>
-                    <Pencil size={14} />
+                  <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white" title="Editar" onClick={() => onPencilClick('budget', budget)}>
+                    < Pencil size={14} />
                   </Button>
                   <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white" title="Gerar PDF" onClick={() => generateBudgetPDF(budget)}>
                     <Share2 size={14} />
-                  </Button>
-                  <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" title="Solicitar Assinatura Externa" onClick={() => handleGenerateSignatureLink(budget.id, 'budget', budget.clientName, companyId, { title: `Orçamento #${formatRecordNumber(budget.number, budget.createdAt)}`, value: budget.total?.toString() }, logAction)}>
-                    <PenTool size={14} />
                   </Button>
                   <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" title="Excluir" onClick={() => {
                     setBudgetToDelete(budget);
