@@ -4290,13 +4290,13 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
                           <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
                             <SelectValue placeholder="Selecione a conta PIX">
                               {pixSettings.accounts?.find(a => a.id === newClient.pixAccountId) 
-                                ? `${pixSettings.accounts.find(a => a.id === newClient.pixAccountId)?.label} (${pixSettings.accounts.find(a => a.id === newClient.pixAccountId)?.bank})`
+                                ? `${pixSettings.accounts.find(a => a.id === newClient.pixAccountId)?.label} (${pixSettings.accounts.find(a => a.id === newClient.pixAccountId)?.bank} - ${pixSettings.accounts.find(a => a.id === newClient.pixAccountId)?.document})`
                                 : null}
                             </SelectValue>
                           </SelectTrigger>
                           <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                             {pixSettings.accounts?.map(acc => (
-                              <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank})</SelectItem>
+                              <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank} - {acc.document})</SelectItem>
                             ))}
                             {(!pixSettings.accounts || pixSettings.accounts.length === 0) && (
                               <SelectItem value="none" disabled>Nenhuma conta cadastrada</SelectItem>
@@ -4400,13 +4400,13 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
                         <SelectValue placeholder="Selecione a conta PIX">
                           {pixSettings.accounts?.find(a => a.id === editingClient.pixAccountId) 
-                            ? `${pixSettings.accounts.find(a => a.id === editingClient.pixAccountId)?.label} (${pixSettings.accounts.find(a => a.id === editingClient.pixAccountId)?.bank})`
+                            ? `${pixSettings.accounts.find(a => a.id === editingClient.pixAccountId)?.label} (${pixSettings.accounts.find(a => a.id === editingClient.pixAccountId)?.bank} - ${pixSettings.accounts.find(a => a.id === editingClient.pixAccountId)?.document})`
                             : null}
                         </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         {pixSettings.accounts?.map(acc => (
-                          <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank})</SelectItem>
+                          <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank} - {acc.document})</SelectItem>
                         ))}
                         {(!pixSettings.accounts || pixSettings.accounts.length === 0) && (
                           <SelectItem value="none" disabled>Nenhuma conta cadastrada</SelectItem>
@@ -5267,7 +5267,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
               <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                 <SelectItem value="all">Todas Contas PIX</SelectItem>
                 {pixSettings.accounts?.map(acc => (
-                  <SelectItem key={acc.id} value={acc.id}>{acc.label}</SelectItem>
+                  <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank} - {acc.document})</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -5443,7 +5443,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         {pixSettings.accounts?.map(acc => (
-                          <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank})</SelectItem>
+                          <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank} - {acc.document})</SelectItem>
                         ))}
                         {(!pixSettings.accounts || pixSettings.accounts.length === 0) && (
                           <SelectItem value="none" disabled>Nenhuma conta cadastrada</SelectItem>
@@ -5595,7 +5595,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                         </SelectTrigger>
                         <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                           {pixSettings.accounts?.map(acc => (
-                            <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank})</SelectItem>
+                            <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank} - {acc.document})</SelectItem>
                           ))}
                           {(!pixSettings.accounts || pixSettings.accounts.length === 0) && (
                             <SelectItem value="none" disabled>Nenhuma conta cadastrada</SelectItem>
@@ -7614,7 +7614,7 @@ function SettingsManager({
                       <div key={acc.id} className="flex items-center justify-between p-3 bg-[#0f1115] border border-[#2d3139] rounded-xl group">
                         <div className="flex flex-col">
                           <span className="text-white font-bold text-xs">{acc.label}</span>
-                          <span className="text-[#71717a] text-[10px] font-mono">{acc.bank} • {acc.favored}</span>
+                          <span className="text-[#71717a] text-[10px] font-mono">{acc.bank} • {acc.favored} • {acc.document}</span>
                           <span className="text-xs text-[#3b82f6] font-bold">{acc.key}</span>
                         </div>
                         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -9864,13 +9864,15 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
                     <SelectValue>
                       {pixFilter === 'all' 
                         ? "Conta PIX: Todas" 
-                        : pixSettings.accounts?.find(a => a.id === pixFilter)?.label || "Conta PIX"}
+                        : pixSettings.accounts?.find(a => a.id === pixFilter)
+                          ? `${pixSettings.accounts.find(a => a.id === pixFilter)?.label} (${pixSettings.accounts.find(a => a.id === pixFilter)?.document})`
+                          : "Conta PIX"}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                     <SelectItem value="all">Todas as Contas</SelectItem>
                     {pixSettings.accounts?.map(acc => (
-                      <SelectItem key={acc.id} value={acc.id}>{acc.label}</SelectItem>
+                      <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank} - {acc.document})</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -9948,7 +9950,7 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
                         </SelectTrigger>
                         <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                           {pixSettings.accounts?.map(acc => (
-                            <SelectItem key={acc.id} value={acc.id}>{acc.label}</SelectItem>
+                            <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank} - {acc.document})</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -10219,7 +10221,7 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
                         </SelectTrigger>
                         <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                           {pixSettings.accounts?.map(acc => (
-                            <SelectItem key={acc.id} value={acc.id}>{acc.label}</SelectItem>
+                            <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank} - {acc.document})</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -11727,7 +11729,7 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
                         <SelectValue placeholder="Selecione a conta PIX">
                           {pixSettings.accounts?.find(a => a.id === newBudget.pixAccountId) 
-                            ? `${pixSettings.accounts.find(a => a.id === newBudget.pixAccountId)?.label} (${pixSettings.accounts.find(a => a.id === newBudget.pixAccountId)?.bank})`
+                            ? `${pixSettings.accounts.find(a => a.id === newBudget.pixAccountId)?.label} (${pixSettings.accounts.find(a => a.id === newBudget.pixAccountId)?.bank} - ${pixSettings.accounts.find(a => a.id === newBudget.pixAccountId)?.document})`
                             : null}
                         </SelectValue>
                       </SelectTrigger>
@@ -11991,13 +11993,13 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
                       <SelectValue placeholder="Selecione a conta PIX">
                         {pixSettings.accounts?.find(a => a.id === editingBudget.pixAccountId) 
-                          ? `${pixSettings.accounts.find(a => a.id === editingBudget.pixAccountId)?.label} (${pixSettings.accounts.find(a => a.id === editingBudget.pixAccountId)?.bank})`
+                          ? `${pixSettings.accounts.find(a => a.id === editingBudget.pixAccountId)?.label} (${pixSettings.accounts.find(a => a.id === editingBudget.pixAccountId)?.bank} - ${pixSettings.accounts.find(a => a.id === editingBudget.pixAccountId)?.document})`
                           : null}
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       {pixSettings.accounts?.map(acc => (
-                        <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank})</SelectItem>
+                        <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank} - {acc.document})</SelectItem>
                       ))}
                       {(!pixSettings.accounts || pixSettings.accounts.length === 0) && (
                         <SelectItem value="none" disabled>Nenhuma conta cadastrada</SelectItem>
