@@ -9680,6 +9680,33 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
         <p className="text-[#a0a0a0] text-sm">Controle fluxo de caixa, entradas e saídas.</p>
       </div>
 
+      <div className="grid grid-cols-3 md:grid-cols-3 gap-2 md:gap-6 mb-6">
+        <Card className="bg-[#3b82f6] text-white border-none shadow-lg shadow-blue-900/20">
+          <CardContent className="p-3 md:p-6 text-center md:text-left">
+            <p className="text-[9px] md:text-xs text-blue-100 uppercase tracking-wider mb-1 font-semibold">Caixa</p>
+            <h3 className="text-[11px] md:text-3xl font-bold truncate">
+              R$ {financialStats.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </h3>
+          </CardContent>
+        </Card>
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl">
+          <CardContent className="p-3 md:p-6 text-center md:text-left">
+            <p className="text-[9px] md:text-xs text-[#71717a] uppercase tracking-wider mb-1 font-semibold">Receitas</p>
+            <h3 className="text-[11px] md:text-2xl font-bold text-[#10b981] truncate">
+              R$ {financialStats.income.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </h3>
+          </CardContent>
+        </Card>
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl">
+          <CardContent className="p-3 md:p-6 text-center md:text-left">
+            <p className="text-[9px] md:text-xs text-[#71717a] uppercase tracking-wider mb-1 font-semibold">Despesas</p>
+            <h3 className="text-[11px] md:text-2xl font-bold text-[#ef4444] truncate">
+              R$ {financialStats.expense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </h3>
+          </CardContent>
+        </Card>
+      </div>
+
       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-6">
         <div className="flex flex-wrap items-center gap-3 bg-[#1a1d23] border border-[#2d3139] px-4 py-2 rounded-xl shadow-sm">
           <div className="flex items-center gap-2 pr-3 border-r border-[#2d3139]">
@@ -10140,33 +10167,6 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
     ) : (
       <NoAccessList title="Financeiro" />
     )}
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="bg-[#3b82f6] text-white border-none shadow-lg shadow-blue-900/20">
-          <CardContent className="p-6">
-            <p className="text-xs text-blue-100 uppercase tracking-wider mb-1 font-semibold">Caixa no Mês</p>
-            <h3 className="text-3xl font-bold">
-              R$ {financialStats.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-            </h3>
-          </CardContent>
-        </Card>
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl">
-          <CardContent className="p-6">
-            <p className="text-xs text-[#71717a] uppercase tracking-wider mb-1 font-semibold">Receitas Mês</p>
-            <h3 className="text-2xl font-bold text-[#10b981]">
-              R$ {financialStats.income.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-            </h3>
-          </CardContent>
-        </Card>
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl">
-          <CardContent className="p-6">
-            <p className="text-xs text-[#71717a] uppercase tracking-wider mb-1 font-semibold">Despesas Mês</p>
-            <h3 className="text-2xl font-bold text-[#ef4444]">
-              R$ {financialStats.expense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-            </h3>
-          </CardContent>
-        </Card>
-      </div>
 
       {/* Edit Record Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
