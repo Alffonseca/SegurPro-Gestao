@@ -9489,6 +9489,7 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
   const [financialTypeFilter, setFinancialTypeFilter] = useState<'todos' | 'Receita' | 'Despesa'>('todos');
   const [dateFilter, setDateFilter] = useState('all');
   const [pixFilter, setPixFilter] = useState('all');
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState('all');
   const [selectedMonth, setSelectedMonth] = useState<string>(format(new Date(), 'MM'));
   const [selectedYear, setSelectedYear] = useState<string>(format(new Date(), 'yyyy'));
 
@@ -9561,11 +9562,14 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
         return format(d, 'yyyy-MM-dd') === dateFilter;
       });
     }
-    if (pixFilter !== 'all') {
+    if (paymentMethodFilter !== 'all') {
+      filtered = filtered.filter(f => f.paymentMethod === paymentMethodFilter);
+    }
+    if (pixFilter !== 'all' && paymentMethodFilter === 'PIX') {
       filtered = filtered.filter(f => f.pixAccountId === pixFilter);
     }
     return filtered;
-  }, [financials, financialTypeFilter, dateFilter, pixFilter, selectedClientFilter, selectedMonth, selectedYear]);
+  }, [financials, financialTypeFilter, dateFilter, pixFilter, paymentMethodFilter, selectedClientFilter, selectedMonth, selectedYear]);
 
   const financialStats = useMemo(() => {
     const filteredByPeriod = financials.filter(f => {
@@ -9811,23 +9815,42 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
 
             <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
 
-            <Select value={pixFilter} onValueChange={setPixFilter}>
-              <SelectTrigger className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[100px]">
+            <Select value={paymentMethodFilter} onValueChange={setPaymentMethodFilter}>
+              <SelectTrigger className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[120px]">
                 <SelectValue>
-                  {pixFilter === 'all' 
-                    ? "PIX: Todos" 
-                    : pixSettings.accounts?.find(a => a.id === pixFilter)?.label || "Conta PIX"}
+                  {paymentMethodFilter === 'all' ? "Pagamento: Todos" : paymentMethodFilter}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                <SelectItem value="all">Todas as Contas PIX</SelectItem>
-                {pixSettings.accounts?.map(acc => (
-                  <SelectItem key={acc.id} value={acc.id}>{acc.label}</SelectItem>
-                ))}
+                <SelectItem value="all">Formas: Todas</SelectItem>
+                <SelectItem value="PIX">PIX</SelectItem>
+                <SelectItem value="Dinheiro">Dinheiro</SelectItem>
+                <SelectItem value="Cartão">Cartão</SelectItem>
               </SelectContent>
             </Select>
 
-            {(dateFilter !== 'all' || financialTypeFilter !== 'todos' || selectedClientFilter !== 'all' || pixFilter !== 'all') && (
+            {paymentMethodFilter === 'PIX' && (
+              <>
+                <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
+                <Select value={pixFilter} onValueChange={setPixFilter}>
+                  <SelectTrigger className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[120px]">
+                    <SelectValue>
+                      {pixFilter === 'all' 
+                        ? "Conta PIX: Todas" 
+                        : pixSettings.accounts?.find(a => a.id === pixFilter)?.label || "Conta PIX"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                    <SelectItem value="all">Todas as Contas</SelectItem>
+                    {pixSettings.accounts?.map(acc => (
+                      <SelectItem key={acc.id} value={acc.id}>{acc.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </>
+            )}
+
+            {(dateFilter !== 'all' || financialTypeFilter !== 'todos' || selectedClientFilter !== 'all' || pixFilter !== 'all' || paymentMethodFilter !== 'all') && (
               <Button 
                 variant="ghost" 
                 size="icon" 
@@ -9837,6 +9860,7 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
                   setFinancialTypeFilter('todos');
                   setSelectedClientFilter('all');
                   setPixFilter('all');
+                  setPaymentMethodFilter('all');
                 }}
               >
                 <X size={12} />
