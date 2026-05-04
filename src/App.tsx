@@ -1755,21 +1755,32 @@ function SignaturePortalPage({ onVerify }: { onVerify: (token: string) => void }
     setLoading(true);
     setError(null);
     try {
+      // Use single where clause to avoid composite index requirement
       const q = query(
         collection(db, 'signature_requests'), 
-        where('accessCode', '==', code.trim()), 
-        where('status', '==', 'pending')
+        where('accessCode', '==', code.trim().replace(/\s/g, '')),
+        limit(10) // Small limit for safety
       );
       const querySnap = await getDocs(q);
       
-      if (!querySnap.empty) {
-        onVerify(querySnap.docs[0].id);
+      // Filter by status in memory to avoid complex query issues
+      const pendingDoc = querySnap.docs.find(doc => doc.data().status === 'pending');
+      
+      if (pendingDoc) {
+        onVerify(pendingDoc.id);
+      } else if (querySnap.empty) {
+        setError('Código inválido ou não encontrado.');
       } else {
-        setError('Código inválido, expirado ou já utilizado.');
+        setError('Este código já foi utilizado ou está expirado.');
       }
-    } catch (err) {
-      console.error(err);
-      setError('Erro ao validar código. Tente novamente.');
+    } catch (err: any) {
+      console.error('Erro na validação do código:', err);
+      // provide more context if it is a permission issue
+      const msg = err.code === 'permission-denied' 
+        ? 'Erro de permissão no servidor. Contate o administrador.' 
+        : (err.message || 'Tente novamente.');
+      setError(`Erro ao validar código: ${msg}`);
+      toast.error('Falha na comunicação com o servidor.');
     } finally {
       setLoading(false);
     }
@@ -3886,7 +3897,15 @@ export default function MainApp() {
                    <p className="text-[10px] uppercase font-bold text-[#71717a] px-1">Portal de Assinatura</p>
                    <div className="flex gap-2">
                      <Input readOnly value={generatedSignatureInfo.portalUrl} className="bg-[#0f1115] border-[#2d3139] text-[10px] text-[#71717a] h-9" />
-                     <Button size="icon" variant="outline" className="h-9 w-9 border-[#2d3139]" onClick={() => {
+                     <Button size="icon" variant="outline" className="h-9 w-9 border-[#2d3139]" title="Copiar e Enviar WhatsApp" onClick={() => {
+                        const message = `Olá, aqui está o link para você assinar o documento:\n\n🔗 *Acesse o portal:* ${generatedSignatureInfo.portalUrl}\n🔢 *Código de Acesso:* ${generatedSignatureInfo.accessCode}\n\n_Assinatura digital Segurpro Gestão_`;
+                        navigator.clipboard.writeText(message);
+                        window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+                        toast.success('Link copiado e WhatsApp aberto!');
+                     }}>
+                        <Share2 size={14} className="text-blue-500" />
+                     </Button>
+                     <Button size="icon" variant="outline" className="h-9 w-9 border-[#2d3139]" title="Copiar Link apenas" onClick={() => {
                         navigator.clipboard.writeText(generatedSignatureInfo.portalUrl);
                         toast.success('Link do portal copiado!');
                      }}>
