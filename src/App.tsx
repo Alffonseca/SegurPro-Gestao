@@ -6218,25 +6218,25 @@ function SuperAdminPanel({ companies = [], financials = [], saasSettings, user, 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <Card className="bg-[#1a1d23] border-[#2d3139] p-6 text-center shadow-xl hover:border-blue-500/20 transition-all group">
           <h4 className="text-[#71717a] text-[10px] uppercase tracking-[0.2em] mb-3 font-black group-hover:text-blue-400">Total Parceiros</h4>
-          <p className="text-4xl font-black text-white tracking-tighter">{companies.length}</p>
+          <p className="text-3xl font-black text-white tracking-tighter">{companies.length}</p>
         </Card>
         <Card className="bg-[#1a1d23] border-[#2d3139] p-6 text-center shadow-xl hover:border-emerald-500/20 transition-all group">
           <h4 className="text-[#71717a] text-[10px] uppercase tracking-[0.2em] mb-3 font-black group-hover:text-emerald-400">Status Atividade</h4>
           <div className="flex justify-center gap-4 items-baseline">
-            <span className="text-3xl font-black text-[#10b981]">{activeCompaniesCount}</span>
+            <span className="text-2xl font-black text-[#10b981]">{activeCompaniesCount}</span>
             <span className="text-[#2d3139] text-xl font-thin">/</span>
-            <span className="text-3xl font-black text-[#ef4444]">{companies.length - activeCompaniesCount}</span>
+            <span className="text-2xl font-black text-[#ef4444]">{companies.length - activeCompaniesCount}</span>
           </div>
         </Card>
         <Card className="bg-[#1a1d23] border-[#2d3139] p-6 text-center shadow-xl hover:border-blue-500/20 transition-all group">
           <h4 className="text-[#71717a] text-[10px] uppercase tracking-[0.2em] mb-3 font-black group-hover:text-blue-400">MRR Assinaturas</h4>
-          <p className="text-3xl font-black text-[#3b82f6] tracking-tighter">
+          <p className="text-2xl font-black text-[#3b82f6] tracking-tighter">
             R$ {saasRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </p>
         </Card>
         <Card className="bg-[#1a1d23] border-blue-500/20 border-2 p-6 text-center shadow-2xl shadow-blue-500/5 transition-all group">
           <h4 className="text-[#3b82f6] text-[10px] uppercase tracking-[0.2em] mb-3 font-black">Faturamento SaaS Total</h4>
-          <p className="text-3xl font-black text-white tracking-tighter">
+          <p className="text-2xl font-black text-white tracking-tighter">
             R$ {totalGrossRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </p>
         </Card>
@@ -7614,7 +7614,8 @@ function SettingsManager({
                       <div key={acc.id} className="flex items-center justify-between p-3 bg-[#0f1115] border border-[#2d3139] rounded-xl group">
                         <div className="flex flex-col">
                           <span className="text-white font-bold text-xs">{acc.label}</span>
-                          <span className="text-[#71717a] text-[10px] font-mono">{acc.key}</span>
+                          <span className="text-[#71717a] text-[10px] font-mono">{acc.bank} • {acc.favored}</span>
+                          <span className="text-xs text-[#3b82f6] font-bold">{acc.key}</span>
                         </div>
                         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <Button size="icon" variant="ghost" className="h-7 w-7 text-blue-400" onClick={() => {
@@ -7640,22 +7641,49 @@ function SettingsManager({
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="space-y-2">
-                <Label>Identificador</Label>
+                <Label>Identificador (Ex: Principal)</Label>
                 <Input 
                   value={currentPix.label || ''} 
                   onChange={e => setCurrentPix({...currentPix, label: e.target.value})} 
-                  placeholder="Ex: CPF Principal"
+                  placeholder="Ex: Itaú Empresa"
                   className="bg-[#0f1115] border-[#2d3139] text-white" 
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Chave PIX</Label>
-                <Input 
-                  value={currentPix.key || ''} 
-                  onChange={e => setCurrentPix({...currentPix, key: e.target.value})} 
-                  placeholder="A chave em si"
-                  className="bg-[#0f1115] border-[#2d3139] text-white" 
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Chave PIX</Label>
+                  <Input 
+                    value={currentPix.key || ''} 
+                    onChange={e => setCurrentPix({...currentPix, key: e.target.value})} 
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Banco</Label>
+                  <Input 
+                    value={currentPix.bank || ''} 
+                    onChange={e => setCurrentPix({...currentPix, bank: e.target.value})} 
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Favorecido</Label>
+                  <Input 
+                    value={currentPix.favored || ''} 
+                    onChange={e => setCurrentPix({...currentPix, favored: e.target.value})} 
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>CPF/CNPJ</Label>
+                  <Input 
+                    value={currentPix.document || ''} 
+                    onChange={e => setCurrentPix({...currentPix, document: e.target.value})} 
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  />
+                </div>
               </div>
             </div>
             <DialogFooter>
@@ -9461,6 +9489,33 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
   const [financialTypeFilter, setFinancialTypeFilter] = useState<'todos' | 'Receita' | 'Despesa'>('todos');
   const [dateFilter, setDateFilter] = useState('all');
   const [pixFilter, setPixFilter] = useState('all');
+  const [selectedMonth, setSelectedMonth] = useState<string>(format(new Date(), 'MM'));
+  const [selectedYear, setSelectedYear] = useState<string>(format(new Date(), 'yyyy'));
+
+  const months = [
+    { value: '01', label: 'Janeiro' },
+    { value: '02', label: 'Fevereiro' },
+    { value: '03', label: 'Março' },
+    { value: '04', label: 'Abril' },
+    { value: '05', label: 'Maio' },
+    { value: '06', label: 'Junho' },
+    { value: '07', label: 'Julho' },
+    { value: '08', label: 'Agosto' },
+    { value: '09', label: 'Setembro' },
+    { value: '10', label: 'Outubro' },
+    { value: '11', label: 'Novembro' },
+    { value: '12', label: 'Dezembro' },
+  ];
+
+  const years = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const availableYears = financials.map(f => {
+      const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
+      return d.getFullYear();
+    });
+    const uniqueYears = Array.from(new Set([...availableYears, currentYear])).sort((a, b) => b - a);
+    return uniqueYears.map(y => ({ value: y.toString(), label: y.toString() }));
+  }, [financials]);
 
   const clientsWithFinancials = useMemo(() => {
     const clientsWithDataIds = Array.from(new Set(financials.map(f => f.clientId).filter(Boolean)));
@@ -9493,6 +9548,13 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
     if (financialTypeFilter !== 'todos') {
       filtered = filtered.filter(f => f.type === financialTypeFilter);
     }
+    
+    // Filtro por Mês/Ano (sempre ativo para os totais e lista básica)
+    filtered = filtered.filter(f => {
+      const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
+      return format(d, 'MM') === selectedMonth && format(d, 'yyyy') === selectedYear;
+    });
+
     if (dateFilter && dateFilter !== 'all') {
       filtered = filtered.filter(f => {
         const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
@@ -9503,17 +9565,22 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
       filtered = filtered.filter(f => f.pixAccountId === pixFilter);
     }
     return filtered;
-  }, [financials, financialTypeFilter, dateFilter, pixFilter, selectedClientFilter]);
+  }, [financials, financialTypeFilter, dateFilter, pixFilter, selectedClientFilter, selectedMonth, selectedYear]);
 
   const financialStats = useMemo(() => {
-    const income = financials.filter(f => f.type === 'Receita').reduce((acc, f) => acc + f.value, 0);
-    const expense = financials.filter(f => f.type === 'Despesa').reduce((acc, f) => acc + f.value, 0);
+    const filteredByPeriod = financials.filter(f => {
+      const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
+      return format(d, 'MM') === selectedMonth && format(d, 'yyyy') === selectedYear;
+    });
+
+    const income = filteredByPeriod.filter(f => f.type === 'Receita').reduce((acc, f) => acc + f.value, 0);
+    const expense = filteredByPeriod.filter(f => f.type === 'Despesa').reduce((acc, f) => acc + f.value, 0);
     return {
       income,
       expense,
       balance: income - expense
     };
-  }, [financials]);
+  }, [financials, selectedMonth, selectedYear]);
 
   const [newRecord, setNewRecord] = useState<Partial<FinancialRecord>>({
     type: 'Receita',
@@ -9680,6 +9747,34 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
                 </Command>
               </PopoverContent>
             </Popover>
+
+            <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
+
+            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+              <SelectTrigger className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[100px]">
+                <SelectValue>
+                  {months.find(m => m.value === selectedMonth)?.label}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                {months.map(m => (
+                  <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
+
+            <Select value={selectedYear} onValueChange={setSelectedYear}>
+              <SelectTrigger className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[70px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                {years.map(y => (
+                  <SelectItem key={y.value} value={y.value}>{y.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
             <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
 
@@ -10025,7 +10120,7 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="bg-[#3b82f6] text-white border-none shadow-lg shadow-blue-900/20">
           <CardContent className="p-6">
-            <p className="text-xs text-blue-100 uppercase tracking-wider mb-1 font-semibold">Total em Caixa</p>
+            <p className="text-xs text-blue-100 uppercase tracking-wider mb-1 font-semibold">Caixa no Mês</p>
             <h3 className="text-3xl font-bold">
               R$ {financialStats.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </h3>
@@ -10033,7 +10128,7 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
         </Card>
         <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl">
           <CardContent className="p-6">
-            <p className="text-xs text-[#71717a] uppercase tracking-wider mb-1 font-semibold">Total Receitas</p>
+            <p className="text-xs text-[#71717a] uppercase tracking-wider mb-1 font-semibold">Receitas Mês</p>
             <h3 className="text-2xl font-bold text-[#10b981]">
               R$ {financialStats.income.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </h3>
@@ -10041,7 +10136,7 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
         </Card>
         <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl">
           <CardContent className="p-6">
-            <p className="text-xs text-[#71717a] uppercase tracking-wider mb-1 font-semibold">Total Despesas</p>
+            <p className="text-xs text-[#71717a] uppercase tracking-wider mb-1 font-semibold">Despesas Mês</p>
             <h3 className="text-2xl font-bold text-[#ef4444]">
               R$ {financialStats.expense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </h3>
