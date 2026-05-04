@@ -7,9 +7,33 @@ function Popover({ ...props }: PopoverPrimitive.Root.Props) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />
 }
 
-function PopoverTrigger({ ...props }: PopoverPrimitive.Trigger.Props) {
-  return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />
-}
+const PopoverTrigger = React.forwardRef<
+  HTMLButtonElement,
+  PopoverPrimitive.Trigger.Props & { asChild?: boolean }
+>(({ asChild, children, ...props }, ref) => {
+  if (asChild && React.isValidElement(children)) {
+    return (
+      <PopoverPrimitive.Trigger
+        data-slot="popover-trigger"
+        render={React.cloneElement(children as React.ReactElement, {
+          ref,
+        } as any)}
+        {...props}
+      />
+    )
+  }
+
+  return (
+    <PopoverPrimitive.Trigger
+      data-slot="popover-trigger"
+      ref={ref}
+      {...props}
+    >
+      {children}
+    </PopoverPrimitive.Trigger>
+  )
+})
+PopoverTrigger.displayName = "PopoverTrigger"
 
 function PopoverContent({
   className,

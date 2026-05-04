@@ -9,17 +9,65 @@ function Dialog({ ...props }: DialogPrimitive.Root.Props) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />
 }
 
-function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {
-  return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />
-}
+const DialogTrigger = React.forwardRef<
+  HTMLButtonElement,
+  DialogPrimitive.Trigger.Props & { asChild?: boolean }
+>(({ asChild, children, ...props }, ref) => {
+  if (asChild && React.isValidElement(children)) {
+    return (
+      <DialogPrimitive.Trigger
+        data-slot="dialog-trigger"
+        render={React.cloneElement(children as React.ReactElement, {
+          ref,
+        } as any)}
+        {...props}
+      />
+    )
+  }
+
+  return (
+    <DialogPrimitive.Trigger
+      data-slot="dialog-trigger"
+      ref={ref}
+      {...props}
+    >
+      {children}
+    </DialogPrimitive.Trigger>
+  )
+})
+DialogTrigger.displayName = "DialogTrigger"
 
 function DialogPortal({ ...props }: DialogPrimitive.Portal.Props) {
   return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />
 }
 
-function DialogClose({ ...props }: DialogPrimitive.Close.Props) {
-  return <DialogPrimitive.Close data-slot="dialog-close" {...props} />
-}
+const DialogClose = React.forwardRef<
+  HTMLButtonElement,
+  DialogPrimitive.Close.Props & { asChild?: boolean }
+>(({ asChild, children, ...props }, ref) => {
+  if (asChild && React.isValidElement(children)) {
+    return (
+      <DialogPrimitive.Close
+        data-slot="dialog-close"
+        render={React.cloneElement(children as React.ReactElement, {
+          ref,
+        } as any)}
+        {...props}
+      />
+    )
+  }
+
+  return (
+    <DialogPrimitive.Close
+      data-slot="dialog-close"
+      ref={ref}
+      {...props}
+    >
+      {children}
+    </DialogPrimitive.Close>
+  )
+})
+DialogClose.displayName = "DialogClose"
 
 function DialogOverlay({
   className,
