@@ -3292,15 +3292,11 @@ export default function MainApp() {
           
           {activeTab === 'logs' && (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                    <History className="text-blue-500" />
-                    Logs do Sistema
-                  </h2>
-                  <div className="flex items-center gap-3 mt-1">
-                    <p className="text-[#a0a0a0] text-sm">Histórico de ações e acessos dos usuários da empresa.</p>
-                    {(() => {
+              <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
+                <h2 className="text-3xl font-black tracking-tighter text-white uppercase italic text-[#3b82f6]">Logs do Sistema</h2>
+                <div className="flex items-center justify-between">
+                  <p className="text-[#a0a0a0] text-sm">Histórico de ações e acessos dos usuários da empresa.</p>
+                  {(() => {
                       const onlineCount = users.filter(u => u.lastSeen && Date.now() - u.lastSeen.toDate().getTime() < 300000).length;
                       return (
                         <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
@@ -3349,11 +3345,10 @@ export default function MainApp() {
                     <RefreshCw size={16} className="mr-2" /> Atualizar
                   </Button>
                 </div>
-              </div>
 
-              <Card 
-                className="border-[#2d3139] bg-[#1a1d23] overflow-hidden shadow-xl focus:outline-none focus:ring-1 focus:ring-blue-500/50"
-                tabIndex={0}
+                <Card 
+                  className="border-[#2d3139] bg-[#1a1d23] overflow-hidden shadow-xl focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+                  tabIndex={0}
                 onKeyDown={(e) => {
                   const filteredLogs = logs.filter(log => {
                     const userMatch = logSearchUser === 'all' || log.userId === logSearchUser || log.userName === logSearchUser;
@@ -6248,67 +6243,6 @@ function SuperAdminPanel({ companies = [], financials = [], saasSettings, user, 
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
-        <Card className="lg:col-span-2 bg-[#1a1d23] border-[#2d3139] overflow-hidden flex flex-col min-h-[450px] shadow-2xl">
-          <CardHeader className="bg-blue-500/5 border-b border-[#2d3139] px-6 py-5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-500/10 rounded-lg">
-                  <Ticket className="text-blue-500" size={18} />
-                </div>
-                <CardTitle className="text-sm font-black text-white uppercase tracking-[0.2em] leading-none">Código Master</CardTitle>
-              </div>
-              <Button 
-                size="sm" 
-                className="bg-blue-500 hover:bg-blue-600 text-white font-bold px-4 h-9 shadow-lg shadow-blue-500/20"
-                onClick={handleGenerateRegCode}
-                disabled={isGeneratingCode}
-              >
-                {isGeneratingCode ? <RefreshCw className="animate-spin h-3 w-3 mr-2" /> : <Plus className="h-3 w-3 mr-2" />}
-                REGERAR
-              </Button>
-            </div>
-            <CardDescription className="text-[10px] mt-2 uppercase tracking-wider font-medium text-[#71717a]">Código único de convite para novos parceiros SaaS</CardDescription>
-          </CardHeader>
-          <CardContent className="p-10 flex flex-col items-center justify-center bg-[#0f1115]/30 flex-1">
-            {regCodes.filter(c => c.status !== 'used').length > 0 ? (
-              <div className="flex flex-col items-center gap-6 w-full max-w-sm">
-                <div className="w-full bg-[#1a1d23] border-2 border-dashed border-[#2d3139] p-8 rounded-2xl flex flex-col items-center gap-4 group hover:border-blue-500/50 transition-colors">
-                  <div className="text-[10px] text-[#71717a] font-black uppercase tracking-[0.3em]">Convite Ativo</div>
-                  <code className="text-4xl font-black text-white tracking-[0.2em] select-all">
-                    {regCodes.filter(c => c.status !== 'used').sort((a,b) => (b.createdAt as any).seconds - (a.createdAt as any).seconds)[0]?.code}
-                  </code>
-                </div>
-                <Button 
-                  className="w-full bg-[#1a1d23] border border-[#2d3139] text-white hover:bg-white/5 h-12 font-bold uppercase tracking-wider gap-2 shadow-xl shadow-black/40"
-                  onClick={() => {
-                    const activeCode = regCodes.filter(c => c.status !== 'used').sort((a,b) => (b.createdAt as any).seconds - (a.createdAt as any).seconds)[0]?.code;
-                    if (activeCode) {
-                      navigator.clipboard.writeText(activeCode);
-                      toast.success("Código copiado!");
-                    }
-                  }}
-                >
-                  <Copy size={16} />
-                  COPIAR CÓDIGO
-                </Button>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-4 text-center py-10">
-                <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-2">
-                  <Ticket size={32} className="text-[#3b82f6]/30" />
-                </div>
-                <p className="text-[#71717a] text-sm">Nenhum código ativo de convite.</p>
-                <Button onClick={handleGenerateRegCode} disabled={isGeneratingCode} className="bg-blue-500 font-bold uppercase tracking-widest px-6 h-11 rounded-xl">
-                  Gerar Convite Master
-                </Button>
-              </div>
-            )}
-          </CardContent>
-          <div className="p-3 bg-[#0f1115] border-t border-[#2d3139] text-[9px] text-[#555] italic text-center">
-            Este código permite que novos parceiros se retirem da fase de demonstração e criem sua própria empresa SaaS.
-          </div>
-        </Card>
-
         <Card className="lg:col-span-2 bg-[#1a1d23] border-[#2d3139] p-4 flex flex-col min-h-[500px]">
           <div className="flex items-center gap-3 text-yellow-500 mb-4 min-w-fit">
             <Database size={20} />
@@ -6383,6 +6317,67 @@ function SuperAdminPanel({ companies = [], financials = [], saasSettings, user, 
                 </div>
               </div>
             )}
+          </div>
+        </Card>
+
+        <Card className="lg:col-span-2 bg-[#1a1d23] border-[#2d3139] overflow-hidden flex flex-col min-h-[450px] shadow-2xl">
+          <CardHeader className="bg-blue-500/5 border-b border-[#2d3139] px-6 py-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-500/10 rounded-lg">
+                  <Ticket className="text-blue-500" size={18} />
+                </div>
+                <CardTitle className="text-sm font-black text-white uppercase tracking-[0.2em] leading-none">Código Master</CardTitle>
+              </div>
+              <Button 
+                size="sm" 
+                className="bg-blue-500 hover:bg-blue-600 text-white font-bold px-4 h-9 shadow-lg shadow-blue-500/20"
+                onClick={handleGenerateRegCode}
+                disabled={isGeneratingCode}
+              >
+                {isGeneratingCode ? <RefreshCw className="animate-spin h-3 w-3 mr-2" /> : <Plus className="h-3 w-3 mr-2" />}
+                REGERAR
+              </Button>
+            </div>
+            <CardDescription className="text-[10px] mt-2 uppercase tracking-wider font-medium text-[#71717a]">Código único de convite para novos parceiros SaaS</CardDescription>
+          </CardHeader>
+          <CardContent className="p-10 flex flex-col items-center justify-center bg-[#0f1115]/30 flex-1">
+            {regCodes.filter(c => c.status !== 'used').length > 0 ? (
+              <div className="flex flex-col items-center gap-6 w-full max-w-sm">
+                <div className="w-full bg-[#1a1d23] border-2 border-dashed border-[#2d3139] p-8 rounded-2xl flex flex-col items-center gap-4 group hover:border-blue-500/50 transition-colors">
+                  <div className="text-[10px] text-[#71717a] font-black uppercase tracking-[0.3em]">Convite Ativo</div>
+                  <code className="text-4xl font-black text-white tracking-[0.2em] select-all">
+                    {regCodes.filter(c => c.status !== 'used').sort((a,b) => (b.createdAt as any).seconds - (a.createdAt as any).seconds)[0]?.code}
+                  </code>
+                </div>
+                <Button 
+                  className="w-full bg-[#1a1d23] border border-[#2d3139] text-white hover:bg-white/5 h-12 font-bold uppercase tracking-wider gap-2 shadow-xl shadow-black/40"
+                  onClick={() => {
+                    const activeCode = regCodes.filter(c => c.status !== 'used').sort((a,b) => (b.createdAt as any).seconds - (a.createdAt as any).seconds)[0]?.code;
+                    if (activeCode) {
+                      navigator.clipboard.writeText(activeCode);
+                      toast.success("Código copiado!");
+                    }
+                  }}
+                >
+                  <Copy size={16} />
+                  COPIAR CÓDIGO
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-4 text-center py-10">
+                <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-2">
+                  <Ticket size={32} className="text-[#3b82f6]/30" />
+                </div>
+                <p className="text-[#71717a] text-sm">Nenhum código ativo de convite.</p>
+                <Button onClick={handleGenerateRegCode} disabled={isGeneratingCode} className="bg-blue-500 font-bold uppercase tracking-widest px-6 h-11 rounded-xl">
+                  Gerar Convite Master
+                </Button>
+              </div>
+            )}
+          </CardContent>
+          <div className="p-3 bg-[#0f1115] border-t border-[#2d3139] text-[9px] text-[#555] italic text-center">
+            Este código permite que novos parceiros se retirem da fase de demonstração e criem sua própria empresa SaaS.
           </div>
         </Card>
       </div>
@@ -7308,11 +7303,6 @@ function SettingsManager({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
-        <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest text-[#3b82f6]">Configurações</h2>
-        <p className="text-[#a0a0a0] text-sm">Gerencie os dados globais da sua empresa e seu perfil.</p>
-      </div>
-
       {isSuperAdmin && allCompanies.length > 0 && (
         <Card className="bg-[#3b82f6]/5 border border-[#3b82f6]/20 p-6 rounded-xl mb-8">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
@@ -7326,13 +7316,11 @@ function SettingsManager({
             <div className="w-full md:w-64">
               <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
                 <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                  <SelectValue>
-                    {allCompanies.find(c => c.id === selectedCompanyId)?.name || 'Empresa S/N'}
-                  </SelectValue>
+                  <SelectValue placeholder="Selecione a Empresa" />
                 </SelectTrigger>
-                <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-[#e0e0e0]">
+                <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                   {allCompanies.map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.name || 'Empresa S/N'}</SelectItem>
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -7341,426 +7329,346 @@ function SettingsManager({
         </Card>
       )}
 
-      <RoleSettings companyId={companyId} customRoles={customRoles} userRoles={userRoles} />
-
-      <div className="flex flex-col md:flex-row justify-between items-center bg-[#3b82f6]/10 border border-[#3b82f6]/20 p-6 rounded-xl gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <h3 className="text-lg font-bold text-white tracking-tight">Código de Acesso Técnico</h3>
-            <Badge className="bg-[#3b82f6] text-white">Ativo</Badge>
-          </div>
-          <p className="text-sm text-[#71717a]">Novos técnicos podem entrar na sua empresa usando este código único. Ele muda automaticamente após o primeiro uso.</p>
-        </div>
-        <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
-          <div className="bg-[#0f1115] px-4 py-2.5 rounded-lg border border-[#2d3139] text-[#3b82f6] font-mono font-bold text-xl w-full md:w-auto text-center">
-            {currentCompany?.inviteCode || '...'}
-          </div>
-          <div className="flex gap-2 w-full sm:w-auto">
-            <Button 
-              variant="default" 
-              className="bg-[#3b82f6] hover:bg-[#2563eb] text-white flex-1 sm:flex-none"
-              onClick={() => {
-                const code = currentCompany?.inviteCode || '';
-                if (code) {
-                  navigator.clipboard.writeText(code);
-                  toast.success('Código copiado!');
-                }
-              }}
-            >
-              Copiar
-            </Button>
-            <Button 
-              variant="outline" 
-              className="border-[#2d3139] text-[#a0a0a0] hover:text-white flex-1 sm:flex-none"
-              onClick={handleRotateInviteCode}
-            >
-              <RefreshCw size={16} className="mr-2" />
-              Mudar código
-            </Button>
-          </div>
-        </div>
+      <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
+        <h2 className="text-3xl font-black tracking-tighter text-white uppercase italic text-[#3b82f6]">Configurações</h2>
+        <p className="text-[#a0a0a0] text-sm uppercase tracking-[0.2em] font-medium">Controle de acesso, dados da empresa e backup.</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Settings className="text-[#3b82f6]" size={20} />
-              Configurações Gerais
-            </CardTitle>
-            <CardDescription className="text-[#71717a]">
-              Personalize o nome da empresa e a logo do sistema.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="companyName" className="text-[#a0a0a0]">Nome da Empresa</Label>
-              <Input 
-                id="companyName" 
-                value={localApp.companyName || ''} 
-                onChange={e => setLocalApp({ ...localApp, companyName: e.target.value })} 
-                className="bg-[#0f1115] border-[#2d3139] text-white" 
-              />
+        <div className="grid grid-cols-1 md:grid-cols-2 justify-between items-center bg-[#3b82f6]/10 border border-[#3b82f6]/20 p-6 rounded-xl gap-4 mb-8">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-bold text-white tracking-tight">Código de Acesso Técnico</h3>
+              <Badge className="bg-[#3b82f6] text-white">Ativo</Badge>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="companyDoc" className="text-[#a0a0a0]">CPF/CNPJ da Empresa</Label>
-                <Input 
-                  id="companyDoc" 
-                  value={localApp.document || ''} 
-                  onChange={e => setLocalApp({ ...localApp, document: e.target.value })} 
-                  className="bg-[#0f1115] border-[#2d3139] text-white" 
-                  placeholder="00.000.000/0001-00"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="companyResp" className="text-[#a0a0a0]">Responsável</Label>
-                <Input 
-                  id="companyResp" 
-                  value={localApp.responsible || ''} 
-                  onChange={e => setLocalApp({ ...localApp, responsible: e.target.value })} 
-                  className="bg-[#0f1115] border-[#2d3139] text-white" 
-                />
-              </div>
+            <p className="text-sm text-[#71717a]">Novos técnicos podem entrar na sua empresa usando este código único.</p>
+          </div>
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+            <div className="bg-[#0f1115] px-4 py-2.5 rounded-lg border border-[#2d3139] text-[#3b82f6] font-mono font-bold text-xl w-full md:justify-end text-center flex-1">
+              {currentCompany?.inviteCode || '...'}
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="companyPhone" className="text-[#a0a0a0]">Telefone de Contato</Label>
-                <Input 
-                  id="companyPhone" 
-                  value={localApp.companyPhone || ''} 
-                  onChange={e => setLocalApp({ ...localApp, companyPhone: e.target.value })} 
-                  className="bg-[#0f1115] border-[#2d3139] text-white" 
-                  placeholder="(00) 00000-0000"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="companyEmail" className="text-[#a0a0a0]">E-mail de Contato</Label>
-                <Input 
-                  id="companyEmail" 
-                  value={localApp.companyEmail || ''} 
-                  onChange={e => setLocalApp({ ...localApp, companyEmail: e.target.value })} 
-                  className="bg-[#0f1115] border-[#2d3139] text-white" 
-                  placeholder="empresa@exemplo.com"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="companyAddress" className="text-[#a0a0a0]">Endereço</Label>
-                <Input 
-                  id="companyAddress" 
-                  value={localApp.address || ''} 
-                  onChange={e => setLocalApp({ ...localApp, address: e.target.value })} 
-                  className="bg-[#0f1115] border-[#2d3139] text-white" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="companyNeighborhood" className="text-[#a0a0a0]">Bairro</Label>
-                <Input 
-                  id="companyNeighborhood" 
-                  value={localApp.neighborhood || ''} 
-                  onChange={e => setLocalApp({ ...localApp, neighborhood: e.target.value })} 
-                  className="bg-[#0f1115] border-[#2d3139] text-white" 
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="companyCity" className="text-[#a0a0a0]">Cidade - UF</Label>
-                <Input 
-                  id="companyCity" 
-                  value={localApp.city || ''} 
-                  onChange={e => setLocalApp({ ...localApp, city: e.target.value })} 
-                  className="bg-[#0f1115] border-[#2d3139] text-white" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="companyCep" className="text-[#a0a0a0]">CEP</Label>
-                <Input 
-                  id="companyCep" 
-                  value={localApp.cep || ''} 
-                  onChange={e => setLocalApp({ ...localApp, cep: e.target.value })} 
-                  className="bg-[#0f1115] border-[#2d3139] text-white" 
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-[#a0a0a0]">Logo da Empresa</Label>
-              <div className="flex flex-col gap-4">
-                {localApp.logoUrl && (
-                  <div className="h-20 w-auto flex items-center justify-center bg-[#0f1115] rounded-lg border border-[#2d3139] p-2">
-                    <img src={localApp.logoUrl} alt="Logo Preview" className="max-h-full max-w-full object-contain" referrerPolicy="no-referrer" />
-                  </div>
-                )}
-                <Input 
-                  type="file" 
-                  accept="image/*" 
-                  onChange={handleLogoUpload}
-                  className="bg-[#0f1115] border-[#2d3139] text-white file:bg-[#3b82f6] file:text-white file:border-none file:px-4 file:py-1 file:rounded-md file:mr-4 file:cursor-pointer" 
-                />
-                <p className="text-[10px] text-[#71717a]">Recomendado: PNG ou JPG com fundo transparente.</p>
-              </div>
-            </div>
-            <div className="space-y-4 pt-4 border-t border-[#2d3139]">
-              <Label className="text-[#a0a0a0]">Assinatura Digital (Recibos e Contratos)</Label>
-              <SignaturePad 
-                value={localApp.signatureUrl} 
-                onChange={(val) => setLocalApp({ ...localApp, signatureUrl: val })} 
-              />
-              <p className="text-[10px] text-[#71717a]">Use o mouse ou tela touch para assinar acima. Ela será usada em todos os documentos.</p>
-            </div>
-            <Button onClick={handleSaveApp} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none mt-4">
-              Salvar Configurações Gerais
-            </Button>
-          </CardContent>
-        </Card>
-
-        <div className="space-y-8">
-          <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <UserIcon className="text-[#3b82f6]" size={20} />
-                Perfil do Usuário
-              </CardTitle>
-              <CardDescription className="text-[#71717a]">
-                Atualize seu nome de exibição e senha de acesso.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="profileName" className="text-[#a0a0a0]">Nome de Exibição</Label>
-                <Input 
-                  id="profileName" 
-                  value={newDisplayName} 
-                  onChange={e => setNewDisplayName(e.target.value)} 
-                  className="bg-[#0f1115] border-[#2d3139] text-white" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="profileEmail" className="text-[#a0a0a0]">E-mail (Apenas leitura)</Label>
-                <Input 
-                  id="profileEmail" 
-                  value={user.email || ''} 
-                  disabled
-                  className="bg-[#0f1115] border-[#2d3139] text-[#71717a] cursor-not-allowed" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="profilePass" className="text-[#a0a0a0]">Nova Senha (Deixe em branco para não alterar)</Label>
-                <Input 
-                  id="profilePass" 
-                  type="password"
-                  value={newPassword} 
-                  onChange={e => setNewPassword(e.target.value)} 
-                  placeholder="Mínimo 6 caracteres"
-                  className="bg-[#0f1115] border-[#2d3139] text-white" 
-                />
-              </div>
+            <div className="flex gap-2 w-full sm:w-auto">
               <Button 
-                onClick={handleUpdateProfile} 
-                disabled={isUpdatingProfile}
-                className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white"
+                variant="default" 
+                className="bg-[#3b82f6] hover:bg-[#2563eb] text-white flex-1 sm:flex-none uppercase font-bold text-xs"
+                onClick={() => {
+                  const code = currentCompany?.inviteCode || '';
+                  if (code) {
+                    navigator.clipboard.writeText(code);
+                    toast.success('Código copiado!');
+                  }
+                }}
               >
-                {isUpdatingProfile ? 'Atualizando...' : 'Salvar Perfil'}
+                Copiar
               </Button>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Database className="text-[#3b82f6]" size={20} />
-                Backup e Restauração
-              </CardTitle>
-              <CardDescription className="text-[#71717a]">
-                Gerencie a segurança dos seus dados.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-xs text-[#a0a0a0]">
-                O backup inclui todos os clientes, visitas técnicas, orçamentos e registros financeiros vinculados à sua empresa.
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Button 
-                  onClick={handleDownloadBackup} 
-                  disabled={isBackingUp || isRestoring}
-                  variant="outline"
-                  className="border-blue-500/30 text-blue-400 hover:bg-blue-500 hover:text-white h-11"
-                >
-                  {isBackingUp ? (
-                    <>
-                      <RefreshCw size={16} className="mr-2 animate-spin" />
-                      Gerando...
-                    </>
-                  ) : (
-                    <>
-                      <Download size={16} className="mr-2" />
-                      GERAR BACKUP
-                    </>
-                  )}
-                </Button>
-
-                <div className="relative">
-                  <input 
-                    type="file" 
-                    ref={fileInputRef}
-                    onChange={handleRestoreBackup}
-                    accept=".json,application/json"
-                    className="hidden"
-                  />
-                  <Button 
-                    onClick={() => fileInputRef.current?.click()} 
-                    disabled={isBackingUp || isRestoring}
-                    variant="outline"
-                    className="w-full border-yellow-500/30 text-yellow-400 hover:bg-yellow-500 hover:text-white h-11"
-                  >
-                    {isRestoring ? (
-                      <>
-                        <RefreshCw size={16} className="mr-2 animate-spin" />
-                        Restaurando...
-                      </>
-                    ) : (
-                      <>
-                        <Upload size={16} className="mr-2" />
-                        RESTAURAR BACKUP
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-              <p className="text-[10px] text-[#71717a] italic text-center">
-                A restauração substituirá dados existentes com o mesmo identificador.
-              </p>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
 
-        <Card className="bg-[#1a1d23] border-[#2d3139] text-white lg:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <DollarSign className="text-[#3b82f6]" size={20} />
-                Contas PIX para Pagamento
-              </CardTitle>
-              <CardDescription className="text-[#71717a]">
-                Cadastre várias chaves PIX para especificar em cada cliente.
-              </CardDescription>
-            </div>
-            <Dialog open={isPixDialogOpen} onOpenChange={setIsPixDialogOpen}>
-              <DialogTrigger asChild>
-                <Button className="bg-[#3b82f6] hover:bg-[#2563eb] text-white gap-2" onClick={() => {
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="space-y-8">
+            <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Settings className="text-[#3b82f6]" size={20} />
+                  Configurações Gerais
+                </CardTitle>
+                <CardDescription className="text-[#71717a]">
+                  Personalize o nome da empresa e a logo do sistema.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="companyName" className="text-[#a0a0a0]">Nome da Empresa</Label>
+                  <Input 
+                    id="companyName" 
+                    value={localApp.companyName || ''} 
+                    onChange={e => setLocalApp({ ...localApp, companyName: e.target.value })} 
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="companyDoc" className="text-[#a0a0a0]">CPF/CNPJ da Empresa</Label>
+                    <Input 
+                      id="companyDoc" 
+                      value={localApp.document || ''} 
+                      onChange={e => setLocalApp({ ...localApp, document: e.target.value })} 
+                      className="bg-[#0f1115] border-[#2d3139] text-white" 
+                      placeholder="00.000.000/0001-00"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="companyResp" className="text-[#a0a0a0]">Responsável</Label>
+                    <Input 
+                      id="companyResp" 
+                      value={localApp.responsible || ''} 
+                      onChange={e => setLocalApp({ ...localApp, responsible: e.target.value })} 
+                      className="bg-[#0f1115] border-[#2d3139] text-white" 
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="companyPhone" className="text-[#a0a0a0]">Telefone de Contato</Label>
+                    <Input 
+                      id="companyPhone" 
+                      value={localApp.companyPhone || ''} 
+                      onChange={e => setLocalApp({ ...localApp, companyPhone: e.target.value })} 
+                      className="bg-[#0f1115] border-[#2d3139] text-white" 
+                      placeholder="(00) 00000-0000"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="companyEmail" className="text-[#a0a0a0]">E-mail de Contato</Label>
+                    <Input 
+                      id="companyEmail" 
+                      value={localApp.companyEmail || ''} 
+                      onChange={e => setLocalApp({ ...localApp, companyEmail: e.target.value })} 
+                      className="bg-[#0f1115] border-[#2d3139] text-white" 
+                      placeholder="empresa@exemplo.com"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="companyAddress" className="text-[#a0a0a0]">Endereço</Label>
+                    <Input 
+                      id="companyAddress" 
+                      value={localApp.address || ''} 
+                      onChange={e => setLocalApp({ ...localApp, address: e.target.value })} 
+                      className="bg-[#0f1115] border-[#2d3139] text-white" 
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="companyNeighborhood" className="text-[#a0a0a0]">Bairro</Label>
+                    <Input 
+                      id="companyNeighborhood" 
+                      value={localApp.neighborhood || ''} 
+                      onChange={e => setLocalApp({ ...localApp, neighborhood: e.target.value })} 
+                      className="bg-[#0f1115] border-[#2d3139] text-white" 
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="companyCity" className="text-[#a0a0a0]">Cidade - UF</Label>
+                    <Input 
+                      id="companyCity" 
+                      value={localApp.city || ''} 
+                      onChange={e => setLocalApp({ ...localApp, city: e.target.value })} 
+                      className="bg-[#0f1115] border-[#2d3139] text-white" 
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="companyCep" className="text-[#a0a0a0]">CEP</Label>
+                    <Input 
+                      id="companyCep" 
+                      value={localApp.cep || ''} 
+                      onChange={e => setLocalApp({ ...localApp, cep: e.target.value })} 
+                      className="bg-[#0f1115] border-[#2d3139] text-white" 
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Logo da Empresa</Label>
+                  <div className="flex flex-col gap-4">
+                    {localApp.logoUrl && (
+                      <div className="h-20 w-auto flex items-center justify-center bg-[#0f1115] rounded-lg border border-[#2d3139] p-2">
+                        <img src={localApp.logoUrl} alt="Logo Preview" className="max-h-full max-w-full object-contain" referrerPolicy="no-referrer" />
+                      </div>
+                    )}
+                    <Input 
+                      type="file" 
+                      accept="image/*" 
+                      onChange={handleLogoUpload}
+                      className="bg-[#0f1115] border-[#2d3139] text-white file:bg-[#3b82f6] file:text-white file:border-none file:px-4 file:py-1 file:rounded-md file:mr-4 file:cursor-pointer" 
+                    />
+                  </div>
+                </div>
+                <div className="space-y-4 pt-4 border-t border-[#2d3139]">
+                  <Label className="text-[#a0a0a0]">Assinatura Digital</Label>
+                  <SignaturePad 
+                    value={localApp.signatureUrl} 
+                    onChange={(val) => setLocalApp({ ...localApp, signatureUrl: val })} 
+                  />
+                  <p className="text-[9px] text-[#71717a] italic">Usada em recibos e laudos técnicos.</p>
+                </div>
+                <Button onClick={handleSaveApp} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white font-bold uppercase tracking-widest text-xs h-10">
+                  Salvar Dados Empresa
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="space-y-8">
+            <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <UserIcon className="text-[#3b82f6]" size={20} />
+                  Perfil do Usuário
+                </CardTitle>
+                <CardDescription className="text-[#71717a]">
+                  Atualize seu nome e senha.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="profileName" className="text-[#a0a0a0]">Nome de Exibição</Label>
+                  <Input 
+                    id="profileName" 
+                    value={newDisplayName} 
+                    onChange={e => setNewDisplayName(e.target.value)} 
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="profilePass" className="text-[#a0a0a0]">Alterar Senha</Label>
+                  <Input 
+                    id="profilePass" 
+                    type="password"
+                    value={newPassword} 
+                    onChange={e => setNewPassword(e.target.value)} 
+                    placeholder="Deixe vazio para manter"
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  />
+                </div>
+                <Button 
+                  onClick={handleUpdateProfile} 
+                  disabled={isUpdatingProfile}
+                  className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white font-bold uppercase tracking-widest text-xs h-10"
+                >
+                  {isUpdatingProfile ? 'Salvando...' : 'Atualizar Perfil'}
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Database className="text-[#3b82f6]" size={20} />
+                  Backup e Segurança
+                </CardTitle>
+                <CardDescription className="text-[#71717a]">
+                  Exporte ou importe seus dados.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Button 
+                    onClick={handleDownloadBackup} 
+                    disabled={isBackingUp || isRestoring}
+                    variant="outline"
+                    className="border-blue-500/30 text-blue-400 hover:bg-blue-500 hover:text-white h-11 text-[9px] font-black tracking-tighter"
+                  >
+                    {isBackingUp ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} className="mr-2" />}
+                    EXPORTAR
+                  </Button>
+
+                  <div className="relative">
+                    <input 
+                      type="file" 
+                      ref={fileInputRef}
+                      onChange={handleRestoreBackup}
+                      accept=".json,application/json"
+                      className="hidden"
+                    />
+                    <Button 
+                      onClick={() => fileInputRef.current?.click()} 
+                      disabled={isBackingUp || isRestoring}
+                      variant="outline"
+                      className="w-full border-yellow-500/30 text-yellow-400 hover:bg-yellow-500 hover:text-white h-11 text-[9px] font-black tracking-tighter"
+                    >
+                      {isRestoring ? <RefreshCw size={14} className="animate-spin" /> : <Upload size={14} className="mr-2" />}
+                      IMPORTAR
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div className="space-y-1">
+                  <CardTitle className="flex items-center gap-2">
+                    <DollarSign className="text-[#3b82f6]" size={20} />
+                    Contas PIX
+                  </CardTitle>
+                  <CardDescription className="text-[#71717a]">
+                    Chaves PIX para recebimentos.
+                  </CardDescription>
+                </div>
+                <Button size="sm" className="bg-[#3b82f6] hover:bg-[#2563eb] text-white h-8" onClick={() => {
                   setCurrentPix({});
                   setEditingPixId(null);
+                  setIsPixDialogOpen(true);
                 }}>
-                  <Plus size={16} />
-                  Nova Conta
+                  <Plus size={14} />
                 </Button>
-              </DialogTrigger>
-              <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[500px]">
-                <DialogHeader className="p-6 pb-2 flex-shrink-0">
-                  <DialogTitle className="text-white">{editingPixId ? 'Editar Conta PIX' : 'Nova Conta PIX'}</DialogTitle>
-                </DialogHeader>
-                <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2">
-                  <div className="grid gap-4 py-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="pixLabel" className="text-[#a0a0a0]">Identificador (Ex: Itaú, Nubank Principal)</Label>
-                      <Input 
-                        id="pixLabel" 
-                        value={currentPix.label || ''} 
-                        onChange={e => setCurrentPix({...currentPix, label: e.target.value})} 
-                        placeholder="Identificador da conta"
-                        className="bg-[#0f1115] border-[#2d3139] text-white" 
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="pixKey" className="text-[#a0a0a0]">Chave PIX</Label>
-                        <Input 
-                          id="pixKey" 
-                          value={currentPix.key || ''} 
-                          onChange={e => setCurrentPix({...currentPix, key: e.target.value})} 
-                          placeholder="E-mail, CPF, etc."
-                          className="bg-[#0f1115] border-[#2d3139] text-white" 
-                        />
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {(pixSettings?.accounts || []).length === 0 ? (
+                    <div className="p-4 text-center text-[#71717a] text-[10px] uppercase font-bold bg-[#0f1115] rounded-xl border border-dashed border-[#2d3139]">Nenhuma conta cadastrada</div>
+                  ) : (
+                    pixSettings.accounts.map(acc => (
+                      <div key={acc.id} className="flex items-center justify-between p-3 bg-[#0f1115] border border-[#2d3139] rounded-xl group">
+                        <div className="flex flex-col">
+                          <span className="text-white font-bold text-xs">{acc.label}</span>
+                          <span className="text-[#71717a] text-[10px] font-mono">{acc.key}</span>
+                        </div>
+                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button size="icon" variant="ghost" className="h-7 w-7 text-blue-400" onClick={() => {
+                            setCurrentPix(acc);
+                            setEditingPixId(acc.id);
+                            setIsPixDialogOpen(true);
+                          }}><Settings size={12} /></Button>
+                          <Button size="icon" variant="ghost" className="h-7 w-7 text-red-400" onClick={() => handleDeletePixAccount(acc.id)}><Trash2 size={12} /></Button>
+                        </div>
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="pixBank" className="text-[#a0a0a0]">Banco</Label>
-                        <Input 
-                          id="pixBank" 
-                          value={currentPix.bank || ''} 
-                          onChange={e => setCurrentPix({...currentPix, bank: e.target.value})} 
-                          placeholder="Ex: Nubank"
-                          className="bg-[#0f1115] border-[#2d3139] text-white" 
-                        />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="pixFavored" className="text-[#a0a0a0]">Favorecido</Label>
-                        <Input 
-                          id="pixFavored" 
-                          value={currentPix.favored || ''} 
-                          onChange={e => setCurrentPix({...currentPix, favored: e.target.value})} 
-                          className="bg-[#0f1115] border-[#2d3139] text-white" 
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="pixDoc" className="text-[#a0a0a0]">Documento (CPF/CNPJ)</Label>
-                        <Input 
-                          id="pixDoc" 
-                          value={currentPix.document || ''} 
-                          onChange={e => setCurrentPix({...currentPix, document: e.target.value})} 
-                          className="bg-[#0f1115] border-[#2d3139] text-white" 
-                        />
-                      </div>
-                    </div>
-                  </div>
+                    ))
+                  )}
                 </div>
-                <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23]">
-                  <Button variant="outline" onClick={() => setIsPixDialogOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
-                  <Button onClick={handleSavePixAccount} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Salvar</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {(pixSettings.accounts || []).map(acc => (
-                <div key={acc.id} className="p-4 rounded-lg bg-[#0f1115] border border-[#2d3139] flex justify-between items-start">
-                  <div>
-                    <h4 className="font-bold text-white mb-1">{acc.label}</h4>
-                    <p className="text-xs text-[#71717a]">{acc.bank} • {acc.favored}</p>
-                    <p className="text-sm text-[#3b82f6] mt-1 font-mono break-all">{acc.key}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={() => {
-                      setCurrentPix(acc);
-                      setEditingPixId(acc.id);
-                      setIsPixDialogOpen(true);
-                    }}>
-                      <Pencil size={14} />
-                    </Button>
-                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-red-500 hover:bg-red-500/10" onClick={() => handleDeletePixAccount(acc.id)}>
-                      <Trash2 size={14} />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-              {(!pixSettings.accounts || pixSettings.accounts.length === 0) && (
-                <div className="col-span-full py-8 text-center text-[#71717a] border border-dashed border-[#2d3139] rounded-lg">
-                  Nenhuma conta PIX cadastrada.
-                </div>
-              )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        <Dialog open={isPixDialogOpen} onOpenChange={setIsPixDialogOpen}>
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+            <DialogHeader>
+              <DialogTitle>{editingPixId ? 'Editar Chave PIX' : 'Nova Chave PIX'}</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <Label>Identificador</Label>
+                <Input 
+                  value={currentPix.label || ''} 
+                  onChange={e => setCurrentPix({...currentPix, label: e.target.value})} 
+                  placeholder="Ex: CPF Principal"
+                  className="bg-[#0f1115] border-[#2d3139] text-white" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Chave PIX</Label>
+                <Input 
+                  value={currentPix.key || ''} 
+                  onChange={e => setCurrentPix({...currentPix, key: e.target.value})} 
+                  placeholder="A chave em si"
+                  className="bg-[#0f1115] border-[#2d3139] text-white" 
+                />
+              </div>
             </div>
-          </CardContent>
-        </Card>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsPixDialogOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+              <Button onClick={handleSavePixAccount} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Salvar</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <RolePermissionManager companyId={companyId} user={user} userRoles={userRoles} />
       </div>
-    </div>
-  );
-}
+    );
+  }
 
 function ReportsManager({ 
   visits = [], 
@@ -10533,15 +10441,6 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
               onClick={() => setSelectedIds(serviceOrders.map(os => os.id))}
             >
               Selecionar Todas
-            </Button>
-          )}
-          {selectedIds.length > 0 && (
-            <Button 
-              variant="outline" 
-              className="border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10 text-xs h-9"
-              onClick={() => setSelectedIds([])}
-            >
-              Limpar Seleção
             </Button>
           )}
           {selectedIds.length > 0 && (
