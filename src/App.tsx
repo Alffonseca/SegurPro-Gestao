@@ -3668,15 +3668,16 @@ function UsersManager({ users = [], currentUserData, showList, userRoles, logAct
   };
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">Gestão de Usuários</h2>
-          <p className="text-[#71717a]">Cadastre e gerencie os acessos ao sistema.</p>
-        </div>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
+        <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest text-[#3b82f6]">Equipe e Acessos</h2>
+        <p className="text-[#a0a0a0] text-sm">Gerencie os membros da sua equipe e permissões de acesso.</p>
+      </div>
+
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div className="flex flex-col sm:flex-row gap-2">
-          <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1 rounded-md">
-            <div className="text-[10px] uppercase text-[#71717a] font-bold">Código de Convite:</div>
+          <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-xl shadow-inner shadow-black/20">
+            <div className="text-[10px] uppercase text-[#71717a] font-black tracking-widest">Convite Técnico:</div>
             <code className="text-[#3b82f6] font-mono font-bold text-sm">{currentUserData.companyId}</code>
             <Button 
               variant="ghost" 
@@ -3690,15 +3691,14 @@ function UsersManager({ users = [], currentUserData, showList, userRoles, logAct
               <Share2 size={12} />
             </Button>
           </div>
-          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-            <DialogTrigger 
-              render={
-                <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
-                  <Plus size={18} />
-                  Novo Usuário
-                </Button>
-              }
-            />
+        </div>
+        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+          <DialogTrigger asChild>
+            <Button className="gap-2 bg-[#3b82f1] hover:bg-[#2563eb] text-white h-11 px-6 font-bold shadow-lg shadow-blue-500/10">
+              <Plus size={18} />
+              NOVO USUÁRIO
+            </Button>
+          </DialogTrigger>
           <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[500px]">
             <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Cadastrar Novo Usuário</DialogTitle>
@@ -3777,7 +3777,6 @@ function UsersManager({ users = [], currentUserData, showList, userRoles, logAct
           </DialogContent>
         </Dialog>
       </div>
-    </div>
 
       {showList ? (
         <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
@@ -4113,29 +4112,29 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
   };
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">Gestão de Clientes</h2>
-          <p className="text-[#71717a]">Base de dados de clientes para serviços e orçamentos.</p>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
+        <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest text-[#3b82f6]">Gestão de Clientes</h2>
+        <p className="text-[#a0a0a0] text-sm">Visualize e gerencie sua base de clientes e contatos.</p>
+      </div>
+
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div className="relative flex-1 max-w-md w-full">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#71717a]" size={16} />
+          <Input 
+            className="pl-10 h-11 bg-[#1a1d23] border-[#2d3139] text-white focus:ring-[#3b82f6] transition-all rounded-xl shadow-inner shadow-black/20" 
+            placeholder="Pesquisar clientes por nome, email ou doc..." 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#71717a]" size={16} />
-            <Input 
-              className="pl-9 w-64 bg-[#0f1115] border-[#2d3139] text-white focus:ring-[#3b82f6] transition-all" 
-              placeholder="Pesquisar clientes..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-            <DialogTrigger asChild>
-              <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
-                <Plus size={18} />
-                Novo Cliente
-              </Button>
-            </DialogTrigger>
+        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+          <DialogTrigger asChild>
+            <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white h-11 px-8 font-bold shadow-lg shadow-blue-500/10">
+              <Plus size={18} />
+              NOVO CLIENTE
+            </Button>
+          </DialogTrigger>
           <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[700px]">
             <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Cadastrar Novo Cliente</DialogTitle>
@@ -4322,7 +4321,6 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
           </DialogContent>
         </Dialog>
       </div>
-    </div>
 
       {/* Edit Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
@@ -4723,29 +4721,29 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
   };
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">Gestão de Fornecedores</h2>
-          <p className="text-[#71717a]">Cadastro e manutenção de fornecedores e parceiros.</p>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
+        <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest text-[#3b82f6]">Gestão de Fornecedores</h2>
+        <p className="text-[#a0a0a0] text-sm">Cadastro e manutenção de parceiros comerciais.</p>
+      </div>
+
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div className="relative flex-1 max-w-md w-full">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#71717a]" size={16} />
+          <Input 
+            className="pl-10 h-11 bg-[#1a1d23] border-[#2d3139] text-white focus:ring-[#3b82f6] transition-all rounded-xl shadow-inner shadow-black/20" 
+            placeholder="Pesquisar fornecedores..." 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#71717a]" size={16} />
-            <Input 
-              className="pl-9 w-64 bg-[#0f1115] border-[#2d3139] text-white focus:ring-[#3b82f6] transition-all" 
-              placeholder="Pesquisar fornecedores..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-            <DialogTrigger asChild>
-              <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
-                <Plus size={18} />
-                Novo Fornecedor
-              </Button>
-            </DialogTrigger>
+        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+          <DialogTrigger asChild>
+            <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white h-11 px-8 font-bold shadow-lg shadow-blue-500/10">
+              <Plus size={18} />
+              NOVO FORNECEDOR
+            </Button>
+          </DialogTrigger>
             <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[600px]">
               <DialogHeader className="p-6 pb-2">
                 <DialogTitle>Cadastrar Novo Fornecedor</DialogTitle>
@@ -4805,7 +4803,6 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
             </DialogContent>
           </Dialog>
         </div>
-      </div>
 
       {showList ? (
         <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden shadow-2xl">
@@ -5153,22 +5150,23 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
   };
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">Gestão de Recibos</h2>
-          <p className="text-[#71717a]">Gere e consulte recibos de pagamentos.</p>
-        </div>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
+        <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest text-[#3b82f6]">Gestão de Recibos</h2>
+        <p className="text-[#a0a0a0] text-sm">Gere e consulte recibos de pagamentos profissionais.</p>
+      </div>
+
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-lg">
-            <span className="text-[10px] text-[#71717a] font-medium uppercase min-w-fit">Filtros:</span>
+          <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-lg shadow-inner shadow-black/20">
+            <span className="text-[10px] text-[#71717a] font-black uppercase tracking-widest min-w-fit">Filtros:</span>
             
             <Popover open={isClientFilterOpen} onOpenChange={setIsClientFilterOpen}>
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
                   role="combobox"
-                  className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[150px] justify-between font-normal"
+                  className="h-8 border-none bg-transparent text-[11px] p-0 focus:ring-0 gap-1 w-[150px] justify-between font-bold uppercase tracking-wider"
                 >
                   <span className="truncate">
                     {selectedClientFilter === 'all' 
@@ -6216,60 +6214,48 @@ function SuperAdminPanel({ companies = [], financials = [], saasSettings, user, 
   const totalGrossRevenue = myCompanyRevenue + saasRevenue;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-            <Shield className="text-yellow-500" size={24} />
-            Administração SaaS
-          </h2>
-          <p className="text-[#71717a]">Gerenciamento global de empresas, preços e faturamento.</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Badge className="bg-blue-500/10 text-blue-500 border-blue-500/20 px-3 py-1">
-            Modo Super Admin
-          </Badge>
-        </div>
+    <div className="space-y-8 animate-in fade-in duration-500">
+      <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
+        <h2 className="text-3xl font-black tracking-tighter text-white uppercase italic text-[#3b82f6]">SaaS Control Center</h2>
+        <p className="text-[#71717a] text-sm uppercase tracking-[0.2em] font-medium">Painel Master de Administração de Instâncias</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <Card className="bg-[#1a1d23] border-[#2d3139] p-5 text-center">
-          <h4 className="text-[#a0a0a0] text-[10px] uppercase tracking-wider mb-2">Total de Empresas</h4>
-          <p className="text-3xl font-bold text-white">{companies.length}</p>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <Card className="bg-[#1a1d23] border-[#2d3139] p-6 text-center shadow-xl hover:border-blue-500/20 transition-all group">
+          <h4 className="text-[#71717a] text-[10px] uppercase tracking-[0.2em] mb-3 font-black group-hover:text-blue-400">Total Parceiros</h4>
+          <p className="text-4xl font-black text-white tracking-tighter">{companies.length}</p>
         </Card>
-        <Card className="bg-[#1a1d23] border-[#2d3139] p-5 text-center">
-          <h4 className="text-[#a0a0a0] text-[10px] uppercase tracking-wider mb-2">Ativas / Bloqueadas</h4>
-          <div className="flex justify-center gap-3 items-baseline">
-            <span className="text-2xl font-bold text-[#10b981]">{activeCompaniesCount}</span>
-            <span className="text-[#71717a]">/</span>
-            <span className="text-2xl font-bold text-[#ef4444]">{companies.length - activeCompaniesCount}</span>
+        <Card className="bg-[#1a1d23] border-[#2d3139] p-6 text-center shadow-xl hover:border-emerald-500/20 transition-all group">
+          <h4 className="text-[#71717a] text-[10px] uppercase tracking-[0.2em] mb-3 font-black group-hover:text-emerald-400">Status Atividade</h4>
+          <div className="flex justify-center gap-4 items-baseline">
+            <span className="text-3xl font-black text-[#10b981]">{activeCompaniesCount}</span>
+            <span className="text-[#2d3139] text-xl font-thin">/</span>
+            <span className="text-3xl font-black text-[#ef4444]">{companies.length - activeCompaniesCount}</span>
           </div>
         </Card>
-        <Card className="bg-[#1a1d23] border-[#2d3139] p-5 text-center">
-          <h4 className="text-[#a0a0a0] text-[10px] uppercase tracking-wider mb-2">Saldo Geral SaaS (Assinaturas)</h4>
-          <p className="text-2xl font-bold text-blue-500">
+        <Card className="bg-[#1a1d23] border-[#2d3139] p-6 text-center shadow-xl hover:border-blue-500/20 transition-all group">
+          <h4 className="text-[#71717a] text-[10px] uppercase tracking-[0.2em] mb-3 font-black group-hover:text-blue-400">MRR Assinaturas</h4>
+          <p className="text-3xl font-black text-[#3b82f6] tracking-tighter">
             R$ {saasRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </p>
-          <p className="text-[10px] text-[#71717a] mt-1 italic">Vendas do sistema</p>
         </Card>
-        <Card className="bg-[#1a1d23] border-[#2d3139] p-5 text-center border-blue-500/30">
-          <h4 className="text-blue-400 text-[10px] uppercase tracking-wider mb-2 font-bold">Receita Total Bruta</h4>
-          <p className="text-2xl font-bold text-white">
+        <Card className="bg-[#1a1d23] border-blue-500/20 border-2 p-6 text-center shadow-2xl shadow-blue-500/5 transition-all group">
+          <h4 className="text-[#3b82f6] text-[10px] uppercase tracking-[0.2em] mb-3 font-black">Faturamento SaaS Total</h4>
+          <p className="text-3xl font-black text-white tracking-tighter">
             R$ {totalGrossRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </p>
-          <p className="text-[10px] text-[#71717a] mt-1 italic">AF Sistemas + Assinaturas</p>
         </Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
-        <Card className="lg:col-span-2 bg-[#1a1d23] border-[#2d3139] overflow-hidden flex flex-col h-[550px] shadow-2xl">
+        <Card className="lg:col-span-2 bg-[#1a1d23] border-[#2d3139] overflow-hidden flex flex-col min-h-[450px] shadow-2xl">
           <CardHeader className="bg-blue-500/5 border-b border-[#2d3139] px-6 py-5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-blue-500/10 rounded-lg">
                   <Ticket className="text-blue-500" size={18} />
                 </div>
-                <CardTitle className="text-sm font-black text-white uppercase tracking-[0.2em] leading-none">Códigos de Registro</CardTitle>
+                <CardTitle className="text-sm font-black text-white uppercase tracking-[0.2em] leading-none">Código Master</CardTitle>
               </div>
               <Button 
                 size="sm" 
@@ -6278,82 +6264,48 @@ function SuperAdminPanel({ companies = [], financials = [], saasSettings, user, 
                 disabled={isGeneratingCode}
               >
                 {isGeneratingCode ? <RefreshCw className="animate-spin h-3 w-3 mr-2" /> : <Plus className="h-3 w-3 mr-2" />}
-                GERAR CÓDIGO
+                REGERAR
               </Button>
             </div>
-            <CardDescription className="text-[10px] mt-1 uppercase tracking-wider font-medium text-[#71717a]">Códigos únicos para liberação de acesso SaaS</CardDescription>
+            <CardDescription className="text-[10px] mt-2 uppercase tracking-wider font-medium text-[#71717a]">Código único de convite para novos parceiros SaaS</CardDescription>
           </CardHeader>
-          <CardContent className="p-0 flex-1 overflow-auto max-h-[600px] custom-scrollbar bg-[#0f1115]/30">
-            <div className="divide-y divide-[#2d3139]">
-              {regCodes.length === 0 ? (
-                <div className="p-12 text-center text-[#71717a] text-xs">Nenhum código gerado.</div>
-              ) : (
-                regCodes.map((c) => (
-                  <div key={c.id} className="p-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors group">
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-2">
-                        <code className="text-[14px] font-bold text-white tracking-widest bg-[#0f1115] px-3 py-1 rounded border border-[#2d3139] select-all">
-                          {c.code}
-                        </code>
-                        <Badge className={cn(
-                          "text-[9px] uppercase font-bold",
-                          c.status === 'active' ? "bg-emerald-500/10 text-emerald-500" : "bg-[#2d3139] text-[#71717a]"
-                        )}>
-                          {c.status === 'active' ? 'Ativo' : 'Usado'}
-                        </Badge>
-                      </div>
-                      <div className="text-[10px] text-[#71717a] flex flex-col">
-                        <span>Gerado em: {c.createdAt instanceof Timestamp ? format(c.createdAt.toDate(), 'dd/MM/yy HH:mm') : '-'}</span>
-                        {c.status === 'used' && (
-                          <span className="text-blue-400">Usado em: {c.usedAt instanceof Timestamp ? format(c.usedAt.toDate(), 'dd/MM/yy HH:mm') : '-'}</span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8 text-blue-400 hover:text-blue-300 hover:bg-blue-400/10"
-                        title="Copiar Código"
-                        onClick={() => {
-                          navigator.clipboard.writeText(c.code);
-                          toast.success("Código copiado!");
-                        }}
-                      >
-                        <Copy size={14} />
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8 text-yellow-500 hover:text-yellow-400 hover:bg-yellow-500/10"
-                        title="Regerar Código"
-                        disabled={c.status === 'used' || isGeneratingCode}
-                        onClick={async () => {
-                           if (!window.confirm("Deseja invalidar este código e gerar um novo?")) return;
-                           const oldId = c.id;
-                           await handleGenerateRegCode();
-                           await deleteDoc(doc(db, 'registration_codes', oldId));
-                        }}
-                      >
-                        <RefreshCw size={14} />
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8 text-[#ef4444]/60 hover:text-red-500 hover:bg-red-500/10"
-                        title="Excluir"
-                        onClick={() => handleDeleteRegCode(c.id)}
-                      >
-                        <Trash2 size={14} />
-                      </Button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+          <CardContent className="p-10 flex flex-col items-center justify-center bg-[#0f1115]/30 flex-1">
+            {regCodes.filter(c => c.status !== 'used').length > 0 ? (
+              <div className="flex flex-col items-center gap-6 w-full max-w-sm">
+                <div className="w-full bg-[#1a1d23] border-2 border-dashed border-[#2d3139] p-8 rounded-2xl flex flex-col items-center gap-4 group hover:border-blue-500/50 transition-colors">
+                  <div className="text-[10px] text-[#71717a] font-black uppercase tracking-[0.3em]">Convite Ativo</div>
+                  <code className="text-4xl font-black text-white tracking-[0.2em] select-all">
+                    {regCodes.filter(c => c.status !== 'used').sort((a,b) => (b.createdAt as any).seconds - (a.createdAt as any).seconds)[0]?.code}
+                  </code>
+                </div>
+                <Button 
+                  className="w-full bg-[#1a1d23] border border-[#2d3139] text-white hover:bg-white/5 h-12 font-bold uppercase tracking-wider gap-2 shadow-xl shadow-black/40"
+                  onClick={() => {
+                    const activeCode = regCodes.filter(c => c.status !== 'used').sort((a,b) => (b.createdAt as any).seconds - (a.createdAt as any).seconds)[0]?.code;
+                    if (activeCode) {
+                      navigator.clipboard.writeText(activeCode);
+                      toast.success("Código copiado!");
+                    }
+                  }}
+                >
+                  <Copy size={16} />
+                  COPIAR CÓDIGO
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-4 text-center py-10">
+                <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-2">
+                  <Ticket size={32} className="text-[#3b82f6]/30" />
+                </div>
+                <p className="text-[#71717a] text-sm">Nenhum código ativo de convite.</p>
+                <Button onClick={handleGenerateRegCode} disabled={isGeneratingCode} className="bg-blue-500 font-bold uppercase tracking-widest px-6 h-11 rounded-xl">
+                  Gerar Convite Master
+                </Button>
+              </div>
+            )}
           </CardContent>
           <div className="p-3 bg-[#0f1115] border-t border-[#2d3139] text-[9px] text-[#555] italic text-center">
-            Passe este código para o cliente que deseja cadastrar uma nova empresa.
+            Este código permite que novos parceiros se retirem da fase de demonstração e criem sua própria empresa SaaS.
           </div>
         </Card>
 
@@ -7355,10 +7307,10 @@ function SettingsManager({
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight text-white">Configurações do Sistema</h2>
-        <p className="text-[#71717a]">Gerencie os dados globais do sistema e seu perfil.</p>
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
+        <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest text-[#3b82f6]">Configurações</h2>
+        <p className="text-[#a0a0a0] text-sm">Gerencie os dados globais da sua empresa e seu perfil.</p>
       </div>
 
       {isSuperAdmin && allCompanies.length > 0 && (
@@ -7963,9 +7915,9 @@ function ReportsManager({
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight text-white">Centro de Relatórios</h2>
-        <p className="text-[#71717a]">Gere listagens em PDF das suas atividades por período.</p>
+      <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
+        <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest text-[#3b82f6]">Gestão de Relatórios</h2>
+        <p className="text-[#a0a0a0] text-sm">Gere listagens em PDF das suas atividades por período.</p>
       </div>
 
       {showList ? (
@@ -8920,22 +8872,23 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
   };
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">Visitas Técnicas</h2>
-          <p className="text-[#71717a]">Gerencie seus agendamentos e ordens de serviço.</p>
-        </div>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
+        <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest text-[#3b82f6]">Visitas Técnicas</h2>
+        <p className="text-[#a0a0a0] text-sm">Gerencie seus agendamentos, check-ins e check-outs.</p>
+      </div>
+
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-lg">
-            <span className="text-[10px] text-[#71717a] font-medium uppercase min-w-fit">Filtros:</span>
+          <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-lg shadow-inner shadow-black/20">
+            <span className="text-[10px] text-[#71717a] font-black uppercase tracking-widest min-w-fit">Filtros:</span>
             
             <Popover open={isClientFilterOpen} onOpenChange={setIsClientFilterOpen}>
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
                   role="combobox"
-                  className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[150px] justify-between font-normal"
+                  className="h-8 border-none bg-transparent text-[11px] p-0 focus:ring-0 gap-1 w-[150px] justify-between font-bold uppercase tracking-wider"
                 >
                   <span className="truncate">
                     {clientFilter === 'all' ? "Todos Clientes" : clientFilter}
@@ -10970,7 +10923,7 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                   </div>
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t border-[#2d3139]/30">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-3 flex-1">
                     <Checkbox 
                       checked={selectedIds.includes(os.id)}
                       onCheckedChange={(checked) => {
@@ -10980,11 +10933,13 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                           setSelectedIds(prev => prev.filter(id => id !== os.id));
                         }
                       }}
-                      className="bg-[#0f1115] border-[#2d3139] h-5 w-5 data-[state=checked]:bg-[#3b82f6]"
+                      className="bg-[#0f1115] border-[#2d3139] h-5 w-5 data-[state=checked]:bg-[#3b82f6] cursor-pointer"
                     />
-                    <p className="text-lg font-bold text-white">R$ {(os.totalValue || 0).toFixed(2)}</p>
+                    <span className="text-[10px] text-[#71717a] font-bold uppercase tracking-widest hidden sm:inline">Selecionar</span>
                   </div>
-                  <div className="text-[9px] text-[#71717a] italic">ID: {os.id?.slice(-6).toUpperCase()}</div>
+                  <div className="text-right">
+                    <p className="text-lg font-black text-white">R$ {(os.totalValue || 0).toFixed(2)}</p>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -11544,22 +11499,23 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
   };
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">Orçamentos</h2>
-          <p className="text-[#71717a]">Gere orçamentos profissionais para seus clientes.</p>
-        </div>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
+        <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest text-[#3b82f6]">Gestão de Orçamentos</h2>
+        <p className="text-[#a0a0a0] text-sm">Gere propostas e orçamentos profissionais para seus clientes.</p>
+      </div>
+
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-lg">
-            <span className="text-[10px] text-[#71717a] font-medium uppercase min-w-fit">Filtros:</span>
+          <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-lg shadow-inner shadow-black/20">
+            <span className="text-[10px] text-[#71717a] font-black uppercase tracking-widest min-w-fit">Filtros:</span>
             
             <Popover open={isClientFilterOpen} onOpenChange={setIsClientFilterOpen}>
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
                   role="combobox"
-                  className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[150px] justify-between font-normal"
+                  className="h-8 border-none bg-transparent text-[11px] p-0 focus:ring-0 gap-1 w-[150px] justify-between font-bold uppercase tracking-wider"
                 >
                   <span className="truncate">
                     {clientFilter === 'all' ? "Todos Clientes" : clientFilter}
