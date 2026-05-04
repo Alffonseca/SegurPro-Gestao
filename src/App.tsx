@@ -4130,12 +4130,12 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
             />
           </div>
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-            <DialogTrigger render={
+            <DialogTrigger asChild>
               <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
                 <Plus size={18} />
                 Novo Cliente
               </Button>
-            } />
+            </DialogTrigger>
           <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[700px]">
             <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Cadastrar Novo Cliente</DialogTitle>
@@ -4213,11 +4213,11 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
                     <div className="flex items-center justify-between">
                       <Label className="text-white font-semibold">Itens do Objeto do Contrato</Label>
                       <Popover>
-                      <PopoverTrigger render={
-                        <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#a0a0a0] hover:text-white">
-                          Selecionar Objetos ({newClient.serviceObjects?.length || 0})
-                        </Button>
-                      } />
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#a0a0a0] hover:text-white">
+                            Selecionar Objetos ({newClient.serviceObjects?.length || 0})
+                          </Button>
+                        </PopoverTrigger>
                         <PopoverContent className="w-[300px] bg-[#1a1d23] border-[#2d3139] p-3 text-white shadow-xl" align="end">
                           <div className="space-y-3">
                             <p className="text-[11px] text-[#71717a] font-medium uppercase tracking-wider">Itens Disponíveis</p>
@@ -4427,11 +4427,11 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
                     <div className="flex items-center justify-between">
                       <Label className="text-white font-semibold">Itens do Objeto do Contrato</Label>
                       <Popover>
-                      <PopoverTrigger render={
-                        <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#a0a0a0] hover:text-white">
-                          Selecionar Objetos ({editingClient.serviceObjects?.length || 0})
-                        </Button>
-                      } />
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" size="sm" className="h-8 border-[#2d3139] text-[#a0a0a0] hover:text-white">
+                            Selecionar Objetos ({editingClient.serviceObjects?.length || 0})
+                          </Button>
+                        </PopoverTrigger>
                         <PopoverContent className="w-[300px] bg-[#1a1d23] border-[#2d3139] p-3 text-white shadow-xl" align="end">
                           <div className="space-y-3">
                             <p className="text-[11px] text-[#71717a] font-medium uppercase tracking-wider">Itens Disponíveis</p>
@@ -4740,12 +4740,12 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
             />
           </div>
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-            <DialogTrigger render={
+            <DialogTrigger asChild>
               <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
                 <Plus size={18} />
                 Novo Fornecedor
               </Button>
-            } />
+            </DialogTrigger>
             <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[600px]">
               <DialogHeader className="p-6 pb-2">
                 <DialogTitle>Cadastrar Novo Fornecedor</DialogTitle>
@@ -5296,12 +5296,12 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
             )}
           </div>
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger render={
-            <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
-              <Plus size={18} />
-              Novo Recibo
-            </Button>
-          } />
+            <DialogTrigger asChild>
+              <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+                <Plus size={18} />
+                Novo Recibo
+              </Button>
+            </DialogTrigger>
           <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[600px]">
             <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Gerar Novo Recibo</DialogTitle>
@@ -6262,26 +6262,28 @@ function SuperAdminPanel({ companies = [], financials = [], saasSettings, user, 
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
-        <Card className="lg:col-span-2 bg-[#1a1d23] border-[#2d3139] overflow-hidden flex flex-col min-h-[500px]">
-          <CardHeader className="bg-blue-500/5 border-b border-[#2d3139]">
+        <Card className="lg:col-span-2 bg-[#1a1d23] border-[#2d3139] overflow-hidden flex flex-col h-[550px] shadow-2xl">
+          <CardHeader className="bg-blue-500/5 border-b border-[#2d3139] px-6 py-5">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Ticket className="text-blue-500" size={18} />
-                <CardTitle className="text-sm font-bold text-white uppercase tracking-wider">Códigos de Registro (Liberação)</CardTitle>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-500/10 rounded-lg">
+                  <Ticket className="text-blue-500" size={18} />
+                </div>
+                <CardTitle className="text-sm font-black text-white uppercase tracking-[0.2em] leading-none">Códigos de Registro</CardTitle>
               </div>
               <Button 
                 size="sm" 
-                onClick={handleGenerateRegCode} 
+                className="bg-blue-500 hover:bg-blue-600 text-white font-bold px-4 h-9 shadow-lg shadow-blue-500/20"
+                onClick={handleGenerateRegCode}
                 disabled={isGeneratingCode}
-                className="h-8 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px]"
               >
                 {isGeneratingCode ? <RefreshCw className="animate-spin h-3 w-3 mr-2" /> : <Plus className="h-3 w-3 mr-2" />}
-                GERAR NOVO
+                GERAR CÓDIGO
               </Button>
             </div>
-            <CardDescription className="text-[10px]">Códigos únicos para liberar o cadastro de novas empresas por parceiros.</CardDescription>
+            <CardDescription className="text-[10px] mt-1 uppercase tracking-wider font-medium text-[#71717a]">Códigos únicos para liberação de acesso SaaS</CardDescription>
           </CardHeader>
-          <CardContent className="p-0 flex-1 overflow-auto max-h-[600px] custom-scrollbar">
+          <CardContent className="p-0 flex-1 overflow-auto max-h-[600px] custom-scrollbar bg-[#0f1115]/30">
             <div className="divide-y divide-[#2d3139]">
               {regCodes.length === 0 ? (
                 <div className="p-12 text-center text-[#71717a] text-xs">Nenhum código gerado.</div>
@@ -7694,7 +7696,7 @@ function SettingsManager({
               </CardDescription>
             </div>
             <Dialog open={isPixDialogOpen} onOpenChange={setIsPixDialogOpen}>
-              <DialogTrigger render={
+              <DialogTrigger asChild>
                 <Button className="bg-[#3b82f6] hover:bg-[#2563eb] text-white gap-2" onClick={() => {
                   setCurrentPix({});
                   setEditingPixId(null);
@@ -7702,7 +7704,7 @@ function SettingsManager({
                   <Plus size={16} />
                   Nova Conta
                 </Button>
-              } />
+              </DialogTrigger>
               <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[500px]">
                 <DialogHeader className="p-6 pb-2 flex-shrink-0">
                   <DialogTitle className="text-white">{editingPixId ? 'Editar Conta PIX' : 'Nova Conta PIX'}</DialogTitle>
@@ -7996,12 +7998,12 @@ function ReportsManager({
                 <div className="flex-1 space-y-3">
                   <Label className="text-[#a0a0a0]">Data da Listagem</Label>
                   <Popover>
-                    <PopoverTrigger render={
+                    <PopoverTrigger asChild>
                       <Button variant="outline" className={cn("w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white h-11", !date && "text-muted-foreground")}>
                         <CalendarIcon className="mr-2 h-4 w-4 text-[#3b82f6]" />
                         {date ? format(date, "PPP", { locale: ptBR }) : <span>Selecione</span>}
                       </Button>
-                    } />
+                    </PopoverTrigger>
                     <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
                       <Calendar mode="single" selected={date} onSelect={(d) => d && setDate(d)} initialFocus className="bg-[#1a1d23] text-white" />
                     </PopoverContent>
@@ -8353,7 +8355,7 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
 
         <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden h-[400px]">
           <CardHeader className="border-b border-[#2d3139] px-6 py-4">
-            <CardTitle className="text-[15px] font-semibold text-white">Distribuição por Tipo</CardTitle>
+            <CardTitle className="text-[15px] font-semibold text-white">Distribuição por Tipo de Serviço</CardTitle>
           </CardHeader>
           <CardContent className="p-6 flex flex-col items-center justify-center h-[320px]">
             <div className="h-full w-full min-h-[250px]">
@@ -8443,36 +8445,6 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
             </CardContent>
           </Card>
         )}
-
-        <div className="flex flex-col gap-8">
-          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden">
-            <CardHeader className="border-b border-[#2d3139] px-6 py-4">
-              <CardTitle className="text-[15px] font-semibold text-white">Orçamentos Recentes</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="divide-y divide-[#25282e]">
-                {budgets.slice(0, 3).map(budget => (
-                  <div key={budget.id} className="flex items-center justify-between px-6 py-4 hover:bg-[#25282e]/30 transition-colors">
-                    <div className="flex flex-col">
-                      <span className="text-[13px] font-medium text-white">{budget.clientName || 'Cliente Sem Nome'}</span>
-                      <span className="text-[11px] font-semibold text-white mt-0.5">R$ {(budget.total || 0).toFixed(2)}</span>
-                    </div>
-                    <Badge className={cn(
-                      "text-[10px] font-semibold uppercase px-2 py-0.5 rounded",
-                      budget.status === 'Aprovado' ? "bg-emerald-500/10 text-emerald-500" : "bg-blue-500/10 text-blue-500"
-                    )}>
-                      {budget.status === 'Aprovado' ? 'Aprovado' : 'Aguardando'}
-                    </Badge>
-                  </div>
-                ))}
-                {budgets.length === 0 && (
-                  <p className="text-center py-8 text-sm text-[#71717a]">Nenhum orçamento recente.</p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-        </div>
       </div>
     </>
   )}
@@ -9054,12 +9026,12 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
             )}
           </div>
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-            <DialogTrigger render={
+            <DialogTrigger asChild>
               <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
                 <Plus size={18} />
                 Nova Visita
               </Button>
-            } />
+            </DialogTrigger>
           <DialogContent className="sm:max-w-[600px] bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0">
             <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Agendar Nova Visita</DialogTitle>
@@ -9765,18 +9737,18 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
   };
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">Gestão Financeira</h2>
-          <p className="text-[#71717a]">Controle suas entradas e saídas.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex flex-wrap items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-lg">
-            <div className="flex items-center gap-2 pr-2 border-r border-[#2d3139]">
-              <Filter className="text-blue-500" size={14} />
-              <span className="text-[10px] text-[#71717a] font-bold uppercase tracking-widest min-w-fit">Filtros</span>
-            </div>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
+        <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest text-[#3b82f6]">Gestão Financeira</h2>
+        <p className="text-[#a0a0a0] text-sm">Controle fluxo de caixa, entradas e saídas.</p>
+      </div>
+
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-6">
+        <div className="flex flex-wrap items-center gap-3 bg-[#1a1d23] border border-[#2d3139] px-4 py-2 rounded-xl shadow-sm">
+          <div className="flex items-center gap-2 pr-3 border-r border-[#2d3139]">
+            <Filter size={14} className="text-blue-500" />
+            <span className="text-[10px] text-[#71717a] font-black uppercase tracking-[0.2em] whitespace-nowrap">Filtros</span>
+          </div>
             
             <Popover open={isClientFilterOpen} onOpenChange={setIsClientFilterOpen}>
               <PopoverTrigger asChild>
@@ -9909,14 +9881,13 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
                 <X size={12} />
               </Button>
             )}
-          </div>
-          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-            <DialogTrigger render={
-              <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
-                <Plus size={18} />
-                Novo Lançamento
-              </Button>
-            } />
+            <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+              <DialogTrigger asChild>
+                <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white h-10 px-6 font-bold shadow-lg shadow-blue-500/10">
+                  <Plus size={18} />
+                  LANÇAMENTO
+                </Button>
+              </DialogTrigger>
           <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[500px]">
             <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Novo Lançamento Financeiro</DialogTitle>
@@ -10035,12 +10006,12 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Data</Label>
                     <Popover>
-                      <PopoverTrigger render={
+                      <PopoverTrigger asChild>
                         <Button variant="outline" className="w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white">
                           <CalendarIcon className="mr-2 h-4 w-4" />
                           {newRecord.date ? format(newRecord.date, "dd/MM/yyyy") : <span>Selecione</span>}
                         </Button>
-                      } />
+                      </PopoverTrigger>
                       <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
                         <Calendar mode="single" selected={newRecord.date} onSelect={(date) => setNewRecord({...newRecord, date})} initialFocus className="bg-[#1a1d23] text-white" />
                       </PopoverContent>
@@ -10284,12 +10255,12 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Data</Label>
                     <Popover>
-                      <PopoverTrigger render={
+                      <PopoverTrigger asChild>
                         <Button variant="outline" className="w-full justify-start text-left font-normal bg-[#0f1115] border-[#2d3139] text-white">
                           <CalendarIcon className="mr-2 h-4 w-4" />
                           {editingRecord.date ? format(editingRecord.date as Date, "dd/MM/yyyy") : <span>Selecione</span>}
                         </Button>
-                      } />
+                      </PopoverTrigger>
                       <PopoverContent className="w-auto p-0 bg-[#1a1d23] border-[#2d3139]">
                         <Calendar mode="single" selected={editingRecord.date as Date} onSelect={(date) => setEditingRecord({...editingRecord, date})} initialFocus className="bg-[#1a1d23] text-white" />
                       </PopoverContent>
@@ -10502,15 +10473,16 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
   }, [serviceOrders, filterClient, filterDate]);
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">Ordens de Serviço</h2>
-          <p className="text-[#71717a]">Gerencie ordens de serviço técnicas e vistorias.</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-lg">
-            <span className="text-[10px] text-[#71717a] font-medium uppercase min-w-fit">Filtros:</span>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-2 mb-6">
+        <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest">Ordens de Serviço</h2>
+        <p className="text-[#a0a0a0] text-sm">Gerencie ordens de serviço técnicas e vistorias.</p>
+      </div>
+
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+        <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-lg w-full md:w-auto">
+          <Filter className="text-blue-500" size={14} />
+          <span className="text-[10px] text-[#71717a] font-bold uppercase tracking-widest min-w-fit">Filtros:</span>
             
             <Popover open={isClientFilterOpen} onOpenChange={setIsClientFilterOpen}>
               <PopoverTrigger asChild>
@@ -10628,13 +10600,13 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
             </Button>
           )}
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger render={
-            <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
-              <Plus size={18} />
-              Nova O.S.
-            </Button>
-          } />
-          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-[90vw] md:max-w-[800px] max-h-[90vh] flex flex-col p-0 overflow-hidden">
+            <DialogTrigger asChild>
+              <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white h-9 px-4 font-bold shadow-lg">
+                <Plus size={18} />
+                Nova O.S.
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-[90vw] md:max-w-[800px] max-h-[90vh] flex flex-col p-0 overflow-hidden">
             <DialogHeader className="p-6 pb-2 border-b border-[#2d3139]">
               <DialogTitle>Abrir Ordem de Serviço</DialogTitle>
               <DialogDescription className="text-[#71717a]">Preencha os detalhes técnicos do atendimento.</DialogDescription>
@@ -10900,7 +10872,6 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
             </DialogFooter>
           </DialogContent>
         </Dialog>
-        </div>
       </div>
 
       {showList ? (
@@ -10943,57 +10914,40 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                 selectedRowId === os.id ? 'ring-1 ring-blue-500 bg-blue-500/5' : ''
               )}
             >
-            <CardHeader className="pb-3 border-b border-[#2d3139]/30 relative pt-12">
-                <div className="absolute top-3 left-4 z-10 flex items-center justify-between w-[calc(100%-24px)]">
-                  <div className="flex items-center gap-2">
-                    <Checkbox 
-                      checked={selectedIds.includes(os.id)}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          setSelectedIds(prev => [...prev, os.id]);
-                        } else {
-                          setSelectedIds(prev => prev.filter(id => id !== os.id));
-                        }
-                      }}
-                      className="bg-[#0f1115] border-[#2d3139] data-[state=checked]:bg-[#3b82f6]"
-                    />
-                    <span className="text-[9px] text-[#71717a] uppercase font-bold tracking-wider">Selecionar</span>
-                  </div>
-
-                  <div className="flex gap-0.5">
-                    <Button variant="ghost" size="icon" title="Assinatura Externa" className="h-7 w-7 text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => handleGenerateSignatureLink(os.id, 'service-order', os.clientName, companyId, { title: `Ordem de Serviço #${formatRecordNumber(os.number, os.date)}`, value: os.totalValue?.toString() }, logAction)}>
-                      <PenTool size={13} />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-[#a0a0a0] hover:text-white" onClick={() => {
-                      setEditingOS({
-                        ...os,
-                        startDateTime: format(os.startDateTime instanceof Timestamp ? os.startDateTime.toDate() : new Date(os.startDateTime as any), "yyyy-MM-dd'T'HH:mm"),
-                        endDateTime: format(os.endDateTime instanceof Timestamp ? os.endDateTime.toDate() : new Date(os.endDateTime as any), "yyyy-MM-dd'T'HH:mm"),
-                      });
-                      setIsEditOpen(true);
-                    }}>
-                      <Pencil size={13} />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-[#ef4444]/60 hover:text-[#ef4444]" onClick={() => {
-                      setOSToDelete(os);
-                      setIsDeleteConfirmOpen(true);
-                    }}>
-                      <Trash2 size={13} />
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-7 px-2 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-[10px] font-bold" onClick={() => {
-                      setSelectedOSForPDF(os);
-                      setIsValuesModalOpen(true);
-                    }}>
-                      PDF
-                    </Button>
-                  </div>
+            <CardHeader className="pb-3 border-b border-[#2d3139]/30 relative pt-14">
+                <div className="absolute top-3 right-3 z-10 flex gap-1">
+                  <Button variant="ghost" size="icon" title="Assinatura" className="h-7 w-7 text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => handleGenerateSignatureLink(os.id, 'service-order', os.clientName, companyId, { title: `OS #${formatRecordNumber(os.number, os.date)}`, value: os.totalValue?.toString() }, logAction)}>
+                    <PenTool size={13} />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-[#a0a0a0] hover:text-white" onClick={() => {
+                    setEditingOS({
+                      ...os,
+                      startDateTime: format(os.startDateTime instanceof Timestamp ? os.startDateTime.toDate() : new Date(os.startDateTime as any), "yyyy-MM-dd'T'HH:mm"),
+                      endDateTime: format(os.endDateTime instanceof Timestamp ? os.endDateTime.toDate() : new Date(os.endDateTime as any), "yyyy-MM-dd'T'HH:mm"),
+                    });
+                    setIsEditOpen(true);
+                  }}>
+                    <Pencil size={13} />
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-7 px-2 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-[10px] font-bold" onClick={() => {
+                    setSelectedOSForPDF(os);
+                    setIsValuesModalOpen(true);
+                  }}>
+                    PDF
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-[#ef4444]/60 hover:text-[#ef4444]" onClick={() => {
+                    setOSToDelete(os);
+                    setIsDeleteConfirmOpen(true);
+                  }}>
+                    <Trash2 size={13} />
+                  </Button>
                 </div>
-                <div className="flex justify-between items-start mt-2">
+                <div className="flex justify-between items-start">
                   <Badge className={cn(
-                    "font-normal",
+                    "font-normal h-5 text-[9px]",
                     os.status === 'Finalizado' ? "bg-emerald-500/10 text-emerald-500" : "bg-blue-500/10 text-blue-500"
                   )}>{os.status}</Badge>
-                  <span className="text-[10px] font-mono text-[#3b82f6]">{formatRecordNumber(os.number, os.date)}</span>
+                  <span className="text-[9px] font-mono text-[#3b82f6]">{formatRecordNumber(os.number, os.date)}</span>
                 </div>
                 <CardTitle className="mt-3 text-white flex items-center gap-2">
                   <Shield size={16} className="text-[#3b82f6]" />
@@ -11015,9 +10969,22 @@ function ServiceOrdersManager({ serviceOrders = [], clients = [], users = [], ap
                     "{(os.performedServices || '').length > 80 ? (os.performedServices || '').substring(0, 80) + '...' : (os.performedServices || '')}"
                   </div>
                 </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-lg font-bold text-white">R$ {(os.totalValue || 0).toFixed(2)}</p>
-                  <div className="text-[10px] text-[#71717a] italic">ID: {os.id?.slice(-8)}</div>
+                <div className="flex items-center justify-between pt-2 border-t border-[#2d3139]/30">
+                  <div className="flex items-center gap-2">
+                    <Checkbox 
+                      checked={selectedIds.includes(os.id)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedIds(prev => [...prev, os.id]);
+                        } else {
+                          setSelectedIds(prev => prev.filter(id => id !== os.id));
+                        }
+                      }}
+                      className="bg-[#0f1115] border-[#2d3139] h-5 w-5 data-[state=checked]:bg-[#3b82f6]"
+                    />
+                    <p className="text-lg font-bold text-white">R$ {(os.totalValue || 0).toFixed(2)}</p>
+                  </div>
+                  <div className="text-[9px] text-[#71717a] italic">ID: {os.id?.slice(-6).toUpperCase()}</div>
                 </div>
               </CardContent>
             </Card>
@@ -11680,12 +11647,12 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
             )}
           </div>
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger render={
-            <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
-              <Plus size={18} />
-              Novo Orçamento
-            </Button>
-          } />
+            <DialogTrigger asChild>
+              <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+                <Plus size={18} />
+                Novo Orçamento
+              </Button>
+            </DialogTrigger>
           <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[700px]">
             <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Novo Orçamento</DialogTitle>
