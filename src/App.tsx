@@ -47,7 +47,9 @@ import {
   Ticket,
   Filter,
   Copy,
-  Key
+  Key,
+  Navigation,
+  Phone
 } from 'lucide-react';
 import { 
   collection, 
@@ -2185,12 +2187,6 @@ export default function MainApp() {
     signatureUrl: ''
   });
 
-  const [signatureDecision, setSignatureDecision] = useState<{
-    isOpen: boolean;
-    type: 'visit' | 'contract' | 'service-order' | 'budget';
-    data: any;
-  }>({ isOpen: false, type: 'visit', data: null });
-
   const [generatedSignatureInfo, setGeneratedSignatureInfo] = useState<{
     isOpen: boolean;
     token: string;
@@ -2203,9 +2199,11 @@ export default function MainApp() {
   const [interpretedEditAction, setInterpretedEditAction] = useState<{type: string, data: any} | null>(null);
   const onExternalEditHandled = useMemo(() => () => setInterpretedEditAction(null), []);
 
-  // Add the handler for Signature generation
-  const handleGenerateSignatureFinal = async () => {
-    const { type, data } = signatureDecision;
+  const onEditClick = (type: 'visit' | 'contract' | 'service-order' | 'budget' | 'receipt', data: any) => {
+    setInterpretedEditAction({ type, data });
+  };
+
+  const onSignatureClick = async (type: 'visit' | 'contract' | 'service-order' | 'budget', data: any) => {
     if (!data) return;
 
     let documentId = data.id;
@@ -2240,8 +2238,8 @@ export default function MainApp() {
         displayValue: displayInfo?.value || '',
         displayDetails: displayInfo?.details || '',
         status: 'pending',
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now()
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
       });
 
       if (logAction) {
@@ -2259,25 +2257,10 @@ export default function MainApp() {
         portalUrl,
         clientName
       });
-      setSignatureDecision({ ...signatureDecision, isOpen: false });
     } catch (err) {
       console.error(err);
       toast.error('Erro ao gerar código de assinatura.');
     }
-  };
-
-  const openEditFlow = () => {
-    const { type, data } = signatureDecision;
-    setSignatureDecision({ ...signatureDecision, isOpen: false });
-    setInterpretedEditAction({ type, data });
-  };
-
-  const onPencilClick = (type: 'visit' | 'contract' | 'service-order' | 'budget', data: any) => {
-    setSignatureDecision({
-      isOpen: true,
-      type,
-      data
-    });
   };
 
   // Log system
@@ -3545,7 +3528,8 @@ export default function MainApp() {
               onClearFilter={() => setVisitsFilter({ date: null })}
               showList={canViewList('visits')}
               logAction={logAction}
-              onPencilClick={onPencilClick}
+              onEditClick={onEditClick}
+              onSignatureClick={onSignatureClick}
               externalEditAction={interpretedEditAction?.type === 'visit' ? interpretedEditAction.data : null}
               onExternalEditHandled={() => setInterpretedEditAction(null)}
             />
@@ -3560,7 +3544,8 @@ export default function MainApp() {
               companyId={currentUserData?.companyId || ''} 
               showList={canViewList('budgets')} 
               logAction={logAction} 
-              onPencilClick={onPencilClick}
+              onEditClick={onEditClick}
+              onSignatureClick={onSignatureClick}
               externalEditAction={interpretedEditAction?.type === 'budget' ? interpretedEditAction.data : null}
               onExternalEditHandled={() => setInterpretedEditAction(null)}
             />
@@ -3575,7 +3560,8 @@ export default function MainApp() {
               companyId={currentUserData?.companyId || ''} 
               showList={canViewList('service-orders')}
               logAction={logAction}
-              onPencilClick={onPencilClick}
+              onEditClick={onEditClick}
+              onSignatureClick={onSignatureClick}
               externalEditAction={interpretedEditAction?.type === 'service-order' ? interpretedEditAction.data : null}
               onExternalEditHandled={() => setInterpretedEditAction(null)}
             />
@@ -3588,13 +3574,14 @@ export default function MainApp() {
               companyId={currentUserData?.companyId || ''} 
               showList={canViewList('clients')} 
               logAction={logAction} 
-              onPencilClick={onPencilClick}
+              onEditClick={onEditClick}
+              onSignatureClick={onSignatureClick}
               externalEditAction={interpretedEditAction?.type === 'contract' ? interpretedEditAction.data : null}
               onExternalEditHandled={() => setInterpretedEditAction(null)}
             />
           )}
           {activeTab === 'suppliers' && <SuppliersManager suppliers={suppliers} companyId={currentUserData?.companyId || ''} showList={canViewList('suppliers')} />}
-          {activeTab === 'receipts' && <ReceiptsManager receipts={receipts} clients={clients} pixSettings={pixSettings} appSettings={appSettings} companyId={currentUserData?.companyId || ''} currentUserData={currentUserData} showList={canViewList('receipts')} />}
+          {activeTab === 'receipts' && <ReceiptsManager receipts={receipts} clients={clients} pixSettings={pixSettings} appSettings={appSettings} companyId={currentUserData?.companyId || ''} currentUserData={currentUserData} showList={canViewList('receipts')} onEditClick={onEditClick} />}
           {activeTab === 'reports' && (
             <ReportsManager 
               visits={visits} 
@@ -3837,33 +3824,6 @@ export default function MainApp() {
             />
           )}
         </div>
-        <Dialog open={signatureDecision.isOpen} onOpenChange={(open) => setSignatureDecision({ ...signatureDecision, isOpen: open })}>
-          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[400px]">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Shield size={20} className="text-blue-500" />
-                Opção de Ação
-              </DialogTitle>
-              <DialogDescription className="text-[#71717a] text-xs">
-                O que você deseja fazer com este registro?
-              </DialogDescription>
-            </DialogHeader>
-            <div className="py-6 space-y-4">
-              <p className="text-sm text-center font-medium">Deseja gerar um código de assinatura para este documento agora?</p>
-              <div className="grid grid-cols-1 gap-2">
-                 <Button onClick={handleGenerateSignatureFinal} className="bg-blue-600 hover:bg-blue-700 text-white h-12 font-bold uppercase tracking-widest text-[10px]">
-                   <Key size={14} className="mr-2" /> Sim, Gerar Código de Assinatura
-                 </Button>
-                 <Button variant="outline" onClick={openEditFlow} className="border-[#2d3139] text-[#a0a0a0] hover:text-white h-12 font-bold uppercase tracking-widest text-[10px]">
-                   <Pencil size={14} className="mr-2" /> Não, Apenas Editar Registro
-                 </Button>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="ghost" onClick={() => setSignatureDecision({ ...signatureDecision, isOpen: false })} className="text-[#71717a] text-[10px] uppercase font-bold">Cancelar</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
 
         <Dialog open={generatedSignatureInfo.isOpen} onOpenChange={(open) => setGeneratedSignatureInfo({ ...generatedSignatureInfo, isOpen: open })}>
           <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[450px]">
@@ -4185,7 +4145,7 @@ function UsersManager({ users = [], currentUserData, showList, userRoles, logAct
           <Table>
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">Ações</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[60px]">Ações</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Usuário</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">E-mail</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Nível</TableHead>
@@ -4385,7 +4345,7 @@ const PAYMENT_METHODS = [
   "Boleto"
 ];
 
-function ClientsManager({ clients = [], appSettings, pixSettings, companyId, showList, logAction, onPencilClick, externalEditAction, onExternalEditHandled }: { clients: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, showList: boolean, logAction?: any, onPencilClick: (type: 'contract', data: any) => void, externalEditAction: any, onExternalEditHandled: () => void }) {
+function ClientsManager({ clients = [], appSettings, pixSettings, companyId, showList, logAction, onEditClick, onSignatureClick, externalEditAction, onExternalEditHandled }: { clients: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, showList: boolean, logAction?: any, onEditClick: (type: 'contract', data: any) => void, onSignatureClick: (type: 'contract', data: any) => void, externalEditAction: any, onExternalEditHandled: () => void }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -4401,7 +4361,12 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
 
   useEffect(() => {
     if (externalEditAction && onExternalEditHandled) {
-      setEditingClient(externalEditAction);
+      const data = { ...externalEditAction };
+      if (data.createdAt instanceof Timestamp) data.createdAt = data.createdAt.toDate();
+      if (data.updatedAt instanceof Timestamp) data.updatedAt = data.updatedAt.toDate();
+      if (data.contractStartDate instanceof Timestamp) data.contractStartDate = data.contractStartDate.toDate();
+      
+      setEditingClient(data);
       setIsEditOpen(true);
       onExternalEditHandled();
     }
@@ -4928,7 +4893,7 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
           <Table>
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">Ações</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[110px]">Ações</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Nome / Tipo</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Contato</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Contrato / Serviço</TableHead>
@@ -4936,71 +4901,71 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
             </TableHeader>
             <TableBody>
               {filteredClients.map((client) => (
-                <TableRow key={client.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
-                  <TableCell>
-                    <div className="flex gap-2">
-                      {client.type === 'Contrato' && (
-                        <Button 
-                          variant="outline" 
-                          size="icon" 
-                          className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" 
-                          title="Gerar Contrato PDF"
-                          onClick={() => generateContractPDF(client, appSettings, pixSettings)}
-                        >
-                          <FileText size={14} />
-                        </Button>
-                      )}
-                      <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
-                        if (onPencilClick) {
-                          onPencilClick('contract', client);
-                        } else {
-                          setEditingClient(client);
-                          setIsEditOpen(true);
-                        }
+                <TableRow key={client.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-all h-[70px]">
+                  <TableCell className="w-[140px] p-2">
+                    <div className="flex items-center gap-1.5 flex-nowrap transition-all">
+                      <Button variant="outline" size="icon" title="Editar" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={() => {
+                        onEditClick('contract', client);
                       }}>
-                        <Pencil size={14} />
+                        <Pencil size={12} />
                       </Button>
-                      {client.type === 'Contrato' && (
-                        <Button variant="outline" size="icon" title="Solicitar Assinatura Contrato" className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => handleGenerateSignatureLink(client.id, 'contract', (client.name || 'Cliente'), companyId, { title: 'Contrato de Prestação de Serviços' }, logAction)}>
-                          <PenTool size={14} />
-                        </Button>
-                      )}
-                      <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
+                      <Button variant="outline" size="icon" title="Assinatura" className="h-7 w-7 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => {
+                        onSignatureClick('contract', client);
+                      }}>
+                        <Pencil size={12} />
+                      </Button>
+                      <Button variant="outline" size="icon" className="h-7 w-7 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
                         setClientToDelete(client);
                         setIsDeleteConfirmOpen(true);
-                      }}>
-                        <Trash2 size={14} />
+                       }}>
+                        <Trash2 size={12} />
                       </Button>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-medium text-white text-[13px]">{client.name || 'Cliente Sem Nome'}</div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Badge variant="outline" className={cn(
-                        "text-[10px] h-5",
-                        client.type === 'Contrato' ? "border-[#10b981] text-[#10b981]" : "border-[#71717a] text-[#71717a]"
-                      )}>
-                        {client.type || 'Avulso'}
-                      </Badge>
-                      {client.type === 'Contrato' && client.contractValue && (
-                        <span className="text-[11px] text-[#10b981] font-medium">R$ {client.contractValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                      {client.type === 'Contrato' && (
+                        <>
+                          <div className="w-[1px] h-4 bg-[#2d3139] mx-0.5" />
+                          <Button 
+                            variant="outline" 
+                            size="icon"
+                            className="h-7 w-7 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" 
+                            title="Gerar Contrato PDF"
+                            onClick={() => generateContractPDF(client, appSettings, pixSettings)}
+                          >
+                            <FileText size={12} />
+                          </Button>
+                        </>
                       )}
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="text-[12px] text-white font-medium">{client.responsible || 'Sem Resp'}</div>
-                    <div className="text-[11px] text-[#e0e0e0]">{client.phone || 'N/A'}</div>
-                    <div className="text-[10px] text-[#71717a]">{client.email || 'N/A'}</div>
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white text-[13px] truncate max-w-[200px]">{client.name || 'Sem Nome'}</span>
+                        <Badge variant="outline" className={cn(
+                          "text-[9px] uppercase border-[#2d3139] text-[#a0a0a0] px-1 h-3.5"
+                        )}>
+                          {client.type || 'Avulso'}
+                        </Badge>
+                      </div>
+                      <span className="text-[10px] text-[#71717a] mt-0.5">{client.document || 'Sem Documento'}</span>
+                    </div>
                   </TableCell>
                   <TableCell>
-                    {client.type === 'Contrato' ? (
-                      <>
-                        <div className="text-[12px] text-[#10b981] font-medium">R$ {(client.contractValue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/mês</div>
-                        <div className="text-[11px] text-[#71717a] max-w-[200px] truncate">{client.serviceSpecification || 'Sem especificação'}</div>
-                      </>
-                    ) : (
-                      <div className="text-[12px] text-[#71717a]">Serviços Avulsos</div>
-                    )}
+                    <div className="flex flex-col gap-0.5 text-[11px] text-[#a0a0a0]">
+                      <div className="truncate max-w-[150px]">{client.email}</div>
+                      <div className="flex items-center gap-1"><Phone size={10} /> {client.phone}</div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col text-[11px]">
+                      {client.type === 'Contrato' ? (
+                        <>
+                          <div className="text-white font-bold">R$ {Number(client.monthlyValue || 0).toFixed(2)}</div>
+                          <div className="text-[10px] text-[#71717a]">Vencimento: <span className="text-blue-400">Dia {client.paymentDay}</span></div>
+                        </>
+                      ) : (
+                        <span className="italic text-[#71717a] opacity-50">Serviços Avulsos</span>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -5224,38 +5189,51 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
           <Table>
             <TableHeader>
               <TableRow className="border-[#2d3139] hover:bg-transparent">
-                <TableHead className="w-[100px] text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ações</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[80px]">N.º Cadastro</TableHead>
+                <TableHead className="w-[40px] text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ações</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Fornecedor</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Contato</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Telefone</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ramo</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ramo / Dados</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredSuppliers.map((supplier) => (
-                <TableRow key={supplier.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
-                  <TableCell>
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-[#f59e0b] hover:bg-[#f59e0b]/10" onClick={() => {
+                <TableRow key={supplier.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-all h-[70px]">
+                  <TableCell className="w-[100px] p-2">
+                    <div className="flex items-center gap-1 flex-nowrap">
+                      <Button variant="outline" size="icon" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-[#f59e0b] hover:bg-[#f59e0b]/10" onClick={() => {
                         setEditingSupplier(supplier);
                         setIsEditOpen(true);
                       }}>
-                        <Pencil size={14} />
+                        <Pencil size={12} />
                       </Button>
-                      <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
+                      <Button variant="outline" size="icon" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
                         setSupplierToDelete(supplier);
                         setIsDeleteConfirmOpen(true);
                       }}>
-                        <Trash2 size={14} />
+                        <Trash2 size={12} />
                       </Button>
                     </div>
                   </TableCell>
-                  <TableCell className="text-[12px] text-[#e0e0e0] font-mono">{supplier.registrationNumber || '-'}</TableCell>
-                  <TableCell className="font-medium text-white text-[13px]">{supplier.name}</TableCell>
-                  <TableCell className="text-[12px] text-[#e0e0e0]">{supplier.contact || '-'}</TableCell>
-                  <TableCell className="text-[12px] text-[#e0e0e0]">{supplier.phone || '-'}</TableCell>
-                  <TableCell className="text-[12px] text-[#71717a]">{supplier.activity || '-'}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-white text-[13px]">{supplier.name}</span>
+                      <span className="text-[10px] text-[#71717a]">REF: {supplier.registrationNumber || '-'}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col text-[11px] text-[#a0a0a0]">
+                      <div className="font-medium text-white/90 truncate max-w-[150px]">{supplier.contact || 'Sem contato'}</div>
+                      <div className="flex items-center gap-1"><Phone size={10} /> {supplier.phone || '-'}</div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <Badge variant="outline" className="text-[9px] uppercase border-[#2d3139] text-[#a0a0a0] w-fit px-1 h-3.5">
+                        {supplier.activity || 'Geral'}
+                      </Badge>
+                      <span className="text-[9px] text-[#71717a] mt-1 italic">Industrial / Comercial</span>
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))}
               {filteredSuppliers.length === 0 && (
@@ -5367,10 +5345,12 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
 
 // --- Receipts Manager Component ---
 
-function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings, companyId, currentUserData, showList }: { receipts: Receipt[], clients: Client[], pixSettings: PixSettings, appSettings: AppSettings, companyId: string, currentUserData: any, showList: boolean }) {
+function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings, companyId, currentUserData, showList, onEditClick }: { receipts: Receipt[], clients: Client[], pixSettings: PixSettings, appSettings: AppSettings, companyId: string, currentUserData: any, showList: boolean, onEditClick: (type: 'receipt', data: any) => void }) {
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isViewOpen, setIsViewOpen] = useState(false);
+  const [viewingReceipt, setViewingReceipt] = useState<Receipt | null>(null);
   const [editingReceipt, setEditingReceipt] = useState<Receipt | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [receiptToDelete, setReceiptToDelete] = useState<Receipt | null>(null);
@@ -5414,21 +5394,20 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
   }, [clients, clientSearch]);
 
   const syncReceiptToFinancial = async (receiptId: string, receiptData: any) => {
-    if (receiptData.status !== 'Recebido') return;
-
     try {
       // Check if financial record already exists for this receipt
       const q = query(collection(db, 'financial'), where('receiptId', '==', receiptId));
       const snapshot = await getDocs(q);
       
-      if (snapshot.empty) {
+      if (receiptData.status === 'Recebido') {
+        if (snapshot.empty) {
         await addDoc(collection(db, 'financial'), {
           type: 'Receita',
           category: receiptData.clientType === 'Contrato' ? 'Mensalidade Contrato' : 'Serviço Avulso',
           description: `Recebimento Recibo: ${receiptData.clientName} - ${receiptData.referenceMonth || format(new Date(), 'MMMM/yyyy', { locale: ptBR })}`,
           origin: receiptData.number ? formatRecordNumber(receiptData.number, receiptData.date) : 'Recibo',
           value: Number(receiptData.value),
-          date: receiptData.date || Timestamp.now(),
+          date: Timestamp.now(), // Usar data atual do recebimento
           paymentMethod: receiptData.paymentMethod || 'PIX',
           pixAccountId: receiptData.pixAccountId || null,
           serviceType: receiptData.clientType === 'Contrato' ? 'Contrato' : 'Serviço Normal',
@@ -5439,7 +5418,14 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
         });
         toast.info('Lançamento financeiro realizado automaticamente!');
       }
-    } catch (error) {
+    } else {
+      // Remove from financial if no longer 'Recebido'
+      for (const docSnap of snapshot.docs) {
+        await deleteDoc(doc(db, 'financial', docSnap.id));
+        toast.info('Lançamento financeiro removido (mudança de status).');
+      }
+    }
+  } catch (error) {
       console.error("Erro ao sincronizar recibo com financeiro:", error);
     }
   };
@@ -5447,9 +5433,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
   const updateReceiptStatus = async (id: string, status: 'Aguardando Pagamento' | 'Recebido', receipt: Receipt) => {
     try {
       await updateDoc(doc(db, 'receipts', id), { status });
-      if (status === 'Recebido') {
-        await syncReceiptToFinancial(id, { ...receipt, status });
-      }
+      await syncReceiptToFinancial(id, { ...receipt, status });
       toast.success(`Status do recibo atualizado para ${status}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `receipts/${id}`);
@@ -5551,10 +5535,8 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
       
       await updateDoc(doc(db, 'receipts', id), receiptData);
       
-      // Perform finance sync if status changed to 'Recebido'
-      if (receiptData.status === 'Recebido') {
-        await syncReceiptToFinancial(id, receiptData);
-      }
+      // Always call sync to handle both adding and removing based on status
+      await syncReceiptToFinancial(id, receiptData);
 
       setEditingReceipt(null);
       setIsEditOpen(false);
@@ -6092,13 +6074,10 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
           <Table>
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[140px]">Ações</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[80px]">Nº</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Status</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Conta PIX</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Cliente</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Serviço</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">Ações</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[80px]">Nº / Data</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Informações do Cliente</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Conta / Pagamento</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Valor</TableHead>
               </TableRow>
             </TableHeader>
@@ -6109,61 +6088,69 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                   id={`receipt-${receipt.id}`}
                   onClick={() => setSelectedRowId(receipt.id)}
                   className={cn(
-                    "border-[#2d3139] transition-colors cursor-pointer",
+                    "border-[#2d3139] transition-all h-[70px] cursor-pointer",
                     selectedRowId === receipt.id ? "bg-blue-500/10" : "hover:bg-[#25282e]/30"
                   )}
                 >
-                  <TableCell>
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="icon" title="Baixar PDF" className="h-8 w-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => generateReceiptPDF(receipt, appSettings, pixSettings)}>
-                        <Download size={14} />
-                      </Button>
-                      <Button variant="outline" size="icon" title="Compartilhar" className="h-8 w-8 border-[#2d3139] text-[#10b981] hover:bg-[#10b981]/10" onClick={() => generateReceiptPDF(receipt, appSettings, pixSettings, true)}>
-                        <Share2 size={14} />
-                      </Button>
-                      <Button variant="outline" size="icon" title="Editar" className="h-8 w-8 border-[#2d3139] text-[#f59e0b] hover:bg-[#f59e0b]/10" onClick={() => {
-                        setEditingReceipt(receipt);
-                        setIsEditOpen(true);
+                  <TableCell className="w-[150px] p-2">
+                    <div className="flex items-center gap-1.5 flex-nowrap">
+                      <Button variant="outline" size="icon" title="Ver Detalhes" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={(e) => {
+                        e.stopPropagation();
+                        setViewingReceipt(receipt);
+                        setIsViewOpen(true);
                       }}>
-                        <Pencil size={14} />
+                        <Eye size={12} />
                       </Button>
-                      <Button variant="outline" size="icon" title="Excluir" className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
+                      <Button variant="outline" size="icon" title="Gerar PDF" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={(e) => {
+                        e.stopPropagation();
+                        generateReceiptPDF(receipt, appSettings, pixSettings);
+                      }}>
+                        <Share2 size={12} />
+                      </Button>
+                      <Button variant="outline" size="icon" title="Editar" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={(e) => {
+                        e.stopPropagation();
+                        onEditClick('receipt', receipt);
+                      }}>
+                        <Pencil size={12} />
+                      </Button>
+                      <Button variant="outline" size="icon" title="Excluir" className="h-7 w-7 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={(e) => {
+                        e.stopPropagation();
                         setReceiptToDelete(receipt);
                         setIsDeleteConfirmOpen(true);
                       }}>
-                        <Trash2 size={14} />
+                        <Trash2 size={12} />
                       </Button>
                     </div>
                   </TableCell>
-                  <TableCell className="text-[12px] text-[#e0e0e0] font-mono">
-                    {receipt.number ? formatRecordNumber(receipt.number, receipt.date) : '-'}
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <span className="text-[11px] font-mono text-[#3b82f6] font-bold">#{receipt.number ? formatRecordNumber(receipt.number, receipt.date) : '-'}</span>
+                      <span className="text-[10px] text-[#71717a]">{format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), 'dd/MM/yy')}</span>
+                    </div>
                   </TableCell>
                   <TableCell>
-                    <Select 
-                      value={receipt.status || 'Aguardando Pagamento'} 
-                      onValueChange={(val: any) => updateReceiptStatus(receipt.id, val, receipt)}
-                    >
-                      <SelectTrigger className="h-8 w-[170px] text-[11px] bg-[#0f1115] border-[#2d3139] text-white">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                        <SelectItem value="Aguardando Pagamento">Aguardando Pagamento</SelectItem>
-                        <SelectItem value="Recebido">Recebido</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-white text-[12px] truncate max-w-[150px]">{receipt.clientName}</span>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[10px] text-[#71717a] italic">Serviço: {receipt.serviceSpecification || 'N/A'}</span>
+                      </div>
+                    </div>
                   </TableCell>
-                  <TableCell className="text-[12px] text-[#e0e0e0]">
-                    {pixSettings.accounts?.find(a => a.id === receipt.pixAccountId)?.label || '-'}
+                  <TableCell>
+                    <div className="flex flex-col text-[10px] text-[#a0a0a0]">
+                      <span className="text-[#e0e0e0] font-medium truncate max-w-[120px]">{pixSettings.accounts?.find(a => a.id === receipt.pixAccountId)?.label || 'C. Corrente'}</span>
+                      <span className="uppercase text-[9px]">{receipt.paymentMethod}</span>
+                    </div>
                   </TableCell>
-                  <TableCell className="text-[12px] text-[#e0e0e0]">
-                    {format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), 'dd/MM/yyyy')}
-                  </TableCell>
-                  <TableCell className="font-medium text-white text-[13px]">{receipt.clientName}</TableCell>
-                  <TableCell className="text-[12px] text-[#71717a] max-w-[200px] truncate">
-                    {receipt.serviceSpecification || 'N/A'}
-                  </TableCell>
-                  <TableCell className="text-[12px] text-[#10b981] font-medium">
-                    R$ {Number(receipt.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  <TableCell className="text-right">
+                    <div className="flex flex-col items-end">
+                      <Badge variant="outline" className={cn(
+                        "text-[9px] uppercase mb-1 border-[#2d3139] text-[#a0a0a0] px-1 h-3.5"
+                      )}>
+                        {receipt.status}
+                      </Badge>
+                      <span className="font-bold text-emerald-500 text-[13px]">R$ {Number(receipt.value).toFixed(2)}</span>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -6178,6 +6165,73 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
           </Table>
         </Card>
       )}
+
+      {/* View Receipt Dialog */}
+      <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-[90vw] md:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex justify-between items-center pr-8">
+              <span>Recibo #{viewingReceipt?.number ? formatRecordNumber(viewingReceipt.number, viewingReceipt.date) : '-'}</span>
+              <Badge variant="outline" className="text-[#a0a0a0] border-[#2d3139]">
+                {viewingReceipt?.status}
+              </Badge>
+            </DialogTitle>
+            <DialogDescription className="text-[#71717a]">
+              Detalhes do recibo gerado em {viewingReceipt?.date ? format(viewingReceipt.date instanceof Timestamp ? viewingReceipt.date.toDate() : new Date(viewingReceipt.date), 'dd/MM/yyyy') : ''}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 pt-4">
+            <div className="grid grid-cols-2 gap-6 bg-[#0f1115] p-4 rounded-lg border border-[#2d3139]">
+              <div>
+                <Label className="text-[#71717a] text-[10px] uppercase font-black">Cliente</Label>
+                <div className="text-white font-bold">{viewingReceipt?.clientName}</div>
+                <div className="text-[11px] text-[#71717a]">{viewingReceipt?.clientType}</div>
+              </div>
+              <div className="text-right">
+                <Label className="text-[#71717a] text-[10px] uppercase font-black">Valor Total</Label>
+                <div className="text-2xl font-black text-emerald-500">R$ {Number(viewingReceipt?.value || 0).toFixed(2)}</div>
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-[#71717a] text-[10px] uppercase font-black">Serviço/Produto</Label>
+              <div className="text-white mt-1 italic">
+                {viewingReceipt?.serviceSpecification || 'Não especificado'}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <Label className="text-[#71717a] text-[10px] uppercase font-black">Forma de Pagamento</Label>
+                <div className="text-white font-medium mt-1 uppercase text-xs">{viewingReceipt?.paymentMethod}</div>
+              </div>
+              <div className="text-right">
+                <Label className="text-[#71717a] text-[10px] uppercase font-black">Mês de Referência</Label>
+                <div className="text-white font-medium mt-1">{viewingReceipt?.referenceMonth || 'Não informado'}</div>
+              </div>
+            </div>
+
+            {viewingReceipt?.observations && (
+              <div>
+                <Label className="text-[#71717a] text-[10px] uppercase font-black">Observações</Label>
+                <div className="bg-[#0f1115] p-3 rounded border border-[#2d3139] text-xs text-[#a0a0a0] mt-1 italic">
+                  "{viewingReceipt.observations}"
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="mt-8 border-t border-[#2d3139] pt-6 flex gap-2">
+            <Button variant="outline" onClick={() => setIsViewOpen(false)} className="border-[#2d3139]">Fechar</Button>
+            <Button className="bg-[#3b82f6] hover:bg-[#2563eb]" onClick={() => {
+              if (viewingReceipt) generateReceiptPDF(viewingReceipt, appSettings, pixSettings);
+            }}>
+              Gerar PDF
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
         <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[400px]">
@@ -8820,7 +8874,7 @@ function StatCard({ title, value, icon, trend, isBalance, isCount, onClick }: { 
 
 // --- Visits Manager Component ---
 
-function VisitsManager({ visits = [], receipts = [], user, clients = [], appSettings, pixSettings, companyId, initialFilter, onClearFilter, showList, logAction, onPencilClick, externalEditAction, onExternalEditHandled }: { visits?: TechnicalVisit[], receipts?: Receipt[], user: FirebaseUser, clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, initialFilter?: { date: Date | null }, onClearFilter?: () => void, showList: boolean, logAction?: any, onPencilClick: (type: 'visit', data: any) => void, externalEditAction: any, onExternalEditHandled: () => void }) {
+function VisitsManager({ visits = [], receipts = [], user, clients = [], appSettings, pixSettings, companyId, initialFilter, onClearFilter, showList, logAction, onEditClick, onSignatureClick, externalEditAction, onExternalEditHandled }: { visits?: TechnicalVisit[], receipts?: Receipt[], user: FirebaseUser, clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, initialFilter?: { date: Date | null }, onClearFilter?: () => void, showList: boolean, logAction?: any, onEditClick: (type: 'visit', data: any) => void, onSignatureClick: (type: 'visit', data: any) => void, externalEditAction: any, onExternalEditHandled: () => void }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
@@ -8840,7 +8894,13 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
 
   useEffect(() => {
     if (externalEditAction) {
-      setEditingVisit(externalEditAction);
+      // Ensure timestamps are converted to Dates to prevent crashes in the form
+      const data = { ...externalEditAction };
+      if (data.date instanceof Timestamp) data.date = data.date.toDate();
+      if (data.expectedDate instanceof Timestamp) data.expectedDate = data.expectedDate.toDate();
+      if (data.createdAt instanceof Timestamp) data.createdAt = data.createdAt.toDate();
+      
+      setEditingVisit(data);
       setIsEditOpen(true);
       onExternalEditHandled();
     }
@@ -8984,28 +9044,11 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
 
         const receiptRef = await addDoc(collection(db, 'receipts'), receiptData);
 
-        // 2. Add to Financials
-        await addDoc(collection(db, 'financial'), {
-          type: 'Receita',
-          category: 'Serviço Avulso',
-          description: `Recebimento Visita: ${visit.clientName} - ${visit.description || visit.type}`,
-          origin: `Recibo Nº ${formatRecordNumber(nextReceiptNum, new Date())}`,
-          value: Number(visit.totalValue),
-          date: Timestamp.now(),
-          pixAccountId: client?.pixAccountId || null,
-          serviceType: 'Serviço Normal',
-          clientId: visit.clientId || null,
-          visitId: id,
-          receiptId: receiptRef.id,
-          companyId,
-          createdAt: Timestamp.now()
-        });
-
         // 3. Automatically generate PDF for the automated receipt
         const fullReceipt = { id: receiptRef.id, ...receiptData } as Receipt;
         generateReceiptPDF(fullReceipt, appSettings, pixSettings);
         
-        toast.success('Recibo emitido e financeiro registrado!');
+        toast.success('Recibo emitido (Aguardando Pagamento).');
       }
       
       toast.success(`Status atualizado para ${status}`);
@@ -9528,7 +9571,7 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
         <Table>
           <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[140px]">Ações</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[60px]">Ações</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[60px]">Nº</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Cliente</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Status</TableHead>
@@ -9539,47 +9582,74 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
           </TableHeader>
           <TableBody>
             {filteredVisits.map((visit) => (
-              <TableRow key={visit.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-colors">
-                <TableCell>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="icon" title="Ver Detalhes" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
-                      setViewingVisit({
-                        ...visit,
-                        date: visit.date instanceof Timestamp ? visit.date.toDate() : (visit.date ? new Date(visit.date) : new Date()),
-                        expectedDate: visit.expectedDate ? (visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate)) : (visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date)),
-                        createdAt: visit.createdAt instanceof Timestamp ? visit.createdAt.toDate() : (visit.createdAt ? new Date(visit.createdAt) : null)
-                      });
-                      setIsViewOpen(true);
-                    }}>
-                      <Eye size={14} />
-                    </Button>
-                    <Button variant="outline" size="icon" title="Editar" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => onPencilClick('visit', visit)}>
-                      <Pencil size={14} />
-                    </Button>
-                    <Button variant="outline" size="icon" title="Gerar PDF" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => generateVisitPDF(visit)}>
-                      <Share2 size={14} />
-                    </Button>
-                    <Button variant="outline" size="icon" title="Excluir" className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
-                      setVisitToDelete(visit);
-                      setIsDeleteConfirmOpen(true);
-                    }}>
-                      <Trash2 size={14} />
-                    </Button>
+                <TableRow key={visit.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-all h-[70px]">
+                  <TableCell className="w-[170px] p-2">
+                    <div className="flex items-center gap-1.5 flex-nowrap">
+                      <Button variant="outline" size="icon" title="Ver Detalhes" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={() => {
+                        setViewingVisit({
+                          ...visit,
+                          date: visit.date instanceof Timestamp ? visit.date.toDate() : (visit.date ? new Date(visit.date) : new Date()),
+                          expectedDate: visit.expectedDate ? (visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate)) : (visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date)),
+                          createdAt: visit.createdAt instanceof Timestamp ? visit.createdAt.toDate() : (visit.createdAt ? new Date(visit.createdAt) : null)
+                        });
+                        setIsViewOpen(true);
+                      }}>
+                        <Eye size={12} />
+                      </Button>
+                      <Button variant="outline" size="icon" title="Abrir Navegação (Maps)" className="h-7 w-7 border-[#2d3139] text-green-500 hover:bg-green-500/10" onClick={() => {
+                        const address = `${visit.address || ''} ${visit.cep || ''}`.trim();
+                        if (!address) {
+                          toast.error('Endereço não informado.');
+                          return;
+                        }
+                        window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`, '_blank');
+                      }}>
+                        <Navigation size={12} />
+                      </Button>
+                      <Button variant="outline" size="icon" title="Editar" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={(e) => {
+                        e.stopPropagation();
+                        onEditClick('visit', visit);
+                      }}>
+                        <Pencil size={12} />
+                      </Button>
+                      <Button variant="outline" size="icon" title="Assinatura" className="h-7 w-7 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={(e) => {
+                        e.stopPropagation();
+                        onSignatureClick('visit', visit);
+                      }}>
+                        <Pencil size={12} />
+                      </Button>
+                      <Button variant="outline" size="icon" title="Gerar PDF" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={() => generateVisitPDF(visit)}>
+                        <Share2 size={12} />
+                      </Button>
+                      <Button variant="outline" size="icon" title="Excluir" className="h-7 w-7 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
+                        setVisitToDelete(visit);
+                        setIsDeleteConfirmOpen(true);
+                       }}>
+                        <Trash2 size={12} />
+                      </Button>
+                    </div>
+                  </TableCell>
+                <TableCell className="text-[11px] font-mono text-[#3b82f6] whitespace-nowrap p-1">
+                  #{formatRecordNumber(visit.number, visit.date)}
+                </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-white text-[12px] truncate max-w-[150px]">{visit.clientName}</span>
+                      <span className="text-[10px] text-[#71717a] italic mt-0.5 truncate max-w-[200px]">{visit.description || visit.type}</span>
+                    </div>
+                  </TableCell>
+                <TableCell className="max-w-[180px]">
+                  <div className="flex flex-col text-[10px] text-[#a0a0a0]">
+                    <span className="truncate">{visit.address}</span>
+                    <span>{visit.technicianName}</span>
                   </div>
-                </TableCell>
-                <TableCell className="text-[12px] font-mono text-[#3b82f6] whitespace-nowrap">
-                  {formatRecordNumber(visit.number, visit.date)}
-                </TableCell>
-                <TableCell>
-                  <div className="font-medium text-white text-[13px]">{visit.clientName}</div>
-                  <div className="text-[11px] text-[#71717a]">{visit.clientPhone}</div>
                 </TableCell>
                 <TableCell>
                   <Select 
                     value={visit.status} 
                     onValueChange={(val: any) => updateStatus(visit.id, val)}
                   >
-                    <SelectTrigger className="h-8 w-[140px] text-[11px] bg-[#0f1115] border-[#2d3139] text-white">
+                    <SelectTrigger className="h-7 w-[130px] text-[10px] bg-[#0f1115] border-[#2d3139] text-white">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
@@ -9668,7 +9738,20 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
               </div>
               <div className="space-y-1">
                 <p className="text-[11px] text-[#71717a] uppercase">Endereço</p>
-                <p className="text-sm font-medium">{viewingVisit.address}</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">{viewingVisit.address}</p>
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    className="h-8 gap-2 bg-green-600/10 border-green-600/20 text-green-500 hover:bg-green-600 hover:text-white"
+                    onClick={() => {
+                      const address = `${viewingVisit.address || ''} ${viewingVisit.cep || ''}`.trim();
+                      window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`, '_blank');
+                    }}
+                  >
+                    <Navigation size={14} /> Navegar
+                  </Button>
+                </div>
               </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
@@ -10500,13 +10583,10 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
         <Table>
           <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">Ações</TableHead>
-              <TableHead className="text-left text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Valor</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Descrição</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Origem</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Conta PIX</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Tipo</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Categoria</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[80px]">Ações</TableHead>
+              <TableHead className="text-left text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Transação / Valor</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Descrição / Origem</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Conta / Categoria</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data</TableHead>
             </TableRow>
           </TableHeader>
@@ -10517,16 +10597,16 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
                 id={`fin-${record.id}`}
                 onClick={() => setSelectedRowId(record.id)}
                 className={cn(
-                  "border-[#2d3139] transition-colors cursor-pointer",
+                  "border-[#2d3139] transition-all h-[70px] cursor-pointer",
                   selectedRowId === record.id ? "bg-blue-500/10" : "hover:bg-[#25282e]/30"
                 )}
               >
-                <TableCell>
-                  <div className="flex gap-2">
+                <TableCell className="w-[100px] p-2">
+                  <div className="flex items-center gap-1 flex-nowrap">
                     <Button variant="outline" size="icon" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
                       setEditingRecord({
                         ...record,
-                        date: record.date instanceof Timestamp ? record.date.toDate() : new Date(record.date)
+                        date: record.date instanceof Timestamp ? record.date.toDate() : (record.date ? new Date(record.date) : new Date())
                       });
                       setIsEditOpen(true);
                     }}>
@@ -10540,54 +10620,43 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
                     </Button>
                   </div>
                 </TableCell>
-                <TableCell className={cn(
-                  "text-left font-bold text-[13px]",
-                  record.type === 'Receita' ? "text-[#10b981]" : "text-[#ef4444]"
-                )}>
-                  {record.type === 'Receita' ? '+' : '-'} R$ {(record.value || 0).toFixed(2)}
-                </TableCell>
-                <TableCell className="font-medium text-white text-[13px]">
-                  {record.description}
-                  {record.clientId && (
-                    <div className="text-[11px] text-[#71717a] mt-0.5">
-                      Cliente: {clients.find(c => c.id === record.clientId)?.name || 'N/A'}
-                    </div>
-                  )}
+                <TableCell>
+                  <div className="flex flex-col font-bold">
+                    <span className={cn("text-[13px]", record.type === 'Receita' ? "text-[#10b981]" : "text-[#ef4444]")}>
+                      {record.type === 'Receita' ? '+' : '-'} R$ {(record.value || 0).toFixed(2)}
+                    </span>
+                    <Badge className={cn(
+                      "text-[8px] uppercase px-1 py-0 h-3.5 w-fit",
+                      record.type === 'Receita' ? "bg-emerald-500/10 text-emerald-500 border-none" : "bg-red-500/10 text-red-500 border-none"
+                    )}>
+                      {record.type}
+                    </Badge>
+                  </div>
                 </TableCell>
                 <TableCell>
-                  <div className="flex flex-col gap-1">
+                  <div className="flex flex-col">
+                    <span className="font-medium text-white text-[12px] truncate max-w-[150px]">{record.description}</span>
                     {record.origin && (
-                      <span className="text-[11px] text-blue-400 font-medium">
-                        {record.origin.replace('Recibo Nº ', '')}
+                      <span className="text-[10px] text-blue-400 font-medium">
+                        {record.origin.replace('Recibo Nº ', 'Recib #')}
                       </span>
-                    )}
-                    {record.serviceType && (
-                      <Badge className={cn(
-                        "font-normal text-[10px] uppercase tracking-wider w-fit",
-                        record.serviceType === 'Contrato' ? "bg-amber-500/10 text-amber-500" : "bg-blue-500/10 text-blue-500"
-                      )}>
-                        {record.serviceType}
-                      </Badge>
                     )}
                   </div>
                 </TableCell>
-                <TableCell className="text-[12px] text-[#e0e0e0]">
-                  {pixSettings.accounts?.find(a => a.id === record.pixAccountId)?.label || '-'}
-                </TableCell>
                 <TableCell>
-                  <Badge className={cn(
-                    "text-[10px] font-semibold uppercase px-2 py-0.5 rounded",
-                    record.type === 'Receita' ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"
-                  )}>
-                    {record.type}
-                  </Badge>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[11px] text-[#e0e0e0]">
+                      {pixSettings.accounts?.find(a => a.id === record.pixAccountId)?.label || 'C. Corrente'}
+                    </span>
+                    <Badge variant="outline" className="bg-[#2d3139]/30 text-[#a0a0a0] font-normal text-[9px] uppercase w-fit border-none px-0">
+                      {record.category}
+                    </Badge>
+                  </div>
                 </TableCell>
-                <TableCell>
-                  <Badge className="bg-[#2d3139] text-[#e0e0e0] font-normal text-[10px] uppercase tracking-wider">{record.category}</Badge>
+                <TableCell className="text-[11px] text-[#71717a]">
+                  {format(record.date instanceof Timestamp ? record.date.toDate() : new Date(record.date), 'dd/MM/yy')}
                 </TableCell>
-                <TableCell className="text-[12px] text-[#e0e0e0]">
-                  {format(record.date instanceof Timestamp ? record.date.toDate() : new Date(record.date), 'dd/MM/yyyy')}
-                </TableCell>
+
               </TableRow>
             ))}
             {filteredFinancials.length === 0 && (
@@ -10728,7 +10797,8 @@ function ServiceOrdersManager({
   companyId, 
   showList, 
   logAction, 
-  onPencilClick, 
+  onEditClick, 
+  onSignatureClick, 
   externalEditAction, 
   onExternalEditHandled 
 }: { 
@@ -10740,7 +10810,8 @@ function ServiceOrdersManager({
   companyId: string, 
   showList: boolean, 
   logAction?: any, 
-  onPencilClick: (type: 'service-order', data: any) => void, 
+  onEditClick: (type: 'service-order', data: any) => void, 
+  onSignatureClick: (type: 'service-order', data: any) => void, 
   externalEditAction: any, 
   onExternalEditHandled: () => void 
 }) {
@@ -11323,121 +11394,113 @@ function ServiceOrdersManager({
       </div>
 
       {showList ? (
-        <div className="space-y-6">
-          <div 
-            className="grid grid-cols-1 gap-6 focus:outline-none focus:ring-1 focus:ring-blue-500/50 p-1"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (!filteredServiceOrders.length) return;
-              const currentIndex = filteredServiceOrders.findIndex(os => os.id === selectedRowId);
-              let nextIndex = currentIndex;
-              
-              if (e.key === 'ArrowDown') {
-                nextIndex = Math.min(currentIndex + 1, filteredServiceOrders.length - 1);
-              } else if (e.key === 'ArrowUp') {
-                nextIndex = Math.max(currentIndex - 1, 0);
-              } else {
-                return;
-              }
-              
-              setSelectedRowId(filteredServiceOrders[nextIndex].id);
-              e.preventDefault();
-              document.getElementById(`os-${filteredServiceOrders[nextIndex].id}`)?.scrollIntoView({ block: 'nearest' });
-            }}
-          >
-            {filteredServiceOrders.map(os => (
-            <Card 
-              key={os.id} 
-              id={`os-${os.id}`}
-              onClick={() => setSelectedRowId(os.id)}
-              className={cn(
-                "border-[#2d3139] bg-[#1a1d23] hover:border-[#3b82f6]/40 transition-all overflow-hidden group relative",
-                selectedIds.includes(os.id) ? 'ring-2 ring-[#3b82f6] border-transparent' : '',
-                selectedRowId === os.id ? 'ring-1 ring-blue-500 bg-blue-500/5' : ''
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50" tabIndex={0}>
+          <Table>
+            <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
+              <TableRow className="border-[#2d3139] hover:bg-transparent">
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">Ações</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">OS / Data</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Cliente / Equipamento</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Técnico / Status</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider text-right w-[140px]">Etiqueta</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredServiceOrders.map(os => (
+                <TableRow 
+                  key={os.id}
+                  id={`os-${os.id}`}
+                  onClick={() => setSelectedRowId(os.id)}
+                  className={cn(
+                    "border-[#2d3139] transition-all h-[70px] cursor-pointer",
+                    selectedRowId === os.id ? "bg-blue-500/10" : "hover:bg-[#25282e]/30"
+                  )}
+                >
+                  <TableCell className="w-[150px] p-2">
+                    <div className="flex items-center gap-1.5 flex-nowrap">
+                      <Button variant="outline" size="icon" title="Editar" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={(e) => {
+                        e.stopPropagation();
+                        onEditClick('service-order', os);
+                      }}>
+                        <Pencil size={12} />
+                      </Button>
+                      <Button variant="outline" size="icon" title="Assinatura" className="h-7 w-7 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={(e) => {
+                        e.stopPropagation();
+                        onSignatureClick('service-order', os);
+                      }}>
+                        <Pencil size={12} />
+                      </Button>
+                      <Button variant="outline" size="sm" className="h-7 px-1 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-[9px] font-bold" onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedOSForPDF(os);
+                        setIsValuesModalOpen(true);
+                      }}>
+                        PDF
+                      </Button>
+                      <Button variant="outline" size="icon" title="Excluir" className="h-7 w-7 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={(e) => {
+                        e.stopPropagation();
+                        setOSToDelete(os);
+                        setIsDeleteConfirmOpen(true);
+                      }}>
+                        <Trash2 size={12} />
+                      </Button>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <span className="text-[11px] font-mono text-[#3b82f6] font-bold">{formatRecordNumber(os.number, os.date)}</span>
+                      <span className="text-[10px] text-[#71717a]">{format(os.date instanceof Timestamp ? os.date.toDate() : new Date(os.date), 'dd/MM/yy')}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-white text-[12px] truncate max-w-[150px]">{os.clientName}</span>
+                      <span className="text-[10px] text-[#71717a] italic mt-0.5 truncate max-w-[200px]">Equip: {os.equipment}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <span className="text-[#10b981] font-bold text-[10px]">@{os.technicianName?.split(' ')[0] || 'Técnico'}</span>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex flex-col items-end mr-2">
+                        <Badge variant="outline" className={cn(
+                          "text-[9px] uppercase border-[#2d3139] text-[#a0a0a0] px-1 h-3.5 mb-1"
+                        )}>
+                          {os.status}
+                        </Badge>
+                        <span className="font-bold text-[#3b82f6] text-[13px]">R$ {(os.totalValue || 0).toFixed(2)}</span>
+                        <span className="text-[9px] text-[#71717a] uppercase tracking-wider">{os.serviceType}</span>
+                      </div>
+                      <Checkbox 
+                        id={`select-${os.id}`}
+                        checked={selectedIds.includes(os.id)}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedIds(prev => [...prev, os.id]);
+                          } else {
+                            setSelectedIds(prev => prev.filter(id => id !== os.id));
+                          }
+                        }}
+                        className="bg-[#0f1115] border-[#2d3139] h-4 w-4 data-[state=checked]:bg-[#3b82f6]"
+                      />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {serviceOrders.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-20 text-[#71717a] text-sm">
+                    Nenhuma Ordem de Serviço encontrada.
+                  </TableCell>
+                </TableRow>
               )}
-            >
-            <CardHeader className="pb-3 border-b border-[#2d3139]/30 relative pt-14">
-                <div className="absolute top-3 right-3 z-10 flex gap-1">
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-[#a0a0a0] hover:text-white" onClick={() => onPencilClick('service-order', os)}>
-                    <Pencil size={13} />
-                  </Button>
-                  <Button variant="outline" size="sm" className="h-7 px-2 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-[10px] font-bold" onClick={() => {
-                    setSelectedOSForPDF(os);
-                    setIsValuesModalOpen(true);
-                  }}>
-                    PDF
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-[#ef4444]/60 hover:text-[#ef4444]" onClick={() => {
-                    setOSToDelete(os);
-                    setIsDeleteConfirmOpen(true);
-                  }}>
-                    <Trash2 size={13} />
-                  </Button>
-                </div>
-                <div className="flex justify-between items-start">
-                  <Badge className={cn(
-                    "font-normal h-5 text-[9px]",
-                    os.status === 'Finalizado' ? "bg-emerald-500/10 text-emerald-500" : "bg-blue-500/10 text-blue-500"
-                  )}>{os.status}</Badge>
-                  <span className="text-[9px] font-mono text-[#3b82f6] font-bold">{formatRecordNumber(os.number, os.date)}</span>
-                </div>
-                <CardTitle className="mt-3 text-white flex items-center gap-2">
-                  <Shield size={16} className="text-[#3b82f6]" />
-                  {os.clientName}
-                </CardTitle>
-                <p className="text-xs text-[#71717a]">{os.equipment} - {os.brandModelSN}</p>
-              </CardHeader>
-              <CardContent className="pt-4">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-                  <div className="flex flex-wrap gap-4 text-[11px]">
-                    <div className="flex flex-col">
-                      <span className="text-[#71717a] text-[10px] uppercase font-bold tracking-wider">Data Atendimento</span>
-                      <span className="text-white font-medium">{format(os.date instanceof Timestamp ? os.date.toDate() : new Date(os.date), 'dd/MM/yyyy')}</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-[#71717a] text-[10px] uppercase font-bold tracking-wider">Técnico</span>
-                      <span className="text-[#10b981] font-bold">@{os.technicianName?.split(' ')[0] || users.find(u => u.uid === os.technicianId)?.displayName?.split(' ')[0] || 'AF-Sist'}</span>
-                    </div>
-                  </div>
-                  <div className="flex-1 p-2 bg-[#0f1115] rounded border border-[#2d3139] text-[10px] text-[#a0a0a0] min-h-[40px] italic">
-                    "{(os.performedServices || '').length > 120 ? (os.performedServices || '').substring(0, 120) + '...' : (os.performedServices || '')}"
-                  </div>
-                </div>
-                <div className="flex items-center justify-between pt-2 border-t border-[#2d3139]/30">
-                  <div className="flex items-center gap-3">
-                    <Checkbox 
-                      id={`select-${os.id}`}
-                      checked={selectedIds.includes(os.id)}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          setSelectedIds(prev => [...prev, os.id]);
-                        } else {
-                          setSelectedIds(prev => prev.filter(id => id !== os.id));
-                        }
-                      }}
-                      className="bg-[#0f1115] border-[#2d3139] h-5 w-5 data-[state=checked]:bg-[#3b82f6] cursor-pointer"
-                    />
-                    <Label htmlFor={`select-${os.id}`} className="text-[10px] text-[#71717a] font-bold uppercase tracking-widest cursor-pointer hover:text-white">Marcar para imprimir Etiqueta.</Label>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-lg font-black text-white">R$ {(os.totalValue || 0).toFixed(2)}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-          {serviceOrders.length === 0 && (
-            <div className="col-span-full py-20 text-center bg-[#1a1d23] rounded-xl border border-dashed border-[#2d3139]">
-              <Plus className="mx-auto h-12 w-12 text-[#2d3139] mb-4" />
-              <h3 className="text-lg font-medium text-white">Nenhuma Ordem de Serviço</h3>
-              <p className="text-[#71717a]">Registre seu primeiro atendimento técnico hoje.</p>
-            </div>
-          )}
-        </div>
-      </div>
-    ) : (
-      <NoAccessList title="Ordens de Serviço" />
-    )}
+            </TableBody>
+          </Table>
+        </Card>
+      ) : (
+        <NoAccessList title="Ordens de Serviço" />
+      )}
 
       {/* Edit Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
@@ -11688,7 +11751,7 @@ function ServiceOrdersManager({
   );
 }
 
-function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, companyId, showList, logAction, onPencilClick, externalEditAction, onExternalEditHandled }: { budgets?: Budget[], clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, showList: boolean, logAction?: any, onPencilClick: (type: 'budget', data: any) => void, externalEditAction: any, onExternalEditHandled: () => void }) {
+function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, companyId, showList, logAction, onEditClick, onSignatureClick, externalEditAction, onExternalEditHandled }: { budgets?: Budget[], clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, showList: boolean, logAction?: any, onEditClick: (type: 'budget', data: any) => void, onSignatureClick: (type: 'budget', data: any) => void, externalEditAction: any, onExternalEditHandled: () => void }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -11702,7 +11765,12 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
 
   useEffect(() => {
     if (externalEditAction) {
-      setEditingBudget(externalEditAction);
+      const data = { ...externalEditAction };
+      if (data.date instanceof Timestamp) data.date = data.date.toDate();
+      if (data.createdAt instanceof Timestamp) data.createdAt = data.createdAt.toDate();
+      if (data.validUntil instanceof Timestamp) data.validUntil = data.validUntil.toDate();
+      
+      setEditingBudget(data);
       setIsEditOpen(true);
       onExternalEditHandled();
     }
@@ -12319,69 +12387,86 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
     </div>
 
     {showList ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredBudgets.map((budget) => (
-          <Card key={budget.id} className="border-[#2d3139] bg-[#1a1d23] rounded-xl hover:border-[#3b82f6]/50 transition-all group">
-            <CardHeader className="pb-2">
-              <div className="flex justify-between items-start">
-                <div className="flex flex-col gap-1">
-                  <Badge className={cn(
-                    "text-[10px] font-semibold uppercase px-2 py-0.5 rounded w-fit",
-                    budget.status === 'Aprovado' ? "bg-emerald-500/10 text-emerald-500" : "bg-blue-500/10 text-blue-500"
-                  )}>
-                    {budget.status || 'Pendente'}
-                  </Badge>
-                  <span className="text-[10px] font-mono text-[#3b82f6]">{formatRecordNumber(budget.number, budget.createdAt)}</span>
-                </div>
-                <p className="text-[11px] text-[#71717a]">{format(budget.createdAt instanceof Timestamp ? budget.createdAt.toDate() : new Date(budget.createdAt), 'dd/MM/yyyy')}</p>
-              </div>
-              <CardTitle className="mt-3 text-[16px] font-bold text-white">{budget.clientName || 'Cliente Sem Nome'}</CardTitle>
-              <CardDescription className="text-[#71717a] text-[12px]">{budget.clientPhone || 'Sem telefone'}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2 mb-6">
-                {(budget.items || []).slice(0, 2).map((item, i) => (
-                  <div key={i} className="flex justify-between text-[12px]">
-                    <span className="text-[#a0a0a0] truncate mr-2">{item.quantity}x {item.description}</span>
-                    <span className="font-medium text-[#e0e0e0]">R$ {(item.quantity * item.price || 0).toFixed(2)}</span>
-                  </div>
-                ))}
-                {(budget.items || []).length > 2 && <p className="text-[10px] text-[#555]">+{(budget.items || []).length - 2} itens...</p>}
-              </div>
-              <Separator className="my-4 bg-[#2d3139]" />
-              <div className="flex items-center justify-between">
-                <p className="text-lg font-bold text-white">R$ {(budget.total || 0).toFixed(2)}</p>
-                <div className="flex gap-1">
-                  <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white" title="Editar" onClick={() => onPencilClick('budget', budget)}>
-                    < Pencil size={14} />
-                  </Button>
-                  <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white" title="Gerar PDF" onClick={() => generateBudgetPDF(budget)}>
-                    <Share2 size={14} />
-                  </Button>
-                  <Button variant="outline" size="icon" className="h-8 w-8 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" title="Excluir" onClick={() => {
-                    setBudgetToDelete(budget);
-                    setIsDeleteConfirmOpen(true);
-                  }}>
-                    <Trash2 size={14} />
-                  </Button>
-                  {budget.status === 'Pendente' && (
-                    <Button size="sm" className="h-8 bg-[#3b82f6] hover:bg-[#2563eb] text-white text-[11px] px-2" onClick={() => handleApproveBudget(budget)}>
-                      Aprovar
-                    </Button>
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50" tabIndex={0}>
+          <Table>
+            <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
+              <TableRow className="border-[#2d3139] hover:bg-transparent">
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">Ações</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">Orç / Data</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Cliente / Descrição</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Status / Total</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider text-right">Valor</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredBudgets.map(budget => (
+                <TableRow 
+                  key={budget.id}
+                  className={cn(
+                    "border-[#2d3139] transition-all h-[70px] cursor-pointer hover:bg-[#25282e]/30"
                   )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-        {budgets.length === 0 && (
-          <div className="col-span-full text-center py-20 bg-[#1a1d23] rounded-xl border border-dashed border-[#2d3139]">
-            <FileText className="mx-auto h-12 w-12 text-[#2d3139] mb-4" />
-            <h3 className="text-lg font-medium text-white">Nenhum orçamento</h3>
-            <p className="text-[#71717a]">Comece criando um novo orçamento para seus clientes.</p>
-          </div>
-        )}
-      </div>
+                >
+                  <TableCell className="w-[150px] p-2">
+                    <div className="flex items-center gap-1.5 flex-nowrap">
+                      <Button variant="outline" size="icon" title="Editar" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={() => onEditClick('budget', budget)}>
+                        <Pencil size={12} />
+                      </Button>
+                      <Button variant="outline" size="icon" title="Assinatura" className="h-7 w-7 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => onSignatureClick('budget', budget)}>
+                        <Pencil size={12} />
+                      </Button>
+                      <Button variant="outline" size="icon" title="Gerar PDF" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={() => generateBudgetPDF(budget)}>
+                        <Share2 size={12} />
+                      </Button>
+                      <Button variant="outline" size="icon" title="Excluir" className="h-7 w-7 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
+                        setBudgetToDelete(budget);
+                        setIsDeleteConfirmOpen(true);
+                      }}>
+                        <Trash2 size={12} />
+                      </Button>
+                      {budget.status === 'Pendente' && (
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-emerald-500 hover:bg-emerald-500/10" title="Aprovar" onClick={() => handleApproveBudget(budget)}>
+                          <CheckCircle2 size={12} />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <span className="text-[11px] font-mono text-[#3b82f6] font-bold">{formatRecordNumber(budget.number, budget.createdAt)}</span>
+                      <span className="text-[10px] text-[#71717a]">{format(budget.createdAt instanceof Timestamp ? budget.createdAt.toDate() : new Date(budget.createdAt), 'dd/MM/yy')}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-white text-[12px] truncate max-w-[150px]">{budget.clientName || 'Cliente Sem Nome'}</span>
+                      <span className="text-[10px] text-[#71717a] truncate max-w-[200px] italic mt-0.5">
+                        {budget.items?.[0]?.description || 'Sem descrição'} {(budget.items?.length || 0) > 1 ? `(+${budget.items!.length - 1} itens)` : ''}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex flex-col items-end">
+                      <Badge variant="outline" className={cn(
+                        "text-[9px] uppercase mb-1 border-[#2d3139] px-1 h-3.5",
+                        budget.status === 'Aprovado' ? "text-emerald-500" : "text-blue-500"
+                      )}>
+                        {budget.status || 'Pendente'}
+                      </Badge>
+                      <span className="font-bold text-white text-[13px]">R$ {(budget.total || 0).toFixed(2)}</span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {filteredBudgets.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-20 text-[#71717a] text-sm">
+                    Nenhum orçamento encontrado.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Card>
     ) : (
       <NoAccessList title="Orçamentos" />
     )}

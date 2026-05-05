@@ -1,6 +1,17 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // PUBLIC SIGNATURE VALIDATION - MUST BE ACCESSIBLE BY ALL
+    match /signature_requests/{token} {
+      allow read, get, list: if true;
+      allow create: if isSignedIn();
+      allow update: if (resource.data.status == 'pending' && request.resource.data.status == 'signed') || 
+                    isSuperAdmin() || 
+                    (isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == resource.data.companyId);
+      allow delete: if isSuperAdmin() || 
+                    (isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == resource.data.companyId);
+    }
+
     // helpers
     function isSignedIn() { return request.auth != null; }
     
@@ -35,13 +46,6 @@ service cloud.firestore {
               get(/databases/$(database)/documents/signature_requests/$(token)).data.status == 'signed';
     }
 
-    match /signature_requests/{token} {
-      allow read: if true;
-      allow create: if isSignedIn();
-      allow update: if (resource.data.status == 'pending' && request.resource.data.status == 'signed') || 
-                    (isSignedIn() && (isSuperAdmin() || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == resource.data.companyId));
-      allow delete: if isSignedIn() && (isSuperAdmin() || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == resource.data.companyId);
-    }
 
     match /companies/{companyId} {
       allow read: if isMemberOf(companyId);
