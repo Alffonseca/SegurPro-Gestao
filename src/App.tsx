@@ -30,6 +30,7 @@ import {
   X,
   Shield,
   PenTool,
+  PenLine,
   Database,
   RefreshCw,
   Upload,
@@ -1083,9 +1084,10 @@ interface TechnicalVisit {
   scheduledTime?: string;
   expectedDate?: any; // Data prevista
   expectedTime?: string; // Hora prevista
-  type: 'CFTV' | 'Alarme' | 'Cerca Elétrica' | 'Motor de Portão' | 'Outros';
+  type: 'CFTV' | 'Alarme' | 'Cerca Elétrica' | 'Motor de Portão' | 'Redes' | 'Outros';
   status: 'Agendada' | 'Em Andamento' | 'Concluída' | 'Cancelada';
   description: string;
+  serviceAddress?: string; // Endereço específico do serviço
   observations?: string;
   technicianId: string;
   technicianName: string;
@@ -3581,7 +3583,20 @@ export default function MainApp() {
             />
           )}
           {activeTab === 'suppliers' && <SuppliersManager suppliers={suppliers} companyId={currentUserData?.companyId || ''} showList={canViewList('suppliers')} />}
-          {activeTab === 'receipts' && <ReceiptsManager receipts={receipts} clients={clients} pixSettings={pixSettings} appSettings={appSettings} companyId={currentUserData?.companyId || ''} currentUserData={currentUserData} showList={canViewList('receipts')} onEditClick={onEditClick} />}
+          {activeTab === 'receipts' && (
+            <ReceiptsManager 
+              receipts={receipts} 
+              clients={clients} 
+              pixSettings={pixSettings} 
+              appSettings={appSettings} 
+              companyId={currentUserData?.companyId || ''} 
+              currentUserData={currentUserData} 
+              showList={canViewList('receipts')} 
+              onEditClick={onEditClick}
+              externalEditAction={interpretedEditAction?.type === 'receipt' ? interpretedEditAction.data : null}
+              onExternalEditHandled={() => setInterpretedEditAction(null)}
+            />
+          )}
           {activeTab === 'reports' && (
             <ReportsManager 
               visits={visits} 
@@ -4909,10 +4924,11 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
                       }}>
                         <Pencil size={12} />
                       </Button>
-                      <Button variant="outline" size="icon" title="Assinatura" className="h-7 w-7 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => {
+                      <Button variant="outline" size="icon" title="Assinatura" className="h-7 w-7 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={(e) => {
+                        e.stopPropagation();
                         onSignatureClick('contract', client);
                       }}>
-                        <Pencil size={12} />
+                        <PenLine size={12} />
                       </Button>
                       <Button variant="outline" size="icon" className="h-7 w-7 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
                         setClientToDelete(client);
@@ -5345,7 +5361,7 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
 
 // --- Receipts Manager Component ---
 
-function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings, companyId, currentUserData, showList, onEditClick }: { receipts: Receipt[], clients: Client[], pixSettings: PixSettings, appSettings: AppSettings, companyId: string, currentUserData: any, showList: boolean, onEditClick: (type: 'receipt', data: any) => void }) {
+function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings, companyId, currentUserData, showList, onEditClick, externalEditAction, onExternalEditHandled }: { receipts: Receipt[], clients: Client[], pixSettings: PixSettings, appSettings: AppSettings, companyId: string, currentUserData: any, showList: boolean, onEditClick: (type: 'receipt', data: any) => void, externalEditAction: any, onExternalEditHandled: () => void }) {
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -5356,6 +5372,15 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
   const [receiptToDelete, setReceiptToDelete] = useState<Receipt | null>(null);
   const [isReceiptConfirmOpen, setIsReceiptConfirmOpen] = useState(false);
   const [pendingReceiptForPdf, setPendingReceiptForPdf] = useState<Receipt | null>(null);
+
+  // External edit action handler
+  useEffect(() => {
+    if (externalEditAction) {
+      setEditingReceipt({ ...externalEditAction });
+      setIsEditOpen(true);
+      onExternalEditHandled();
+    }
+  }, [externalEditAction, onExternalEditHandled]);
   const [statusFilter, setStatusFilter] = useState<'Todos' | 'Aguardando Pagamento' | 'Recebido'>('Todos');
   const [dateFilter, setDateFilter] = useState('all');
   const [pixFilter, setPixFilter] = useState('all');
@@ -8538,6 +8563,7 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
       const currentDateStr = format(currentDate, 'yyyy-MM-dd');
       
       const count = (visits || []).filter(v => {
+        if (v.status === 'Concluída') return false;
         // Look for both date and expectedDate to include all visits (scheduled and completed)
         const d = safeParseDate(v.expectedDate || v.date);
         return format(d, 'yyyy-MM-dd') === currentDateStr;
@@ -8615,7 +8641,7 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
   }, [financials]);
 
   const typeData = useMemo(() => {
-    const types = ['CFTV', 'Alarme', 'Cerca Elétrica', 'Motor de Portão', 'Outros'];
+    const types = ['CFTV', 'Alarme', 'Cerca Elétrica', 'Motor de Portão', 'Redes', 'Outros'];
     return types.map(type => ({
       name: type,
       value: (visits || []).filter(v => v.type === type).length
@@ -8945,6 +8971,7 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
     expectedTime: '',
     technicianName: user.displayName || '',
     responsibleName: '',
+    serviceAddress: '',
     totalValue: 0
   });
 
@@ -9151,8 +9178,8 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
 
     // 2. DADOS DO CLIENTE & AGENDAMENTO
     drawSectionTitle('1. Dados do Cliente e Agendamento');
-    const boxWidth = 82;
-    const boxHeight = 35;
+    const boxWidth = 83;
+    const boxHeight = visit.serviceAddress ? 42 : 35;
     
     // Draw Box for Client Data
     doc.setDrawColor(200, 200, 200);
@@ -9175,6 +9202,15 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
     doc.text(addressLines, 48, clientDataY);
     
     clientDataY += (addressLines.length * 5);
+
+    if (visit.serviceAddress) {
+      doc.setFont('helvetica', 'bold');
+      doc.text('SERVIÇO:', 23, clientDataY);
+      doc.setFont('helvetica', 'normal');
+      const serviceAddressLines = doc.splitTextToSize(visit.serviceAddress, boxWidth - 28);
+      doc.text(serviceAddressLines, 48, clientDataY);
+      clientDataY += (serviceAddressLines.length * 5);
+    }
 
     doc.setFont('helvetica', 'bold');
     doc.text('FONE:', 23, clientDataY);
@@ -9473,8 +9509,12 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="address" className="text-[#a0a0a0]">Endereço</Label>
+                  <Label htmlFor="address" className="text-[#a0a0a0]">Endereço Cliente</Label>
                   <Input id="address" value={newVisit.address || ''} onChange={e => setNewVisit({...newVisit, address: e.target.value})} placeholder="Rua, Número, Bairro" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="serviceAddress" className="text-[#a0a0a0]">Endereço do Serviço (Opcional - Prioridade para GPS)</Label>
+                  <Input id="serviceAddress" value={newVisit.serviceAddress || ''} onChange={e => setNewVisit({...newVisit, serviceAddress: e.target.value})} placeholder="Onde o serviço será realizado" className="bg-[#0f1115] border-[#b8ab26]/30 text-white" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -9490,6 +9530,7 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
                         <SelectItem value="Alarme">Alarme</SelectItem>
                         <SelectItem value="Cerca Elétrica">Cerca Elétrica</SelectItem>
                         <SelectItem value="Motor de Portão">Motor de Portão</SelectItem>
+                        <SelectItem value="Redes">Redes</SelectItem>
                         <SelectItem value="Outros">Outros</SelectItem>
                       </SelectContent>
                     </Select>
@@ -9597,7 +9638,8 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
                         <Eye size={12} />
                       </Button>
                       <Button variant="outline" size="icon" title="Abrir Navegação (Maps)" className="h-7 w-7 border-[#2d3139] text-green-500 hover:bg-green-500/10" onClick={() => {
-                        const address = `${visit.address || ''} ${visit.cep || ''}`.trim();
+                        const targetAddress = visit.serviceAddress || visit.address || '';
+                        const address = `${targetAddress} ${visit.cep || ''}`.trim();
                         if (!address) {
                           toast.error('Endereço não informado.');
                           return;
@@ -9616,7 +9658,7 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
                         e.stopPropagation();
                         onSignatureClick('visit', visit);
                       }}>
-                        <Pencil size={12} />
+                        <PenLine size={12} />
                       </Button>
                       <Button variant="outline" size="icon" title="Gerar PDF" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={() => generateVisitPDF(visit)}>
                         <Share2 size={12} />
@@ -9737,15 +9779,20 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
                 </div>
               </div>
               <div className="space-y-1">
-                <p className="text-[11px] text-[#71717a] uppercase">Endereço</p>
+                <p className="text-[11px] text-[#71717a] uppercase">Endereço Principal</p>
+                <p className="text-sm font-medium">{viewingVisit.address}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[11px] text-[#71717a] uppercase">Endereço do Serviço</p>
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium">{viewingVisit.address}</p>
+                  <p className="text-sm font-medium">{viewingVisit.serviceAddress || viewingVisit.address}</p>
                   <Button 
                     size="sm" 
                     variant="outline" 
                     className="h-8 gap-2 bg-green-600/10 border-green-600/20 text-green-500 hover:bg-green-600 hover:text-white"
                     onClick={() => {
-                      const address = `${viewingVisit.address || ''} ${viewingVisit.cep || ''}`.trim();
+                      const targetAddress = viewingVisit.serviceAddress || viewingVisit.address || '';
+                      const address = `${targetAddress} ${viewingVisit.cep || ''}`.trim();
                       window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`, '_blank');
                     }}
                   >
@@ -9837,8 +9884,12 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="editAddress" className="text-[#a0a0a0]">Endereço</Label>
+                  <Label htmlFor="editAddress" className="text-[#a0a0a0]">Endereço Cliente</Label>
                   <Input id="editAddress" value={editingVisit.address || ''} onChange={e => setEditingVisit({...editingVisit, address: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editServiceAddress" className="text-[#a0a0a0]">Endereço do Serviço (Opcional - Prioridade para GPS)</Label>
+                  <Input id="editServiceAddress" value={editingVisit.serviceAddress || ''} onChange={e => setEditingVisit({...editingVisit, serviceAddress: e.target.value})} placeholder="Onde o serviço será realizado" className="bg-[#0f1115] border-[#b8ab26]/30 text-white" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -9854,6 +9905,7 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
                         <SelectItem value="Alarme">Alarme</SelectItem>
                         <SelectItem value="Cerca Elétrica">Cerca Elétrica</SelectItem>
                         <SelectItem value="Motor de Portão">Motor de Portão</SelectItem>
+                        <SelectItem value="Redes">Redes</SelectItem>
                         <SelectItem value="Outros">Outros</SelectItem>
                       </SelectContent>
                     </Select>
@@ -11428,7 +11480,7 @@ function ServiceOrdersManager({
                         e.stopPropagation();
                         onSignatureClick('service-order', os);
                       }}>
-                        <Pencil size={12} />
+                        <PenLine size={12} />
                       </Button>
                       <Button variant="outline" size="sm" className="h-7 px-1 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-[9px] font-bold" onClick={(e) => {
                         e.stopPropagation();
@@ -12412,7 +12464,7 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
                         <Pencil size={12} />
                       </Button>
                       <Button variant="outline" size="icon" title="Assinatura" className="h-7 w-7 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => onSignatureClick('budget', budget)}>
-                        <Pencil size={12} />
+                        <PenLine size={12} />
                       </Button>
                       <Button variant="outline" size="icon" title="Gerar PDF" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={() => generateBudgetPDF(budget)}>
                         <Share2 size={12} />
