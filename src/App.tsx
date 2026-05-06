@@ -3747,6 +3747,8 @@ export default function MainApp() {
                             d = d.replace(/client/g, 'cliente');
                             d = d.replace(/receipt/g, 'recibo');
                             d = d.replace(/service order/g, 'ordem de serviço');
+                            d = d.replace(/signature request/g, 'pedido de assinatura');
+                            d = d.replace(/Acessou menu/g, 'Acessou o menu');
                             return d;
                           };
 
@@ -3794,7 +3796,10 @@ export default function MainApp() {
                                     log.resourceType === 'budget' ? 'Orçamento' :
                                     log.resourceType === 'client' ? 'Cliente' :
                                     log.resourceType === 'receipt' ? 'Recibo' :
-                                    log.resourceType === 'service_order' ? 'O.S.' : log.resourceType
+                                    log.resourceType === 'service_order' ? 'O.S.' : 
+                                    log.resourceType === 'signature_request' ? 'Assinatura' :
+                                    log.resourceType === 'user' ? 'Usuário' :
+                                    log.resourceType === 'menu' ? 'Menu' : log.resourceType
                                   }</span>
                                   {log.resourceId && <span className="text-[10px] bg-[#0f1115] px-1.5 py-0.5 rounded border border-[#2d3139] font-mono">#{log.resourceId.slice(-6)}</span>}
                                 </div>
@@ -4438,6 +4443,9 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
         contractValue: data.type === 'Contrato' ? Number(data.contractValue || 0) : 0
       };
       await updateDoc(doc(db, 'clients', id), updatedData);
+      if (logAction) {
+        await logAction('update', 'client', `Atualizou dados do cliente ${updatedData.name}`, id);
+      }
       
       setEditingClient(null);
       setIsEditOpen(false);
@@ -4977,6 +4985,9 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
               if (clientToDelete) {
                 try {
                   await deleteDoc(doc(db, 'clients', clientToDelete.id));
+                  if (logAction) {
+                    await logAction('delete', 'client', `Excluiu o cliente ${clientToDelete.name}`, clientToDelete.id);
+                  }
                   toast.success('Cliente removido.');
                   setIsDeleteConfirmOpen(false);
                   setClientToDelete(null);
@@ -9086,6 +9097,9 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
       
       const oldStatus = visit.status;
       await updateDoc(doc(db, 'visits', id), { status });
+      if (logAction) {
+        await logAction('update', 'visit', `${visit.clientName}: de ${oldStatus} para ${status}`, id);
+      }
       
       if (status === 'Concluída' && oldStatus !== 'Concluída' && generateReceipt) {
         const client = visit.clientId ? clients.find(c => c.id === visit.clientId) : clients.find(c => c.name === visit.clientName);
@@ -9169,6 +9183,9 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
           expectedDate: editingVisit.expectedDate instanceof Date ? Timestamp.fromDate(editingVisit.expectedDate) : editingVisit.expectedDate,
           updatedAt: Timestamp.now()
         });
+        if (logAction) {
+          await logAction('update', 'visit', `Atualizou visita técnica #${editingVisit.number} (${editingVisit.clientName})`, id);
+        }
         setEditingVisit(null);
         setIsEditOpen(false);
         setIsReceiptPromptOpen(true);
@@ -9179,6 +9196,9 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
           expectedDate: editingVisit.expectedDate instanceof Date ? Timestamp.fromDate(editingVisit.expectedDate) : editingVisit.expectedDate,
           updatedAt: Timestamp.now()
         });
+        if (logAction) {
+          await logAction('update', 'visit', `Atualizou visita técnica #${editingVisit.number} (${editingVisit.clientName})`, id);
+        }
         setEditingVisit(null);
         setIsEditOpen(false);
         toast.success('Visita atualizada com sucesso!');
@@ -9781,6 +9801,9 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
               if (visitToDelete) {
                 try {
                   await deleteDoc(doc(db, 'visits', visitToDelete.id));
+                  if (logAction) {
+                    await logAction('delete', 'visit', `Excluiu visita #${visitToDelete.number} (${visitToDelete.clientName})`, visitToDelete.id);
+                  }
                   toast.success('Visita excluída.');
                   setIsDeleteConfirmOpen(false);
                   setVisitToDelete(null);
@@ -10236,12 +10259,15 @@ function FinancialManager({
     }
 
     try {
-      await addDoc(collection(db, 'financial'), {
+      const docRef = await addDoc(collection(db, 'financial'), {
         ...newRecord,
         date: Timestamp.fromDate(newRecord.date instanceof Date ? newRecord.date : new Date()),
         companyId,
         createdAt: Timestamp.now()
       });
+      if (logAction) {
+        await logAction('create', 'financial', `Lançamento financeiro: ${newRecord.description} (R$ ${newRecord.value})`, docRef.id);
+      }
       setNewRecord({ type: 'Receita', date: new Date(), value: 0, serviceType: 'Serviço Normal' });
       setIsAddOpen(false);
       toast.success('Registro financeiro salvo!');
@@ -10268,6 +10294,9 @@ function FinancialManager({
         paymentMethod: editingRecord.paymentMethod || null,
         pixAccountId: editingRecord.pixAccountId || null
       });
+      if (logAction) {
+        await logAction('update', 'financial', `Editou financeiro: ${editingRecord.description}`, id);
+      }
       setEditingRecord(null);
       setIsEditOpen(false);
       toast.success('Registro financeiro atualizado com sucesso!');
@@ -10282,6 +10311,9 @@ function FinancialManager({
 
     try {
       await deleteDoc(doc(db, 'financial', recordToDelete.id));
+      if (logAction) {
+        await logAction('delete', 'financial', `Removeu financeiro: ${recordToDelete.description}`, recordToDelete.id);
+      }
       setRecordToDelete(null);
       setIsDeleteConfirmOpen(false);
       toast.success('Registro financeiro excluído!');
@@ -11042,6 +11074,10 @@ function ServiceOrdersManager({
       const docRef = await addDoc(collection(db, 'serviceOrders'), osData);
       const createdOS = { id: docRef.id, ...osData } as ServiceOrder;
       
+      if (logAction) {
+        await logAction('create', 'service_order', `Criou O.S. #${nextNumber} para ${osData.clientName}`, docRef.id);
+      }
+
       setIsAddOpen(false);
       setNewOS({
         serviceType: 'Corretiva',
@@ -11082,6 +11118,9 @@ function ServiceOrdersManager({
       };
 
       await updateDoc(doc(db, 'serviceOrders', editingOS.id), osData);
+      if (logAction) {
+        await logAction('update', 'service_order', `Atualizou O.S. #${editingOS.number} (${editingOS.clientName})`, editingOS.id);
+      }
       setIsEditOpen(false);
       toast.success('Ordem de serviço atualizada!');
       
@@ -11099,6 +11138,9 @@ function ServiceOrdersManager({
     if (!osToDelete?.id) return;
     try {
       await deleteDoc(doc(db, 'serviceOrders', osToDelete.id));
+      if (logAction) {
+        await logAction('delete', 'service_order', `Removeu O.S. #${osToDelete.number} (${osToDelete.clientName})`, osToDelete.id);
+      }
       setIsDeleteConfirmOpen(false);
       toast.success('Ordem de serviço excluída com sucesso.');
     } catch (err) {
@@ -11981,7 +12023,7 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
       });
       
       if (logAction) {
-        logAction('Criação', `Orçamento #${nextNumber} criado para ${newBudget.clientName}`, savedDoc.id, 'Orçamentos');
+        logAction('create', 'budget', `Orçamento #${nextNumber} criado para ${newBudget.clientName}`, savedDoc.id);
       }
 
       setNewBudget({ items: [{ description: '', quantity: 1, price: 0 }], status: 'Pendente', observations: '', clientName: '', clientPhone: '', address: '' });
@@ -12010,7 +12052,7 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
       });
       
       if (logAction) {
-        logAction('Edição', `Orçamento #${editingBudget.number} atualizado`, editingBudget.id, 'Orçamentos');
+        logAction('update', 'budget', `Orçamento #${editingBudget.number} atualizado`, editingBudget.id);
       }
 
       setIsEditOpen(false);
@@ -12027,7 +12069,7 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
     try {
       await deleteDoc(doc(db, 'budgets', budgetToDelete.id));
       if (logAction) {
-        logAction('Exclusão', `Orçamento #${budgetToDelete.number} excluído`, budgetToDelete.id, 'Orçamentos');
+        logAction('delete', 'budget', `Orçamento #${budgetToDelete.number} excluído`, budgetToDelete.id);
       }
       setIsDeleteConfirmOpen(false);
       setBudgetToDelete(null);
