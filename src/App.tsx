@@ -5347,12 +5347,12 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
         await addDoc(collection(db, 'financial'), {
           type: 'Receita',
           category: receiptData.clientType === 'Contrato' ? 'Mensalidade Contrato' : 'Serviço Avulso',
-          description: `Recebimento Recibo: ${receiptData.clientName} - ${receiptData.referenceMonth || format(new Date(), 'MMMM/yyyy', { locale: ptBR })}`,
+          description: `${receiptData.clientName} - ${receiptData.referenceMonth || format(new Date(), 'MMMM/yyyy', { locale: ptBR })}`,
           origin: receiptData.number ? formatRecordNumber(receiptData.number, receiptData.date) : 'Recibo',
           value: Number(receiptData.value),
           date: Timestamp.now(), // Usar data atual do recebimento
           paymentMethod: receiptData.paymentMethod || 'PIX',
-          pixAccountId: receiptData.pixAccountId || null,
+          pixAccountId: receiptData.paymentMethod === 'Dinheiro' ? null : (receiptData.pixAccountId || null),
           serviceType: receiptData.clientType === 'Contrato' ? 'Contrato' : 'Serviço Normal',
           clientId: receiptData.clientId || null,
           receiptId: receiptId,
@@ -9530,18 +9530,16 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
         <Table>
           <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[60px]">Ações</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[60px]">Nº</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Cliente</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Status</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Serviço</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">Visita para</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Valor</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">AÇÕES</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">CLIENTE / Nº</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">ENDEREÇO DO SERVIÇO / SERVIÇO</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">STATUS / VISITA PARA</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider text-right">VALOR</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredVisits.map((visit) => (
-                <TableRow key={visit.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-all h-[70px]">
+                <TableRow key={visit.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-all h-[80px]">
                   <TableCell className="w-[170px] p-2">
                     <div className="flex items-center gap-1.5 flex-nowrap">
                       <Button variant="outline" size="icon" title="Ver Detalhes" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={() => {
@@ -9583,54 +9581,44 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
                       </Button>
                     </div>
                   </TableCell>
-                <TableCell className="text-[11px] font-mono text-[#3b82f6] whitespace-nowrap p-1">
-                  #{formatRecordNumber(visit.number, visit.date)}
-                </TableCell>
                   <TableCell>
                     <div className="flex flex-col">
                       <span className="font-bold text-white text-[12px] truncate max-w-[150px]">{visit.clientName}</span>
-                      <span className="text-[10px] text-[#71717a] italic mt-0.5 truncate max-w-[200px]">{visit.description || visit.type}</span>
+                      <span className="text-[10px] font-mono text-[#3b82f6] whitespace-nowrap">#{formatRecordNumber(visit.number, visit.date)}</span>
                     </div>
                   </TableCell>
-                <TableCell className="max-w-[180px]">
-                  <div className="flex flex-col text-[10px] text-[#a0a0a0]">
-                    <span className="truncate">{visit.address}</span>
-                    <span>{visit.technicianName}</span>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <Select 
-                    value={visit.status} 
-                    onValueChange={(val: any) => updateStatus(visit.id, val)}
-                  >
-                    <SelectTrigger className="h-7 w-[130px] text-[10px] bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      <SelectItem value="Agendada">Agendada</SelectItem>
-                      <SelectItem value="Em Andamento">Em Andamento</SelectItem>
-                      <SelectItem value="Concluída">Concluída</SelectItem>
-                      <SelectItem value="Cancelada">Cancelada</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </TableCell>
-                <TableCell>
-                  <Badge className="bg-[#2d3139] text-[#e0e0e0] font-normal text-[10px] uppercase tracking-wider">{visit.type}</Badge>
-                </TableCell>
-                <TableCell className="text-[12px] text-[#e0e0e0]">
-                  <div className="font-medium text-[#3b82f6]">{format(visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date), 'dd/MM/yyyy')}</div>
-                  {visit.scheduledTime && <div className="text-[10px] text-[#71717a]">{visit.scheduledTime}</div>}
-                  {visit.expectedDate && (
-                    <div className="text-[10px] text-[#10b981] mt-1 italic">
-                      Prev: {format(visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate), 'dd/MM/yyyy')} {visit.expectedTime}
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <span className="text-[11px] text-[#e0e0e0] truncate max-w-[200px] font-medium">{visit.serviceAddress || visit.address}</span>
+                      <span className="text-[10px] text-[#71717a] italic truncate max-w-[200px]">{visit.description || visit.type}</span>
                     </div>
-                  )}
-                  <div className="text-[9px] text-[#71717a] mt-1 font-mono italic">Reg: {format(visit.createdAt instanceof Timestamp ? visit.createdAt.toDate() : new Date(visit.createdAt), 'dd/MM/yyyy')}</div>
-                </TableCell>
-                <TableCell className="text-[12px] font-semibold text-white">
-                  R$ {(visit.totalValue || 0).toFixed(2)}
-                </TableCell>
-              </TableRow>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-1.5">
+                      <Select 
+                        value={visit.status} 
+                        onValueChange={(val: any) => updateStatus(visit.id, val)}
+                      >
+                        <SelectTrigger className="h-6 w-[120px] text-[9px] bg-[#0f1115] border-[#2d3139] text-white p-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                          <SelectItem value="Agendada">Agendada</SelectItem>
+                          <SelectItem value="Em Andamento">Em Andamento</SelectItem>
+                          <SelectItem value="Concluída">Concluída</SelectItem>
+                          <SelectItem value="Cancelada">Cancelada</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <div className="flex flex-col text-[9px] text-[#71717a]">
+                        <span className="font-bold text-[#3b82f6]">{format(visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date), 'dd/MM/yyyy')} {visit.scheduledTime}</span>
+                        {visit.technicianName && <span className="text-[8px] italic">Téc: {visit.technicianName.split(' ')[0]}</span>}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right text-[13px] font-bold text-white">
+                    R$ {(visit.totalValue || 0).toFixed(2)}
+                  </TableCell>
+                </TableRow>
             ))}
             {filteredVisits.length === 0 && (
               <TableRow>
@@ -10599,7 +10587,9 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-col">
-                    <span className="font-medium text-white text-[12px] truncate max-w-[150px]">{record.description}</span>
+                    <span className="font-medium text-white text-[12px] truncate max-w-[180px]">
+                      {record.description?.replace('Recebido Recibo:', '').trim()}
+                    </span>
                     {record.origin && (
                       <span className="text-[10px] text-blue-400 font-medium">
                         {record.origin.replace('Recibo Nº ', 'Recib #')}
@@ -10614,8 +10604,11 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
                         ? '( EM ESPÉCIE )' 
                         : (pixSettings.accounts?.find(a => a.id === record.pixAccountId)?.label || 'CONTA CORRENTE')}
                     </span>
-                    <Badge variant="outline" className="bg-[#2d3139]/30 text-[#a0a0a0] font-normal text-[9px] uppercase w-fit border-none px-0">
-                      {record.paymentMethod === 'Dinheiro' ? 'DINHEIRO' : (record.type === 'income' ? 'VALOR RECEBIDO' : 'PAGAMENTO')}
+                    <Badge variant="outline" className={cn(
+                      "font-normal text-[9px] uppercase w-fit border-none px-0",
+                      record.paymentMethod === 'PIX' ? "bg-blue-500/10 text-blue-500" : "bg-[#2d3139]/30 text-[#a0a0a0]"
+                    )}>
+                      {record.paymentMethod === 'Dinheiro' ? 'DINHEIRO' : (record.paymentMethod === 'PIX' ? 'PIX' : (record.type === 'Receita' ? 'VALOR RECEBIDO' : 'PAGAMENTO'))}
                     </Badge>
                   </div>
                 </TableCell>
@@ -11365,11 +11358,12 @@ function ServiceOrdersManager({
           <Table>
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">Ações</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">OS / Data</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Cliente / Equipamento</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Técnico / Status</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider text-right w-[140px]">Etiqueta</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">AÇÕES</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">OS / DATA</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">CLIENTE / STATUS</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">EQUIPAMENTO / MARCA / MODELO / SN</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">TÉCNICO / VALOR</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider text-right w-[100px]">ETIQUETA</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -11379,7 +11373,7 @@ function ServiceOrdersManager({
                   id={`os-${os.id}`}
                   onClick={() => setSelectedRowId(os.id)}
                   className={cn(
-                    "border-[#2d3139] transition-all h-[70px] cursor-pointer",
+                    "border-[#2d3139] transition-all h-[90px] cursor-pointer",
                     selectedRowId === os.id ? "bg-blue-500/10" : "hover:bg-[#25282e]/30"
                   )}
                 >
@@ -11409,31 +11403,35 @@ function ServiceOrdersManager({
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-col">
-                      <span className="text-[11px] font-mono text-[#3b82f6] font-bold">{formatRecordNumber(os.number, os.date)}</span>
-                      <span className="text-[10px] text-[#71717a]">{format(os.date instanceof Timestamp ? os.date.toDate() : new Date(os.date), 'dd/MM/yy')}</span>
+                      <span className="text-[12px] font-mono text-[#3b82f6] font-bold">#{formatRecordNumber(os.number, os.date)}</span>
+                      <span className="text-[10px] text-[#71717a] font-medium">{format(os.date instanceof Timestamp ? os.date.toDate() : new Date(os.date), 'dd/MM/yy')}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-1">
+                      <span className="font-bold text-white text-[12px] truncate max-w-[150px]">{os.clientName}</span>
+                      <Badge variant="outline" className={cn(
+                        "text-[9px] uppercase border-[#2d3139] text-[#a0a0a0] px-1 h-3.5 w-fit"
+                      )}>
+                        {os.status}
+                      </Badge>
                     </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-col">
-                      <span className="font-bold text-white text-[12px] truncate max-w-[150px]">{os.clientName}</span>
-                      <span className="text-[10px] text-[#71717a] italic mt-0.5 truncate max-w-[200px]">Equip: {os.equipment}</span>
+                      <span className="text-[11px] text-white font-medium truncate max-w-[200px]">{os.equipment}</span>
+                      <span className="text-[10px] text-[#71717a] italic truncate max-w-[200px]">{os.brandModelSN}</span>
                     </div>
                   </TableCell>
                   <TableCell>
-                    <span className="text-[#10b981] font-bold text-[10px]">@{os.technicianName?.split(' ')[0] || 'Técnico'}</span>
+                    <div className="flex flex-col">
+                      <span className="text-[#10b981] font-bold text-[10px] truncate max-w-[120px]">@{os.technicianName || 'Técnico'}</span>
+                      <span className="font-bold text-[#3b82f6] text-[13px]">R$ {(os.totalValue || 0).toFixed(2)}</span>
+                    </div>
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex flex-col items-end mr-2">
-                        <Badge variant="outline" className={cn(
-                          "text-[9px] uppercase border-[#2d3139] text-[#a0a0a0] px-1 h-3.5 mb-1"
-                        )}>
-                          {os.status}
-                        </Badge>
-                        <span className="font-bold text-[#3b82f6] text-[13px]">R$ {(os.totalValue || 0).toFixed(2)}</span>
-                        <span className="text-[9px] text-[#71717a] uppercase tracking-wider">{os.serviceType}</span>
-                      </div>
-                      <Checkbox 
+                    <div className="flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
+                    <Checkbox 
                         id={`select-${os.id}`}
                         checked={selectedIds.includes(os.id)}
                         onCheckedChange={(checked) => {
@@ -11443,7 +11441,7 @@ function ServiceOrdersManager({
                             setSelectedIds(prev => prev.filter(id => id !== os.id));
                           }
                         }}
-                        className="bg-[#0f1115] border-[#2d3139] h-4 w-4 data-[state=checked]:bg-[#3b82f6]"
+                        className="bg-[#0f1115] border-[#2d3139] h-5 w-5 data-[state=checked]:bg-[#3b82f6]"
                       />
                     </div>
                   </TableCell>
