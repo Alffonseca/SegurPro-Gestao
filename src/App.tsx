@@ -2197,6 +2197,10 @@ export default function MainApp() {
     clientName: string;
   }>({ isOpen: false, token: '', accessCode: '', url: '', portalUrl: '', clientName: '' });
 
+  const [viewPeriod, setViewPeriod] = useState<'month' | 'year'>('month');
+  const [selectedMonth, setSelectedMonth] = useState<string>(format(new Date(), 'MM'));
+  const [selectedYear, setSelectedYear] = useState<string>(format(new Date(), 'yyyy'));
+
   const [interpretedEditAction, setInterpretedEditAction] = useState<{type: string, data: any} | null>(null);
   const onExternalEditHandled = useMemo(() => () => setInterpretedEditAction(null), []);
 
@@ -3517,7 +3521,22 @@ export default function MainApp() {
               onExternalEditHandled={() => setInterpretedEditAction(null)}
             />
           )}
-          {activeTab === 'financial' && <FinancialManager financials={financials} visits={visits} clients={clients} pixSettings={pixSettings} companyId={currentUserData?.companyId || ''} showList={canViewList('financial')} />}
+          {activeTab === 'financial' && (
+            <FinancialManager 
+              financials={financials} 
+              visits={visits} 
+              clients={clients} 
+              pixSettings={pixSettings} 
+              companyId={currentUserData?.companyId || ''} 
+              showList={canViewList('financial')}
+              viewPeriod={viewPeriod}
+              setViewPeriod={setViewPeriod}
+              selectedMonth={selectedMonth}
+              setSelectedMonth={setSelectedMonth}
+              selectedYear={selectedYear}
+              setSelectedYear={setSelectedYear}
+            />
+          )}
           {activeTab === 'budgets' && (
             <BudgetsManager 
               budgets={budgets} 
@@ -3796,11 +3815,18 @@ export default function MainApp() {
           {activeTab === 'super-admin' && (
             <SuperAdminPanel 
               companies={allCompanies} 
-              financials={allFinancials} 
+              allFinancials={allFinancials} 
               saasSettings={saasSettings}
               user={user}
               selectedCompanyId={selectedCompanyId}
               setSelectedCompanyId={setSelectedCompanyId}
+              viewPeriod={viewPeriod}
+              setViewPeriod={setViewPeriod}
+              selectedMonth={selectedMonth}
+              setSelectedMonth={setSelectedMonth}
+              selectedYear={selectedYear}
+              setSelectedYear={setSelectedYear}
+              currentUserData={currentUserData}
             />
           )}
           {activeTab === 'settings' && (
@@ -6207,7 +6233,35 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
 
 // --- Super Admin Panel Component ---
 
-function SuperAdminPanel({ companies = [], financials = [], saasSettings, user, selectedCompanyId, setSelectedCompanyId }: { companies: any[], financials: any[], saasSettings: any, user: any, selectedCompanyId: string, setSelectedCompanyId: (id: string) => void }) {
+function SuperAdminPanel({ 
+  companies = [], 
+  allFinancials = [], 
+  saasSettings, 
+  user, 
+  selectedCompanyId, 
+  setSelectedCompanyId,
+  viewPeriod,
+  setViewPeriod,
+  selectedMonth,
+  setSelectedMonth,
+  selectedYear,
+  setSelectedYear,
+  currentUserData
+}: { 
+  companies: any[], 
+  allFinancials: any[], 
+  saasSettings: any, 
+  user: any, 
+  selectedCompanyId: string, 
+  setSelectedCompanyId: (id: string) => void,
+  viewPeriod: 'month' | 'year',
+  setViewPeriod: (v: 'month' | 'year') => void,
+  selectedMonth: string,
+  setSelectedMonth: (v: string) => void,
+  selectedYear: string,
+  setSelectedYear: (v: string) => void,
+  currentUserData: any
+}) {
   const [isMigrating, setIsMigrating] = useState(false);
   const [migrationStats, setMigrationStats] = useState<any>(null);
   const [migrationLogs, setMigrationLogs] = useState<string[]>([]);
@@ -6600,36 +6654,115 @@ function SuperAdminPanel({ companies = [], financials = [], saasSettings, user, 
   };
 
   // Identify AF Sistemas (User's own company)
-  const myCompany = companies.find(c => c.ownerId === user?.uid) || 
-                    companies.find(c => c.name?.toLowerCase().includes('af sistemas'));
-  
-  // Calculate SaaS Total Revenue (Subscriptions)
-  // Logic: Active companies (excluding my own AND exempt ones)
-  const activeCompaniesCount = (companies || []).filter(c => c && c.status !== 'blocked').length;
-  
-  const saasRevenue = (companies || []).reduce((total, c) => {
-    if (!c || c.status === 'blocked' || c.id === myCompany?.id || c.isExempt) return total;
+  // Identification of Master Company (AF Sistemas)
+  // Logic: Use current company for financial realization
+  const myCompany = companies.find(c => c.id === currentUserData?.companyId);
+
+  // SaaS Subscription Revenue (Calculated/Projected)
+  const saasProjectedRevenue = (companies || []).reduce((total, c) => {
+    if (!c || c.status === 'blocked' || c.id === currentUserData?.companyId || c.isExempt) return total;
     
     // Use custom company price if set, otherwise global SaaS price (fallback to 0)
     const price = c.customPrice !== undefined ? Number(c.customPrice) : (saasSettings?.price || 0);
     
-    return total + price;
+    // For SaaS subscriptions, we assume it's MRR. If year view, it's MRR * 12
+    return total + (viewPeriod === 'year' ? price * 12 : price);
   }, 0);
 
-  // Global Dashboard Revenue (AF Sistemas internal records)
-  const myCompanyFinancials = (financials || []).filter(f => f && f.companyId === myCompany?.id);
-  const myCompanyRevenue = myCompanyFinancials
-    .filter(f => f.type === 'Receita')
+  // Realized Revenue from SaaS (Actually recorded in Finance)
+  // We identify these from the master company's records
+  const myCompanyFinancials = (allFinancials || []).filter(f => f && f.companyId === currentUserData?.companyId);
+  const realizedRevenue = myCompanyFinancials
+    .filter(f => {
+      if (f.type !== 'Receita') return false;
+      const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
+      if (viewPeriod === 'year') {
+        return format(d, 'yyyy') === selectedYear;
+      }
+      return format(d, 'MM') === selectedMonth && format(d, 'yyyy') === selectedYear;
+    })
     .reduce((sum, f) => sum + (Number(f.value) || 0), 0);
 
-  // Total Gross Revenue = My Company Revenue + SaaS Subscription Revenue
-  const totalGrossRevenue = myCompanyRevenue + saasRevenue;
+  // Active companies count (excluding blocked)
+  const activeCompaniesCount = (companies || []).filter(c => c && c.status !== 'blocked').length;
+
+  const months = [
+    { value: '01', label: 'Janeiro' },
+    { value: '02', label: 'Fevereiro' },
+    { value: '03', label: 'Março' },
+    { value: '04', label: 'Abril' },
+    { value: '05', label: 'Maio' },
+    { value: '06', label: 'Junho' },
+    { value: '07', label: 'Julho' },
+    { value: '08', label: 'Agosto' },
+    { value: '09', label: 'Setembro' },
+    { value: '10', label: 'Outubro' },
+    { value: '11', label: 'Novembro' },
+    { value: '12', label: 'Dezembro' },
+  ];
+
+  const years = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const availableYears = allFinancials.map(f => {
+      const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
+      return d.getFullYear();
+    });
+    const uniqueYears = Array.from(new Set([...availableYears, currentYear])).sort((a, b) => b - a);
+    return uniqueYears.map(y => ({ value: y.toString(), label: y.toString() }));
+  }, [allFinancials]);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
         <h2 className="text-3xl font-black tracking-tighter text-white uppercase italic text-[#3b82f6]">SaaS Control Center</h2>
         <p className="text-[#71717a] text-sm uppercase tracking-[0.2em] font-medium">Painel Master de Administração de Instâncias</p>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-center gap-4 mb-8 bg-[#1a1d23] p-3 rounded-xl border border-[#2d3139] shadow-xl">
+        <div className="flex items-center gap-2 bg-[#0f1115] p-1 rounded-lg border border-[#2d3139]">
+          <Button 
+            variant={viewPeriod === 'month' ? 'default' : 'ghost'} 
+            size="sm" 
+            onClick={() => setViewPeriod('month')}
+            className={cn("h-8 text-[11px] uppercase font-bold px-4", viewPeriod === 'month' ? "bg-blue-600 hover:bg-blue-700" : "text-[#71717a]")}
+          >
+            Mensal
+          </Button>
+          <Button 
+            variant={viewPeriod === 'year' ? 'default' : 'ghost'} 
+            size="sm" 
+            onClick={() => setViewPeriod('year')}
+            className={cn("h-8 text-[11px] uppercase font-bold px-4", viewPeriod === 'year' ? "bg-blue-600 hover:bg-blue-700" : "text-[#71717a]")}
+          >
+            Anual
+          </Button>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {viewPeriod === 'month' && (
+            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+              <SelectTrigger className="h-9 w-[140px] bg-[#0f1115] border-[#2d3139] text-white text-xs">
+                <SelectValue placeholder="Mês" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                {months.map(m => (
+                  <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          <Select value={selectedYear} onValueChange={setSelectedYear}>
+            <SelectTrigger className="h-9 w-[100px] bg-[#0f1115] border-[#2d3139] text-white text-xs">
+              <SelectValue placeholder="Ano" />
+            </SelectTrigger>
+            <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+              {years.map(y => (
+                <SelectItem key={y.value} value={y.value}>{y.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -6646,15 +6779,15 @@ function SuperAdminPanel({ companies = [], financials = [], saasSettings, user, 
           </div>
         </Card>
         <Card className="bg-[#1a1d23] border-[#2d3139] p-6 text-center shadow-xl hover:border-blue-500/20 transition-all group">
-          <h4 className="text-[#71717a] text-[10px] uppercase tracking-[0.2em] mb-3 font-black group-hover:text-blue-400">MRR Assinaturas</h4>
+          <h4 className="text-[#71717a] text-[10px] uppercase tracking-[0.2em] mb-3 font-black group-hover:text-blue-400">MRR Projetado</h4>
           <p className="text-2xl font-black text-[#3b82f6] tracking-tighter">
-            R$ {saasRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            R$ {saasProjectedRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </p>
         </Card>
         <Card className="bg-[#1a1d23] border-blue-500/20 border-2 p-6 text-center shadow-2xl shadow-blue-500/5 transition-all group">
-          <h4 className="text-[#3b82f6] text-[10px] uppercase tracking-[0.2em] mb-3 font-black">Faturamento SaaS Total</h4>
+          <h4 className="text-[#3b82f6] text-[10px] uppercase tracking-[0.2em] mb-3 font-black">Faturamento Realizado</h4>
           <p className="text-2xl font-black text-white tracking-tighter">
-            R$ {totalGrossRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            R$ {realizedRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </p>
         </Card>
       </div>
@@ -9945,7 +10078,33 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
 
 // --- Financial Manager Component ---
 
-function FinancialManager({ financials = [], visits = [], clients = [], pixSettings, companyId, showList }: { financials?: FinancialRecord[], visits?: TechnicalVisit[], clients?: Client[], pixSettings: PixSettings, companyId: string, showList: boolean }) {
+function FinancialManager({ 
+  financials = [], 
+  visits = [], 
+  clients = [], 
+  pixSettings, 
+  companyId, 
+  showList,
+  viewPeriod,
+  setViewPeriod,
+  selectedMonth,
+  setSelectedMonth,
+  selectedYear,
+  setSelectedYear
+}: { 
+  financials?: FinancialRecord[], 
+  visits?: TechnicalVisit[], 
+  clients?: Client[], 
+  pixSettings: PixSettings, 
+  companyId: string, 
+  showList: boolean,
+  viewPeriod: 'month' | 'year',
+  setViewPeriod: (v: 'month' | 'year') => void,
+  selectedMonth: string,
+  setSelectedMonth: (v: string) => void,
+  selectedYear: string,
+  setSelectedYear: (v: string) => void
+}) {
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -9959,8 +10118,6 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
   const [dateFilter, setDateFilter] = useState('all');
   const [pixFilter, setPixFilter] = useState('all');
   const [paymentMethodFilter, setPaymentMethodFilter] = useState('all');
-  const [selectedMonth, setSelectedMonth] = useState<string>(format(new Date(), 'MM'));
-  const [selectedYear, setSelectedYear] = useState<string>(format(new Date(), 'yyyy'));
 
   const months = [
     { value: '01', label: 'Janeiro' },
@@ -10022,6 +10179,9 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
     // Filtro por Mês/Ano (sempre ativo para os totais e lista básica)
     filtered = filtered.filter(f => {
       const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
+      if (viewPeriod === 'year') {
+        return format(d, 'yyyy') === selectedYear;
+      }
       return format(d, 'MM') === selectedMonth && format(d, 'yyyy') === selectedYear;
     });
 
@@ -10038,22 +10198,25 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
       filtered = filtered.filter(f => f.pixAccountId === pixFilter);
     }
     return filtered;
-  }, [financials, financialTypeFilter, dateFilter, pixFilter, paymentMethodFilter, selectedClientFilter, selectedMonth, selectedYear]);
+  }, [financials, financialTypeFilter, dateFilter, pixFilter, paymentMethodFilter, selectedClientFilter, selectedMonth, selectedYear, viewPeriod]);
 
   const financialStats = useMemo(() => {
     const filteredByPeriod = financials.filter(f => {
       const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
+      if (viewPeriod === 'year') {
+        return format(d, 'yyyy') === selectedYear;
+      }
       return format(d, 'MM') === selectedMonth && format(d, 'yyyy') === selectedYear;
     });
 
-    const income = filteredByPeriod.filter(f => f.type === 'Receita').reduce((acc, f) => acc + f.value, 0);
-    const expense = filteredByPeriod.filter(f => f.type === 'Despesa').reduce((acc, f) => acc + f.value, 0);
+    const income = filteredByPeriod.filter(f => f.type === 'Receita').reduce((acc, f) => acc + (Number(f.value) || 0), 0);
+    const expense = filteredByPeriod.filter(f => f.type === 'Despesa').reduce((acc, f) => acc + (Number(f.value) || 0), 0);
     return {
       income,
       expense,
       balance: income - expense
     };
-  }, [financials, selectedMonth, selectedYear]);
+  }, [financials, selectedMonth, selectedYear, viewPeriod]);
 
   const [newRecord, setNewRecord] = useState<Partial<FinancialRecord>>({
     type: 'Receita',
@@ -10149,7 +10312,54 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
         <p className="text-[#a0a0a0] text-sm">Controle fluxo de caixa, entradas e saídas.</p>
       </div>
 
-      <div className="grid grid-cols-3 md:grid-cols-3 gap-2 md:gap-6 mb-6">
+      <div className="flex flex-wrap items-center justify-center gap-4 mb-8 bg-[#1a1d23] p-3 rounded-xl border border-[#2d3139] shadow-xl">
+        <div className="flex items-center gap-2 bg-[#0f1115] p-1 rounded-lg border border-[#2d3139]">
+          <Button 
+            variant={viewPeriod === 'month' ? 'default' : 'ghost'} 
+            size="sm" 
+            onClick={() => setViewPeriod('month')}
+            className={cn("h-8 text-[11px] uppercase font-bold px-4", viewPeriod === 'month' ? "bg-blue-600 hover:bg-blue-700" : "text-[#71717a]")}
+          >
+            Mensal
+          </Button>
+          <Button 
+            variant={viewPeriod === 'year' ? 'default' : 'ghost'} 
+            size="sm" 
+            onClick={() => setViewPeriod('year')}
+            className={cn("h-8 text-[11px] uppercase font-bold px-4", viewPeriod === 'year' ? "bg-blue-600 hover:bg-blue-700" : "text-[#71717a]")}
+          >
+            Anual
+          </Button>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {viewPeriod === 'month' && (
+            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+              <SelectTrigger className="h-9 w-[140px] bg-[#0f1115] border-[#2d3139] text-white text-xs">
+                <SelectValue placeholder="Mês" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                {months.map(m => (
+                  <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          <Select value={selectedYear} onValueChange={setSelectedYear}>
+            <SelectTrigger className="h-9 w-[100px] bg-[#0f1115] border-[#2d3139] text-white text-xs">
+              <SelectValue placeholder="Ano" />
+            </SelectTrigger>
+            <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+              {years.map(y => (
+                <SelectItem key={y.value} value={y.value}>{y.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <Card className="bg-[#3b82f6] text-white border-none shadow-lg shadow-blue-900/20">
           <CardContent className="p-3 md:p-6 text-center md:text-left">
             <p className="text-[9px] md:text-xs text-blue-100 uppercase tracking-wider mb-1 font-semibold">Caixa</p>
@@ -10247,34 +10457,6 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
                 </Command>
               </PopoverContent>
             </Popover>
-
-            <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
-
-            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-              <SelectTrigger className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[100px]">
-                <SelectValue>
-                  {months.find(m => m.value === selectedMonth)?.label}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                {months.map(m => (
-                  <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
-
-            <Select value={selectedYear} onValueChange={setSelectedYear}>
-              <SelectTrigger className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[70px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                {years.map(y => (
-                  <SelectItem key={y.value} value={y.value}>{y.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
 
             <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
 
