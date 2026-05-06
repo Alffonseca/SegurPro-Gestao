@@ -30,7 +30,6 @@ import {
   X,
   Shield,
   PenTool,
-  PenLine,
   Database,
   RefreshCw,
   Upload,
@@ -4928,7 +4927,7 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
                         e.stopPropagation();
                         onSignatureClick('contract', client);
                       }}>
-                        <PenLine size={12} />
+                        <PenTool size={12} />
                       </Button>
                       <Button variant="outline" size="icon" className="h-7 w-7 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
                         setClientToDelete(client);
@@ -9658,7 +9657,7 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
                         e.stopPropagation();
                         onSignatureClick('visit', visit);
                       }}>
-                        <PenLine size={12} />
+                        <PenTool size={12} />
                       </Button>
                       <Button variant="outline" size="icon" title="Gerar PDF" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={() => generateVisitPDF(visit)}>
                         <Share2 size={12} />
@@ -11480,7 +11479,7 @@ function ServiceOrdersManager({
                         e.stopPropagation();
                         onSignatureClick('service-order', os);
                       }}>
-                        <PenLine size={12} />
+                        <PenTool size={12} />
                       </Button>
                       <Button variant="outline" size="sm" className="h-7 px-1 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-[9px] font-bold" onClick={(e) => {
                         e.stopPropagation();
@@ -12464,7 +12463,7 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
                         <Pencil size={12} />
                       </Button>
                       <Button variant="outline" size="icon" title="Assinatura" className="h-7 w-7 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => onSignatureClick('budget', budget)}>
-                        <PenLine size={12} />
+                        <PenTool size={12} />
                       </Button>
                       <Button variant="outline" size="icon" title="Gerar PDF" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={() => generateBudgetPDF(budget)}>
                         <Share2 size={12} />

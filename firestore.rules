@@ -1,6 +1,16 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // 0. Public Access for Signatures - MUST BE FIRST
+    match /signature_requests/{id} {
+      allow read, get, list: if true;
+      allow create: if isSignedIn();
+      allow update: if (resource.data.status == 'pending' && request.resource.data.status == 'signed') || 
+                    isSuperAdmin() || 
+                    (isSignedIn() && isMemberOf(resource.data.companyId));
+      allow delete: if isSuperAdmin() || (isSignedIn() && isMemberOf(resource.data.companyId));
+    }
+
     // 1. Helpers
     function isSignedIn() { return request.auth != null; }
     
@@ -32,16 +42,6 @@ service cloud.firestore {
        return token != null && 
               get(/databases/$(database)/documents/signature_requests/$(token)).data.documentId == id &&
               get(/databases/$(database)/documents/signature_requests/$(token)).data.status == 'signed';
-    }
-
-    // 2. Public Signatures (Must be before general matches)
-    match /signature_requests/{id} {
-      allow read: if true;
-      allow create: if isSignedIn();
-      allow update: if (resource.data.status == 'pending' && request.resource.data.status == 'signed') || 
-                    isSuperAdmin() || 
-                    (isSignedIn() && isMemberOf(resource.data.companyId));
-      allow delete: if isSuperAdmin() || (isSignedIn() && isMemberOf(resource.data.companyId));
     }
 
     // 3. Main Business Collections
