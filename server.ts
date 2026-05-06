@@ -4,11 +4,7 @@ import path from "path";
 import admin from "firebase-admin";
 
 // Initialize Firebase Admin
-// No need for a service account key inside the container as it uses ADC (Application Default Credentials)
-// as long as the project ID is specified.
-admin.initializeApp({
-  projectId: "seguranca-tecnica-app"
-});
+admin.initializeApp();
 
 async function startServer() {
   const app = express();

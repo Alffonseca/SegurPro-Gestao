@@ -1,17 +1,7 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 0. Public Access for Signatures - MUST BE FIRST
-    match /signature_requests/{id} {
-      allow read, get, list: if true;
-      allow create: if isSignedIn();
-      allow update: if (resource.data.status == 'pending' && request.resource.data.status == 'signed') || 
-                    isSuperAdmin() || 
-                    (isSignedIn() && isMemberOf(resource.data.companyId));
-      allow delete: if isSuperAdmin() || (isSignedIn() && isMemberOf(resource.data.companyId));
-    }
-
-    // 1. Helpers
+    // 0. Helpers
     function isSignedIn() { return request.auth != null; }
     
     function isSuperAdmin() {
@@ -37,14 +27,23 @@ service cloud.firestore {
       );
     }
 
-    function canUpdateWithToken(id) {
-       let token = request.resource.data.clientSignatureToken;
-       return token != null && 
-              get(/databases/$(database)/documents/signature_requests/$(token)).data.documentId == id &&
-              get(/databases/$(database)/documents/signature_requests/$(token)).data.status == 'signed';
+    function canUpdateWithToken(docId, tokenId) {
+       return tokenId != null && 
+              get(/databases/$(database)/documents/signature_requests/$(tokenId)).data.documentId == docId &&
+              get(/databases/$(database)/documents/signature_requests/$(tokenId)).data.status == 'signed';
     }
 
-    // 3. Main Business Collections
+    // 1. Signature Requests - Public Read for Portal
+    match /signature_requests/{id} {
+      allow read, get, list: if true;
+      allow create: if isSignedIn();
+      allow update: if (resource.data.status == 'pending' && request.resource.data.status == 'signed') || 
+                    isSuperAdmin() || 
+                    (isSignedIn() && isMemberOf(resource.data.companyId));
+      allow delete: if isSuperAdmin() || (isSignedIn() && isMemberOf(resource.data.companyId));
+    }
+
+    // 2. Business Collections
     match /companies/{companyId} {
       allow read: if isMemberOf(companyId);
       allow write: if isAdminOf(companyId);
@@ -68,7 +67,7 @@ service cloud.firestore {
       allow read, delete: if isMemberOf(resource.data.companyId);
       allow create: if isMemberOf(request.resource.data.companyId);
       allow update: if isMemberOf(resource.data.companyId) || (
-                    canUpdateWithToken(id) &&
+                    canUpdateWithToken(id, request.resource.data.clientSignatureToken) &&
                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clientSignature', 'clientSignatureToken', 'updatedAt'])
                    );
     }
@@ -77,7 +76,7 @@ service cloud.firestore {
       allow read, delete: if isMemberOf(resource.data.companyId);
       allow create: if isMemberOf(request.resource.data.companyId);
       allow update: if isMemberOf(resource.data.companyId) || (
-                    canUpdateWithToken(id) &&
+                    canUpdateWithToken(id, request.resource.data.clientSignatureToken) &&
                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clientSignature', 'clientSignatureToken', 'updatedAt', 'clientSignatureDate'])
                    );
     }
@@ -86,7 +85,7 @@ service cloud.firestore {
       allow read, delete: if isMemberOf(resource.data.companyId);
       allow create: if isMemberOf(request.resource.data.companyId);
       allow update: if isMemberOf(resource.data.companyId) || (
-                    canUpdateWithToken(id) &&
+                    canUpdateWithToken(id, request.resource.data.clientSignatureToken) &&
                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clientSignature', 'clientSignatureToken', 'updatedAt'])
                    );
     }
@@ -95,7 +94,7 @@ service cloud.firestore {
       allow read, delete: if isMemberOf(resource.data.companyId);
       allow create: if isMemberOf(request.resource.data.companyId);
       allow update: if isMemberOf(resource.data.companyId) || (
-                    canUpdateWithToken(id) &&
+                    canUpdateWithToken(id, request.resource.data.clientSignatureToken) &&
                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clientSignature', 'clientSignatureToken', 'updatedAt'])
                    );
     }

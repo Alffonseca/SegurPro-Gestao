@@ -2978,24 +2978,6 @@ export default function MainApp() {
     }
   };
 
-  if (activeSignerToken) {
-    return (
-      <>
-        <Toaster position="top-right" theme="dark" />
-        <ExternalSignaturePage token={activeSignerToken} />
-      </>
-    );
-  }
-
-  if (signaturePortal) {
-    return (
-      <>
-        <Toaster position="top-right" theme="dark" />
-        <SignaturePortalPage onVerify={setActiveSignerToken} />
-      </>
-    );
-  }
-
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0f1115] flex flex-col items-center justify-center p-4">
@@ -3839,64 +3821,7 @@ export default function MainApp() {
           )}
         </div>
 
-        <Dialog open={generatedSignatureInfo.isOpen} onOpenChange={(open) => setGeneratedSignatureInfo({ ...generatedSignatureInfo, isOpen: open })}>
-          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[450px]">
-            <DialogHeader>
-              <DialogTitle className="text-blue-500 flex items-center gap-2">
-                <CheckCircle2 size={20} />
-                Código Gerado com Sucesso!
-              </DialogTitle>
-              <DialogDescription className="text-[#71717a] text-xs">
-                Peça para o cliente acessar o portal e inserir o código abaixo.
-              </DialogDescription>
-            </DialogHeader>
-            
-            <div className="py-4 space-y-6 flex flex-col items-center">
-              <div className="bg-white p-4 rounded-2xl shadow-xl shadow-blue-500/10">
-                <QRCodeCanvas 
-                  value={`${generatedSignatureInfo.portalUrl}&code=${generatedSignatureInfo.accessCode}`} 
-                  size={180}
-                  level="H"
-                />
-              </div>
-
-              <div className="w-full space-y-4">
-                <div className="bg-[#0f1115] p-5 rounded-2xl border border-[#2d3139] text-center space-y-2 relative overflow-hidden">
-                  <div className="absolute top-0 left-0 w-1 h-full bg-blue-500" />
-                  <span className="text-[10px] uppercase font-black tracking-[0.2em] text-[#71717a]">Código de Acesso</span>
-                  <p className="text-4xl font-black text-white tracking-[0.3em] font-mono">{generatedSignatureInfo.accessCode}</p>
-                </div>
-                
-                <div className="space-y-1">
-                   <p className="text-[10px] uppercase font-bold text-[#71717a] px-1">Portal de Assinatura</p>
-                   <div className="flex gap-2">
-                     <Input readOnly value={generatedSignatureInfo.portalUrl} className="bg-[#0f1115] border-[#2d3139] text-[10px] text-[#71717a] h-9" />
-                     <Button size="icon" variant="outline" className="h-9 w-9 border-[#2d3139]" title="Copiar e Enviar WhatsApp" onClick={() => {
-                        const message = `Olá, aqui está o link para você assinar o documento:\n\n🔗 *Acesse o portal:* ${generatedSignatureInfo.portalUrl}\n🔢 *Código de Acesso:* ${generatedSignatureInfo.accessCode}\n\n_Assinatura digital Segurpro Gestão_`;
-                        navigator.clipboard.writeText(message);
-                        window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
-                        toast.success('Link copiado e WhatsApp aberto!');
-                     }}>
-                        <Share2 size={14} className="text-blue-500" />
-                     </Button>
-                     <Button size="icon" variant="outline" className="h-9 w-9 border-[#2d3139]" title="Copiar Link apenas" onClick={() => {
-                        navigator.clipboard.writeText(generatedSignatureInfo.portalUrl);
-                        toast.success('Link do portal copiado!');
-                     }}>
-                        <Copy size={14} />
-                     </Button>
-                   </div>
-                </div>
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button onClick={() => setGeneratedSignatureInfo({ ...generatedSignatureInfo, isOpen: false })} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold h-11 uppercase tracking-widest text-[11px]">
-                Concluir
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Signature Dialog Removed */}
       </main>
     </div>
   );
@@ -4923,16 +4848,10 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
                       }}>
                         <Pencil size={12} />
                       </Button>
-                      <Button variant="outline" size="icon" title="Assinatura" className="h-7 w-7 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={(e) => {
-                        e.stopPropagation();
-                        onSignatureClick('contract', client);
-                      }}>
-                        <PenTool size={12} />
-                      </Button>
                       <Button variant="outline" size="icon" className="h-7 w-7 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
                         setClientToDelete(client);
                         setIsDeleteConfirmOpen(true);
-                       }}>
+                      }}>
                         <Trash2 size={12} />
                       </Button>
                       {client.type === 'Contrato' && (
@@ -9653,12 +9572,6 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
                       }}>
                         <Pencil size={12} />
                       </Button>
-                      <Button variant="outline" size="icon" title="Assinatura" className="h-7 w-7 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={(e) => {
-                        e.stopPropagation();
-                        onSignatureClick('visit', visit);
-                      }}>
-                        <PenTool size={12} />
-                      </Button>
                       <Button variant="outline" size="icon" title="Gerar PDF" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={() => generateVisitPDF(visit)}>
                         <Share2 size={12} />
                       </Button>
@@ -10634,11 +10547,11 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
         <Table>
           <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[80px]">Ações</TableHead>
-              <TableHead className="text-left text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Transação / Valor</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Descrição / Origem</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Conta / Categoria</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[80px]">AÇÕES</TableHead>
+              <TableHead className="text-left text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">TRANSAÇÃO / VALOR</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">DESCRIÇÃO / ORIGEM</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">FORMA DE PAG. / CONTA</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider text-right">DATA</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -10696,17 +10609,20 @@ function FinancialManager({ financials = [], visits = [], clients = [], pixSetti
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-col gap-1">
-                    <span className="text-[11px] text-[#e0e0e0]">
-                      {pixSettings.accounts?.find(a => a.id === record.pixAccountId)?.label || 'C. Corrente'}
+                    <span className="text-[11px] text-[#e0e0e0] font-medium">
+                      {record.paymentMethod === 'Dinheiro' 
+                        ? '( EM ESPÉCIE )' 
+                        : (pixSettings.accounts?.find(a => a.id === record.pixAccountId)?.label || 'CONTA CORRENTE')}
                     </span>
                     <Badge variant="outline" className="bg-[#2d3139]/30 text-[#a0a0a0] font-normal text-[9px] uppercase w-fit border-none px-0">
-                      {record.category}
+                      {record.paymentMethod === 'Dinheiro' ? 'DINHEIRO' : (record.type === 'income' ? 'VALOR RECEBIDO' : 'PAGAMENTO')}
                     </Badge>
                   </div>
                 </TableCell>
-                <TableCell className="text-[11px] text-[#71717a]">
+                <TableCell className="text-right text-[11px] text-[#71717a]">
                   {format(record.date instanceof Timestamp ? record.date.toDate() : new Date(record.date), 'dd/MM/yy')}
                 </TableCell>
+
 
               </TableRow>
             ))}
@@ -11474,12 +11390,6 @@ function ServiceOrdersManager({
                         onEditClick('service-order', os);
                       }}>
                         <Pencil size={12} />
-                      </Button>
-                      <Button variant="outline" size="icon" title="Assinatura" className="h-7 w-7 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={(e) => {
-                        e.stopPropagation();
-                        onSignatureClick('service-order', os);
-                      }}>
-                        <PenTool size={12} />
                       </Button>
                       <Button variant="outline" size="sm" className="h-7 px-1 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-[9px] font-bold" onClick={(e) => {
                         e.stopPropagation();
@@ -12461,9 +12371,6 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
                     <div className="flex items-center gap-1.5 flex-nowrap">
                       <Button variant="outline" size="icon" title="Editar" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={() => onEditClick('budget', budget)}>
                         <Pencil size={12} />
-                      </Button>
-                      <Button variant="outline" size="icon" title="Assinatura" className="h-7 w-7 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => onSignatureClick('budget', budget)}>
-                        <PenTool size={12} />
                       </Button>
                       <Button variant="outline" size="icon" title="Gerar PDF" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={() => generateBudgetPDF(budget)}>
                         <Share2 size={12} />
