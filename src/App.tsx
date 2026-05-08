@@ -49,7 +49,14 @@ import {
   Copy,
   Key,
   Navigation,
-  Phone
+  Phone,
+  Package,
+  Box,
+  ShoppingCart,
+  ArrowUpRight,
+  ArrowDownRight,
+  TrendingUp,
+  AlertTriangle
 } from 'lucide-react';
 import { 
   collection, 
@@ -297,6 +304,7 @@ const ALL_MENU_ITEMS = [
   { id: 'budgets', label: 'Orçamentos' },
   { id: 'visits', label: 'Visitas Técnicas' },
   { id: 'service-orders', label: 'Ordens de Serviço' },
+  { id: 'inventory', label: 'Estoque de Peças' },
   { id: 'users', label: 'Gerenciar Equipe' },
   { id: 'logs', label: 'Logs do Sistema' },
   { id: 'settings', label: 'Configurações' }
@@ -1092,6 +1100,7 @@ interface TechnicalVisit {
   technicianName: string;
   responsibleName?: string;
   totalValue: number;
+  parts?: { description: string; quantity: number; price: number }[];
   clientSignature?: string;
   technicianSignature?: string;
   createdAt: any;
@@ -2145,6 +2154,8 @@ export default function MainApp() {
   const [serviceOrders, setServiceOrders] = useState<ServiceOrder[]>([]);
   const [financials, setFinancials] = useState<FinancialRecord[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [inventory, setInventory] = useState<any[]>([]);
+  const [inventoryTransactions, setInventoryTransactions] = useState<any[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
@@ -2479,7 +2490,7 @@ export default function MainApp() {
     }
     
     if (role === 'tecnico') {
-      return ['visits', 'service-orders', 'receipts'].includes(tabName);
+      return ['visits', 'service-orders', 'receipts', 'inventory'].includes(tabName);
     }
     
     // Default fallback
@@ -2623,6 +2634,8 @@ export default function MainApp() {
     let serviceOrdersUnsubscribe = () => {};
     let financialUnsubscribe = () => {};
     let budgetsUnsubscribe = () => {};
+    let inventoryUnsubscribe = () => {};
+    let inventoryTransactionsUnsubscribe = () => {};
     let clientsUnsubscribe = () => {};
     let suppliersUnsubscribe = () => {};
     let receiptsUnsubscribe = () => {};
@@ -2686,6 +2699,26 @@ export default function MainApp() {
           setBudgets(data.sort((a, b) => {
             const timeA = a.createdAt?.seconds || 0;
             const timeB = b.createdAt?.seconds || 0;
+            return timeB - timeA;
+          }));
+        }
+      );
+
+      inventoryUnsubscribe = onSnapshot(
+        query(collection(db, 'inventory'), where('companyId', '==', companyId)),
+        (snapshot) => {
+          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setInventory(data.sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')));
+        }
+      );
+
+      inventoryTransactionsUnsubscribe = onSnapshot(
+        query(collection(db, 'inventoryTransactions'), where('companyId', '==', companyId)),
+        (snapshot) => {
+          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setInventoryTransactions(data.sort((a: any, b: any) => {
+            const timeA = a.timestamp?.seconds || 0;
+            const timeB = b.timestamp?.seconds || 0;
             return timeB - timeA;
           }));
         }
@@ -2765,6 +2798,8 @@ export default function MainApp() {
       serviceOrdersUnsubscribe();
       financialUnsubscribe();
       budgetsUnsubscribe();
+      inventoryUnsubscribe();
+      inventoryTransactionsUnsubscribe();
       clientsUnsubscribe();
       suppliersUnsubscribe();
       receiptsUnsubscribe();
@@ -2791,6 +2826,41 @@ export default function MainApp() {
         toast.error('O login com Google não está ativado no console do Firebase.');
       } else {
         toast.error(`Erro ao fazer login: ${error.message}`);
+      }
+    }
+  };
+
+  const updateInventoryStock = async (parts: { description: string, quantity: number }[], type: 'exit' | 'entry', referenceId: string, referenceType: 'os' | 'visit') => {
+    if (!companyId || !parts || parts.length === 0) return;
+    
+    for (const part of parts) {
+      if (!part.description) continue;
+      
+      // Try to find matching item by name/description
+      const item = inventory.find(i => i.name.toLowerCase() === part.description.toLowerCase() || i.code === part.description);
+      
+      if (item) {
+        const itemRef = doc(db, 'inventory', item.id);
+        const newQuantity = type === 'exit' ? (item.quantity - part.quantity) : (item.quantity + part.quantity);
+        
+        await updateDoc(itemRef, { 
+          quantity: newQuantity,
+          updatedAt: Timestamp.now()
+        });
+        
+        // Record transaction
+        await addDoc(collection(db, 'inventoryTransactions'), {
+          itemId: item.id,
+          itemName: item.name,
+          companyId,
+          type,
+          quantity: part.quantity,
+          referenceId,
+          referenceType,
+          timestamp: Timestamp.now(),
+          performedBy: user?.uid,
+          performedByName: currentUserData?.displayName || user?.displayName || user?.email
+        });
       }
     }
   };
@@ -3211,6 +3281,14 @@ export default function MainApp() {
                 onClick={() => setActiveTab('service-orders')} 
               />
             )}
+            {canAccess('inventory') && (
+              <SidebarItem 
+                icon={<Package size={18} />} 
+                label="Estoque de Peças" 
+                active={activeTab === 'inventory'} 
+                onClick={() => setActiveTab('inventory')} 
+              />
+            )}
             {canAccess('budgets') && (
               <SidebarItem 
                 icon={<FileText size={18} />} 
@@ -3364,6 +3442,14 @@ export default function MainApp() {
                 onClick={() => { setActiveTab('service-orders'); setIsMobileMenuOpen(false); }} 
               />
             )}
+            {canAccess('inventory') && (
+              <SidebarItem 
+                icon={<Package size={20} />} 
+                label="Estoque de Peças" 
+                active={activeTab === 'inventory'} 
+                onClick={() => { setActiveTab('inventory'); setIsMobileMenuOpen(false); }} 
+              />
+            )}
             {canAccess('budgets') && (
               <SidebarItem 
                 icon={<FileText size={20} />} 
@@ -3508,6 +3594,8 @@ export default function MainApp() {
               receipts={receipts}
               user={user!} 
               clients={clients} 
+              inventory={inventory}
+              updateStock={updateInventoryStock}
               appSettings={appSettings} 
               pixSettings={pixSettings} 
               companyId={currentUserData?.companyId || ''} 
@@ -3529,6 +3617,7 @@ export default function MainApp() {
               pixSettings={pixSettings} 
               companyId={currentUserData?.companyId || ''} 
               showList={canViewList('financial')}
+              logAction={logAction}
               viewPeriod={viewPeriod}
               setViewPeriod={setViewPeriod}
               selectedMonth={selectedMonth}
@@ -3541,11 +3630,12 @@ export default function MainApp() {
             <BudgetsManager 
               budgets={budgets} 
               clients={clients} 
+              inventory={inventory}
               appSettings={appSettings} 
               pixSettings={pixSettings} 
               companyId={currentUserData?.companyId || ''} 
               showList={canViewList('budgets')} 
-              logAction={logAction} 
+              logAction={logAction}
               onEditClick={onEditClick}
               onSignatureClick={onSignatureClick}
               externalEditAction={interpretedEditAction?.type === 'budget' ? interpretedEditAction.data : null}
@@ -3557,6 +3647,8 @@ export default function MainApp() {
               serviceOrders={serviceOrders} 
               clients={clients} 
               users={users}
+              inventory={inventory}
+              updateStock={updateInventoryStock}
               appSettings={appSettings} 
               pixSettings={pixSettings}
               companyId={currentUserData?.companyId || ''} 
@@ -3613,6 +3705,18 @@ export default function MainApp() {
           )}
           {activeTab === 'users' && <UsersManager users={users} currentUserData={currentUserData} showList={canViewList('users')} userRoles={userRoles} logAction={logAction} />}
           
+          {activeTab === 'inventory' && (
+            <InventoryManager 
+              inventory={inventory} 
+              transactions={inventoryTransactions}
+              serviceOrders={serviceOrders}
+              visits={visits}
+              companyId={currentUserData?.companyId || ''} 
+              logAction={logAction}
+              showList={canViewList('inventory')}
+            />
+          )}
+
           {activeTab === 'logs' && (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
@@ -8962,7 +9066,43 @@ function StatCard({ title, value, icon, trend, isBalance, isCount, onClick }: { 
 
 // --- Visits Manager Component ---
 
-function VisitsManager({ visits = [], receipts = [], user, clients = [], appSettings, pixSettings, companyId, initialFilter, onClearFilter, showList, logAction, onEditClick, onSignatureClick, externalEditAction, onExternalEditHandled }: { visits?: TechnicalVisit[], receipts?: Receipt[], user: FirebaseUser, clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, initialFilter?: { date: Date | null }, onClearFilter?: () => void, showList: boolean, logAction?: any, onEditClick: (type: 'visit', data: any) => void, onSignatureClick: (type: 'visit', data: any) => void, externalEditAction: any, onExternalEditHandled: () => void }) {
+function VisitsManager({ 
+  visits = [], 
+  receipts = [], 
+  user, 
+  clients = [], 
+  inventory = [],
+  updateStock,
+  appSettings, 
+  pixSettings, 
+  companyId, 
+  initialFilter, 
+  onClearFilter, 
+  showList, 
+  logAction, 
+  onEditClick, 
+  onSignatureClick, 
+  externalEditAction, 
+  onExternalEditHandled 
+}: { 
+  visits?: TechnicalVisit[], 
+  receipts?: Receipt[], 
+  user: FirebaseUser, 
+  clients?: Client[], 
+  inventory?: any[],
+  updateStock?: (parts: any[], type: 'exit' | 'entry', id: string, refType: 'os' | 'visit') => Promise<void>,
+  appSettings: AppSettings, 
+  pixSettings: PixSettings, 
+  companyId: string, 
+  initialFilter?: { date: Date | null }, 
+  onClearFilter?: () => void, 
+  showList: boolean, 
+  logAction?: any, 
+  onEditClick: (type: 'visit', data: any) => void, 
+  onSignatureClick: (type: 'visit', data: any) => void, 
+  externalEditAction: any, 
+  onExternalEditHandled: () => void 
+}) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
@@ -9034,7 +9174,8 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
     technicianName: user.displayName || '',
     responsibleName: '',
     serviceAddress: '',
-    totalValue: 0
+    totalValue: 0,
+    parts: []
   });
 
   // Update technician name when user changes
@@ -9058,9 +9199,14 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
     try {
       const nextNumber = visits.length > 0 ? Math.max(...visits.map(v => v.number || 0)) + 1 : 1;
       
+      const partsValue = (newVisit.parts || []).reduce((acc, p) => acc + (p.quantity * p.price), 0);
+      const finalTotal = (newVisit.totalValue || 0) + partsValue;
+
       const docRef = await addDoc(collection(db, 'visits'), {
         ...newVisit,
         number: nextNumber,
+        totalValue: finalTotal, // Sum of labor + parts
+        partsValue,
         date: Timestamp.fromDate(newVisit.date instanceof Date ? newVisit.date : new Date()),
         expectedDate: Timestamp.fromDate(newVisit.expectedDate instanceof Date ? newVisit.expectedDate : new Date()),
         technicianId: user.uid,
@@ -9068,6 +9214,12 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
         companyId,
         createdAt: Timestamp.now()
       });
+
+      // Deduct from inventory
+      if (updateStock && newVisit.parts && newVisit.parts.length > 0) {
+        await updateStock(newVisit.parts as any[], 'exit', docRef.id, 'visit');
+      }
+
       await logAction('create', 'visit', `Agendou visita para ${newVisit.clientName}`, docRef.id);
       setNewVisit({ 
         type: 'CFTV', 
@@ -9173,12 +9325,18 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
     try {
       const { id, ...data } = editingVisit;
       const oldVisit = visits.find(v => v.id === id);
-      const isFinishing = data.status === 'Concluída' && oldVisit?.status !== 'Concluída' && (data.totalValue || 0) > 0;
+      
+      const partsValue = (data.parts || []).reduce((acc, p) => acc + (p.quantity * p.price), 0);
+      const finalTotal = (data.totalValue || 0) + partsValue;
+
+      const isFinishing = data.status === 'Concluída' && oldVisit?.status !== 'Concluída' && finalTotal > 0;
 
       if (isFinishing) {
         setVisitForReceipt({ id, status: 'Concluída' });
         await updateDoc(doc(db, 'visits', id), {
           ...data,
+          totalValue: finalTotal,
+          partsValue,
           date: editingVisit.date instanceof Date ? Timestamp.fromDate(editingVisit.date) : editingVisit.date,
           expectedDate: editingVisit.expectedDate instanceof Date ? Timestamp.fromDate(editingVisit.expectedDate) : editingVisit.expectedDate,
           updatedAt: Timestamp.now()
@@ -9332,6 +9490,34 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
     const splitDesc = doc.splitTextToSize(visit.description || 'N/A', 170);
     doc.text(splitDesc, 20, currentY);
     currentY += (splitDesc.length * 5) + 10;
+
+    // --- NOVO: SEÇÃO DE PEÇAS E MATERIAIS NO PDF DA VISITA ---
+    if (visit.parts && visit.parts.length > 0) {
+      if (currentY > 230) { doc.addPage(); currentY = 20; }
+      drawSectionTitle('3. Peças e Materiais Utilizados');
+      
+      // Table Header for Parts
+      doc.setFillColor(245, 245, 245);
+      doc.rect(20, currentY, 170, 7, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.text('Descrição', 23, currentY + 5);
+      doc.text('Qtd', 130, currentY + 5);
+      doc.text('V. Unit', 150, currentY + 5);
+      doc.text('Total', 175, currentY + 5);
+      doc.setFont('helvetica', 'normal');
+      currentY += 10;
+
+      visit.parts.forEach(p => {
+        if (currentY > 275) { doc.addPage(); currentY = 20; }
+        const desc = doc.truncateText(p.description, 100);
+        doc.text(desc, 23, currentY);
+        doc.text(p.quantity.toString(), 133, currentY);
+        doc.text(p.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), 148, currentY);
+        doc.text((p.quantity * p.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), 173, currentY);
+        currentY += 6;
+      });
+      currentY += 5;
+    }
 
     if (visit.observations) {
       // Check if we need a new page for observations
@@ -9661,8 +9847,84 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
                     <Input id="responsibleName" value={newVisit.responsibleName || ''} onChange={e => setNewVisit({...newVisit, responsibleName: e.target.value})} placeholder="Nome de quem acompanhará" className="bg-[#0f1115] border-[#2d3139] text-white" />
                   </div>
                 </div>
+                <div className="space-y-4 pt-4 border-t border-[#2d3139]/50">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-[#a0a0a0] font-bold flex items-center gap-2">
+                       <Package size={16} className="text-[#3b82f6]" /> Materiais / Peças (Opcional)
+                    </Label>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => setNewVisit({...newVisit, parts: [...(newVisit.parts || []), { description: '', quantity: 1, price: 0 }]})} 
+                      className="h-7 border-[#2d3139] text-xs hover:bg-[#3b82f6] hover:text-white"
+                    >
+                      + Adicionar Item
+                    </Button>
+                  </div>
+                  
+                  {newVisit.parts && newVisit.parts.length > 0 && (
+                    <div className="space-y-2 max-h-[150px] overflow-y-auto pr-2">
+                      {newVisit.parts.map((p, i) => (
+                        <div key={i} className="grid grid-cols-12 gap-2 items-center">
+                          <div className="col-span-6 flex items-center gap-2">
+                            <InventorySelector 
+                              inventory={inventory} 
+                              onSelect={(selected) => {
+                                const next = [...(newVisit.parts || [])];
+                                next[i].description = selected.name;
+                                if (selected.price) next[i].price = selected.price;
+                                setNewVisit({...newVisit, parts: next});
+                              }} 
+                            />
+                            <Input 
+                              className="bg-[#0f1115] border-[#2d3139] h-8 text-xs flex-1" 
+                              placeholder="Descrição"
+                              value={p.description} 
+                              onChange={e => {
+                                const next = [...(newVisit.parts || [])];
+                                next[i].description = e.target.value;
+                                setNewVisit({...newVisit, parts: next});
+                              }}
+                            />
+                          </div>
+                          <Input 
+                            type="number"
+                            className="col-span-2 bg-[#0f1115] border-[#2d3139] h-8 text-xs" 
+                            placeholder="Qtd"
+                            value={p.quantity} 
+                            onChange={e => {
+                              const next = [...(newVisit.parts || [])];
+                              next[i].quantity = Number(e.target.value);
+                              setNewVisit({...newVisit, parts: next});
+                            }}
+                          />
+                          <Input 
+                            type="number"
+                            className="col-span-3 bg-[#0f1115] border-[#2d3139] h-8 text-xs" 
+                            placeholder="Preço"
+                            value={p.price} 
+                            onChange={e => {
+                              const next = [...(newVisit.parts || [])];
+                              next[i].price = Number(e.target.value);
+                              setNewVisit({...newVisit, parts: next});
+                            }}
+                          />
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="col-span-1 h-8 w-8 text-[#ef4444] hover:bg-[#ef4444]/10" 
+                            onClick={() => setNewVisit({...newVisit, parts: newVisit.parts?.filter((_, idx) => idx !== i)})}
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <div className="space-y-2">
-                  <Label htmlFor="val" className="text-[#a0a0a0]">Valor Estimado (R$)</Label>
+                  <Label htmlFor="val" className="text-[#a0a0a0]">Valor Adicional / Mão de Obra (R$)</Label>
                   <Input id="val" type="number" value={newVisit.totalValue || ''} onChange={e => setNewVisit({...newVisit, totalValue: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
               </div>
@@ -10007,6 +10269,82 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
                     <Input id="editExpectedTime" type="time" value={editingVisit.expectedTime || ''} onChange={e => setEditingVisit({...editingVisit, expectedTime: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                   </div>
                 </div>
+                <div className="space-y-4 pt-4 border-t border-[#2d3139]/50">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-[#a0a0a0] font-bold flex items-center gap-2">
+                       <Package size={16} className="text-[#3b82f6]" /> Materiais / Peças (Opcional)
+                    </Label>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => setEditingVisit({...editingVisit, parts: [...(editingVisit.parts || []), { description: '', quantity: 1, price: 0 }]})} 
+                      className="h-7 border-[#2d3139] text-xs hover:bg-[#3b82f6] hover:text-white"
+                    >
+                      + Adicionar Item
+                    </Button>
+                  </div>
+                  
+                  {editingVisit.parts && editingVisit.parts.length > 0 && (
+                    <div className="space-y-2 max-h-[150px] overflow-y-auto pr-2">
+                      {editingVisit.parts.map((p, i) => (
+                        <div key={i} className="grid grid-cols-12 gap-2 items-center">
+                          <div className="col-span-6 flex items-center gap-2">
+                            <InventorySelector 
+                              inventory={inventory} 
+                              onSelect={(selected) => {
+                                const next = [...(editingVisit.parts || [])];
+                                next[i].description = selected.name;
+                                if (selected.price) next[i].price = selected.price;
+                                setEditingVisit({...editingVisit, parts: next});
+                              }} 
+                            />
+                            <Input 
+                              className="bg-[#0f1115] border-[#2d3139] h-8 text-xs flex-1" 
+                              placeholder="Descrição"
+                              value={p.description} 
+                              onChange={e => {
+                                const next = [...(editingVisit.parts || [])];
+                                next[i].description = e.target.value;
+                                setEditingVisit({...editingVisit, parts: next});
+                              }}
+                            />
+                          </div>
+                          <Input 
+                            type="number"
+                            className="col-span-2 bg-[#0f1115] border-[#2d3139] h-8 text-xs" 
+                            placeholder="Qtd"
+                            value={p.quantity} 
+                            onChange={e => {
+                              const next = [...(editingVisit.parts || [])];
+                              next[i].quantity = Number(e.target.value);
+                              setEditingVisit({...editingVisit, parts: next});
+                            }}
+                          />
+                          <Input 
+                            type="number"
+                            className="col-span-3 bg-[#0f1115] border-[#2d3139] h-8 text-xs" 
+                            placeholder="Preço"
+                            value={p.price} 
+                            onChange={e => {
+                              const next = [...(editingVisit.parts || [])];
+                              next[i].price = Number(e.target.value);
+                              setEditingVisit({...editingVisit, parts: next});
+                            }}
+                          />
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="col-span-1 h-8 w-8 text-[#ef4444] hover:bg-[#ef4444]/10" 
+                            onClick={() => setEditingVisit({...editingVisit, parts: editingVisit.parts?.filter((_, idx) => idx !== i)})}
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Status</Label>
@@ -10025,7 +10363,7 @@ function VisitsManager({ visits = [], receipts = [], user, clients = [], appSett
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="editVal" className="text-[#a0a0a0]">Valor (R$)</Label>
+                    <Label htmlFor="editVal" className="text-[#a0a0a0]">Valor Adicional / Mão de Obra (R$)</Label>
                     <Input id="editVal" type="number" value={editingVisit.totalValue || ''} onChange={e => setEditingVisit({...editingVisit, totalValue: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                   </div>
                 </div>
@@ -10108,6 +10446,7 @@ function FinancialManager({
   pixSettings, 
   companyId, 
   showList,
+  logAction,
   viewPeriod,
   setViewPeriod,
   selectedMonth,
@@ -10121,6 +10460,7 @@ function FinancialManager({
   pixSettings: PixSettings, 
   companyId: string, 
   showList: boolean,
+  logAction?: any,
   viewPeriod: 'month' | 'year',
   setViewPeriod: (v: 'month' | 'year') => void,
   selectedMonth: string,
@@ -10960,12 +11300,14 @@ function FinancialManager({
   );
 }
 
-// --- Budgets Manager Component ---
+// --- Service Orders Manager Component ---
 
 function ServiceOrdersManager({ 
   serviceOrders = [], 
   clients = [], 
   users = [], 
+  inventory = [],
+  updateStock,
   appSettings, 
   pixSettings,
   companyId, 
@@ -10979,6 +11321,8 @@ function ServiceOrdersManager({
   serviceOrders?: ServiceOrder[], 
   clients?: Client[], 
   users?: any[], 
+  inventory?: any[],
+  updateStock?: (parts: any[], type: 'exit' | 'entry', id: string, refType: 'os' | 'visit') => Promise<void>,
   appSettings: AppSettings, 
   pixSettings: PixSettings,
   companyId: string, 
@@ -11074,6 +11418,11 @@ function ServiceOrdersManager({
       const docRef = await addDoc(collection(db, 'serviceOrders'), osData);
       const createdOS = { id: docRef.id, ...osData } as ServiceOrder;
       
+      // Deduct from inventory
+      if (updateStock && osData.parts && osData.parts.length > 0) {
+        await updateStock(osData.parts, 'exit', docRef.id, 'os');
+      }
+
       if (logAction) {
         await logAction('create', 'service_order', `Criou O.S. #${nextNumber} para ${osData.clientName}`, docRef.id);
       }
@@ -11446,17 +11795,28 @@ function ServiceOrdersManager({
                   </Button>
                 </div>
                 {newOS.parts?.map((p, i) => (
-                  <div key={i} className="grid grid-cols-12 gap-2">
-                    <Input 
-                      className="col-span-6 bg-[#0f1115] border-[#2d3139] h-8 text-xs" 
-                      placeholder="Descrição"
-                      value={p.description} 
-                      onChange={e => {
-                        const next = [...(newOS.parts || [])];
-                        next[i].description = e.target.value;
-                        setNewOS({...newOS, parts: next});
-                      }}
-                    />
+                  <div key={i} className="grid grid-cols-12 gap-2 items-center">
+                    <div className="col-span-6 flex items-center gap-2">
+                      <InventorySelector 
+                        inventory={inventory} 
+                        onSelect={(selected) => {
+                          const next = [...(newOS.parts || [])];
+                          next[i].description = selected.name;
+                          if (selected.price) next[i].price = selected.price;
+                          setNewOS({...newOS, parts: next});
+                        }} 
+                      />
+                      <Input 
+                        className="bg-[#0f1115] border-[#2d3139] h-8 text-xs flex-1" 
+                        placeholder="Descrição"
+                        value={p.description} 
+                        onChange={e => {
+                          const next = [...(newOS.parts || [])];
+                          next[i].description = e.target.value;
+                          setNewOS({...newOS, parts: next});
+                        }}
+                      />
+                    </div>
                     <Input 
                       type="number"
                       className="col-span-2 bg-[#0f1115] border-[#2d3139] h-8 text-xs" 
@@ -11800,12 +12160,23 @@ function ServiceOrdersManager({
                     <Button variant="outline" size="sm" onClick={() => handleAddPart(true)} className="h-7 border-[#2d3139] text-xs">+ Peça</Button>
                   </div>
                   {editingOS.parts?.map((p, i) => (
-                    <div key={i} className="grid grid-cols-12 gap-2">
-                      <Input className="col-span-6 bg-[#0f1115] border-[#2d3139] h-8 text-xs" value={p.description} onChange={e => {
-                        const next = [...(editingOS.parts || [])];
-                        next[i].description = e.target.value;
-                        setEditingOS({...editingOS, parts: next});
-                      }} />
+                    <div key={i} className="grid grid-cols-12 gap-2 items-center">
+                      <div className="col-span-6 flex items-center gap-2">
+                        <InventorySelector 
+                          inventory={inventory} 
+                          onSelect={(selected) => {
+                            const next = [...(editingOS.parts || [])];
+                            next[i].description = selected.name;
+                            if (selected.price) next[i].price = selected.price;
+                            setEditingOS({...editingOS, parts: next});
+                          }} 
+                        />
+                        <Input className="bg-[#0f1115] border-[#2d3139] h-8 text-xs flex-1" value={p.description} onChange={e => {
+                          const next = [...(editingOS.parts || [])];
+                          next[i].description = e.target.value;
+                          setEditingOS({...editingOS, parts: next});
+                        }} />
+                      </div>
                       <Input type="number" className="col-span-2 bg-[#0f1115] border-[#2d3139] h-8 text-xs" value={p.quantity} onChange={e => {
                         const next = [...(editingOS.parts || [])];
                         next[i].quantity = Number(e.target.value);
@@ -11934,7 +12305,103 @@ function ServiceOrdersManager({
   );
 }
 
-function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, companyId, showList, logAction, onEditClick, onSignatureClick, externalEditAction, onExternalEditHandled }: { budgets?: Budget[], clients?: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, showList: boolean, logAction?: any, onEditClick: (type: 'budget', data: any) => void, onSignatureClick: (type: 'budget', data: any) => void, externalEditAction: any, onExternalEditHandled: () => void }) {
+// --- Inventory Selector Component (Reusable) ---
+
+function InventorySelector({ 
+  inventory = [], 
+  onSelect 
+}: { 
+  inventory: any[], 
+  onSelect: (item: any) => void 
+}) {
+  const [searchTerm, setSearchTerm] = useState('');
+  
+  const filtered = inventory.filter(p => 
+    (p.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+     p.code?.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" size="icon" className="h-9 w-9 text-blue-400 hover:bg-blue-400/10 shrink-0">
+          <Box size={16} />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[300px] p-0 bg-[#1a1d23] border-[#2d3139] shadow-2xl z-[100]">
+        <div className="p-3 border-b border-[#2d3139]">
+          <div className="flex items-center gap-2 mb-2">
+            <Package size={14} className="text-blue-500" />
+            <span className="text-[10px] font-black text-white uppercase tracking-widest">Selecionar do Estoque</span>
+          </div>
+          <Input 
+            placeholder="Buscar peça..." 
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            className="h-8 text-xs bg-[#0f1115] border-[#2d3139]"
+            onKeyDown={e => e.stopPropagation()}
+          />
+        </div>
+        <ScrollArea className="h-[250px]">
+          {filtered.length > 0 ? (
+            <div className="p-1">
+              {filtered.map(item => (
+                <button
+                  key={item.id}
+                  className="w-full text-left p-2 hover:bg-[#2d3139] rounded transition-colors group flex items-center justify-between"
+                  onClick={() => onSelect(item)}
+                >
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-white">{item.name}</span>
+                    <span className="text-[9px] text-[#71717a] uppercase font-mono">{item.code} {item.location ? `• ${item.location}` : ''}</span>
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <span className={cn("text-[10px] font-black", (item.quantity <= (item.minQuantity || 0)) ? 'text-amber-500' : 'text-emerald-500')}>
+                      {item.quantity} {item.unit || 'un'}
+                    </span>
+                    {item.price && <span className="text-[9px] text-blue-400 font-bold">R$ {item.price.toFixed(2)}</span>}
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="p-8 text-center text-[10px] text-[#71717a] italic">Nenhuma peça encontrada.</div>
+          )}
+        </ScrollArea>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// --- Budgets Manager Component ---
+
+function BudgetsManager({ 
+  budgets = [], 
+  clients = [], 
+  inventory = [],
+  appSettings, 
+  pixSettings, 
+  companyId, 
+  showList, 
+  logAction, 
+  onEditClick, 
+  onSignatureClick, 
+  externalEditAction, 
+  onExternalEditHandled 
+}: { 
+  budgets?: Budget[], 
+  clients?: Client[], 
+  inventory?: any[],
+  appSettings: AppSettings, 
+  pixSettings: PixSettings, 
+  companyId: string, 
+  showList: boolean, 
+  logAction?: any, 
+  onEditClick: (type: 'budget', data: any) => void, 
+  onSignatureClick: (type: 'budget', data: any) => void, 
+  externalEditAction: any, 
+  onExternalEditHandled: () => void 
+}) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -12516,12 +12983,21 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
                   <ScrollArea className="h-[200px] pr-4 border border-[#2d3139] rounded-md p-2 bg-[#0f1115]">
                     {(newBudget.items || []).map((item, idx) => (
                       <div key={idx} className="grid grid-cols-12 gap-2 mb-2 items-end">
-                        <div className="col-span-6">
+                        <div className="col-span-6 flex items-center gap-2">
+                          <InventorySelector 
+                            inventory={inventory} 
+                            onSelect={(selected) => {
+                              const items = [...(newBudget.items || [])];
+                              items[idx].description = selected.name;
+                              if (selected.price) items[idx].price = selected.price;
+                              setNewBudget({...newBudget, items});
+                            }} 
+                          />
                           <Input placeholder="Descrição" value={item.description} onChange={e => {
                             const items = [...(newBudget.items || [])];
                             items[idx].description = e.target.value;
                             setNewBudget({...newBudget, items});
-                          }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9" />
+                          }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9 flex-1" />
                         </div>
                         <div className="col-span-2">
                           <Input type="number" placeholder="Qtd" value={item.quantity} onChange={e => {
@@ -12782,12 +13258,21 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
                 <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
                   {(editingBudget.items || []).map((item, idx) => (
                     <div key={idx} className="grid grid-cols-12 gap-2 mb-2">
-                      <div className="col-span-6">
+                      <div className="col-span-6 flex items-center gap-2">
+                        <InventorySelector 
+                          inventory={inventory} 
+                          onSelect={(selected) => {
+                            const items = [...(editingBudget.items || [])];
+                            items[idx].description = selected.name;
+                            if (selected.price) items[idx].price = selected.price;
+                            setEditingBudget({...editingBudget, items});
+                          }} 
+                        />
                         <Input value={item.description} onChange={e => {
                           const items = [...(editingBudget.items || [])];
                           items[idx].description = e.target.value;
                           setEditingBudget({...editingBudget, items});
-                        }} className="bg-[#0f1115] border-[#2d3139]" placeholder="Descrição" />
+                        }} className="bg-[#0f1115] border-[#2d3139] flex-1" placeholder="Descrição" />
                       </div>
                       <div className="col-span-2">
                         <Input type="number" value={item.quantity} onChange={e => {
@@ -12844,6 +13329,864 @@ function BudgetsManager({ budgets = [], clients = [], appSettings, pixSettings, 
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)} className="border-[#2d3139]">Cancelar</Button>
             <Button variant="destructive" onClick={handleDeleteBudget} className="bg-red-500 hover:bg-red-600">Excluir</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// --- Inventory Manager Component ---
+
+function InventoryManager({ 
+  inventory = [], 
+  transactions = [], 
+  serviceOrders = [],
+  visits = [],
+  companyId, 
+  logAction,
+  showList 
+}: { 
+  inventory: any[], 
+  transactions: any[], 
+  serviceOrders: any[],
+  visits: any[],
+  companyId: string, 
+  logAction?: any,
+  showList: boolean 
+}) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<any>(null);
+  const [isTransactionOpen, setIsTransactionOpen] = useState(false);
+  const [transactionType, setTransactionType] = useState<'entry' | 'exit'>('entry');
+  const [selectedItem, setSelectedItem] = useState<any>(null);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+
+  const [newItem, setNewItem] = useState({
+    code: '',
+    name: '',
+    description: '',
+    quantity: 0,
+    minQuantity: 5,
+    unit: 'un',
+    price: 0,
+    location: '',
+    category: ''
+  });
+
+  const [newTransaction, setNewTransaction] = useState({
+    itemId: '',
+    type: 'entry' as 'entry' | 'exit',
+    quantity: 1,
+    serialNumber: '',
+    referenceId: '', // OS or Visit ID
+    referenceType: 'none' as 'none' | 'os' | 'visit',
+    observations: ''
+  });
+
+  const filteredInventory = useMemo(() => {
+    return inventory.filter(p => 
+      (p.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+       p.code?.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+  }, [inventory, searchTerm]);
+
+  const abcData = useMemo(() => {
+    // Calculate usage frequency from transactions
+    const usageMap = new Map();
+    transactions.filter(t => t.type === 'exit').forEach(t => {
+      const count = usageMap.get(t.itemId) || 0;
+      usageMap.set(t.itemId, count + t.quantity);
+    });
+
+    const data = inventory.map(item => ({
+      name: item.name,
+      value: usageMap.get(item.id) || 0
+    })).sort((a, b) => b.value - a.value).slice(0, 5);
+
+    return data;
+  }, [inventory, transactions]);
+
+  const stats = useMemo(() => {
+    const lowStock = inventory.filter(item => item.quantity > 0 && item.quantity <= (item.minQuantity || 0)).length;
+    const zeroStock = inventory.filter(item => item.quantity <= 0).length;
+    const totalItems = inventory.length;
+    return { lowStock, zeroStock, totalItems };
+  }, [inventory]);
+
+  const handleSaveItem = async () => {
+    if (!newItem.name || !newItem.code) {
+      toast.error('Preencha os campos obrigatórios (Nome e Código).');
+      return;
+    }
+
+    try {
+      const docRef = await addDoc(collection(db, 'inventory'), {
+        ...newItem,
+        companyId,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
+      });
+
+      if (logAction) {
+        await logAction('create', 'inventory', `Cadastrou item no estoque: ${newItem.name} (${newItem.code})`, docRef.id);
+      }
+
+      setIsAddOpen(false);
+      setNewItem({ code: '', name: '', description: '', quantity: 0, minQuantity: 5, unit: 'un', location: '', category: '' });
+      toast.success('Item cadastrado com sucesso!');
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao cadastrar item.');
+    }
+  };
+
+  const handleUpdateItem = async () => {
+    if (!selectedItem) return;
+
+    try {
+      await updateDoc(doc(db, 'inventory', selectedItem.id), {
+        ...selectedItem,
+        updatedAt: Timestamp.now()
+      });
+
+      if (logAction) {
+        await logAction('update', 'inventory', `Atualizou item no estoque: ${selectedItem.name}`, selectedItem.id);
+      }
+
+      setIsEditOpen(false);
+      setSelectedItem(null);
+      toast.success('Item atualizado com sucesso!');
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao atualizar item.');
+    }
+  };
+
+  const handleDeleteItem = async () => {
+    if (!itemToDelete) return;
+
+    try {
+      await deleteDoc(doc(db, 'inventory', itemToDelete.id));
+      
+      if (logAction) {
+        await logAction('delete', 'inventory', `Removeu item do estoque: ${itemToDelete.name}`, itemToDelete.id);
+      }
+
+      setIsDeleteConfirmOpen(false);
+      setItemToDelete(null);
+      toast.success('Item removido do estoque.');
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao excluir item.');
+    }
+  };
+
+  const handleProcessTransaction = async () => {
+    if (!newTransaction.itemId || newTransaction.quantity <= 0) {
+      toast.error('Selecione o item e a quantidade.');
+      return;
+    }
+
+    const item = inventory.find(i => i.id === newTransaction.itemId);
+    if (!item) return;
+
+    if (newTransaction.type === 'exit' && item.quantity < newTransaction.quantity) {
+      toast.error('Quantidade insuficiente em estoque.');
+      return;
+    }
+
+    try {
+      // 1. Create transaction record
+      const transDoc = await addDoc(collection(db, 'inventoryTransactions'), {
+        ...newTransaction,
+        companyId,
+        timestamp: Timestamp.now()
+      });
+
+      // 2. Update inventory quantity
+      const newQty = newTransaction.type === 'entry' 
+        ? item.quantity + newTransaction.quantity 
+        : item.quantity - newTransaction.quantity;
+
+      await updateDoc(doc(db, 'inventory', item.id), {
+        quantity: newQty,
+        updatedAt: Timestamp.now()
+      });
+
+      if (logAction) {
+        await logAction('create', 'inventory_transaction', `${newTransaction.type === 'entry' ? 'Entrada' : 'Saída'} de ${newTransaction.quantity}x ${item.name}`, transDoc.id);
+      }
+
+      setIsTransactionOpen(false);
+      setNewTransaction({
+        itemId: '',
+        type: 'entry',
+        quantity: 1,
+        serialNumber: '',
+        referenceId: '',
+        referenceType: 'none',
+        observations: ''
+      });
+      toast.success('Movimentação realizada com sucesso!');
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao processar movimentação.');
+    }
+  };
+
+  const getStockStatus = (item: any) => {
+    if (item.quantity <= 0) return { label: 'ZERO', color: 'bg-red-500/20 text-red-500 border-red-500/30' };
+    if (item.quantity <= (item.minQuantity || 0)) return { label: 'BAIXO', color: 'bg-amber-500/20 text-amber-500 border-amber-500/30' };
+    return { label: 'OK', color: 'bg-emerald-500/20 text-emerald-500 border-emerald-500/30' };
+  };
+
+  if (!showList) {
+    return <NoAccessList title="Estoque de Peças" />;
+  }
+
+  return (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
+        <h2 className="text-3xl font-black tracking-tighter text-white uppercase italic text-[#3b82f6]">Controle de Estoque</h2>
+        <div className="flex items-center justify-between">
+          <p className="text-[#a0a0a0] text-sm">Gerencie o inventário de peças e componentes integrados às Ordens de Serviço.</p>
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <p className="text-[10px] text-[#71717a] uppercase font-bold tracking-widest">Alertas</p>
+              <div className="flex gap-2">
+                <Badge className="bg-red-500/10 text-red-500 border-red-500/20 text-[10px] font-bold tracking-tight uppercase px-1.5 py-0.5">{stats.zeroStock} ESGOTADOS</Badge>
+                <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20 text-[10px] font-bold tracking-tight uppercase px-1.5 py-0.5">{stats.lowStock} CRÍTICO</Badge>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {(stats.zeroStock > 0 || stats.lowStock > 0) && (
+        <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center justify-between animate-in slide-in-from-top-2 duration-300">
+          <div className="flex items-center gap-3 text-red-400">
+            <AlertTriangle className="text-red-500" size={20} />
+            <div>
+              <p className="text-sm font-black uppercase tracking-tight italic">Status de Estoque Crítico</p>
+              <p className="text-xs opacity-80">Atenção! Existem componentes esgotados ou abaixo do nível mínimo de segurança.</p>
+            </div>
+          </div>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="text-red-500 hover:bg-red-500 hover:text-white font-bold text-[10px] uppercase tracking-widest"
+            onClick={() => setSearchTerm('')}
+          >
+            Revisar Itens
+          </Button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="bg-[#1a1d23] border-[#2d3139] p-4 flex flex-col items-center justify-center text-center group hover:border-[#3b82f6]/40 transition-all cursor-pointer shadow-lg" onClick={() => setIsAddOpen(true)}>
+          <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-500 mb-2 group-hover:scale-110 transition-transform ring-1 ring-[#3b82f6]/20">
+            <Plus size={20} />
+          </div>
+          <span className="text-xs font-bold text-white uppercase tracking-tighter">Novo Item</span>
+        </Card>
+        <Card className="bg-[#1a1d23] border-[#2d3139] p-4 flex flex-col items-center justify-center text-center group hover:border-emerald-500/40 transition-all cursor-pointer shadow-lg" onClick={() => { setTransactionType('entry'); setIsTransactionOpen(true); }}>
+          <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-500 mb-2 group-hover:scale-110 transition-transform ring-1 ring-emerald-500/20">
+            <ArrowDownRight size={20} />
+          </div>
+          <span className="text-xs font-bold text-white uppercase tracking-tighter">Entrada</span>
+        </Card>
+        <Card className="bg-[#1a1d23] border-[#2d3139] p-4 flex flex-col items-center justify-center text-center group hover:border-amber-500/40 transition-all cursor-pointer shadow-lg" onClick={() => { setTransactionType('exit'); setIsTransactionOpen(true); }}>
+          <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-500 mb-2 group-hover:scale-110 transition-transform ring-1 ring-amber-500/20">
+            <ArrowUpRight size={20} />
+          </div>
+          <span className="text-xs font-bold text-white uppercase tracking-tighter">Saída/Uso</span>
+        </Card>
+        <Card className="bg-[#1a1d23] border-[#2d3139] p-4 flex flex-col items-center justify-center text-center group hover:border-purple-500/40 transition-all cursor-pointer shadow-lg" onClick={() => setIsHistoryOpen(true)}>
+          <div className="w-10 h-10 rounded-full bg-purple-500/10 flex items-center justify-center text-purple-500 mb-2 group-hover:scale-110 transition-transform ring-1 ring-purple-500/20">
+            <History size={20} />
+          </div>
+          <span className="text-xs font-bold text-white uppercase tracking-tighter">Histórico</span>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-4">
+          <div className="flex items-center gap-3 bg-[#1a1d23] border border-[#2d3139] p-2 rounded-xl focus-within:ring-1 focus-within:ring-blue-500/50 transition-all group">
+            <Search className="text-[#71717a] ml-2 group-focus-within:text-blue-500 transition-colors" size={18} />
+            <Input 
+              placeholder="Pesquisar por peça ou código (SN/SKU)..." 
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="bg-transparent border-none focus-visible:ring-0 text-white placeholder:text-[#71717a] h-9"
+            />
+          </div>
+
+          <Card className="bg-[#1a1d23] border-[#2d3139] overflow-hidden shadow-2xl">
+            <ScrollArea className="w-full">
+              <Table>
+                <TableHeader className="bg-[#0f1115]">
+                  <TableRow className="hover:bg-transparent border-[#2d3139]">
+                    <TableHead className="text-[#71717a] text-[10px] uppercase font-black px-4 py-3">Cod.</TableHead>
+                    <TableHead className="text-[#71717a] text-[10px] uppercase font-black px-4 py-3">Peça / Componente</TableHead>
+                    <TableHead className="text-[#71717a] text-[10px] uppercase font-black text-center px-4 py-3">Quant.</TableHead>
+                    <TableHead className="text-[#71717a] text-[10px] uppercase font-black text-center px-4 py-3">Min.</TableHead>
+                    <TableHead className="text-[#71717a] text-[10px] uppercase font-black text-center px-4 py-3">Status</TableHead>
+                    <TableHead className="text-[#71717a] text-[10px] uppercase font-black text-right px-4 py-3">Ação</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredInventory.length > 0 ? (
+                    filteredInventory.map((item) => {
+                      const status = getStockStatus(item);
+                      return (
+                        <TableRow key={item.id} className="border-[#2d3139] hover:bg-[#2d3139]/20 transition-colors group">
+                          <TableCell className="font-mono text-[10px] text-blue-400 px-4 py-3 tracking-tighter uppercase">#{item.code}</TableCell>
+                          <TableCell className="px-4 py-3">
+                            <div className="flex flex-col">
+                              <span className="text-sm font-bold text-white tracking-tight">{item.name}</span>
+                              <span className="text-[10px] text-[#71717a] font-medium uppercase">{item.category || 'Geral'} • {item.location || 'Sem local'}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-center font-bold text-white px-4 py-3">{item.quantity} {item.unit}</TableCell>
+                          <TableCell className="text-center text-[#71717a] text-xs px-4 py-3 font-medium">{item.minQuantity}</TableCell>
+                          <TableCell className="text-center px-4 py-3">
+                            <Badge className={cn("text-[9px] font-black tracking-tight border px-1.5 py-0.5", status.color)}>
+                              {status.label}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right px-4 py-3">
+                            <div className="flex justify-end gap-1">
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-7 w-7 text-[#71717a] hover:text-blue-400 hover:bg-blue-400/10"
+                                onClick={() => { setSelectedItem(item); setIsEditOpen(true); }}
+                              >
+                                <Pencil size={12} />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-7 w-7 text-[#71717a] hover:text-red-400 hover:bg-red-400/10"
+                                onClick={() => { setItemToDelete(item); setIsDeleteConfirmOpen(true); }}
+                              >
+                                <Trash2 size={12} />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-7 w-7 text-[#71717a] hover:text-white hover:bg-[#2d3139]"
+                                onClick={() => { 
+                                  setSelectedItem(item);
+                                  setIsHistoryOpen(true);
+                                }}
+                              >
+                                <Eye size={12} />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={6} className="h-48 text-center text-[#71717a] italic">
+                        <div className="flex flex-col items-center gap-2 opacity-40">
+                          <Package size={40} />
+                          <span className="text-sm">Nenhum item encontrado no estoque.</span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          </Card>
+        </div>
+
+        <div className="space-y-6">
+          <Card className="bg-[#1a1d23] border-[#2d3139] p-6 shadow-xl relative overflow-hidden group border-t-2 border-t-blue-500">
+            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 group-hover:opacity-10 transition-all">
+              <TrendingUp size={100} className="text-blue-500" />
+            </div>
+            <h4 className="text-xs font-black text-white uppercase tracking-widest mb-4 flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-blue-500/10">
+                <TrendingUp size={14} className="text-blue-500" />
+              </div>
+              Curva ABC (Mais Usados)
+            </h4>
+            <div className="h-[200px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={abcData} layout="vertical">
+                  <XAxis type="number" hide />
+                  <YAxis 
+                    dataKey="name" 
+                    type="category" 
+                    width={80} 
+                    stroke="#71717a" 
+                    fontSize={10} 
+                    tickFormatter={(val) => val.length > 10 ? val.substring(0, 10) + '...' : val} 
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <Tooltip 
+                    cursor={{fill: '#2d3139', opacity: 0.2}}
+                    contentStyle={{ backgroundColor: '#0f1115', border: '1px solid #2d3139', borderRadius: '8px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                    itemStyle={{ color: '#3b82f6', fontSize: '11px', fontWeight: 'bold' }}
+                    labelStyle={{ color: '#a0a0a0', fontSize: '10px', marginBottom: '4px' }}
+                  />
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                    {abcData.map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={index === 0 ? '#3b82f6' : index === 1 ? '#60a5fa' : '#93c5fd'} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <p className="text-[10px] text-[#71717a] text-center mt-2 italic font-medium leading-relaxed">Itens com maior rotatividade baseadas em registros de OS e Visitas.</p>
+          </Card>
+
+          <Card className="bg-[#1a1d23] border-[#2d3139] p-6 shadow-xl relative overflow-hidden group">
+            <h4 className="text-xs font-black text-white uppercase tracking-widest mb-4 flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-emerald-500/10">
+                <History size={14} className="text-emerald-500" />
+              </div>
+              Últimas Atividades
+            </h4>
+            <div className="space-y-4">
+              {transactions.slice(0, 5).map((t, idx) => {
+                const item = inventory.find(i => i.id === t.itemId);
+                return (
+                  <div key={idx} className="flex items-center justify-between border-b border-[#2d3139]/30 pb-3 last:border-0 last:pb-0 group/item">
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-white group-hover/item:text-blue-400 transition-colors">{item?.name || 'Item Removido'}</span>
+                      <span className="text-[9px] text-[#71717a] font-mono tracking-tighter">{format(t.timestamp?.toDate() || new Date(), "dd/MM/yy HH:mm")}</span>
+                    </div>
+                    <div className="flex items-center gap-2 bg-[#0f1115] px-2 py-1 rounded-lg border border-[#2d3139]">
+                       <span className={cn("text-[11px] font-black font-mono", t.type === 'entry' ? 'text-emerald-500' : 'text-amber-500')}>
+                         {t.type === 'entry' ? '+' : '-'}{t.quantity}
+                       </span>
+                       {t.type === 'entry' ? <ArrowDownRight size={12} className="text-emerald-500" /> : <ArrowUpRight size={12} className="text-amber-500" />}
+                    </div>
+                  </div>
+                );
+              })}
+              {transactions.length === 0 && <p className="text-center text-[10px] text-[#71717a] py-4 italic">Sem movimentações recentes.</p>}
+              {transactions.length > 5 && (
+                <Button variant="ghost" size="sm" className="w-full text-[10px] font-black uppercase text-[#71717a] hover:text-white mt-2" onClick={() => setIsHistoryOpen(true)}>
+                  Ver Todas
+                </Button>
+              )}
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      {/* Edit Item Dialog */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-lg shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black text-white uppercase italic tracking-tighter flex items-center gap-2">
+              <Package className="text-blue-500" /> Editar Item de Estoque
+            </DialogTitle>
+          </DialogHeader>
+          {selectedItem && (
+            <div className="grid grid-cols-2 gap-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Código / SKU</Label>
+                <Input 
+                  value={selectedItem.code} 
+                  onChange={e => setSelectedItem({...selectedItem, code: e.target.value})} 
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Nome da Peça</Label>
+                <Input 
+                  value={selectedItem.name} 
+                  onChange={e => setSelectedItem({...selectedItem, name: e.target.value})} 
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Categoria</Label>
+                <Input 
+                  value={selectedItem.category} 
+                  onChange={e => setSelectedItem({...selectedItem, category: e.target.value})} 
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Localização</Label>
+                <Input 
+                  value={selectedItem.location} 
+                  onChange={e => setSelectedItem({...selectedItem, location: e.target.value})} 
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Estoque Atual</Label>
+                <Input 
+                  type="number"
+                  value={selectedItem.quantity} 
+                  onChange={e => setSelectedItem({...selectedItem, quantity: Number(e.target.value)})} 
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Mínimo para Alerta</Label>
+                <Input 
+                  type="number"
+                  value={selectedItem.minQuantity} 
+                  onChange={e => setSelectedItem({...selectedItem, minQuantity: Number(e.target.value)})} 
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                />
+              </div>
+              <div className="col-span-2 space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Venda Sugerido (R$)</Label>
+                <Input 
+                  type="number"
+                  value={selectedItem.price || 0} 
+                  onChange={e => setSelectedItem({...selectedItem, price: Number(e.target.value)})} 
+                  className="bg-[#0f1115] border-[#2d3139] h-11 text-lg font-bold text-blue-400" 
+                />
+              </div>
+              <div className="col-span-2 space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Observações</Label>
+                <Input 
+                  value={selectedItem.description} 
+                  onChange={e => setSelectedItem({...selectedItem, description: e.target.value})} 
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter className="bg-[#0f1115]/50 p-6 -mx-6 -mb-6 border-t border-[#2d3139]">
+            <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139]">Cancelar</Button>
+            <Button onClick={handleUpdateItem} className="bg-[#3b82f6] hover:bg-[#2563eb] font-black uppercase italic tracking-tighter">Atualizar Registro</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Item Dialog */}
+      <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-lg shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black text-white uppercase italic tracking-tighter flex items-center gap-2">
+              <Package className="text-blue-500" /> Novo Item de Estoque
+            </DialogTitle>
+            <DialogDescription className="text-[#a0a0a0]">Cadastre novas peças ou componentes para uso técnico.</DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-4 py-4">
+            <div className="space-y-2">
+              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Código / SKU</Label>
+              <Input 
+                value={newItem.code} 
+                onChange={e => setNewItem({...newItem, code: e.target.value})} 
+                className="bg-[#0f1115] border-[#2d3139] focus:ring-blue-500" 
+                placeholder="Ex: SSD-240-KING"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Nome da Peça</Label>
+              <Input 
+                value={newItem.name} 
+                onChange={e => setNewItem({...newItem, name: e.target.value})} 
+                className="bg-[#0f1115] border-[#2d3139] focus:ring-blue-500" 
+                placeholder="Ex: SSD 240GB Kingston"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Categoria</Label>
+              <Input 
+                value={newItem.category} 
+                onChange={e => setNewItem({...newItem, category: e.target.value})} 
+                className="bg-[#0f1115] border-[#2d3139]" 
+                placeholder="Ex: Armazenamento"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Localização (Armário/Box)</Label>
+              <Input 
+                value={newItem.location} 
+                onChange={e => setNewItem({...newItem, location: e.target.value})} 
+                className="bg-[#0f1115] border-[#2d3139]" 
+                placeholder="Prateleira A2"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Saldo Inicial</Label>
+              <Input 
+                type="number"
+                value={newItem.quantity} 
+                onChange={e => setNewItem({...newItem, quantity: Number(e.target.value)})} 
+                className="bg-[#0f1115] border-[#2d3139]" 
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Qtd. Mínima (Aviso)</Label>
+              <Input 
+                type="number"
+                value={newItem.minQuantity} 
+                onChange={e => setNewItem({...newItem, minQuantity: Number(e.target.value)})} 
+                className="bg-[#0f1115] border-[#2d3139]" 
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Venda Sugerido (R$)</Label>
+              <Input 
+                type="number"
+                value={newItem.price} 
+                onChange={e => setNewItem({...newItem, price: Number(e.target.value)})} 
+                className="bg-[#0f1115] border-[#2d3139]" 
+              />
+            </div>
+            <div className="col-span-2 space-y-2">
+              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Observações Técnicas</Label>
+              <Input 
+                value={newItem.description} 
+                onChange={e => setNewItem({...newItem, description: e.target.value})} 
+                className="bg-[#0f1115] border-[#2d3139]" 
+              />
+            </div>
+          </div>
+          <DialogFooter className="bg-[#0f1115]/50 p-6 -mx-6 -mb-6 border-t border-[#2d3139]">
+            <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139]">Cancelar</Button>
+            <Button onClick={handleSaveItem} className="bg-[#3b82f6] hover:bg-[#2563eb] font-black uppercase italic tracking-tighter">Salvar no Inventário</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Transaction Dialog (Entry/Exit) */}
+      <Dialog open={isTransactionOpen} onOpenChange={setIsTransactionOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-lg shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black text-white uppercase italic tracking-tighter flex items-center gap-2">
+              {transactionType === 'entry' ? (
+                <>
+                  <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500"><ArrowDownRight size={24} /></div>
+                  Entrada de Peças
+                </>
+              ) : (
+                <>
+                  <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-500"><ArrowUpRight size={24} /></div>
+                  Baixa de Estoque / Uso OS
+                </>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Item Selecionado</Label>
+              <Select value={newTransaction.itemId} onValueChange={val => setNewTransaction({...newTransaction, itemId: val})}>
+                <SelectTrigger className="bg-[#0f1115] border-[#2d3139] h-12">
+                  <SelectValue placeholder="Selecione o item..." />
+                </SelectTrigger>
+                <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                  {inventory.map(item => (
+                    <SelectItem key={item.id} value={item.id} className="focus:bg-[#3b82f6]/20">
+                      <div className="flex justify-between items-center w-64">
+                         <span className="font-bold">{item.name}</span>
+                         <Badge variant="outline" className="text-[8px] font-mono opacity-60 border-[#2d3139] ml-2">Saldo: {item.quantity}</Badge>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Quantidade ({transactionType === 'entry' ? 'Recebida' : 'Utilizada'})</Label>
+                <Input 
+                  type="number" 
+                  value={newTransaction.quantity} 
+                  onChange={e => setNewTransaction({...newTransaction, quantity: Number(e.target.value)})} 
+                  className="bg-[#0f1115] border-[#2d3139] h-11 text-lg font-mono font-bold text-center" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">N. de Série / Lote (SN)</Label>
+                <Input 
+                  value={newTransaction.serialNumber} 
+                  onChange={e => setNewTransaction({...newTransaction, serialNumber: e.target.value})} 
+                  className="bg-[#0f1115] border-[#2d3139] h-11 font-mono tracking-tighter" 
+                  placeholder="Ex: CN-02J-0F..."
+                />
+              </div>
+            </div>
+
+            {transactionType === 'exit' && (
+              <div className="bg-[#0f1115]/30 p-4 rounded-xl border border-[#2d3139] space-y-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                  <span className="text-[10px] font-black uppercase text-blue-500 tracking-widest">Informações de Integração</span>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#71717a] text-[10px] uppercase font-bold">Vincular a</Label>
+                    <Select value={newTransaction.referenceType} onValueChange={(val: any) => setNewTransaction({...newTransaction, referenceType: val, referenceId: ''})}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="none">Nenhum vínculo</SelectItem>
+                        <SelectItem value="os">Ordem de Serviço (OS)</SelectItem>
+                        <SelectItem value="visit">Visita Técnica</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {newTransaction.referenceType !== 'none' && (
+                    <div className="space-y-2">
+                      <Label className="text-[#71717a] text-[10px] uppercase font-bold">Localizar #{newTransaction.referenceType.toUpperCase()}</Label>
+                      <Select value={newTransaction.referenceId} onValueChange={val => setNewTransaction({...newTransaction, referenceId: val})}>
+                        <SelectTrigger className="bg-[#0f1115] border-[#2d3139] overflow-hidden">
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                          {newTransaction.referenceType === 'os' ? 
+                            serviceOrders.slice(0, 50).map(os => <SelectItem key={os.id} value={os.id}>OS #{os.number} - {os.clientName}</SelectItem>) :
+                            visits.slice(0, 50).map(v => <SelectItem key={v.id} value={v.id}>Visita #{v.number} - {v.clientName}</SelectItem>)
+                          }
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Justificativa / Motivo</Label>
+              <Input 
+                value={newTransaction.observations} 
+                onChange={e => setNewTransaction({...newTransaction, observations: e.target.value})} 
+                className="bg-[#0f1115] border-[#2d3139] font-medium" 
+                placeholder="Ex: Troca de SSD em garantia ou Compra nota #123"
+              />
+            </div>
+          </div>
+          <DialogFooter className="bg-[#0f1115]/50 p-6 -mx-6 -mb-6 border-t border-[#2d3139]">
+            <Button variant="outline" onClick={() => setIsTransactionOpen(false)} className="border-[#2d3139]">Cancelar</Button>
+            <Button onClick={handleProcessTransaction} className={cn("font-black uppercase italic tracking-tighter", transactionType === 'entry' ? "bg-emerald-500 hover:bg-emerald-600" : "bg-amber-500 hover:bg-amber-600")}>
+              Confirmar {transactionType === 'entry' ? 'Entrada' : 'Baixa'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-black text-white px-0 uppercase italic tracking-tighter">Excluir Item do Estoque?</DialogTitle>
+            <DialogDescription className="text-[#a0a0a0]">
+              Esta ação não pode ser desfeita. O item <strong>{itemToDelete?.name}</strong> será removido permanentemente do registro de inventário.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0 mt-4">
+            <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)} className="border-[#2d3139] text-[#a0a0a0]">Cancelar</Button>
+            <Button variant="destructive" onClick={handleDeleteItem} className="bg-red-500 hover:bg-red-600 font-bold uppercase tracking-tighter italic">Confirmar Exclusão</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* History Dialog (Specific Item or General) */}
+      <Dialog open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-3xl shadow-2xl border-l-4 border-l-purple-500">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black text-white uppercase italic tracking-tighter flex items-center gap-2">
+              <History className="text-purple-500" />
+              {selectedItem ? `Rastreabilidade: ${selectedItem.name}` : 'Histórico Consolidado de Movimentações'}
+            </DialogTitle>
+            <DialogDescription className="text-[#71717a]">
+              {selectedItem ? `Veja todas as entradas e saídas desta peça específica.` : 'Auditagem completa de todas as movimentações do estoque.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+             <ScrollArea className="h-[450px] pr-4">
+                <Table>
+                  <TableHeader className="bg-[#0f1115] sticky top-0 z-10">
+                    <TableRow className="border-[#2d3139] hover:bg-transparent">
+                      <TableHead className="text-[9px] uppercase font-black px-2 py-3">Data/Hora</TableHead>
+                      {!selectedItem && <TableHead className="text-[9px] uppercase font-black px-2 py-3">Item</TableHead>}
+                      <TableHead className="text-[9px] uppercase font-black px-2 py-3">Ação</TableHead>
+                      <TableHead className="text-[9px] uppercase font-black text-center px-2 py-3">Qtd.</TableHead>
+                      <TableHead className="text-[9px] uppercase font-black px-2 py-3">Ref Integ. / SN</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {transactions
+                      .filter(t => !selectedItem || t.itemId === selectedItem.id)
+                      .map((t, idx) => {
+                        const item = inventory.find(i => i.id === t.itemId);
+                        let refDesc = 'Sem vínculo';
+                        let refIcon = null;
+
+                        if (t.referenceType === 'os') {
+                          const os = serviceOrders.find(o => o.id === t.referenceId);
+                          refDesc = os ? `OS #${os.number}` : 'OS Excluída';
+                          refIcon = <FileText size={10} className="text-blue-400" />;
+                        } else if (t.referenceType === 'visit') {
+                          const v = visits.find(vis => vis.id === t.referenceId);
+                          refDesc = v ? `Visita #${v.number}` : 'Visita Excluída';
+                          refIcon = <CalendarIcon size={10} className="text-amber-400" />;
+                        }
+                        
+                        return (
+                          <TableRow key={idx} className="border-[#2d3139]/50 hover:bg-[#2d3139]/30 transition-colors">
+                            <TableCell className="text-[10px] font-mono text-[#a0a0a0] leading-tight">
+                              {format(t.timestamp?.toDate() || new Date(), "dd/MM/yy")}<br/>
+                              <span className="opacity-50">{format(t.timestamp?.toDate() || new Date(), "HH:mm:ss")}</span>
+                            </TableCell>
+                            {!selectedItem && (
+                              <TableCell className="text-[11px] font-bold text-white max-w-[120px] truncate">{item?.name || '---'}</TableCell>
+                            )}
+                            <TableCell>
+                              <Badge className={cn("text-[8px] font-black tracking-tight border px-1 py-0 shadow-sm", t.type === 'entry' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-amber-500/10 text-amber-500 border-amber-500/20')}>
+                                {t.type === 'entry' ? 'ENTRADA' : 'SAÍDA'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-center font-mono font-bold text-sm">{t.quantity}</TableCell>
+                            <TableCell className="text-[10px]">
+                              <div className="flex flex-col gap-0.5">
+                                <div className="flex items-center gap-1 font-bold text-[#e0e0e0]">
+                                  {refIcon}
+                                  <span>{refDesc}</span>
+                                </div>
+                                {t.serialNumber && (
+                                  <div className="flex items-center gap-1 text-[9px] text-blue-400 uppercase font-bold bg-blue-500/5 px-1 rounded ring-1 ring-blue-500/10 w-fit">
+                                    <Shield size={8} />
+                                    <span>SN: {t.serialNumber}</span>
+                                  </div>
+                                )}
+                                {t.observations && <span className="text-[9px] text-[#71717a] italic mt-0.5 max-w-[150px] truncate">"{t.observations}"</span>}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    }
+                    {transactions.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={selectedItem ? 4 : 5} className="text-center py-16 text-[#71717a] italic">
+                           <div className="flex flex-col items-center gap-2 opacity-30">
+                             <History size={32} />
+                             <span>Sem registros de movimentação para este item.</span>
+                           </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+             </ScrollArea>
+          </div>
+          <DialogFooter className="border-t border-[#2d3139] pt-4 mt-2">
+            <Button variant="ghost" className="text-[10px] font-bold uppercase tracking-widest text-[#71717a] hover:text-white" onClick={() => setIsHistoryOpen(false)}>Fechar Histórico</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
