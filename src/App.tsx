@@ -57,7 +57,8 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   TrendingUp,
-  AlertTriangle
+  AlertTriangle,
+  QrCode
 } from 'lucide-react';
 import { 
   collection, 
@@ -2233,8 +2234,9 @@ export default function MainApp() {
   const [userPhotoError, setUserPhotoError] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>(inviteCodeUrl ? 'register' : 'login');
   
+  // Update authMode if URL code changes and user is not logged in
   useEffect(() => {
-    if (inviteCodeUrl && !user && authMode === 'login') {
+    if (inviteCodeUrl && !user) {
       setAuthMode('register');
     }
   }, [inviteCodeUrl, user]);
@@ -2527,13 +2529,6 @@ export default function MainApp() {
 
   const userRoles = useMemo(() => [...DEFAULT_ROLES, ...customRoles], [customRoles]);
 
-  // Redirect technicians if they land on dashboard
-  useEffect(() => {
-    if (currentUserData?.role === 'tecnico' && activeTab === 'dashboard') {
-      setActiveTab('visits');
-    }
-  }, [currentUserData, activeTab]);
-
   const isSuperAdmin = user?.email?.toLowerCase().trim() === 'emailparasiteslixo@gmail.com' || 
                        user?.email?.toLowerCase().trim() === 'alffonseca42@gmail.com' || 
                        currentUserData?.role === 'super_admin';
@@ -2553,7 +2548,11 @@ export default function MainApp() {
     }
     
     if (role === 'tecnico') {
-      return ['visits', 'service-orders', 'receipts', 'inventory'].includes(tabName);
+      return ['dashboard', 'visits', 'service-orders', 'receipts', 'inventory'].includes(tabName);
+    }
+
+    if (role === 'auxiliar') {
+      return ['dashboard', 'visits'].includes(tabName);
     }
     
     // Default fallback
@@ -2564,6 +2563,9 @@ export default function MainApp() {
     const role = currentUserData?.role;
     if (isSuperAdmin || role === 'admin' || role === 'owner') return true;
     
+    // Fail-safe for dashboard summary: if you can access it, you can view the summary
+    if (tabName === 'dashboard') return canAccess('dashboard');
+
     if (rolePermissions && rolePermissions[role]) {
       return rolePermissions[role].lists?.includes(tabName) || false;
     }
@@ -3151,7 +3153,19 @@ export default function MainApp() {
     return (
       <div className="flex h-screen flex-col items-center justify-center bg-[#0f1115] p-6 overflow-y-auto">
         <div className="w-full max-w-md space-y-8 text-center py-8">
-          <div className="space-y-2">
+          <div className="space-y-4">
+            {inviteCodeUrl && (
+              <div className="bg-[#3b82f6]/10 border border-[#3b82f6]/30 p-4 rounded-xl flex items-center gap-4 mb-4 text-left animate-in slide-in-from-top duration-700">
+                <div className="p-2 bg-[#3b82f6] rounded-lg text-white">
+                  <Plus className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-white font-bold text-sm uppercase tracking-tighter italic">Voucher de Adesão Detectado!</h3>
+                  <p className="text-[#a0a0a0] text-[10px]">Crie sua conta agora para ativar seu acesso exclusivo com o código <span className="text-white font-mono">{inviteCodeUrl}</span></p>
+                </div>
+              </div>
+            )}
+            
             {appSettings.logoUrl ? (
               <div className="mx-auto flex h-24 w-auto items-center justify-center overflow-hidden mb-4">
                 <img src={appSettings.logoUrl} alt="Logo" className="max-h-full max-w-full object-contain" referrerPolicy="no-referrer" />
@@ -3804,7 +3818,7 @@ export default function MainApp() {
               showList={canViewList('reports')}
             />
           )}
-          {activeTab === 'users' && <UsersManager users={users} currentUserData={currentUserData} showList={canViewList('users')} userRoles={userRoles} logAction={logAction} />}
+          {activeTab === 'users' && <UsersManager users={users} currentUserData={currentUserData} currentCompany={currentCompany} showList={canViewList('users')} userRoles={userRoles} logAction={logAction} />}
           
           {activeTab === 'inventory' && (
             <InventoryManager 
@@ -4063,7 +4077,7 @@ export default function MainApp() {
   );
 }
 
-function UsersManager({ users = [], currentUserData, showList, userRoles, logAction }: { users?: any[], currentUserData: any, showList: boolean, userRoles: UserRole[], logAction?: any }) {
+function UsersManager({ users = [], currentUserData, currentCompany, showList, userRoles, logAction }: { users?: any[], currentUserData: any, currentCompany: any, showList: boolean, userRoles: UserRole[], logAction?: any }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'tecnico' });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -4214,19 +4228,50 @@ function UsersManager({ users = [], currentUserData, showList, userRoles, logAct
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div className="flex flex-col sm:flex-row gap-2">
           <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-xl shadow-inner shadow-black/20">
-            <div className="text-[10px] uppercase text-[#71717a] font-black tracking-widest">Convite Técnico:</div>
-            <code className="text-[#3b82f6] font-mono font-bold text-sm">{currentUserData.companyId}</code>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="h-6 w-6 text-[#71717a] hover:text-white"
-              onClick={() => {
-                navigator.clipboard.writeText(currentUserData.companyId);
-                toast.success('Código copiado!');
-              }}
-            >
-              <Share2 size={12} />
-            </Button>
+            <div className="text-[10px] uppercase text-[#71717a] font-black tracking-widest">Código de Equipe:</div>
+            <code className="text-[#3b82f6] font-mono font-bold text-sm">{currentCompany?.inviteCode || '---'}</code>
+            <div className="flex items-center gap-1">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-6 w-6 text-[#71717a] hover:text-white"
+                onClick={() => {
+                  const inviteCode = currentCompany?.inviteCode;
+                  if (inviteCode) {
+                    const url = `${window.location.origin}${window.location.pathname}?code=${inviteCode}`;
+                    navigator.clipboard.writeText(url);
+                    toast.success('Link de convite copiado!');
+                  } else {
+                    toast.error('Gere um código nas configurações primeiro.');
+                  }
+                }}
+                title="Copiar Link de Convite"
+              >
+                <Share2 size={12} />
+              </Button>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-6 w-6 text-[#71717a] hover:text-white" title="Ver QR Code">
+                    <QrCode size={12} />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white w-fit">
+                  <DialogHeader>
+                    <DialogTitle className="text-white text-center">Convite de Equipe</DialogTitle>
+                    <DialogDescription className="text-center text-[#71717a] text-xs">Aponte a câmera para se juntar à empresa</DialogDescription>
+                  </DialogHeader>
+                  <div className="p-6 bg-white rounded-xl shadow-2xl flex items-center justify-center mx-auto">
+                    <QRCodeCanvas 
+                      value={`${window.location.origin}${window.location.pathname}?code=${currentCompany?.inviteCode}`}
+                      size={200}
+                      level="H"
+                      includeMargin={true}
+                    />
+                  </div>
+                  <div className="text-center font-mono font-bold text-lg tracking-widest mt-2">{currentCompany?.inviteCode}</div>
+                </DialogContent>
+              </Dialog>
+            </div>
           </div>
         </div>
         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
@@ -7147,18 +7192,18 @@ function SuperAdminPanel({
                     Código
                   </Button>
                   <Button 
-                    className="bg-blue-600 border border-blue-500 text-white hover:bg-blue-700 h-12 font-bold uppercase tracking-wider gap-2 shadow-xl shadow-blue-500/20"
+                    className="bg-blue-600 border border-blue-500 text-white hover:bg-blue-700 h-12 font-black uppercase tracking-tighter italic gap-2 shadow-xl shadow-blue-500/20 w-full"
                     onClick={() => {
                       const activeCode = regCodes.filter(c => c.status !== 'used').sort((a,b) => (b.createdAt as any).seconds - (a.createdAt as any).seconds)[0]?.code;
                       if (activeCode) {
                         const url = `${window.location.origin}${window.location.pathname}?code=${activeCode}`;
                         navigator.clipboard.writeText(url);
-                        toast.success("Link com código copiado!");
+                        toast.success("Link Mestre Copiado! Envie para o novo cliente.");
                       }
                     }}
                   >
                     <ExternalLink size={16} />
-                    Copiar Link
+                    COPIAR LINK PARA VENDA
                   </Button>
                 </div>
               </div>
@@ -7510,8 +7555,8 @@ function RolePermissionManager({ companyId, user, userRoles }: { companyId: stri
             lists: ['dashboard', 'financial', 'budgets', 'clients', 'suppliers', 'receipts', 'users', 'reports', 'settings']
           },
           tecnico: { 
-            menus: ['visits', 'service-orders', 'receipts'],
-            lists: ['visits', 'service-orders']
+            menus: ['dashboard', 'visits', 'service-orders', 'receipts'],
+            lists: ['dashboard', 'visits', 'service-orders']
           },
           auxiliar: { menus: ['dashboard'], lists: [] }
         });
