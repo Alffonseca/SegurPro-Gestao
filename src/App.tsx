@@ -25,6 +25,7 @@ import {
   User as UserIcon,
   Receipt as ReceiptIcon,
   Share2,
+  ExternalLink,
   Settings,
   Menu,
   X,
@@ -1436,13 +1437,57 @@ interface LogRecord {
 
 // --- Components ---
 
-function CompanyWizard({ onCreate, onJoin }: { onCreate: (name: string) => void, onJoin: (code: string) => void }) {
+function CompanyWizard({ onCreate, onJoin, initialCode }: { onCreate: (name: string) => void, onJoin: (code: string) => void, initialCode?: string }) {
   const [name, setName] = useState('');
-  const [code, setCode] = useState('');
-  const [regCode, setRegCode] = useState('');
+  const [code, setCode] = useState(initialCode || '');
+  const [regCode, setRegCode] = useState(initialCode || '');
   const [isValidated, setIsValidated] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [mode, setMode] = useState<'selection' | 'create' | 'join' | 'validate_registration'>('selection');
+
+  useEffect(() => {
+    if (initialCode) {
+      handleAutoDetectCode(initialCode);
+    }
+  }, [initialCode]);
+
+  const handleAutoDetectCode = async (searchCode: string) => {
+    const cleanCode = searchCode.trim().toUpperCase();
+    setIsValidating(true);
+    try {
+      // 1. Try if it's a Registration Code (New Company)
+      const regQ = query(
+        collection(db, 'registration_codes'), 
+        where('code', '==', cleanCode),
+        where('status', '==', 'active')
+      );
+      const regSnap = await getDocs(regQ);
+      if (!regSnap.empty) {
+        setRegCode(cleanCode);
+        setIsValidated(true);
+        setMode('create');
+        (window as any)._validatedRegCodeId = regSnap.docs[0].id;
+        toast.success("Código de liberação mestre detectado!");
+        return;
+      }
+
+      // 2. Try if it's a Company Invite Code (Collaborator)
+      const compQ = query(collection(db, 'companies'), where('inviteCode', '==', cleanCode));
+      const compSnap = await getDocs(compQ);
+      if (!compSnap.empty) {
+        setCode(cleanCode);
+        setMode('join');
+        toast.success("Código de convite de equipe detectado!");
+        return;
+      }
+
+      toast.error("O código fornecido via link é inválido ou expirou.");
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsValidating(false);
+    }
+  };
 
   const validateRegistrationCode = async () => {
     if (!regCode.trim()) {
@@ -1578,7 +1623,13 @@ function CompanyWizard({ onCreate, onJoin }: { onCreate: (name: string) => void,
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0f1115] p-6">
+    <div className="min-h-screen flex items-center justify-center bg-[#0f1115] p-6 relative">
+      {isValidating && (
+        <div className="absolute inset-0 bg-[#0f1115]/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center gap-4">
+          <RefreshCw className="h-10 w-10 text-[#3b82f6] animate-spin" />
+          <p className="text-white font-bold animate-pulse uppercase tracking-[0.2em] text-xs">Validando Código de Acesso...</p>
+        </div>
+      )}
       <div className="w-full max-w-2xl text-center space-y-8">
         <div className="space-y-4">
           <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-2xl shadow-blue-500/20">
@@ -2147,6 +2198,11 @@ export default function MainApp() {
     return params.get('assinatura') === 'portal';
   }, []);
 
+  const inviteCodeUrl = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('code');
+  }, []);
+
   const [activeSignerToken, setActiveSignerToken] = useState<string | null>(signerTokenUrl);
 
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -2486,7 +2542,7 @@ export default function MainApp() {
     }
 
     if (role === 'secretaria') {
-      return ['dashboard', 'financial', 'budgets', 'clients', 'suppliers', 'receipts', 'users', 'reports', 'settings', 'logs'].includes(tabName);
+      return ['dashboard', 'financial', 'budgets', 'clients', 'suppliers', 'receipts', 'users', 'reports', 'settings', 'logs', 'inventory'].includes(tabName);
     }
     
     if (role === 'tecnico') {
@@ -2514,7 +2570,7 @@ export default function MainApp() {
     if (currentUserData && !canAccess(activeTab)) {
       const allowedTabs = [
         'dashboard', 'visits', 'financial', 'budgets', 'service-orders',
-        'clients', 'suppliers', 'receipts', 'users', 'settings', 'reports', 'super-admin'
+        'clients', 'suppliers', 'receipts', 'users', 'settings', 'reports', 'super-admin', 'inventory'
       ].filter(canAccess);
       
       if (allowedTabs.length > 0) {
@@ -2831,17 +2887,23 @@ export default function MainApp() {
   };
 
   const updateInventoryStock = async (parts: { description: string, quantity: number }[], type: 'exit' | 'entry', referenceId: string, referenceType: 'os' | 'visit') => {
+    const companyId = currentUserData?.companyId;
     if (!companyId || !parts || parts.length === 0) return;
     
     for (const part of parts) {
       if (!part.description) continue;
       
       // Try to find matching item by name/description
-      const item = inventory.find(i => i.name.toLowerCase() === part.description.toLowerCase() || i.code === part.description);
+      const item = inventory.find(i => 
+        (i.name && i.name.toLowerCase() === part.description.toLowerCase()) || 
+        (i.code && i.code === part.description)
+      );
       
       if (item) {
         const itemRef = doc(db, 'inventory', item.id);
-        const newQuantity = type === 'exit' ? (item.quantity - part.quantity) : (item.quantity + part.quantity);
+        const currentQty = Number(item.quantity) || 0;
+        const partQty = Number(part.quantity) || 0;
+        const newQuantity = type === 'exit' ? (currentQty - partQty) : (currentQty + partQty);
         
         await updateDoc(itemRef, { 
           quantity: newQuantity,
@@ -3200,7 +3262,11 @@ export default function MainApp() {
   if (!currentUserData?.companyId && !isSuperAdmin) {
     return (
       <div className="min-h-screen bg-[#0f1115]">
-        <CompanyWizard onCreate={handleCreateCompany} onJoin={handleJoinCompany} />
+        <CompanyWizard 
+          onCreate={handleCreateCompany} 
+          onJoin={handleJoinCompany} 
+          initialCode={inviteCodeUrl || undefined}
+        />
       </div>
     );
   }
@@ -7008,26 +7074,57 @@ function SuperAdminPanel({
           </CardHeader>
           <CardContent className="p-10 flex flex-col items-center justify-center bg-[#0f1115]/30 flex-1">
             {regCodes.filter(c => c.status !== 'used').length > 0 ? (
-              <div className="flex flex-col items-center gap-6 w-full max-w-sm">
-                <div className="w-full bg-[#1a1d23] border-2 border-dashed border-[#2d3139] p-8 rounded-2xl flex flex-col items-center gap-4 group hover:border-blue-500/50 transition-colors">
-                  <div className="text-[10px] text-[#71717a] font-black uppercase tracking-[0.3em]">Convite Ativo</div>
-                  <code className="text-4xl font-black text-white tracking-[0.2em] select-all">
-                    {regCodes.filter(c => c.status !== 'used').sort((a,b) => (b.createdAt as any).seconds - (a.createdAt as any).seconds)[0]?.code}
-                  </code>
+              <div className="flex flex-col items-center gap-6 w-full max-w-md">
+                <div className="w-full bg-[#1a1d23] border-2 border-dashed border-[#2d3139] p-8 rounded-2xl flex flex-col items-center gap-6 group hover:border-blue-500/50 transition-colors">
+                  <div className="text-[10px] text-[#71717a] font-black uppercase tracking-[0.3em]">Convite Ativo Detectado</div>
+                  
+                  {/* QR Code Display */}
+                  <div className="p-4 bg-white rounded-xl shadow-2xl">
+                    <QRCodeCanvas 
+                      value={`${window.location.origin}${window.location.pathname}?code=${regCodes.filter(c => c.status !== 'used').sort((a,b) => (b.createdAt as any).seconds - (a.createdAt as any).seconds)[0]?.code}`}
+                      size={160}
+                      level="H"
+                      includeMargin={true}
+                    />
+                  </div>
+
+                  <div className="flex flex-col items-center gap-2">
+                    <code className="text-4xl font-black text-white tracking-[0.2em] select-all">
+                      {regCodes.filter(c => c.status !== 'used').sort((a,b) => (b.createdAt as any).seconds - (a.createdAt as any).seconds)[0]?.code}
+                    </code>
+                    <p className="text-[9px] text-blue-400 font-bold uppercase tracking-widest mt-2">Clique no código para selecionar</p>
+                  </div>
                 </div>
-                <Button 
-                  className="w-full bg-[#1a1d23] border border-[#2d3139] text-white hover:bg-white/5 h-12 font-bold uppercase tracking-wider gap-2 shadow-xl shadow-black/40"
-                  onClick={() => {
-                    const activeCode = regCodes.filter(c => c.status !== 'used').sort((a,b) => (b.createdAt as any).seconds - (a.createdAt as any).seconds)[0]?.code;
-                    if (activeCode) {
-                      navigator.clipboard.writeText(activeCode);
-                      toast.success("Código copiado!");
-                    }
-                  }}
-                >
-                  <Copy size={16} />
-                  COPIAR CÓDIGO
-                </Button>
+
+                <div className="grid grid-cols-2 gap-3 w-full">
+                  <Button 
+                    className="bg-[#1a1d23] border border-[#2d3139] text-white hover:bg-white/5 h-12 font-bold uppercase tracking-wider gap-2 shadow-xl"
+                    onClick={() => {
+                      const activeCode = regCodes.filter(c => c.status !== 'used').sort((a,b) => (b.createdAt as any).seconds - (a.createdAt as any).seconds)[0]?.code;
+                      if (activeCode) {
+                        navigator.clipboard.writeText(activeCode);
+                        toast.success("Código copiado!");
+                      }
+                    }}
+                  >
+                    <Copy size={16} />
+                    Código
+                  </Button>
+                  <Button 
+                    className="bg-blue-600 border border-blue-500 text-white hover:bg-blue-700 h-12 font-bold uppercase tracking-wider gap-2 shadow-xl shadow-blue-500/20"
+                    onClick={() => {
+                      const activeCode = regCodes.filter(c => c.status !== 'used').sort((a,b) => (b.createdAt as any).seconds - (a.createdAt as any).seconds)[0]?.code;
+                      if (activeCode) {
+                        const url = `${window.location.origin}${window.location.pathname}?code=${activeCode}`;
+                        navigator.clipboard.writeText(url);
+                        toast.success("Link com código copiado!");
+                      }
+                    }}
+                  >
+                    <ExternalLink size={16} />
+                    Copiar Link
+                  </Button>
+                </div>
               </div>
             ) : (
               <div className="flex flex-col items-center gap-4 text-center py-10">
@@ -9509,7 +9606,7 @@ function VisitsManager({
 
       visit.parts.forEach(p => {
         if (currentY > 275) { doc.addPage(); currentY = 20; }
-        const desc = doc.truncateText(p.description, 100);
+        const desc = p.description.length > 45 ? p.description.substring(0, 42) + '...' : p.description;
         doc.text(desc, 23, currentY);
         doc.text(p.quantity.toString(), 133, currentY);
         doc.text(p.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), 148, currentY);
@@ -12317,8 +12414,8 @@ function InventorySelector({
   const [searchTerm, setSearchTerm] = useState('');
   
   const filtered = inventory.filter(p => 
-    (p.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-     p.code?.toLowerCase().includes(searchTerm.toLowerCase()))
+    (p.name?.toLowerCase()?.includes(searchTerm.toLowerCase()) || 
+     p.code?.toLowerCase()?.includes(searchTerm.toLowerCase()))
   );
 
   return (
