@@ -318,6 +318,7 @@ interface UserRole {
 }
 
 const DEFAULT_ROLES: UserRole[] = [
+  { id: 'owner', label: 'Proprietário' },
   { id: 'admin', label: 'Administrador' },
   { id: 'tecnico', label: 'Técnico' },
   { id: 'secretaria', label: 'Secretaria' },
@@ -2540,7 +2541,7 @@ export default function MainApp() {
   // Access Helper for Sidebar
   const canAccess = (tabName: string) => {
     const role = currentUserData?.role;
-    if (isSuperAdmin || role === 'admin') return true;
+    if (isSuperAdmin || role === 'admin' || role === 'owner') return true;
     
     // Check dynamic permissions if they exist
     if (rolePermissions && rolePermissions[role]) {
@@ -2561,7 +2562,7 @@ export default function MainApp() {
 
   const canViewList = (tabName: string) => {
     const role = currentUserData?.role;
-    if (isSuperAdmin || role === 'admin') return true;
+    if (isSuperAdmin || role === 'admin' || role === 'owner') return true;
     
     if (rolePermissions && rolePermissions[role]) {
       return rolePermissions[role].lists?.includes(tabName) || false;
@@ -3045,12 +3046,17 @@ export default function MainApp() {
           role: 'tecnico'
         });
 
-        // If it was an invite code, regenerate it to make it "single use" or rotate it
+        // If it was an invite code, try to regenerate it to make it "single use" or rotate it
+        // This is a "best effort" - if it fails (403), we still allow the join to succeed
         if (isInviteCode) {
-          const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-          await updateDoc(doc(db, 'companies', targetCompanyId), {
-            inviteCode: newCode
-          });
+          try {
+            const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+            await updateDoc(doc(db, 'companies', targetCompanyId), {
+              inviteCode: newCode
+            });
+          } catch (rotateError) {
+            console.warn("Could not rotate invite code (expected if joining user is not admin):", rotateError);
+          }
         }
 
         toast.success("Você entrou na empresa com sucesso!");
@@ -3139,123 +3145,8 @@ export default function MainApp() {
     );
   }
 
-  if (!user && inviteCodeUrl) {
-    return (
-      <div className="min-h-screen bg-[#0f1115] flex items-center justify-center p-6 relative overflow-hidden">
-        {/* Decorative elements */}
-        <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
-          <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-[#3b82f6]/5 rounded-full blur-[120px]"></div>
-          <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-[#3b82f6]/5 rounded-full blur-[120px]"></div>
-        </div>
-
-        <div className="w-full max-w-4xl grid md:grid-cols-2 gap-12 items-center relative z-10">
-          <div className="space-y-8 text-left">
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="h-12 w-12 rounded-xl bg-[#3b82f6] flex items-center justify-center shadow-lg shadow-blue-500/20">
-                  <Shield size={24} className="text-white" />
-                </div>
-                <h2 className="text-xl font-black text-white uppercase tracking-widest italic">{appSettings.companyName || 'SegurPro Gestão'}</h2>
-              </div>
-              <h1 className="text-5xl font-black text-white tracking-tight leading-none uppercase italic">
-                Sua Nova <span className="text-[#3b82f6]">Era Digital</span> Começa Aqui.
-              </h1>
-              <p className="text-[#71717a] text-lg max-w-md leading-relaxed font-medium">
-                Você recebeu um acesso exclusivo. Ative seu plano corporativo agora e tenha o controle total na palma da sua mão.
-              </p>
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm">
-                <div className="h-10 w-10 rounded-full bg-blue-500/20 flex items-center justify-center">
-                  <Package className="text-blue-400" size={20} />
-                </div>
-                <div>
-                  <p className="text-white font-bold text-sm">Plano Detectado</p>
-                  <p className="text-[#71717a] text-xs">Acesso Especial ({inviteCodeUrl})</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 text-[10px] text-[#555] font-black uppercase tracking-[0.2em]">
-                <Shield size={10} /> Sistema de Segurança SegurPro Ativo
-              </div>
-            </div>
-          </div>
-
-          <Card className="border-[#2d3139] bg-[#1a1d23] shadow-2xl shadow-black/50">
-            <CardHeader className="space-y-1">
-              <CardTitle className="text-2xl font-black text-white uppercase italic tracking-tight">Ativar Acesso</CardTitle>
-              <CardDescription className="text-[#71717a] font-medium">
-                {authMode === 'register' ? 'Configure sua conta de administrador' : 'Entre com sua conta existente'}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <form onSubmit={handleEmailAuth} className="space-y-4 text-left">
-                {authMode === 'register' && (
-                  <div className="space-y-2">
-                    <Label className="text-[#a0a0a0] font-bold uppercase text-[10px] tracking-widest">Nome Completo</Label>
-                    <Input 
-                      type="text" 
-                      value={displayName} 
-                      onChange={e => setDisplayName(e.target.value)} 
-                      placeholder="Identificação do Admin"
-                      className="bg-[#0f1115] border-[#2d3139] text-white h-11" 
-                    />
-                  </div>
-                )}
-                <div className="space-y-2">
-                  <Label className="text-[#a0a0a0] font-bold uppercase text-[10px] tracking-widest">E-mail ou Usuário</Label>
-                  <Input 
-                    type="text" 
-                    value={email} 
-                    onChange={e => setEmail(e.target.value)} 
-                    placeholder="email@exemplo.com"
-                    className="bg-[#0f1115] border-[#2d3139] text-white h-11" 
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-[#a0a0a0] font-bold uppercase text-[10px] tracking-widest">Senha</Label>
-                  <Input 
-                    type="password" 
-                    value={password} 
-                    onChange={e => setPassword(e.target.value)} 
-                    placeholder="••••••••"
-                    className="bg-[#0f1115] border-[#2d3139] text-white h-11" 
-                  />
-                </div>
-                <Button 
-                  type="submit" 
-                  disabled={isAuthLoading}
-                  className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white h-12 font-black uppercase tracking-widest italic shadow-lg shadow-blue-500/20"
-                >
-                  {isAuthLoading ? <RefreshCw className="animate-spin mr-2" size={18} /> : null}
-                  {authMode === 'login' ? 'Vincular e Entrar' : 'Ativar e Começar'}
-                </Button>
-              </form>
-
-              <div className="relative py-2">
-                <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-[#2d3139]"></span></div>
-                <div className="relative flex justify-center text-xs uppercase"><span className="bg-[#1a1d23] px-2 text-[#555] font-black">Ou</span></div>
-              </div>
-
-              <Button 
-                variant="ghost" 
-                onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
-                className="w-full text-[#71717a] hover:text-white hover:bg-white/5 font-bold text-xs uppercase tracking-widest"
-              >
-                {authMode === 'login' ? 'Não tem conta? Cadastrar' : 'Já tem conta? Entrar'}
-              </Button>
-            </CardContent>
-            <div className="p-4 border-t border-[#2d3139]/30 text-center">
-               <p className="text-[10px] text-[#555] italic font-medium leading-relaxed">
-                 Ao ativar seu acesso, você concorda com nossos Termos de Uso e Políticas de Privacidade SegurPro.
-               </p>
-            </div>
-          </Card>
-        </div>
-      </div>
-    );
-  }
-
+  // If user is not logged in, show the standard login page.
+  // The inviteCodeUrl will stay in the URL and be processed by the CompanyWizard after login.
   if (!user) {
     return (
       <div className="flex h-screen flex-col items-center justify-center bg-[#0f1115] p-6 overflow-y-auto">
@@ -3271,37 +3162,32 @@ export default function MainApp() {
               </div>
             )}
             <h1 className="text-3xl font-bold tracking-tight text-white">
-              {inviteCodeUrl ? 'Ativação de Acesso' : (currentCompany?.name || appSettings.companyName || 'SegurPro SaaS')}
+              {inviteCodeUrl ? 'Ativação de Cadastro' : (currentCompany?.name || appSettings.companyName || 'SegurPro SaaS')}
             </h1>
             <p className="text-[#71717a]">
               {inviteCodeUrl 
-                ? 'Você recebeu um convite especial para entrar no sistema SegurPro.' 
+                ? 'Use o formulário abaixo para criar sua conta e ativar seu código de liberação.' 
                 : 'Controle total para instaladores de segurança eletrônica.'}
             </p>
           </div>
 
-          <Card className={`border-[#2d3139] bg-[#1a1d23] ${inviteCodeUrl ? 'ring-2 ring-blue-500/30' : ''}`}>
+          <Card className={`border-[#2d3139] bg-[#1a1d23] ${inviteCodeUrl ? 'ring-2 ring-blue-500/30 shadow-2xl shadow-blue-500/10' : ''}`}>
             <CardHeader>
               <CardTitle className="text-white">
                 {inviteCodeUrl 
-                  ? (authMode === 'login' ? 'Vincular Conta Existente' : 'Criar Nova Administração') 
+                  ? (authMode === 'login' ? 'Vincular Convite' : 'Criar Conta de Admin') 
                   : (authMode === 'login' ? 'Bem-vindo' : 'Criar Conta')}
               </CardTitle>
               <CardDescription className="text-[#71717a]">
                 {inviteCodeUrl ? (
-                  <div className="bg-blue-500/10 border border-blue-500/20 p-4 rounded-xl mb-4 text-left">
-                    <div className="flex items-center justify-between mb-2">
-                       <p className="text-blue-400 text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2">
-                         <Shield size={14} /> Convite Detectado
-                       </p>
-                       <span className="bg-blue-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-tighter">Válido</span>
-                    </div>
-                    <p className="text-white text-xs opacity-90 font-medium leading-relaxed">
-                      Código: <span className="font-mono font-black text-blue-300 bg-black/30 px-2 py-0.5 rounded ml-1 tracking-widest">{inviteCodeUrl}</span>
-                    </p>
-                    <p className="text-[#71717a] text-[10px] mt-2 italic">
-                      Configure seus dados de acesso abaixo para ativar {authMode === 'register' ? 'sua nova empresa' : 'seu acesso de equipe'}.
-                    </p>
+                  <div className="bg-blue-500/10 border border-blue-500/20 p-3 rounded-lg mb-2 text-left">
+                     <p className="text-blue-400 text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2">
+                       <Shield size={14} /> Convite Mestre Detectado
+                     </p>
+                     <p className="text-white text-xs mt-1">
+                       Identificamos o código <span className="font-mono font-bold text-blue-300">{inviteCodeUrl}</span>. 
+                       {authMode === 'register' ? ' Cadastre-se para ativar sua nova empresa.' : ' Entre para vincular este acesso à sua conta.'}
+                     </p>
                   </div>
                 ) : (authMode === 'login' ? 'Faça login para gerenciar suas visitas e finanças.' : 'Cadastre-se para começar a usar o sistema.')}
               </CardDescription>
@@ -4483,7 +4369,8 @@ function UsersManager({ users = [], currentUserData, showList, userRoles, logAct
                   <TableCell className="text-[12px] text-[#e0e0e0]">{u.email}</TableCell>
                   <TableCell>
                     <Badge className={cn(
-                      "font-normal text-[10px] uppercase tracking-wider",
+                      "font-semibold text-[10px] uppercase tracking-wider",
+                      u.role === 'owner' ? "bg-amber-500/20 text-amber-500 border border-amber-500/30" :
                       u.role === 'admin' ? "bg-purple-500/10 text-purple-500" : 
                       u.role === 'secretaria' ? "bg-pink-500/10 text-pink-500" : 
                       u.role === 'tecnico' ? "bg-blue-500/10 text-blue-500" :
