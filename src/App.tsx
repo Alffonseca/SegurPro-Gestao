@@ -2242,6 +2242,13 @@ export default function MainApp() {
       setAuthMode('register');
     }
   }, [inviteCodeUrl, user]);
+  useEffect(() => {
+    if (user && inviteCodeUrl) {
+      // Clear URL parameters when successfully authenticated to prevent them from sticking
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, [user, inviteCodeUrl]);
+
   const [showPassword, setShowPassword] = useState(false);
   const [visitsFilter, setVisitsFilter] = useState<{ date: Date | null }>({ date: null });
   const [email, setEmail] = useState('');
@@ -2348,18 +2355,18 @@ export default function MainApp() {
 
   // Log system
   const logAction = async (action: string, resourceType: string, details: string, resourceId?: string) => {
-    if (!user || !currentUserData?.companyId) return;
+    if (!user || !effectiveCompanyId) return;
     try {
       await addDoc(collection(db, 'logs'), {
         userId: user.uid,
-        userName: currentUserData.displayName || user.displayName || 'Usuário',
+        userName: currentUserData?.displayName || user.displayName || 'Usuário',
         userEmail: user.email,
         action,
         resourceType,
         resourceId: resourceId || '',
         details,
         timestamp: Timestamp.now(),
-        companyId: currentUserData.companyId
+        companyId: effectiveCompanyId
       });
     } catch (err) {
       console.error('Erro ao registrar log:', err);
@@ -2495,14 +2502,20 @@ export default function MainApp() {
     return () => unsubscribeUser();
   }, [user]);
 
+  const isSuperAdmin = user?.email ? SUPER_ADMIN_EMAILS.includes(user.email.toLowerCase().trim()) || currentUserData?.role === 'super_admin' : false;
+
+  const effectiveCompanyId = useMemo(() => {
+    return isSuperAdmin && selectedCompanyId ? selectedCompanyId : currentUserData?.companyId;
+  }, [isSuperAdmin, selectedCompanyId, currentUserData?.companyId]);
+
   // 3. Current Company Listener
   useEffect(() => {
-    if (!currentUserData?.companyId) {
+    if (!effectiveCompanyId) {
       setCurrentCompany(null);
       return;
     }
 
-    const compRef = doc(db, 'companies', currentUserData.companyId);
+    const compRef = doc(db, 'companies', effectiveCompanyId);
     const unsubscribeCompany = onSnapshot(compRef, (compSnap) => {
       if (compSnap.exists()) {
         setCurrentCompany({ id: compSnap.id, ...compSnap.data() });
@@ -2515,7 +2528,7 @@ export default function MainApp() {
       setLoading(false);
     });
 
-    const unsubRoles = onSnapshot(doc(db, 'companies', currentUserData.companyId, 'settings', 'roles'), (docSnap) => {
+    const unsubRoles = onSnapshot(doc(db, 'companies', effectiveCompanyId, 'settings', 'roles'), (docSnap) => {
       if (docSnap.exists()) {
         setCustomRoles(docSnap.data().roles || []);
       } else {
@@ -2527,11 +2540,9 @@ export default function MainApp() {
       unsubscribeCompany();
       unsubRoles();
     };
-  }, [currentUserData?.companyId]);
+  }, [currentUserData?.companyId, selectedCompanyId, isSuperAdmin]);
 
   const userRoles = useMemo(() => [...DEFAULT_ROLES, ...customRoles], [customRoles]);
-
-  const isSuperAdmin = user?.email ? SUPER_ADMIN_EMAILS.includes(user.email.toLowerCase().trim()) || currentUserData?.role === 'super_admin' : false;
 
   // Access Helper for Sidebar
   const canAccess = (tabName: string) => {
@@ -2660,9 +2671,7 @@ export default function MainApp() {
     if (!user) return;
     if (!currentUserData?.companyId && !isSuperAdmin) return;
 
-    const effectiveCompanyId = isSuperAdmin ? (selectedCompanyId || currentUserData?.companyId) : currentUserData?.companyId;
     const companyId = effectiveCompanyId;
-
     let allCompaniesUnsubscribe: (() => void) | null = null;
     let allFinancialsUnsubscribe: (() => void) | null = null;
     let saasSettingsUnsubscribe: (() => void) | null = null;
@@ -3126,6 +3135,8 @@ export default function MainApp() {
   const handleLogout = async () => {
     try {
       await signOut(auth);
+      // Clear URL parameters upon logout to ensure a clean login screen
+      window.location.href = window.location.origin + window.location.pathname;
       toast.success('Sessão encerrada.');
     } catch (error) {
       console.error(error);
@@ -3717,7 +3728,7 @@ export default function MainApp() {
               updateStock={updateInventoryStock}
               appSettings={appSettings} 
               pixSettings={pixSettings} 
-              companyId={currentUserData?.companyId || ''} 
+              companyId={effectiveCompanyId || ''} 
               initialFilter={visitsFilter}
               onClearFilter={() => setVisitsFilter({ date: null })}
               showList={canViewList('visits')}
@@ -3734,7 +3745,7 @@ export default function MainApp() {
               visits={visits} 
               clients={clients} 
               pixSettings={pixSettings} 
-              companyId={currentUserData?.companyId || ''} 
+              companyId={effectiveCompanyId || ''} 
               showList={canViewList('financial')}
               logAction={logAction}
               viewPeriod={viewPeriod}
@@ -3752,7 +3763,7 @@ export default function MainApp() {
               inventory={inventory}
               appSettings={appSettings} 
               pixSettings={pixSettings} 
-              companyId={currentUserData?.companyId || ''} 
+              companyId={effectiveCompanyId || ''} 
               showList={canViewList('budgets')} 
               logAction={logAction}
               onEditClick={onEditClick}
@@ -3770,7 +3781,7 @@ export default function MainApp() {
               updateStock={updateInventoryStock}
               appSettings={appSettings} 
               pixSettings={pixSettings}
-              companyId={currentUserData?.companyId || ''} 
+              companyId={effectiveCompanyId || ''} 
               showList={canViewList('service-orders')}
               logAction={logAction}
               onEditClick={onEditClick}
@@ -3784,7 +3795,7 @@ export default function MainApp() {
               clients={clients} 
               appSettings={appSettings} 
               pixSettings={pixSettings} 
-              companyId={currentUserData?.companyId || ''} 
+              companyId={effectiveCompanyId || ''} 
               showList={canViewList('clients')} 
               logAction={logAction} 
               onEditClick={onEditClick}
@@ -3793,14 +3804,14 @@ export default function MainApp() {
               onExternalEditHandled={() => setInterpretedEditAction(null)}
             />
           )}
-          {activeTab === 'suppliers' && <SuppliersManager suppliers={suppliers} companyId={currentUserData?.companyId || ''} showList={canViewList('suppliers')} />}
+          {activeTab === 'suppliers' && <SuppliersManager suppliers={suppliers} companyId={effectiveCompanyId || ''} showList={canViewList('suppliers')} />}
           {activeTab === 'receipts' && (
             <ReceiptsManager 
               receipts={receipts} 
               clients={clients} 
               pixSettings={pixSettings} 
               appSettings={appSettings} 
-              companyId={currentUserData?.companyId || ''} 
+              companyId={effectiveCompanyId || ''} 
               currentUserData={currentUserData} 
               showList={canViewList('receipts')} 
               onEditClick={onEditClick}
@@ -3818,7 +3829,7 @@ export default function MainApp() {
               serviceOrders={serviceOrders}
               suppliers={suppliers}
               appSettings={appSettings} 
-              companyId={currentUserData?.companyId || ''}
+              companyId={effectiveCompanyId || ''}
               showList={canViewList('reports')}
             />
           )}
@@ -3830,7 +3841,7 @@ export default function MainApp() {
               transactions={inventoryTransactions}
               serviceOrders={serviceOrders}
               visits={visits}
-              companyId={currentUserData?.companyId || ''} 
+              companyId={effectiveCompanyId || ''} 
               logAction={logAction}
               showList={canViewList('inventory')}
             />
@@ -4062,7 +4073,7 @@ export default function MainApp() {
               pixSettings={pixSettings} 
               appSettings={appSettings} 
               user={user!} 
-              companyId={currentUserData?.companyId || ''} 
+              companyId={effectiveCompanyId || ''} 
               currentUserData={currentUserData}
               allCompanies={allCompanies}
               selectedCompanyId={selectedCompanyId}
@@ -5016,7 +5027,14 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
                   {editingClient.type === 'Contrato' && (
                     <div className="space-y-2">
                       <Label htmlFor="edit-contractValue" className="text-[#a0a0a0]">Valor Mensal (R$)</Label>
-                      <Input id="edit-contractValue" type="number" value={editingClient.contractValue || ''} onChange={e => setEditingClient({...editingClient, contractValue: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                      <Input 
+                        id="edit-contractValue" 
+                        type="number" 
+                        value={editingClient.contractValue === 0 ? '' : editingClient.contractValue} 
+                        onChange={e => setEditingClient({...editingClient, contractValue: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                        onFocus={(e) => e.target.select()}
+                        className="bg-[#0f1115] border-[#2d3139] text-white" 
+                      />
                     </div>
                   )}
                 </div>
@@ -6080,7 +6098,15 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="value" className="text-[#a0a0a0]">Valor (R$)</Label>
-                  <Input id="value" type="number" value={newReceipt.value || ''} onChange={e => setNewReceipt({...newReceipt, value: Number(e.target.value)})} placeholder="0,00" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  <Input 
+                    id="value" 
+                    type="number" 
+                    value={newReceipt.value === 0 ? '' : newReceipt.value} 
+                    onChange={e => setNewReceipt({...newReceipt, value: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                    onFocus={(e) => e.target.select()}
+                    placeholder="0,00" 
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -7065,7 +7091,7 @@ function SuperAdminPanel({
                 </SelectTrigger>
                 <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                   {companies.map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.name || c.id}</SelectItem>
+                    <SelectItem key={c.id} value={c.id}>{c.companyName || c.name || c.tradeName || c.id}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -7358,7 +7384,7 @@ function SuperAdminPanel({
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-col">
-                    <span className="font-medium text-white">{company.name || company.id}</span>
+                    <span className="font-medium text-white">{company.name || company.companyName || company.id}</span>
                     <span className="text-[10px] text-[#71717a] uppercase font-mono">UID: {company.ownerId}</span>
                   </div>
                 </TableCell>
@@ -7405,7 +7431,7 @@ function SuperAdminPanel({
       <Dialog open={isEditCompanyOpen} onOpenChange={setIsEditCompanyOpen}>
         <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[450px]">
           <DialogHeader>
-            <DialogTitle>Gerenciar Licença: {editingCompany?.name || editingCompany?.id}</DialogTitle>
+            <DialogTitle>Gerenciar Licença: {editingCompany?.name || editingCompany?.companyName || editingCompany?.id}</DialogTitle>
             <DialogDescription className="text-[#a0a0a0]">
               Configure o plano, ciclo de cobrança e permissão de atualizações.
             </DialogDescription>
@@ -10247,7 +10273,14 @@ function VisitsManager({
 
                 <div className="space-y-2">
                   <Label htmlFor="val" className="text-[#a0a0a0]">Valor Adicional / Mão de Obra (R$)</Label>
-                  <Input id="val" type="number" value={newVisit.totalValue || ''} onChange={e => setNewVisit({...newVisit, totalValue: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  <Input 
+                    id="val" 
+                    type="number" 
+                    value={newVisit.totalValue === 0 ? '' : newVisit.totalValue} 
+                    onChange={e => setNewVisit({...newVisit, totalValue: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                    onFocus={(e) => e.target.select()}
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  />
                 </div>
               </div>
             </div>
@@ -11286,7 +11319,14 @@ function FinancialManager({
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="val" className="text-[#a0a0a0]">Valor (R$)</Label>
-                    <Input id="val" type="number" value={newRecord.value || ''} onChange={e => setNewRecord({...newRecord, value: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    <Input 
+                      id="val" 
+                      type="number" 
+                      value={newRecord.value || ''} 
+                      onChange={e => setNewRecord({...newRecord, value: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                      onFocus={(e) => e.target.select()}
+                      className="bg-[#0f1115] border-[#2d3139] text-white" 
+                    />
                   </div>
                 </div>
 
@@ -11554,7 +11594,14 @@ function FinancialManager({
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-val" className="text-[#a0a0a0]">Valor (R$)</Label>
-                    <Input id="edit-val" type="number" value={editingRecord.value || ''} onChange={e => setEditingRecord({...editingRecord, value: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    <Input 
+                      id="edit-val" 
+                      type="number" 
+                      value={editingRecord.value === 0 ? '' : editingRecord.value} 
+                      onChange={e => setEditingRecord({...editingRecord, value: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                      onFocus={(e) => e.target.select()}
+                      className="bg-[#0f1115] border-[#2d3139] text-white" 
+                    />
                   </div>
                 </div>
                 
@@ -12042,7 +12089,9 @@ function ServiceOrdersManager({
                           onChange={e => setClientSearch(e.target.value)}
                         />
                       </div>
-                      {filteredClients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                      {filteredClients.map(c => (
+                        <SelectItem key={c.id} value={c.id}>{c.name || c.razaoSocial || 'Cliente Sem Nome'}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -14242,8 +14291,9 @@ function InventoryManager({
                 <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Venda Sugerido (R$)</Label>
                 <Input 
                   type="number"
-                  value={selectedItem.price || 0} 
-                  onChange={e => setSelectedItem({...selectedItem, price: Number(e.target.value)})} 
+                  value={selectedItem.price === 0 ? '' : selectedItem.price} 
+                  onChange={e => setSelectedItem({...selectedItem, price: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                  onFocus={(e) => e.target.select()}
                   className="bg-[#0f1115] border-[#2d3139] h-11 text-lg font-bold text-blue-400" 
                 />
               </div>
@@ -14314,8 +14364,9 @@ function InventoryManager({
               <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Saldo Inicial</Label>
               <Input 
                 type="number"
-                value={newItem.quantity} 
-                onChange={e => setNewItem({...newItem, quantity: Number(e.target.value)})} 
+                value={newItem.quantity === 0 ? '' : newItem.quantity} 
+                onChange={e => setNewItem({...newItem, quantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                onFocus={(e) => e.target.select()}
                 className="bg-[#0f1115] border-[#2d3139]" 
               />
             </div>
@@ -14323,8 +14374,9 @@ function InventoryManager({
               <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Qtd. Mínima (Aviso)</Label>
               <Input 
                 type="number"
-                value={newItem.minQuantity} 
-                onChange={e => setNewItem({...newItem, minQuantity: Number(e.target.value)})} 
+                value={newItem.minQuantity === 0 ? '' : newItem.minQuantity} 
+                onChange={e => setNewItem({...newItem, minQuantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                onFocus={(e) => e.target.select()}
                 className="bg-[#0f1115] border-[#2d3139]" 
               />
             </div>
@@ -14332,8 +14384,9 @@ function InventoryManager({
               <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Venda Sugerido (R$)</Label>
               <Input 
                 type="number"
-                value={newItem.price} 
-                onChange={e => setNewItem({...newItem, price: Number(e.target.value)})} 
+                value={newItem.price === 0 ? '' : newItem.price} 
+                onChange={e => setNewItem({...newItem, price: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                onFocus={(e) => e.target.select()}
                 className="bg-[#0f1115] border-[#2d3139]" 
               />
             </div>
