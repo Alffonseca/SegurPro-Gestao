@@ -149,6 +149,8 @@ import {
 } from '@/components/ui/select';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
+
+const SUPER_ADMIN_EMAILS = ['emailparasiteslixo@gmail.com', 'alffonseca42@gmail.com'];
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Calendar } from '@/components/ui/calendar';
@@ -2468,7 +2470,7 @@ export default function MainApp() {
       } else {
         // Initial setup for new user
         const normalizedEmail = user.email?.toLowerCase().trim();
-        const isSuper = normalizedEmail === 'emailparasiteslixo@gmail.com' || normalizedEmail === 'alffonseca42@gmail.com';
+        const isSuper = normalizedEmail ? SUPER_ADMIN_EMAILS.includes(normalizedEmail) : false;
         try {
           const initialData = {
             uid: user.uid,
@@ -2529,13 +2531,15 @@ export default function MainApp() {
 
   const userRoles = useMemo(() => [...DEFAULT_ROLES, ...customRoles], [customRoles]);
 
-  const isSuperAdmin = user?.email?.toLowerCase().trim() === 'emailparasiteslixo@gmail.com' || 
-                       user?.email?.toLowerCase().trim() === 'alffonseca42@gmail.com' || 
-                       currentUserData?.role === 'super_admin';
+  const isSuperAdmin = user?.email ? SUPER_ADMIN_EMAILS.includes(user.email.toLowerCase().trim()) || currentUserData?.role === 'super_admin' : false;
 
   // Access Helper for Sidebar
   const canAccess = (tabName: string) => {
     const role = currentUserData?.role;
+    
+    // Hard restriction for super-admin tab
+    if (tabName === 'super-admin') return isSuperAdmin;
+
     if (isSuperAdmin || role === 'admin' || role === 'owner') return true;
     
     // Check dynamic permissions if they exist
@@ -4192,6 +4196,7 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
 
   const handleDeleteUser = async () => {
     if (!userToDelete) return;
+    setIsSubmitting(true);
     try {
       // Delete from Firestore
       await deleteDoc(doc(db, 'users', userToDelete.id));
@@ -4206,15 +4211,16 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
         });
       } catch (authErr) {
         console.error("Auth deletion failed via API:", authErr);
-        // We still consider business success if firestore is cleared
       }
 
       setIsDeleteConfirmOpen(false);
       setUserToDelete(null);
-      toast.success('Usuário removido com sucesso (Firestore e Auth)!');
+      toast.success('Usuário removido com sucesso!');
     } catch (error) {
       console.error(error);
       toast.error('Erro ao remover usuário.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -4569,6 +4575,7 @@ const PAYMENT_METHODS = [
 function ClientsManager({ clients = [], appSettings, pixSettings, companyId, showList, logAction, onEditClick, onSignatureClick, externalEditAction, onExternalEditHandled }: { clients: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, showList: boolean, logAction?: any, onEditClick: (type: 'contract', data: any) => void, onSignatureClick: (type: 'contract', data: any) => void, externalEditAction: any, onExternalEditHandled: () => void }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [newClient, setNewClient] = useState<Partial<Client>>({
     type: 'Avulso',
@@ -4642,6 +4649,12 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
   }, [clients, searchTerm]);
 
   const handleAddClient = async () => {
+    if (!newClient.name) {
+      toast.error('Nome do cliente é obrigatório.');
+      return;
+    }
+    
+    setIsSubmitting(true);
     try {
       const clientData = {
         name: newClient.name || '',
@@ -4671,12 +4684,16 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
         setIsContractConfirmOpen(true);
       }
     } catch (error) {
+      toast.error('Erro ao cadastrar cliente.');
       handleFirestoreError(error, OperationType.CREATE, 'clients');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleUpdateClient = async () => {
     if (!editingClient) return;
+    setIsSubmitting(true);
 
     try {
       const { id, ...data } = editingClient;
@@ -4707,7 +4724,10 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
         setIsContractConfirmOpen(true);
       }
     } catch (error) {
+      toast.error('Erro ao atualizar cliente.');
       handleFirestoreError(error, OperationType.UPDATE, 'clients');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -4915,8 +4935,11 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
               </div>
             </div>
             <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23]">
-              <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
-              <Button onClick={handleAddClient} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Cadastrar</Button>
+              <Button variant="outline" onClick={() => setIsAddOpen(false)} disabled={isSubmitting} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+              <Button onClick={handleAddClient} disabled={isSubmitting} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Cadastrar
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -5106,8 +5129,11 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
             )}
           </div>
           <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23]">
-            <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
-            <Button onClick={handleUpdateClient} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Salvar Alterações</Button>
+            <Button variant="outline" onClick={() => setIsEditOpen(false)} disabled={isSubmitting} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+            <Button onClick={handleUpdateClient} disabled={isSubmitting} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+              {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Salvar Alterações
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -5264,6 +5290,7 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [supplierToDelete, setSupplierToDelete] = useState<Supplier | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const filteredSuppliers = useMemo(() => {
     return (suppliers || []).filter(s => 
@@ -5274,6 +5301,7 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
   }, [suppliers, searchTerm]);
 
   const handleAddSupplier = async () => {
+    setIsSubmitting(true);
     try {
       const supplierData = {
         registrationNumber: newSupplier.registrationNumber || '',
@@ -5293,12 +5321,16 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
       setIsAddOpen(false);
       toast.success('Fornecedor cadastrado com sucesso!');
     } catch (error) {
+      toast.error('Erro ao cadastrar fornecedor.');
       handleFirestoreError(error, OperationType.CREATE, 'suppliers');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleUpdateSupplier = async () => {
     if (!editingSupplier) return;
+    setIsSubmitting(true);
     try {
       const { id, ...data } = editingSupplier;
       const updatedData = {
@@ -5318,7 +5350,10 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
       setIsEditOpen(false);
       toast.success('Fornecedor atualizado com sucesso!');
     } catch (error) {
+      toast.error('Erro ao atualizar fornecedor.');
       handleFirestoreError(error, OperationType.UPDATE, `suppliers/${editingSupplier.id}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -5399,8 +5434,11 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
                 </div>
               </div>
               <DialogFooter className="p-6 border-t border-[#2d3139]">
-                <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]">Cancelar</Button>
-                <Button onClick={handleAddSupplier} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Cadastrar</Button>
+                <Button variant="outline" onClick={() => setIsAddOpen(false)} disabled={isSubmitting} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]">Cancelar</Button>
+                <Button onClick={handleAddSupplier} disabled={isSubmitting} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+                  {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Cadastrar
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -5529,8 +5567,11 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
             )}
           </div>
           <DialogFooter className="p-6 border-t border-[#2d3139]">
-            <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]">Cancelar</Button>
-            <Button onClick={handleUpdateSupplier} className="bg-[#f59e0b] hover:bg-[#d97706] text-white">Salvar Alterações</Button>
+            <Button variant="outline" onClick={() => setIsEditOpen(false)} disabled={isSubmitting} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]">Cancelar</Button>
+            <Button onClick={handleUpdateSupplier} disabled={isSubmitting} className="bg-[#f59e0b] hover:bg-[#d97706] text-white">
+              {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Salvar Alterações
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -5545,19 +5586,26 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]">Cancelar</Button>
+            <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)} disabled={isSubmitting} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]">Cancelar</Button>
             <Button variant="destructive" onClick={async () => {
               if (supplierToDelete) {
+                setIsSubmitting(true);
                 try {
                   await deleteDoc(doc(db, 'suppliers', supplierToDelete.id));
                   toast.success('Fornecedor removido.');
                   setIsDeleteConfirmOpen(false);
                   setSupplierToDelete(null);
                 } catch (error) {
+                  toast.error('Erro ao excluir fornecedor.');
                   handleFirestoreError(error, OperationType.DELETE, `suppliers/${supplierToDelete.id}`);
+                } finally {
+                  setIsSubmitting(false);
                 }
               }
-            }} className="bg-[#ef4444] hover:bg-[#dc2626] text-white">Excluir</Button>
+            }} disabled={isSubmitting} className="bg-[#ef4444] hover:bg-[#dc2626] text-white">
+              {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Excluir
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -5571,6 +5619,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [viewingReceipt, setViewingReceipt] = useState<Receipt | null>(null);
   const [editingReceipt, setEditingReceipt] = useState<Receipt | null>(null);
@@ -5702,6 +5751,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
       toast.error('Preencha os campos obrigatórios.');
       return;
     }
+    setIsSubmitting(true);
     try {
       const year = new Date().getFullYear();
       const currentYearReceipts = (receipts || []).filter(r => {
@@ -5748,6 +5798,9 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
       toast.success('Recibo gerado com sucesso!');
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'receipts');
+      toast.error('Erro ao gerar recibo.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -5757,6 +5810,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
       return;
     }
 
+    setIsSubmitting(true);
     try {
       const { id, ...data } = editingReceipt;
       const receiptData = {
@@ -5774,6 +5828,9 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
       toast.success('Recibo atualizado!');
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `receipts/${editingReceipt?.id}`);
+      toast.error('Erro ao atualizar recibo.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -6092,12 +6149,15 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
               </div>
             </div>
             <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23]">
-              <Button variant="ghost" onClick={() => setIsAddOpen(false)} className="text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]">
+              <Button variant="ghost" onClick={() => setIsAddOpen(false)} disabled={isSubmitting} className="text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]">
                 Voltar
               </Button>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
-                <Button onClick={handleAddReceipt} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Gerar e Salvar</Button>
+                <Button variant="outline" onClick={() => setIsAddOpen(false)} disabled={isSubmitting} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+                <Button onClick={handleAddReceipt} disabled={isSubmitting} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+                  {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Gerar e Salvar
+                </Button>
               </div>
             </DialogFooter>
           </DialogContent>
@@ -6245,12 +6305,15 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
               )}
             </div>
             <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23] flex flex-row justify-between sm:justify-between">
-              <Button variant="ghost" onClick={() => setIsEditOpen(false)} className="text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]">
+              <Button variant="ghost" onClick={() => setIsEditOpen(false)} disabled={isSubmitting} className="text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]">
                 Voltar
               </Button>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
-                <Button onClick={handleUpdateReceipt} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Salvar Alterações</Button>
+                <Button variant="outline" onClick={() => setIsEditOpen(false)} disabled={isSubmitting} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+                <Button onClick={handleUpdateReceipt} disabled={isSubmitting} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+                  {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Salvar Alterações
+                </Button>
               </div>
             </DialogFooter>
           </DialogContent>
@@ -6783,9 +6846,18 @@ function SuperAdminPanel({
     try {
       // 1. Delete company document
       await deleteDoc(doc(db, 'companies', companyId));
+
+      // 2. Delete company subcollections (best effort as Firestore doesn't support recursive delete)
+      const subSettings = ['general', 'permissions', 'pix', 'roles'];
+      for (const s of subSettings) {
+        await deleteDoc(doc(db, 'companies', companyId, 'settings', s)).catch(() => {});
+      }
       
-      // 2. Delete all related data (best effort)
-      const collections = ['clients', 'visits', 'receipts', 'financial', 'budgets', 'users'];
+      // 3. Delete all related data in top-level collections
+      const collections = [
+        'clients', 'visits', 'receipts', 'financial', 'budgets', 'users', 
+        'suppliers', 'serviceOrders', 'inventory', 'inventoryTransactions', 'logs'
+      ];
       for (const col of collections) {
         const q = query(collection(db, col), where('companyId', '==', companyId));
         const snapshot = await getDocs(q);
@@ -6800,6 +6872,7 @@ function SuperAdminPanel({
       setEditingCompany(null);
     } catch (error) {
       toast.error("Erro ao excluir dados da empresa.");
+      console.error(error);
     }
   };
 
@@ -6975,6 +7048,32 @@ function SuperAdminPanel({
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
+      {companies.length > 0 && (
+        <Card className="bg-[#3b82f6]/5 border border-[#3b82f6]/20 p-6 rounded-xl mb-8">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="space-y-1">
+              <h3 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+                <Database className="text-[#3b82f6]" size={20} />
+                Visão da Empresa (Super Admin)
+              </h3>
+              <p className="text-sm text-[#71717a]">Selecione qual empresa você deseja visualizar e gerenciar no momento.</p>
+            </div>
+            <div className="w-full md:w-64">
+              <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
+                <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                  <SelectValue placeholder="Selecione a Empresa" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                  {companies.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name || c.id}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </Card>
+      )}
+
       <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
         <h2 className="text-3xl font-black tracking-tighter text-white uppercase italic text-[#3b82f6]">SaaS Control Center</h2>
         <p className="text-[#71717a] text-sm uppercase tracking-[0.2em] font-medium">Painel Master de Administração de Instâncias</p>
@@ -7259,7 +7358,7 @@ function SuperAdminPanel({
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-col">
-                    <span className="font-medium text-white">{company.name}</span>
+                    <span className="font-medium text-white">{company.name || company.id}</span>
                     <span className="text-[10px] text-[#71717a] uppercase font-mono">UID: {company.ownerId}</span>
                   </div>
                 </TableCell>
@@ -7306,7 +7405,7 @@ function SuperAdminPanel({
       <Dialog open={isEditCompanyOpen} onOpenChange={setIsEditCompanyOpen}>
         <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[450px]">
           <DialogHeader>
-            <DialogTitle>Gerenciar Licença: {editingCompany?.name}</DialogTitle>
+            <DialogTitle>Gerenciar Licença: {editingCompany?.name || editingCompany?.id}</DialogTitle>
             <DialogDescription className="text-[#a0a0a0]">
               Configure o plano, ciclo de cobrança e permissão de atualizações.
             </DialogDescription>
@@ -7535,12 +7634,14 @@ function SuperAdminPanel({
   );
 }
 
-function RolePermissionManager({ companyId, user, userRoles }: { companyId: string, user: FirebaseUser, userRoles: UserRole[] }) {
+function RolePermissionManager({ companyId, user, userRoles, currentUserData }: { companyId: string, user: FirebaseUser, userRoles: UserRole[], currentUserData: any }) {
   const [rolePermissions, setRolePermissions] = useState<any>({});
   const [selectedRole, setSelectedRole] = useState<string>('tecnico');
   const [loading, setLoading] = useState(true);
 
-  const isMaster = user?.email?.toLowerCase().trim() === 'emailparasiteslixo@gmail.com' || user?.email?.toLowerCase().trim() === 'alffonseca42@gmail.com';
+  const isMaster = user?.email ? SUPER_ADMIN_EMAILS.includes(user.email.toLowerCase().trim()) : false;
+  const isAdminOrOwner = currentUserData?.role === 'admin' || currentUserData?.role === 'owner';
+  const hasAccess = isMaster || isAdminOrOwner;
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'companies', companyId, 'settings', 'permissions'), (docSnap) => {
@@ -7567,6 +7668,10 @@ function RolePermissionManager({ companyId, user, userRoles }: { companyId: stri
   }, [companyId]);
 
   const togglePermission = async (menuId: string, type: 'menus' | 'lists') => {
+    if (selectedRole === 'owner' && currentUserData?.role !== 'owner' && !isMaster) {
+      toast.error('As permissões do nível Proprietário só podem ser alteradas pelo próprio Proprietário ou Admin SaaS.');
+      return;
+    }
     const current = rolePermissions[selectedRole] || { menus: [], lists: [] };
     const list = current[type] || [];
     const newList = list.includes(menuId)
@@ -7591,7 +7696,7 @@ function RolePermissionManager({ companyId, user, userRoles }: { companyId: stri
 
   if (loading) return <div className="p-4 text-[#71717a] text-sm italic">Carregando permissões...</div>;
 
-  if (!isMaster) {
+  if (!hasAccess) {
     return (
       <Card className="bg-[#1a1d23] border-[#2d3139] text-white lg:col-span-2">
         <CardContent className="flex flex-col items-center justify-center p-12 text-center">
@@ -7614,7 +7719,7 @@ function RolePermissionManager({ companyId, user, userRoles }: { companyId: stri
               <Shield className="text-yellow-500" size={24} />
             </div>
             <div>
-              <CardTitle className="text-white text-lg">Controle de Acesso Granular (Master)</CardTitle>
+              <CardTitle className="text-white text-lg">Controle de Acesso Granular</CardTitle>
               <CardDescription className="text-[#a0a0a0]">
                 Configure o acesso aos menus e visibilidade de dados por perfil.
               </CardDescription>
@@ -7740,6 +7845,7 @@ function RoleSettings({
       setIsAdding(false);
       toast.success('Nível de acesso criado!');
     } catch (error) {
+      toast.error('Erro ao criar nível de acesso.');
       handleFirestoreError(error, OperationType.UPDATE, `companies/${companyId}/settings/roles`);
     }
   };
@@ -7754,6 +7860,7 @@ function RoleSettings({
       });
       toast.success('Nível de acesso removido!');
     } catch (error) {
+      toast.error('Erro ao remover nível de acesso.');
       handleFirestoreError(error, OperationType.UPDATE, `companies/${companyId}/settings/roles`);
     }
   };
@@ -7872,6 +7979,7 @@ function SettingsManager({
   const [newDisplayName, setNewDisplayName] = useState(user?.displayName || '');
   const [newPassword, setNewPassword] = useState('');
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Multi-PIX states
   const [isPixDialogOpen, setIsPixDialogOpen] = useState(false);
@@ -7893,6 +8001,7 @@ function SettingsManager({
   }, [user?.displayName]);
 
   const handleSaveApp = async () => {
+    setIsSubmitting(true);
     try {
       await setDoc(doc(db, 'companies', companyId, 'settings', 'general'), localApp);
       // Also update the main company document for better reactivity in the header
@@ -7902,11 +8011,15 @@ function SettingsManager({
       });
       toast.success('Configurações gerais salvas!');
     } catch (error) {
+      toast.error('Erro ao salvar configurações.');
       handleFirestoreError(error, OperationType.UPDATE, `companies/${companyId}/settings/general`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleRotateInviteCode = async () => {
+    setIsSubmitting(true);
     try {
       const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
       await updateDoc(doc(db, 'companies', companyId), {
@@ -7914,7 +8027,10 @@ function SettingsManager({
       });
       toast.success('Código de convite alterado com sucesso!');
     } catch (error) {
+      toast.error('Erro ao alterar código de convite.');
       handleFirestoreError(error, OperationType.UPDATE, `companies/${companyId}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -7943,23 +8059,31 @@ function SettingsManager({
     }
 
     try {
+      setIsSubmitting(true);
       await setDoc(doc(db, 'companies', companyId, 'settings', 'pix'), { accounts: updatedAccounts });
       toast.success(editingPixId ? 'Conta PIX atualizada!' : 'Nova conta PIX adicionada!');
       setIsPixDialogOpen(false);
       setCurrentPix({});
       setEditingPixId(null);
     } catch (error) {
+      toast.error('Erro ao salvar conta PIX.');
       handleFirestoreError(error, OperationType.UPDATE, `companies/${companyId}/settings/pix`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleDeletePixAccount = async (id: string) => {
     const updatedAccounts = (pixSettings.accounts || []).filter(acc => acc.id !== id);
+    setIsSubmitting(true);
     try {
       await setDoc(doc(db, 'companies', companyId, 'settings', 'pix'), { accounts: updatedAccounts });
       toast.success('Conta PIX removida!');
     } catch (error) {
+      toast.error('Erro ao remover conta PIX.');
       handleFirestoreError(error, OperationType.UPDATE, `companies/${companyId}/settings/pix`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -8146,32 +8270,6 @@ function SettingsManager({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      {isSuperAdmin && allCompanies.length > 0 && (
-        <Card className="bg-[#3b82f6]/5 border border-[#3b82f6]/20 p-6 rounded-xl mb-8">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-            <div className="space-y-1">
-              <h3 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
-                <Database className="text-[#3b82f6]" size={20} />
-                Visão da Empresa (Super Admin)
-              </h3>
-              <p className="text-sm text-[#71717a]">Selecione qual empresa você deseja visualizar e gerenciar no momento.</p>
-            </div>
-            <div className="w-full md:w-64">
-              <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
-                <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                  <SelectValue placeholder="Selecione a Empresa" />
-                </SelectTrigger>
-                <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                  {allCompanies.map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </Card>
-      )}
-
       <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
         <h2 className="text-3xl font-black tracking-tighter text-white uppercase italic text-[#3b82f6]">Configurações</h2>
         <p className="text-[#a0a0a0] text-sm uppercase tracking-[0.2em] font-medium">Controle de acesso, dados da empresa e backup.</p>
@@ -8377,7 +8475,8 @@ function SettingsManager({
                   />
                   <p className="text-[9px] text-[#71717a] italic">Usada em recibos e laudos técnicos.</p>
                 </div>
-                <Button onClick={handleSaveApp} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white font-bold uppercase tracking-widest text-xs h-10">
+                <Button onClick={handleSaveApp} disabled={isSubmitting} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white font-bold uppercase tracking-widest text-xs h-10">
+                  {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                   Salvar Dados Empresa
                 </Button>
               </CardContent>
@@ -8593,7 +8692,8 @@ function SettingsManager({
           </DialogContent>
         </Dialog>
 
-        <RolePermissionManager companyId={companyId} user={user} userRoles={userRoles} />
+        <RoleSettings companyId={companyId} customRoles={customRoles} userRoles={userRoles} />
+        <RolePermissionManager companyId={companyId} user={user} userRoles={userRoles} currentUserData={currentUserData} />
       </div>
     );
   }
@@ -9454,6 +9554,7 @@ function VisitsManager({
       setIsAddOpen(false);
       toast.success('Visita agendada com sucesso!');
     } catch (error) {
+      toast.error('Erro ao agendar visita.');
       handleFirestoreError(error, OperationType.CREATE, 'visits');
     } finally {
       setIsSubmitting(false);
@@ -9516,6 +9617,7 @@ function VisitsManager({
       
       toast.success(`Status atualizado para ${status}`);
     } catch (error) {
+      toast.error('Erro ao atualizar status da visita.');
       handleFirestoreError(error, OperationType.UPDATE, 'visits');
     } finally {
       setIsSubmitting(false);
@@ -9581,6 +9683,7 @@ function VisitsManager({
         toast.success('Visita atualizada com sucesso!');
       }
     } catch (error) {
+      toast.error('Erro ao atualizar visita.');
       handleFirestoreError(error, OperationType.UPDATE, `visits/${editingVisit?.id}`);
     } finally {
       setIsSubmitting(false);
@@ -10289,10 +10392,16 @@ function VisitsManager({
                   setIsDeleteConfirmOpen(false);
                   setVisitToDelete(null);
                 } catch (error) {
+                  toast.error('Erro ao excluir visita.');
                   handleFirestoreError(error, OperationType.DELETE, `visits/${visitToDelete.id}`);
+                } finally {
+                  setIsSubmitting(false);
                 }
               }
-            }} className="bg-[#ef4444] hover:bg-[#dc2626] text-white">Excluir</Button>
+            }} disabled={isSubmitting} className="bg-[#ef4444] hover:bg-[#dc2626] text-white">
+              {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Excluir
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -10690,6 +10799,7 @@ function FinancialManager({
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<FinancialRecord | null>(null);
   const [recordToDelete, setRecordToDelete] = useState<FinancialRecord | null>(null);
@@ -10817,6 +10927,7 @@ function FinancialManager({
       return;
     }
 
+    setIsSubmitting(true);
     try {
       const docRef = await addDoc(collection(db, 'financial'), {
         ...newRecord,
@@ -10831,7 +10942,10 @@ function FinancialManager({
       setIsAddOpen(false);
       toast.success('Registro financeiro salvo!');
     } catch (error) {
+      toast.error('Erro ao salvar registro financeiro.');
       handleFirestoreError(error, OperationType.CREATE, 'financial');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -10841,6 +10955,7 @@ function FinancialManager({
       return;
     }
 
+    setIsSubmitting(true);
     try {
       const { id } = editingRecord;
       await updateDoc(doc(db, 'financial', id), {
@@ -10860,14 +10975,17 @@ function FinancialManager({
       setIsEditOpen(false);
       toast.success('Registro financeiro atualizado com sucesso!');
     } catch (error) {
-      console.error(error);
+      toast.error('Erro ao atualizar registro financeiro.');
       handleFirestoreError(error, OperationType.UPDATE, `financial/${editingRecord?.id}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleDeleteRecord = async () => {
     if (!recordToDelete) return;
 
+    setIsSubmitting(true);
     try {
       await deleteDoc(doc(db, 'financial', recordToDelete.id));
       if (logAction) {
@@ -10877,7 +10995,10 @@ function FinancialManager({
       setIsDeleteConfirmOpen(false);
       toast.success('Registro financeiro excluído!');
     } catch (error) {
+      toast.error('Erro ao excluir registro financeiro.');
       handleFirestoreError(error, OperationType.DELETE, `financial/${recordToDelete.id}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -11277,8 +11398,11 @@ function FinancialManager({
               </div>
             </div>
             <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23]">
-              <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
-              <Button onClick={handleAddRecord} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Salvar Lançamento</Button>
+              <Button variant="outline" onClick={() => setIsAddOpen(false)} disabled={isSubmitting} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+              <Button onClick={handleAddRecord} disabled={isSubmitting} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Salvar Lançamento
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -11663,6 +11787,7 @@ function ServiceOrdersManager({
       setSelectedOSForPDF(createdOS);
       setIsPrintConfirmOpen(true);
     } catch (err) {
+      toast.error('Erro ao salvar Ordem de Serviço.');
       handleFirestoreError(err, OperationType.CREATE, 'serviceOrders');
     } finally {
       setIsSubmitting(false);
@@ -11696,6 +11821,7 @@ function ServiceOrdersManager({
       setSelectedOSForPDF(updatedOS);
       setIsPrintConfirmOpen(true);
     } catch (err) {
+      toast.error('Erro ao atualizar Ordem de Serviço.');
       handleFirestoreError(err, OperationType.UPDATE, 'serviceOrders');
     } finally {
       setIsSubmitting(false);
@@ -11704,6 +11830,7 @@ function ServiceOrdersManager({
 
   const handleDeleteOS = async () => {
     if (!osToDelete?.id) return;
+    setIsSubmitting(true);
     try {
       await deleteDoc(doc(db, 'serviceOrders', osToDelete.id));
       if (logAction) {
@@ -11712,7 +11839,10 @@ function ServiceOrdersManager({
       setIsDeleteConfirmOpen(false);
       toast.success('Ordem de serviço excluída com sucesso.');
     } catch (err) {
+      toast.error('Erro ao excluir Ordem de Serviço.');
       handleFirestoreError(err, OperationType.DELETE, 'serviceOrders');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -12465,8 +12595,11 @@ function ServiceOrdersManager({
             <DialogDescription className="text-[#71717a]">Esta ação não pode ser desfeita. Deseja excluir a O.S. {osToDelete && formatRecordNumber(osToDelete.number, osToDelete.date)}?</DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)} className="border-[#2d3139]">Cancelar</Button>
-            <Button variant="destructive" onClick={handleDeleteOS} className="bg-red-500 hover:bg-red-600">Excluir</Button>
+            <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)} disabled={isSubmitting} className="border-[#2d3139]">Cancelar</Button>
+            <Button variant="destructive" onClick={handleDeleteOS} disabled={isSubmitting} className="bg-red-500 hover:bg-red-600">
+              {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Excluir
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -12623,6 +12756,7 @@ function BudgetsManager({
 }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [budgetToDelete, setBudgetToDelete] = useState<Budget | null>(null);
   const [editingBudget, setEditingBudget] = useState<Partial<Budget>>({});
@@ -12692,7 +12826,17 @@ function BudgetsManager({
   };
 
   const handleSaveBudget = async () => {
-    const total = (newBudget.items || []).reduce((acc, item) => acc + (item.quantity * item.price), 0);
+    if (!newBudget.clientName) {
+      toast.error('Selecione ou informe o nome do cliente.');
+      return;
+    }
+
+    if (!newBudget.items || newBudget.items.length === 0 || !newBudget.items[0].description) {
+      toast.error('Adicione pelo menos um item ao orçamento.');
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
       const nextNumber = (budgets || []).length > 0 ? Math.max(...(budgets || []).map(b => b.number || 0)) + 1 : 1;
       
@@ -12718,12 +12862,16 @@ function BudgetsManager({
       setIsAddOpen(false);
       toast.success('Orçamento criado!');
     } catch (error) {
+      toast.error('Erro ao salvar orçamento. Verifique sua conexão ou permissões.');
       handleFirestoreError(error, OperationType.CREATE, 'budgets');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleUpdateBudget = async () => {
     if (!editingBudget.id) return;
+    setIsSubmitting(true);
     
     // Apply margin if any
     const itemsToSave = applyProfitMargin(editingBudget.items || [], editProfitMargin);
@@ -12746,12 +12894,16 @@ function BudgetsManager({
       setPrevEditItems(null);
       toast.success('Orçamento atualizado!');
     } catch (error) {
+      toast.error('Erro ao atualizar orçamento.');
       handleFirestoreError(error, OperationType.UPDATE, 'budgets');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleDeleteBudget = async () => {
     if (!budgetToDelete) return;
+    setIsSubmitting(true);
     try {
       await deleteDoc(doc(db, 'budgets', budgetToDelete.id));
       if (logAction) {
@@ -12761,7 +12913,10 @@ function BudgetsManager({
       setBudgetToDelete(null);
       toast.success('Orçamento excluído!');
     } catch (error) {
+      toast.error('Erro ao excluir orçamento.');
       handleFirestoreError(error, OperationType.DELETE, 'budgets');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -13153,11 +13308,12 @@ function BudgetsManager({
                     <div className="relative flex-1">
                       <Input 
                         type="number" 
-                        value={profitMargin} 
-                        onChange={e => setProfitMargin(Number(e.target.value))} 
+                        value={profitMargin === 0 ? '' : profitMargin} 
+                        onChange={e => setProfitMargin(e.target.value === '' ? 0 : Number(e.target.value))} 
                         className="bg-[#0f1115] border-[#2d3139] text-[#3b82f6] font-bold" 
                         placeholder="0"
                         disabled={!!prevItems}
+                        onFocus={(e) => e.target.select()}
                       />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#3b82f6] font-bold">%</span>
                     </div>
@@ -13219,18 +13375,18 @@ function BudgetsManager({
                           }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9 flex-1" />
                         </div>
                         <div className="col-span-2">
-                          <Input type="number" placeholder="Qtd" value={item.quantity} onChange={e => {
+                          <Input type="number" placeholder="Qtd" value={item.quantity === 0 ? '' : item.quantity} onChange={e => {
                             const items = [...(newBudget.items || [])];
-                            items[idx].quantity = Number(e.target.value);
+                            items[idx].quantity = e.target.value === '' ? 0 : Number(e.target.value);
                             setNewBudget({...newBudget, items});
-                          }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9" />
+                          }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9" onFocus={(e) => e.target.select()} />
                         </div>
                         <div className="col-span-3">
-                          <Input type="number" placeholder="Preço" value={item.price} onChange={e => {
+                          <Input type="number" placeholder="Preço" value={item.price === 0 ? '' : item.price} onChange={e => {
                             const items = [...(newBudget.items || [])];
-                            items[idx].price = Number(e.target.value);
+                            items[idx].price = e.target.value === '' ? 0 : Number(e.target.value);
                             setNewBudget({...newBudget, items});
-                          }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9" />
+                          }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9" onFocus={(e) => e.target.select()} />
                         </div>
                         <div className="col-span-1">
                           <Button variant="ghost" size="icon" className="text-[#ef4444] hover:bg-[#ef4444]/10 h-9" onClick={() => {
@@ -13255,8 +13411,11 @@ function BudgetsManager({
                 Total: R$ {(newBudget.items || []).reduce((acc, item) => acc + (item.quantity * item.price), 0).toFixed(2)}
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
-                <Button onClick={handleSaveBudget} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Gerar</Button>
+                <Button variant="outline" onClick={() => setIsAddOpen(false)} disabled={isSubmitting} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+                <Button onClick={handleSaveBudget} disabled={isSubmitting} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+                  {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Gerar
+                </Button>
               </div>
             </DialogFooter>
           </DialogContent>
@@ -13425,13 +13584,14 @@ function BudgetsManager({
                   <Percent size={16} /> Atualizar Margem de Lucro (%)
                 </Label>
                 <div className="flex gap-2 items-center">
-                  <div className="relative flex-1">
+                    <div className="relative flex-1">
                     <Input 
                       type="number" 
-                      value={editProfitMargin} 
-                      onChange={e => setEditProfitMargin(Number(e.target.value))} 
+                      value={editProfitMargin === 0 ? '' : editProfitMargin} 
+                      onChange={e => setEditProfitMargin(e.target.value === '' ? 0 : Number(e.target.value))} 
                       className="bg-[#0f1115] border-[#2d3139] text-[#3b82f6]" 
                       disabled={!!prevEditItems}
+                      onFocus={(e) => e.target.select()}
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#3b82f6] font-bold">%</span>
                   </div>
@@ -13494,18 +13654,18 @@ function BudgetsManager({
                         }} className="bg-[#0f1115] border-[#2d3139] flex-1" placeholder="Descrição" />
                       </div>
                       <div className="col-span-2">
-                        <Input type="number" value={item.quantity} onChange={e => {
+                        <Input type="number" value={item.quantity === 0 ? '' : item.quantity} onChange={e => {
                           const items = [...(editingBudget.items || [])];
-                          items[idx].quantity = Number(e.target.value);
+                          items[idx].quantity = e.target.value === '' ? 0 : Number(e.target.value);
                           setEditingBudget({...editingBudget, items});
-                        }} className="bg-[#0f1115] border-[#2d3139]" />
+                        }} className="bg-[#0f1115] border-[#2d3139]" onFocus={(e) => e.target.select()} />
                       </div>
                       <div className="col-span-3">
-                        <Input type="number" value={item.price} onChange={e => {
+                        <Input type="number" value={item.price === 0 ? '' : item.price} onChange={e => {
                           const items = [...(editingBudget.items || [])];
-                          items[idx].price = Number(e.target.value);
+                          items[idx].price = e.target.value === '' ? 0 : Number(e.target.value);
                           setEditingBudget({...editingBudget, items});
-                        }} className="bg-[#0f1115] border-[#2d3139]" />
+                        }} className="bg-[#0f1115] border-[#2d3139]" onFocus={(e) => e.target.select()} />
                       </div>
                       <div className="col-span-1">
                         <Button variant="ghost" size="icon" className="text-red-500" onClick={() => setEditingBudget({...editingBudget, items: editingBudget.items?.filter((_, i) => i !== idx)})}><Trash2 size={14} /></Button>
@@ -13577,6 +13737,7 @@ function InventoryManager({
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<any>(null);
   const [isTransactionOpen, setIsTransactionOpen] = useState(false);
@@ -13642,6 +13803,7 @@ function InventoryManager({
       return;
     }
 
+    setIsSubmitting(true);
     try {
       const docRef = await addDoc(collection(db, 'inventory'), {
         ...newItem,
@@ -13658,13 +13820,16 @@ function InventoryManager({
       setNewItem({ code: '', name: '', description: '', quantity: 0, minQuantity: 5, unit: 'un', location: '', category: '' });
       toast.success('Item cadastrado com sucesso!');
     } catch (err) {
-      console.error(err);
+      handleFirestoreError(err, OperationType.CREATE, 'inventory');
       toast.error('Erro ao cadastrar item.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleUpdateItem = async () => {
     if (!selectedItem) return;
+    setIsSubmitting(true);
 
     try {
       await updateDoc(doc(db, 'inventory', selectedItem.id), {
@@ -13680,13 +13845,16 @@ function InventoryManager({
       setSelectedItem(null);
       toast.success('Item atualizado com sucesso!');
     } catch (err) {
-      console.error(err);
+      handleFirestoreError(err, OperationType.UPDATE, 'inventory');
       toast.error('Erro ao atualizar item.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleDeleteItem = async () => {
     if (!itemToDelete) return;
+    setIsSubmitting(true);
 
     try {
       await deleteDoc(doc(db, 'inventory', itemToDelete.id));
@@ -13699,8 +13867,10 @@ function InventoryManager({
       setItemToDelete(null);
       toast.success('Item removido do estoque.');
     } catch (err) {
-      console.error(err);
       toast.error('Erro ao excluir item.');
+      handleFirestoreError(err, OperationType.DELETE, 'inventory');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -13718,6 +13888,7 @@ function InventoryManager({
       return;
     }
 
+    setIsSubmitting(true);
     try {
       // 1. Create transaction record
       const transDoc = await addDoc(collection(db, 'inventoryTransactions'), {
@@ -13752,8 +13923,10 @@ function InventoryManager({
       });
       toast.success('Movimentação realizada com sucesso!');
     } catch (err) {
-      console.error(err);
       toast.error('Erro ao processar movimentação.');
+      handleFirestoreError(err, OperationType.WRITE, 'inventoryTransactions');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
