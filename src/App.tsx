@@ -3518,9 +3518,12 @@ export default function MainApp() {
               <p className="text-[10px] text-[#71717a] truncate">{user.email}</p>
             </div>
           </div>
-          <Button variant="ghost" className="w-full justify-start gap-2 text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={handleLogout}>
-            <LogOut size={18} />
-            Sair
+          <Button variant="ghost" className="w-full justify-between gap-2 text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={handleLogout}>
+            <div className="flex items-center gap-2">
+              <LogOut size={18} />
+              Sair
+            </div>
+            <span className="text-[10px] opacity-60">Ver. 1.5</span>
           </Button>
         </div>
       </aside>
@@ -3662,9 +3665,12 @@ export default function MainApp() {
             )}
           </nav>
           <div className="p-6 border-t border-[#2d3139]">
-            <Button variant="ghost" className="w-full justify-start gap-2 text-[#a0a0a0]" onClick={handleLogout}>
-              <LogOut size={18} />
-              Sair
+            <Button variant="ghost" className="w-full justify-between gap-2 text-[#a0a0a0]" onClick={handleLogout}>
+              <div className="flex items-center gap-2">
+                <LogOut size={18} />
+                Sair
+              </div>
+              <span className="text-[10px] opacity-60">Ver. 1.5</span>
             </Button>
           </div>
         </div>
@@ -9542,7 +9548,8 @@ function VisitsManager({
 
     setIsSubmitting(true);
     try {
-      const nextNumber = visits.length > 0 ? Math.max(...visits.map(v => v.number || 0)) + 1 : 1;
+      const visitNumbers = (visits || []).map(v => v.number).filter(n => typeof n === 'number' && !isNaN(n));
+      const nextNumber = visitNumbers.length > 0 ? Math.max(...visitNumbers) + 1 : 1;
       
       const partsValue = (newVisit.parts || []).reduce((acc, p) => acc + (p.quantity * p.price), 0);
       const finalTotal = (newVisit.totalValue || 0) + partsValue;
@@ -11788,7 +11795,8 @@ function ServiceOrdersManager({
   const handleOSSave = async () => {
     setIsSubmitting(true);
     try {
-      const nextNumber = (serviceOrders || []).length > 0 ? Math.max(...(serviceOrders || []).map(o => o.number || 0)) + 1 : 1;
+      const osNumbers = (serviceOrders || []).map(o => o.number).filter(n => typeof n === 'number' && !isNaN(n));
+      const nextNumber = osNumbers.length > 0 ? Math.max(...osNumbers) + 1 : 1;
       const finalPartsValue = (newOS.parts || []).reduce((acc, p) => acc + (p.quantity * p.price), 0);
       const finalTotal = (newOS.laborValue || 0) + finalPartsValue;
 
@@ -12887,7 +12895,8 @@ function BudgetsManager({
 
     setIsSubmitting(true);
     try {
-      const nextNumber = (budgets || []).length > 0 ? Math.max(...(budgets || []).map(b => b.number || 0)) + 1 : 1;
+      const budgetNumbers = (budgets || []).map(b => b.number).filter(n => typeof n === 'number' && !isNaN(n));
+      const nextNumber = budgetNumbers.length > 0 ? Math.max(...budgetNumbers) + 1 : 1;
       
       const itemsToSave = applyProfitMargin(newBudget.items || [], profitMargin);
       const finalTotal = itemsToSave.reduce((acc, item) => acc + (item.quantity * item.price), 0);

@@ -6,8 +6,8 @@ service cloud.firestore {
     
     function isSuperAdmin() {
       return isSignedIn() && (
-        request.auth.token.email.lower() == 'emailparasiteslixo@gmail.com' || 
-        request.auth.token.email.lower() == 'alffonseca42@gmail.com'
+        request.auth.token.email.toLower() == 'emailparasiteslixo@gmail.com' || 
+        request.auth.token.email.toLower() == 'alffonseca42@gmail.com'
       );
     }
 
@@ -113,6 +113,18 @@ service cloud.firestore {
     }
 
     match /suppliers/{id} {
+      allow read, delete: if isMemberOf(resource.data.companyId);
+      allow create: if isMemberOf(request.resource.data.companyId);
+      allow update: if isMemberOf(resource.data.companyId);
+    }
+
+    match /inventory/{id} {
+      allow read, delete: if isMemberOf(resource.data.companyId);
+      allow create: if isMemberOf(request.resource.data.companyId);
+      allow update: if isMemberOf(resource.data.companyId);
+    }
+
+    match /inventoryTransactions/{id} {
       allow read, delete: if isMemberOf(resource.data.companyId);
       allow create: if isMemberOf(request.resource.data.companyId);
       allow update: if isMemberOf(resource.data.companyId);
