@@ -4376,14 +4376,14 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
               NOVO USUÁRIO
             </Button>
           </DialogTrigger>
-          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[500px]">
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[85vh] overflow-hidden flex flex-col p-0 sm:max-w-[500px] shadow-2xl">
             <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Cadastrar Novo Usuário</DialogTitle>
               <DialogDescription className="text-[#a0a0a0] text-xs">
                 Crie um novo acesso para técnico ou administrador.
               </DialogDescription>
             </DialogHeader>
-            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2">
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2 custom-scrollbar">
               <div className="grid gap-4 py-4">
                 <div className="space-y-2">
                   <Label htmlFor="user-name" className="text-[#a0a0a0]">Nome Completo</Label>
@@ -4533,14 +4533,14 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
 
       {/* Edit User Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[500px]">
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[85vh] overflow-hidden flex flex-col p-0 sm:max-w-[500px] shadow-2xl">
             <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Editar Usuário</DialogTitle>
               <DialogDescription className="text-[#a0a0a0] text-xs">
                 Atualize as informações do usuário.
               </DialogDescription>
             </DialogHeader>
-            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2">
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2 custom-scrollbar">
               {editingUser && (
                 <div className="grid gap-4 py-4">
                 <div className="space-y-2">
@@ -4843,11 +4843,11 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
               NOVO CLIENTE
             </Button>
           </DialogTrigger>
-          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[700px]">
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[85vh] overflow-hidden flex flex-col p-0 sm:max-w-[700px] shadow-2xl">
             <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Cadastrar Novo Cliente</DialogTitle>
             </DialogHeader>
-            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2">
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2 custom-scrollbar">
               <div className="grid gap-4 py-4">
                 <div className="space-y-2">
                   <Label htmlFor="name" className="text-[#a0a0a0]">Nome Completo</Label>
@@ -5031,11 +5031,11 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
 
       {/* Edit Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[700px]">
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[85vh] overflow-hidden flex flex-col p-0 sm:max-w-[700px] shadow-2xl">
           <DialogHeader className="p-6 pb-2 flex-shrink-0">
             <DialogTitle className="text-white">Editar Cliente</DialogTitle>
           </DialogHeader>
-          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2 custom-scrollbar">
             {editingClient && (
               <div className="grid gap-4 py-4">
                 <div className="space-y-2">
@@ -5468,11 +5468,11 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
               NOVO FORNECEDOR
             </Button>
           </DialogTrigger>
-            <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[600px]">
+            <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[85vh] overflow-hidden flex flex-col p-0 sm:max-w-[600px] shadow-2xl">
               <DialogHeader className="p-6 pb-2">
                 <DialogTitle>Cadastrar Novo Fornecedor</DialogTitle>
               </DialogHeader>
-              <div className="flex-1 overflow-y-auto px-6 py-2">
+              <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2 custom-scrollbar">
                 <div className="grid gap-4 py-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -7630,14 +7630,15 @@ function SuperAdminPanel({
 
       {/* Edit Company License Modal */}
       <Dialog open={isEditCompanyOpen} onOpenChange={setIsEditCompanyOpen}>
-        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[450px]">
-          <DialogHeader>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[450px] max-h-[85vh] overflow-hidden flex flex-col p-0 shadow-2xl">
+          <DialogHeader className="p-6 pb-2 flex-shrink-0">
             <DialogTitle>Gerenciar Licença: {editingCompany?.name || editingCompany?.companyName || editingCompany?.id}</DialogTitle>
             <DialogDescription className="text-[#a0a0a0]">
               Configure o plano, ciclo de cobrança e permissão de atualizações.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4 px-2 text-white">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2 custom-scrollbar">
+            <div className="space-y-4 py-4 text-white">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between p-3 bg-blue-500/5 border border-blue-500/20 rounded-lg">
                     <div className="flex flex-col">
@@ -7816,10 +7817,11 @@ function SuperAdminPanel({
                 {editingCompany?.status === 'blocked' ? 'Desbloquear Acesso Agora' : 'Bloquear Acesso Agora'}
               </Button>
             </div>
+            </div>
           </div>
-          <DialogFooter className="bg-[#0f1115]/50 p-4 -mx-6 -mb-6 border-t border-[#2d3139] mt-2 rounded-b-lg">
-            <Button variant="outline" onClick={() => setIsEditCompanyOpen(false)} className="border-[#2d3139] text-[#a0a0a0]">Fechar Janela</Button>
-            <Button className="bg-blue-600 hover:bg-blue-700 text-white font-bold" onClick={handleUpdateCompanyPlan}>Gravar Alterações do Plano</Button>
+          <DialogFooter className="bg-[#0f1115]/50 p-6 border-t border-[#2d3139] flex-shrink-0">
+            <Button variant="outline" onClick={() => setIsEditCompanyOpen(false)} className="border-[#2d3139] text-[#a0a0a0]">Fechar</Button>
+            <Button className="bg-blue-600 hover:bg-blue-700 text-white font-bold" onClick={handleUpdateCompanyPlan}>Gravar Alterações</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -10591,12 +10593,12 @@ function VisitsManager({
                 Nova Visita
               </Button>
             </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px] bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0">
+          <DialogContent className="sm:max-w-[600px] bg-[#1a1d23] border-[#2d3139] text-white max-h-[85vh] overflow-hidden flex flex-col p-0 shadow-2xl">
             <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Agendar Nova Visita</DialogTitle>
               <DialogDescription className="text-[#a0a0a0] text-xs">Preencha os detalhes do cliente e do serviço.</DialogDescription>
             </DialogHeader>
-            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2">
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2 custom-scrollbar">
               <div className="grid gap-4 py-4">
                 <div className="space-y-2">
                   <Label className="text-[#a0a0a0]">Selecionar Cliente Existente (Opcional)</Label>
@@ -11080,11 +11082,11 @@ function VisitsManager({
 
       {/* Edit Visit Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="sm:max-w-[500px] bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0">
+        <DialogContent className="sm:max-w-[500px] bg-[#1a1d23] border-[#2d3139] text-white max-h-[85vh] overflow-hidden flex flex-col p-0 shadow-2xl">
           <DialogHeader className="p-6 pb-2 flex-shrink-0">
             <DialogTitle className="text-white">Editar Visita</DialogTitle>
           </DialogHeader>
-          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2 custom-scrollbar">
             {editingVisit && (
               <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-2 gap-4">
@@ -12606,12 +12608,12 @@ function ServiceOrdersManager({
                 Nova O.S.
               </Button>
             </DialogTrigger>
-            <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-[90vw] md:max-w-[800px] max-h-[90vh] flex flex-col p-0 overflow-hidden">
-            <DialogHeader className="p-6 pb-2 border-b border-[#2d3139]">
+            <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-[90vw] md:max-w-[800px] max-h-[85vh] flex flex-col p-0 overflow-hidden shadow-2xl">
+            <DialogHeader className="p-6 pb-2 border-b border-[#2d3139] flex-shrink-0">
               <DialogTitle>Abrir Ordem de Serviço</DialogTitle>
               <DialogDescription className="text-[#71717a]">Preencha os detalhes técnicos do atendimento.</DialogDescription>
             </DialogHeader>
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 custom-scrollbar">
               {/* Client Selection */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -12993,12 +12995,12 @@ function ServiceOrdersManager({
 
       {/* Edit Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-[90vw] md:max-w-[800px] max-h-[90vh] flex flex-col p-0 overflow-hidden">
-          <DialogHeader className="p-6 pb-2 border-b border-[#2d3139]">
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-[90vw] md:max-w-[800px] max-h-[85vh] flex flex-col p-0 overflow-hidden shadow-2xl">
+          <DialogHeader className="p-6 pb-2 border-b border-[#2d3139] flex-shrink-0">
             <DialogTitle>Editar Ordem de Serviço</DialogTitle>
             <DialogDescription className="text-[#71717a]">Atualize os detalhes técnicos do atendimento.</DialogDescription>
           </DialogHeader>
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 custom-scrollbar">
             {editingOS && (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -13791,11 +13793,11 @@ function BudgetsManager({
                 Novo Orçamento
               </Button>
             </DialogTrigger>
-          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[700px]">
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[85vh] overflow-hidden flex flex-col p-0 sm:max-w-[700px] shadow-2xl">
             <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Novo Orçamento</DialogTitle>
             </DialogHeader>
-            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2">
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2 custom-scrollbar">
               <div className="grid gap-4 py-4">
                 <div className="space-y-2">
                   <Label className="text-[#a0a0a0]">Selecionar Cliente Existente (Opcional)</Label>
@@ -14323,11 +14325,11 @@ function BudgetsManager({
 
       {/* Edit Budget Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[700px]">
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[85vh] overflow-hidden flex flex-col p-0 sm:max-w-[700px] shadow-2xl">
           <DialogHeader className="p-6 pb-2 flex-shrink-0">
             <DialogTitle>Editar Orçamento #{editingBudget.number}</DialogTitle>
           </DialogHeader>
-          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2 custom-scrollbar">
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
