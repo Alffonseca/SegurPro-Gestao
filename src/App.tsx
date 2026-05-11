@@ -20,6 +20,8 @@ import {
   AlertCircle,
   Download,
   Trash2,
+  Minus,
+  Zap,
   Pencil,
   Eye,
   EyeOff,
@@ -2561,7 +2563,21 @@ export default function MainApp() {
     // Hard restriction for super-admin tab
     if (tabName === 'super-admin') return isSuperAdmin;
 
-    if (isSuperAdmin || role === 'admin' || role === 'owner') return true;
+    // SaaS specific menu restriction
+    if (currentCompany?.enabledMenus && !currentCompany.enabledMenus.includes(tabName)) {
+      // Common tabs that should ALWAYS be accessible if they were not explicitly disabled
+      const essentialTabs = ['settings', 'dashboard'];
+      if (!essentialTabs.includes(tabName)) {
+        return false;
+      }
+    }
+
+    if (isSuperAdmin || role === 'owner') return true;
+    
+    if (role === 'admin') {
+      // Admin should see everything allowed for the company except logs maybe?
+      return true;
+    }
     
     // Check dynamic permissions if they exist
     if (rolePermissions && rolePermissions[role]) {
@@ -3424,9 +3440,17 @@ export default function MainApp() {
             {canAccess('inventory') && (
               <SidebarItem 
                 icon={<Package size={18} />} 
-                label="Estoque de Peças" 
+                label="Estoque" 
                 active={activeTab === 'inventory'} 
                 onClick={() => setActiveTab('inventory')} 
+              />
+            )}
+            {canAccess('pdv') && (
+              <SidebarItem 
+                icon={<ShoppingCart size={18} />} 
+                label="PDV (Vendas)" 
+                active={activeTab === 'pdv'} 
+                onClick={() => setActiveTab('pdv')} 
               />
             )}
             {canAccess('budgets') && (
@@ -3588,9 +3612,17 @@ export default function MainApp() {
             {canAccess('inventory') && (
               <SidebarItem 
                 icon={<Package size={20} />} 
-                label="Estoque de Peças" 
+                label="Estoque" 
                 active={activeTab === 'inventory'} 
                 onClick={() => { setActiveTab('inventory'); setIsMobileMenuOpen(false); }} 
+              />
+            )}
+            {canAccess('pdv') && (
+              <SidebarItem 
+                icon={<ShoppingCart size={20} />} 
+                label="PDV (Vendas)" 
+                active={activeTab === 'pdv'} 
+                onClick={() => { setActiveTab('pdv'); setIsMobileMenuOpen(false); }} 
               />
             )}
             {canAccess('budgets') && (
@@ -3861,6 +3893,18 @@ export default function MainApp() {
               companyId={effectiveCompanyId || ''} 
               logAction={logAction}
               showList={canViewList('inventory')}
+            />
+          )}
+
+          {activeTab === 'pdv' && (
+            <PDVManager 
+              inventory={inventory}
+              clients={clients}
+              updateStock={updateInventoryStock}
+              companyId={effectiveCompanyId || ''}
+              logAction={logAction}
+              pixSettings={pixSettings}
+              appSettings={appSettings}
             />
           )}
 
@@ -6637,6 +6681,49 @@ function SuperAdminPanel({
   const [deepSearchResults, setDeepSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
+  const [sourceIdForRates, setSourceIdForRates] = useState('');
+  const [targetIdForRates, setTargetIdForRates] = useState('');
+  const [isImportingRates, setIsImportingRates] = useState(false);
+
+  const handleImportCardRates = async () => {
+    if (!sourceIdForRates || !targetIdForRates) {
+      toast.error("Selecione ambas as empresas (origem e destino).");
+      return;
+    }
+    if (sourceIdForRates === targetIdForRates) {
+      toast.error("A empresa de origem e destino não podem ser as mesmas.");
+      return;
+    }
+
+    setIsImportingRates(true);
+    try {
+      // Get rates from source
+      const sourceSnap = await getDoc(doc(db, 'companies', sourceIdForRates, 'settings', 'general'));
+      if (!sourceSnap.exists()) {
+        toast.error("Dados de origem não encontrados.");
+        return;
+      }
+      
+      const sourceData = sourceSnap.data();
+      const installmentPlans = sourceData.installmentPlans;
+
+      if (!installmentPlans || !Array.isArray(installmentPlans) || installmentPlans.length === 0) {
+        toast.error("Nenhum plano de parcelamento encontrado na empresa de origem.");
+        return;
+      }
+
+      // Copy to target
+      await setDoc(doc(db, 'companies', targetIdForRates, 'settings', 'general'), { installmentPlans }, { merge: true });
+      
+      toast.success(`Importados ${installmentPlans.length} planos de parcelamento com sucesso!`);
+    } catch (error) {
+      console.error("Error importing rates:", error);
+      toast.error("Erro ao importar taxas de juros.");
+    } finally {
+      setIsImportingRates(false);
+    }
+  };
+
   const [regCodes, setRegCodes] = useState<any[]>([]);
   const [isGeneratingCode, setIsGeneratingCode] = useState(false);
 
@@ -6732,6 +6819,29 @@ function SuperAdminPanel({
   // New states for block confirmation, company editing, and deletion
   const [isBlockConfirmOpen, setIsBlockConfirmOpen] = useState(false);
   const [isEditCompanyOpen, setIsEditCompanyOpen] = useState(false);
+  const [isSavingCompany, setIsSavingCompany] = useState(false);
+
+  const handleSaveCompanyLicense = async () => {
+    if (!editingCompany?.id) return;
+    setIsSavingCompany(true);
+    try {
+      await updateDoc(doc(db, 'companies', editingCompany.id), {
+        isExempt: editingCompany.isExempt ?? false,
+        customPrice: Number(editingCompany.customPrice) || 0,
+        billingCycle: editingCompany.billingCycle || 'mensal',
+        receivesUpdates: editingCompany.receivesUpdates ?? true,
+        enabledMenus: editingCompany.enabledMenus || ['resumo', 'visits', 'receipts', 'clients', 'financial', 'inventory', 'os', 'budgets', 'settings', 'pdv'],
+        updatedAt: Timestamp.now()
+      });
+      toast.success("Licença e menus atualizados!");
+      setIsEditCompanyOpen(false);
+    } catch (err) {
+      toast.error("Erro ao salvar alterações da empresa.");
+    } finally {
+      setIsSavingCompany(false);
+    }
+  };
+
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [companyToToggle, setCompanyToToggle] = useState<{id: string, status: string} | null>(null);
@@ -7370,6 +7480,60 @@ function SuperAdminPanel({
         </Card>
       </div>
 
+      <Card className="bg-[#1a1d23] border-[#2d3139] text-white shadow-xl hover:border-blue-500/20 transition-all mb-8">
+        <CardHeader>
+          <CardTitle className="text-white flex items-center gap-2">
+            <CreditCard className="text-[#3b82f6]" size={20} />
+            Importar Juros de Cartões
+          </CardTitle>
+          <CardDescription className="text-[#71717a]">
+            Replica as bandeiras e juros de uma empresa para outra (Configurações Gerais &rarr; Planos de Parcelamento).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-[#71717a] text-[10px] uppercase font-black tracking-widest">Empresa de Origem (Copiar de:)</Label>
+              <Select value={sourceIdForRates} onValueChange={setSourceIdForRates}>
+                <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white h-11">
+                  <SelectValue placeholder="Selecione a empresa modelo...">
+                    {sourceIdForRates ? (companies.find(c => c.id === sourceIdForRates)?.name || companies.find(c => c.id === sourceIdForRates)?.companyName || 'Empresa Selecionada') : 'Selecione a empresa modelo...'}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                  {companies.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name || c.companyName || c.tradeName || c.trade_name || 'Empresa'}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[#71717a] text-[10px] uppercase font-black tracking-widest">Empresa de Destino (Para:)</Label>
+              <Select value={targetIdForRates} onValueChange={setTargetIdForRates}>
+                <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white h-11">
+                  <SelectValue placeholder="Selecione a empresa destino...">
+                    {targetIdForRates ? (companies.find(c => c.id === targetIdForRates)?.name || companies.find(c => c.id === targetIdForRates)?.companyName || 'Empresa Selecionada') : 'Selecione a empresa destino...'}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                  {companies.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name || c.companyName || c.tradeName || c.trade_name || 'Empresa'}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <Button 
+            onClick={handleImportCardRates} 
+            disabled={isImportingRates}
+            className="w-full bg-[#3b82f1] hover:bg-[#2563eb] text-white font-bold h-11 shadow-lg shadow-blue-500/10"
+          >
+            {isImportingRates ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+            TRANSFERIR DADOS DE JUROS E BANDEIRAS
+          </Button>
+        </CardContent>
+      </Card>
+
       <Card className="bg-[#1a1d23] border-[#2d3139] rounded-xl overflow-hidden">
         <Table>
           <TableHeader>
@@ -7404,8 +7568,8 @@ function SuperAdminPanel({
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-col">
-                    <span className="font-medium text-white">{company.name || company.companyName || company.id}</span>
-                    <span className="text-[10px] text-[#71717a] uppercase font-mono">UID: {company.ownerId}</span>
+                    <span className="font-medium text-white">{company.name || company.companyName || company.tradeName || company.trade_name || 'Empresa sem Nome'}</span>
+                    <span className="text-[10px] text-[#71717a] font-mono">{company.document || 'Sem Documento'}</span>
                   </div>
                 </TableCell>
                 <TableCell>
@@ -7457,7 +7621,48 @@ function SuperAdminPanel({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4 px-2 text-white">
-            <div className="flex items-center justify-between p-3 bg-blue-500/5 border border-blue-500/20 rounded-lg">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-3 bg-blue-500/5 border border-blue-500/20 rounded-lg">
+                    <div className="flex flex-col">
+                      <Label className="text-sm font-bold text-blue-400">Menus Habilitados</Label>
+                      <span className="text-[10px] text-[#71717a]">Selecione quais abas esta empresa pode ver.</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 p-3 bg-[#0f1115]/50 border border-[#2d3139] rounded-lg">
+                    {[
+                      {id: 'resumo', label: 'Dashboard'},
+                      {id: 'visits', label: 'Atendimentos'},
+                      {id: 'receipts', label: 'Recibos'},
+                      {id: 'clients', label: 'Clientes'},
+                      {id: 'financial', label: 'Financeiro'},
+                      {id: 'inventory', label: 'Estoque'},
+                      {id: 'os', label: 'Ordens de Serviço'},
+                      {id: 'budgets', label: 'Orçamentos'},
+                      {id: 'pdv', label: 'PDV (Vendas)'},
+                      {id: 'settings', label: 'Configurações'}
+                    ].map(menu => (
+                      <div key={menu.id} className="flex items-center space-x-2">
+                        <Checkbox 
+                          id={`menu-${menu.id}`} 
+                          checked={editingCompany?.enabledMenus ? editingCompany.enabledMenus.includes(menu.id) : true}
+                          onCheckedChange={(checked) => {
+                            const current = editingCompany?.enabledMenus || ['resumo', 'visits', 'receipts', 'clients', 'financial', 'inventory', 'os', 'budgets', 'settings'];
+                            let updated;
+                            if (checked) {
+                              updated = [...current, menu.id];
+                            } else {
+                              updated = current.filter((m: string) => m !== menu.id);
+                            }
+                            setEditingCompany({...editingCompany, enabledMenus: updated});
+                          }}
+                        />
+                        <Label htmlFor={`menu-${menu.id}`} className="text-xs cursor-pointer">{menu.label}</Label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-blue-500/5 border border-blue-500/20 rounded-lg">
               <div className="flex flex-col">
                 <Label className="text-sm font-bold text-blue-400">Empresa Pagante?</Label>
                 <span className="text-[10px] text-[#71717a]">Define se haverá cobrança de SaaS.</span>
@@ -12039,7 +12244,8 @@ function ServiceOrdersManager({
   onEditClick: (type: 'service-order', data: any) => void, 
   onSignatureClick: (type: 'service-order', data: any) => void, 
   externalEditAction: any, 
-  onExternalEditHandled: () => void 
+  onExternalEditHandled: () => void,
+  user?: any
 }) {
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -13739,12 +13945,28 @@ function BudgetsManager({
                               });
                             }} disabled={!newBudget.selectedCardBrand}>
                               <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                                <SelectValue placeholder="Selecione..." />
+                                <SelectValue placeholder="Selecione...">
+                                  {newBudget.selectedInstallmentPlanId ? (
+                                    (() => {
+                                      const plan = appSettings.installmentPlans?.find(p => p.id === newBudget.selectedInstallmentPlanId);
+                                      return plan ? `${plan.type} - ${plan.installments}x de R$ ${(newBudget.installmentValue || 0).toFixed(2)}` : 'Selecione...';
+                                    })()
+                                  ) : 'Selecione...'}
+                                </SelectValue>
                               </SelectTrigger>
                               <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                                {appSettings.installmentPlans?.filter(p => p.brand === newBudget.selectedCardBrand).map(plan => (
-                                  <SelectItem key={plan.id} value={plan.id}>{plan.type} - {plan.installments}x ({plan.interestRate}% juros)</SelectItem>
-                                ))}
+                                {appSettings.installmentPlans?.filter(p => p.brand === newBudget.selectedCardBrand).map(plan => {
+                                   const total = (newBudget.items || []).reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
+                                   const instVal = calculateInstallmentValue(total, plan.id);
+                                   return (
+                                     <SelectItem key={plan.id} value={plan.id}>
+                                        <div className="flex justify-between items-center gap-4 w-full">
+                                          <span>{plan.type} - {plan.installments}x ({plan.interestRate}% juros)</span>
+                                          <span className="font-bold text-blue-400">R$ {instVal.toFixed(2)} / parc</span>
+                                        </div>
+                                     </SelectItem>
+                                   );
+                                })}
                                 {(!appSettings.installmentPlans || appSettings.installmentPlans.filter(p => p.brand === newBudget.selectedCardBrand).length === 0) && (
                                   <SelectItem value="none" disabled>Nenhum plano cadastrado</SelectItem>
                                 )}
@@ -13758,9 +13980,17 @@ function BudgetsManager({
 
                   {newBudget.paymentMethod === 'Cartão' && newBudget.interestType === 'with_interest' && newBudget.installmentValue && (
                     <div className="bg-[#3b82f6]/10 p-3 rounded-lg border border-[#3b82f6]/30">
-                      <p className="text-[10px] text-[#3b82f6] uppercase font-bold tracking-wider mb-1">Resumo das Parcelas</p>
-                      <p className="text-sm text-white font-bold">{newBudget.installments}x de R$ {newBudget.installmentValue.toFixed(2)}</p>
-                      <p className="text-[10px] text-[#a0a0a0] mt-1">Total financiado: R$ {(newBudget.installmentValue * (newBudget.installments || 1)).toFixed(2)}</p>
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <p className="text-[10px] text-[#3b82f6] uppercase font-bold tracking-wider mb-1">Resumo das Parcelas</p>
+                          <p className="text-sm text-white font-bold">{newBudget.installments}x de R$ {newBudget.installmentValue.toFixed(2)}</p>
+                          <p className="text-[10px] text-[#a0a0a0] mt-1">Total financiado: R$ {(newBudget.installmentValue * (newBudget.installments || 1)).toFixed(2)}</p>
+                        </div>
+                        <div className="text-right">
+                           <p className="text-[10px] text-[#a0a0a0] uppercase font-bold">Bandeira</p>
+                           <p className="text-sm text-white font-black italic">{newBudget.selectedCardBrand}</p>
+                        </div>
+                      </div>
                     </div>
                   )}
 
@@ -13948,7 +14178,9 @@ function BudgetsManager({
             </div>
             <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23] flex items-center justify-between sm:justify-between">
               <div className="text-lg font-bold text-white">
-                Total: R$ {(newBudget.items || []).reduce((acc, item) => acc + (item.quantity * item.price), 0).toFixed(2)}
+                Total: R$ {newBudget.paymentMethod === 'Cartão com Juros' && newBudget.installmentValue 
+                  ? (newBudget.installmentValue * (newBudget.installments || 1)).toFixed(2) 
+                  : (newBudget.items || []).reduce((acc, item) => acc + (item.quantity * item.price), 0).toFixed(2)}
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setIsAddOpen(false)} disabled={isSubmitting} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
@@ -14014,22 +14246,37 @@ function BudgetsManager({
                     </div>
                   </TableCell>
                   <TableCell className="w-[150px]">
-                    <Select value={budget.status || ''} onValueChange={(val) => handleUpdateStatus(budget.id, val)}>
-                      <SelectTrigger className={cn(
-                        "h-8 bg-[#0f1115] border-[#2d3139] text-[10px] uppercase font-bold",
-                        budget.status === 'Aprovado' ? "text-emerald-500" : 
-                        budget.status === 'Em Negociação' ? "text-yellow-500" : 
-                        budget.status === 'Rejeitado' ? "text-red-500" : "text-blue-500"
-                      )}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                        <SelectItem value="Pendente">Pendente</SelectItem>
-                        <SelectItem value="Em Negociação">Em Negociação</SelectItem>
-                        <SelectItem value="Aprovado">Aprovado</SelectItem>
-                        <SelectItem value="Rejeitado">Rejeitado</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <div className="flex flex-col gap-1">
+                      <Select value={budget.status || ''} onValueChange={(val) => handleUpdateStatus(budget.id, val)}>
+                        <SelectTrigger className={cn(
+                          "h-8 bg-[#0f1115] border-[#2d3139] text-[10px] uppercase font-bold",
+                          budget.status === 'Aprovado' ? "text-emerald-500" : 
+                          budget.status === 'Em Negociação' ? "text-yellow-500" : 
+                          budget.status === 'Rejeitado' ? "text-red-500" : "text-blue-500"
+                        )}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                          <SelectItem value="Pendente">Pendente</SelectItem>
+                          <SelectItem value="Em Negociação">Em Negociação</SelectItem>
+                          <SelectItem value="Aprovado">Aprovado</SelectItem>
+                          <SelectItem value="Rejeitado">Rejeitado</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <div className="flex flex-col">
+                        <span className="text-[9px] text-[#71717a] uppercase font-bold">{budget.paymentMethod}</span>
+                        {budget.paymentMethod === 'PIX' && budget.pixAccountId && (
+                          <span className="text-[9px] text-blue-400 font-mono truncate max-w-[120px]">
+                            {pixSettings.accounts?.find(a => a.id === budget.pixAccountId)?.favored || 'PIX'}
+                          </span>
+                        )}
+                        {budget.paymentMethod === 'Cartão com Juros' && budget.installmentValue && (
+                          <span className="text-[9px] text-emerald-500 font-bold">
+                            {budget.installments}x de R$ {budget.installmentValue.toFixed(2)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </TableCell>
                   <TableCell className="text-right w-[120px]">
                     <span className="font-bold text-white text-[13px]">R$ {(budget.total || 0).toFixed(2)}</span>
@@ -14190,12 +14437,28 @@ function BudgetsManager({
                           });
                         }} disabled={!editingBudget.selectedCardBrand}>
                           <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                            <SelectValue placeholder="Selecione..." />
+                            <SelectValue placeholder="Selecione...">
+                              {editingBudget.selectedInstallmentPlanId ? (
+                                (() => {
+                                  const plan = appSettings.installmentPlans?.find(p => p.id === editingBudget.selectedInstallmentPlanId);
+                                  return plan ? `${plan.type} - ${plan.installments}x de R$ ${(editingBudget.installmentValue || 0).toFixed(2)}` : 'Selecione...';
+                                })()
+                              ) : 'Selecione...'}
+                            </SelectValue>
                           </SelectTrigger>
                           <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                            {appSettings.installmentPlans?.filter(p => p.brand === editingBudget.selectedCardBrand).map(plan => (
-                              <SelectItem key={plan.id} value={plan.id}>{plan.type} - {plan.installments}x ({plan.interestRate}% juros)</SelectItem>
-                            ))}
+                            {appSettings.installmentPlans?.filter(p => p.brand === editingBudget.selectedCardBrand).map(plan => {
+                               const total = (editingBudget.items || []).reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
+                               const instVal = calculateInstallmentValue(total, plan.id);
+                               return (
+                                 <SelectItem key={plan.id} value={plan.id}>
+                                   <div className="flex justify-between items-center gap-4 w-full">
+                                     <span>{plan.type} - {plan.installments}x ({plan.interestRate}% juros)</span>
+                                     <span className="font-bold text-blue-400">R$ {instVal.toFixed(2)} / parc</span>
+                                   </div>
+                                 </SelectItem>
+                               );
+                            })}
                             {(!appSettings.installmentPlans || appSettings.installmentPlans.filter(p => p.brand === editingBudget.selectedCardBrand).length === 0) && (
                               <SelectItem value="none" disabled>Nenhum plano cadastrado</SelectItem>
                             )}
@@ -14207,11 +14470,19 @@ function BudgetsManager({
                 </div>
               )}
 
-              {editingBudget.paymentMethod === 'Cartão' && editingBudget.interestType === 'with_interest' && editingBudget.installmentValue && (
+              {editingBudget.paymentMethod === 'Cartão com Juros' && editingBudget.installmentValue && (
                 <div className="bg-[#3b82f6]/10 p-3 rounded-lg border border-[#3b82f6]/30">
-                  <p className="text-[10px] text-[#3b82f6] uppercase font-bold tracking-wider mb-1">Resumo das Parcelas</p>
-                  <p className="text-sm text-white font-bold">{editingBudget.installments}x de R$ {editingBudget.installmentValue.toFixed(2)}</p>
-                  <p className="text-[10px] text-[#a0a0a0] mt-1">Total financiado: R$ {(editingBudget.installmentValue * (editingBudget.installments || 1)).toFixed(2)}</p>
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <p className="text-[10px] text-[#3b82f6] uppercase font-bold tracking-wider mb-1">Resumo das Parcelas</p>
+                      <p className="text-sm text-white font-bold">{editingBudget.installments}x de R$ {editingBudget.installmentValue.toFixed(2)}</p>
+                      <p className="text-[10px] text-[#a0a0a0] mt-1">Total financiado: R$ {(editingBudget.installmentValue * (editingBudget.installments || 1)).toFixed(2)}</p>
+                    </div>
+                    <div className="text-right">
+                       <p className="text-[10px] text-[#a0a0a0] uppercase font-bold">Bandeira</p>
+                       <p className="text-sm text-white font-black italic">{editingBudget.selectedCardBrand}</p>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -14272,11 +14543,17 @@ function BudgetsManager({
                   <Label className="text-[#a0a0a0]">Conta PIX (Para exibir no orçamento)</Label>
                   <Select value={editingBudget.pixAccountId || ''} onValueChange={(val) => setEditingBudget({...editingBudget, pixAccountId: val})}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue placeholder="Selecione a conta PIX" />
+                      <SelectValue placeholder="Selecione a conta PIX">
+                        {editingBudget.pixAccountId ? (
+                          pixSettings.accounts?.find(a => a.id === editingBudget.pixAccountId) 
+                            ? `${pixSettings.accounts.find(a => a.id === editingBudget.pixAccountId)?.bank} - ${pixSettings.accounts.find(a => a.id === editingBudget.pixAccountId)?.favored}`
+                            : 'Conta não encontrada'
+                        ) : 'Selecione a conta PIX'}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       {pixSettings.accounts?.map(acc => (
-                        <SelectItem key={acc.id} value={acc.id}>{acc.label} ({acc.bank} - {acc.document})</SelectItem>
+                        <SelectItem key={acc.id} value={acc.id}>{acc.favored} ({acc.bank})</SelectItem>
                       ))}
                       {(!pixSettings.accounts || pixSettings.accounts.length === 0) && (
                         <SelectItem value="none" disabled>Nenhuma conta cadastrada</SelectItem>
@@ -14393,7 +14670,9 @@ function BudgetsManager({
           </div>
           <DialogFooter className="p-6 border-t border-[#2d3139] flex justify-between items-center sm:justify-between">
             <div className="text-lg font-bold text-white">
-              Total: R$ {(editingBudget.items || []).reduce((acc, item) => acc + (item.quantity * item.price), 0).toFixed(2)}
+              Total: R$ {editingBudget.paymentMethod === 'Cartão com Juros' && editingBudget.installmentValue 
+                ? (editingBudget.installmentValue * (editingBudget.installments || 1)).toFixed(2) 
+                : (editingBudget.items || []).reduce((acc, item) => acc + (item.quantity * item.price), 0).toFixed(2)}
             </div>
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139]">Cancelar</Button>
@@ -14423,6 +14702,396 @@ function BudgetsManager({
 }
 
 // --- Inventory Manager Component ---
+
+// --- PDV (POS) Manager Component ---
+
+function PDVManager({
+  inventory = [],
+  clients = [],
+  updateStock,
+  companyId,
+  logAction,
+  pixSettings,
+  appSettings
+}: {
+  inventory: any[],
+  clients: Client[],
+  updateStock: (parts: any[], type: 'exit' | 'entry', refId: string, refType: 'os' | 'visit') => Promise<void>,
+  companyId: string,
+  logAction?: any,
+  pixSettings: PixSettings,
+  appSettings: AppSettings
+}) {
+  const [cart, setCart] = useState<{item: any, quantity: number, price: number}[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedClient, setSelectedClient] = useState<string>('Avulso');
+  const [paymentMethod, setPaymentMethod] = useState<'Dinheiro' | 'Cartão' | 'PIX'>('Dinheiro');
+  const [isFinishing, setIsFinishing] = useState(false);
+  const [isReceiptOpen, setIsReceiptOpen] = useState(false);
+  const [lastSale, setLastSale] = useState<any>(null);
+
+  const filteredInventory = inventory.filter(p => 
+    (p.name?.toLowerCase().includes(searchTerm.toLowerCase()) || p.code?.toLowerCase().includes(searchTerm.toLowerCase())) && p.quantity > 0
+  );
+
+  const addToCart = (item: any) => {
+    const existing = cart.find(c => c.item.id === item.id);
+    if (existing) {
+      if (existing.quantity >= item.quantity) {
+        toast.error("Quantidade insuficiente no estoque.");
+        return;
+      }
+      setCart(cart.map(c => c.item.id === item.id ? { ...c, quantity: c.quantity + 1 } : c));
+    } else {
+      setCart([...cart, { item, quantity: 1, price: item.price || 0 }]);
+    }
+  };
+
+  const removeFromCart = (id: string) => {
+    setCart(cart.filter(c => c.item.id !== id));
+  };
+
+  const updateQuantity = (id: string, qty: number) => {
+    const itemInCart = cart.find(c => c.item.id === id);
+    if (!itemInCart) return;
+    
+    if (qty > itemInCart.item.quantity) {
+      toast.error("Quantidade excede o estoque disponível.");
+      return;
+    }
+    
+    if (qty <= 0) {
+      removeFromCart(id);
+      return;
+    }
+    
+    setCart(cart.map(c => c.item.id === id ? { ...c, quantity: qty } : c));
+  };
+
+  const total = cart.reduce((acc, curr) => acc + (curr.quantity * curr.price), 0);
+
+  const handleFinishSale = async () => {
+    if (cart.length === 0) {
+      toast.error("Carrinho vazio!");
+      return;
+    }
+
+    setIsFinishing(true);
+    try {
+      const saleId = doc(collection(db, 'sales')).id;
+      const saleData = {
+        items: cart.map(c => ({ 
+          itemId: c.item.id, 
+          name: c.item.name, 
+          quantity: c.quantity, 
+          price: c.price 
+        })),
+        total,
+        paymentMethod,
+        clientName: selectedClient,
+        companyId,
+        createdAt: Timestamp.now()
+      };
+
+      await addDoc(collection(db, 'sales'), saleData);
+      
+      // Update Stock
+      const stockParts = cart.map(c => ({ description: c.item.name, quantity: c.quantity }));
+      await updateStock(stockParts, 'exit', saleId, 'os'); // Using 'os' as generic sale ref type
+
+      if (logAction) {
+        logAction('create', 'sale', `Venda Realizada (PDV) - Total: R$ ${total.toFixed(2)}`, saleId);
+      }
+
+      setLastSale(saleData);
+      setCart([]);
+      toast.success("Venda finalizada com sucesso!");
+      setIsReceiptOpen(true);
+    } catch (err) {
+      toast.error("Erro ao registrar venda.");
+    } finally {
+      setIsFinishing(false);
+    }
+  };
+
+  const printReceipt = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const itemsHtml = lastSale.items.map((i: any) => `
+      <tr>
+        <td style="padding: 2px 0;">${i.name}</td>
+        <td style="text-align: center;">${i.quantity}</td>
+        <td style="text-align: right;">${i.price.toFixed(2)}</td>
+      </tr>
+    `).join('');
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <style>
+            @page { size: 80mm auto; margin: 0; }
+            body { 
+              font-family: 'Courier New', Courier, monospace; 
+              width: 72mm; 
+              padding: 4mm;
+              font-size: 12px;
+              line-height: 1.2;
+            }
+            .header { text-align: center; margin-bottom: 5mm; border-bottom: 1px dashed #000; padding-bottom: 2mm; }
+            .content { margin-bottom: 5mm; }
+            table { width: 100%; border-collapse: collapse; }
+            .total { font-weight: bold; font-size: 14px; border-top: 1px dashed #000; margin-top: 2mm; padding-top: 1mm; }
+            .footer { text-align: center; margin-top: 5mm; font-size: 10px; border-top: 1px dashed #000; padding-top: 2mm; }
+          </style>
+        </head>
+        <body onload="window.print(); window.close();">
+          <div class="header">
+            <strong>${appSettings.companyName || 'PDV Vendas'}</strong><br/>
+            ${appSettings.address || ''}<br/>
+            DOC: ${appSettings.document || ''}
+          </div>
+          <div class="content">
+            <p>DATA: ${format(new Date(), 'dd/MM/yyyy HH:mm')}</p>
+            <p>CLIENTE: ${lastSale.clientName}</p>
+            <hr style="border: none; border-top: 1px dashed #000;"/>
+            <table>
+              <thead>
+                <tr>
+                  <th style="text-align: left;">DESC</th>
+                  <th style="text-align: center;">QT</th>
+                  <th style="text-align: right;">VL</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${itemsHtml}
+              </tbody>
+            </table>
+            <div class="total">
+              <div style="display: flex; justify-content: space-between;">
+                <span>TOTAL:</span>
+                <span>R$ ${lastSale.total.toFixed(2)}</span>
+              </div>
+              <div style="font-size: 10px; font-weight: normal; margin-top: 2px;">
+                FORMA: ${lastSale.paymentMethod}
+              </div>
+            </div>
+          </div>
+          <div class="footer">
+            Obrigado pela preferência!<br/>
+            SISTEMA SEGURPRO GESTÃO
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  return (
+    <div className="p-6 h-[calc(100vh-100px)] flex flex-col gap-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-2xl bg-blue-500/10 border border-blue-500/20 shadow-lg shadow-blue-500/5">
+            <ShoppingCart className="text-blue-500" size={24} />
+          </div>
+          <div>
+            <h1 className="text-2xl font-black text-white uppercase italic tracking-tighter leading-none">Frente de Caixa (PDV)</h1>
+            <p className="text-[10px] text-[#71717a] uppercase font-bold tracking-widest mt-1">Venda direta de peças e serviços rápidos</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 grid grid-cols-12 gap-6 min-h-0">
+        {/* Product Search Side */}
+        <div className="col-span-12 lg:col-span-8 flex flex-col gap-4 min-h-0">
+          <Card className="bg-[#1a1d23] border-[#2d3139] p-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#71717a]" size={18} />
+              <Input 
+                placeholder="Buscar por nome ou código..." 
+                className="pl-10 h-12 bg-[#0f1115] border-[#2d3139] text-white"
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+              />
+            </div>
+          </Card>
+
+          <Card className="flex-1 bg-[#1a1d23] border-[#2d3139] overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-[#2d3139] bg-[#0f1115]/30">
+              <h3 className="text-[10px] font-black text-[#a0a0a0] uppercase tracking-widest">Catálogo de Itens</h3>
+            </div>
+            <ScrollArea className="flex-1">
+              <div className="p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                {filteredInventory.map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => addToCart(item)}
+                    className="p-4 rounded-xl bg-[#0f1115] border border-[#2d3139] hover:border-blue-500/50 transition-all text-left group relative overflow-hidden"
+                  >
+                    <div className="absolute top-0 right-0 p-2 opacity-5 group-hover:opacity-20 transition-all">
+                      <Package size={40} className="text-blue-500" />
+                    </div>
+                    <div className="relative z-10">
+                      <span className="text-[10px] text-[#71717a] font-mono block mb-1">#{item.code}</span>
+                      <h4 className="text-sm font-bold text-white mb-2 line-clamp-2">{item.name}</h4>
+                      <div className="flex justify-between items-baseline">
+                        <span className="text-blue-400 font-bold">R$ {(item.price || 0).toFixed(2)}</span>
+                        <Badge variant="outline" className={cn(
+                          "text-[9px] font-bold",
+                          item.quantity <= (item.minQuantity || 0) ? "text-amber-500 border-amber-500/30" : "text-emerald-500 border-emerald-500/30"
+                        )}>
+                          Estoque: {item.quantity}
+                        </Badge>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+                {filteredInventory.length === 0 && (
+                  <div className="col-span-full py-20 text-center space-y-4">
+                    <div className="mx-auto w-16 h-16 bg-[#0f1115] rounded-full flex items-center justify-center border border-[#2d3139]">
+                       <AlertCircle className="text-[#333]" size={32} />
+                    </div>
+                    <p className="text-[#a0a0a0] text-sm italic">Nenhum item encontrado no catálogo.</p>
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+          </Card>
+        </div>
+
+        {/* Cart Side */}
+        <div className="col-span-12 lg:col-span-4 flex flex-col gap-4 min-h-0">
+          <Card className="flex-1 bg-[#1a1d23] border-[#2d3139] overflow-hidden flex flex-col shadow-2xl relative">
+            <div className="absolute top-0 left-0 w-full h-1 bg-blue-500" />
+            <div className="p-4 border-b border-[#2d3139] flex items-center justify-between">
+              <h3 className="text-[10px] font-black text-white uppercase tracking-[0.2em] flex items-center gap-2">
+                <ShoppingCart size={14} className="text-blue-500" /> Carrinho de Compras
+              </h3>
+              <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">{cart.length} itens</Badge>
+            </div>
+
+            <ScrollArea className="flex-1">
+              <div className="p-4 space-y-3">
+                {cart.map(c => (
+                  <div key={c.item.id} className="p-3 rounded-lg bg-[#0f1115]/50 border border-[#2d3139] group">
+                    <div className="flex justify-between mb-2">
+                      <span className="text-xs font-bold text-white line-clamp-1">{c.item.name}</span>
+                      <button onClick={() => removeFromCart(c.item.id)} className="text-red-500/50 hover:text-red-500"><Trash2 size={14} /></button>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Button 
+                          variant="outline" 
+                          size="icon" 
+                          className="h-6 w-6 border-[#2d3139] text-[#71717a]" 
+                          onClick={() => updateQuantity(c.item.id, c.quantity - 1)}
+                        >
+                          <Minus size={12} />
+                        </Button>
+                        <span className="text-xs font-mono font-bold text-white w-6 text-center">{c.quantity}</span>
+                        <Button 
+                          variant="outline" 
+                          size="icon" 
+                          className="h-6 w-6 border-[#2d3139] text-[#71717a]" 
+                          onClick={() => updateQuantity(c.item.id, c.quantity + 1)}
+                        >
+                          <Plus size={12} />
+                        </Button>
+                      </div>
+                      <span className="text-sm font-bold text-blue-400">R$ {(c.quantity * c.price).toFixed(2)}</span>
+                    </div>
+                  </div>
+                ))}
+                {cart.length === 0 && (
+                  <div className="text-center py-20 text-[#71717a]">
+                    <Ticket className="mx-auto mb-3 opacity-20" size={48} />
+                    <p className="text-xs italic uppercase tracking-widest font-bold">Carrinho vazio</p>
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+
+            <div className="p-6 bg-[#0f1115] border-t border-[#2d3139] space-y-4">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase text-[#71717a] tracking-widest">Cliente</Label>
+                  <Select value={selectedClient} onValueChange={setSelectedClient}>
+                    <SelectTrigger className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="Avulso">Consumidor Avulso</SelectItem>
+                      {clients.map(cl => (
+                        <SelectItem key={cl.id} value={cl.name}>{cl.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase text-[#71717a] tracking-widest">Pagamento</Label>
+                  <div className="flex gap-2">
+                    {['Dinheiro', 'Cartão', 'PIX'].map((m: any) => (
+                      <Button
+                        key={m}
+                        variant={paymentMethod === m ? 'default' : 'outline'}
+                        className={cn(
+                          "flex-1 h-10 text-[10px] font-bold uppercase",
+                          paymentMethod === m ? "bg-blue-600 hover:bg-blue-700 text-white" : "border-[#2d3139] text-[#71717a]"
+                        )}
+                        onClick={() => setPaymentMethod(m)}
+                      >
+                        {m === 'PIX' && <Zap size={14} className="mr-1" />}
+                        {m === 'Dinheiro' && <DollarSign size={14} className="mr-1" />}
+                        {m === 'Cartão' && <CreditCard size={14} className="mr-1" />}
+                        {m}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-[#2d3139]/50">
+                <div className="flex justify-between items-end mb-4">
+                  <span className="text-[10px] font-black uppercase text-[#71717a] tracking-widest mb-1">Total a Pagar</span>
+                  <span className="text-3xl font-black text-white italic tracking-tighter">R$ {total.toFixed(2)}</span>
+                </div>
+                <Button 
+                  className="w-full h-14 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase italic tracking-tighter text-xl shadow-lg shadow-emerald-600/20"
+                  disabled={cart.length === 0 || isFinishing}
+                  onClick={handleFinishSale}
+                >
+                  {isFinishing ? <Loader2 className="animate-spin" /> : "Finalizar Venda"}
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      {/* Sale Success / Receipt Modal */}
+      <Dialog open={isReceiptOpen} onOpenChange={setIsReceiptOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-sm text-center">
+          <DialogHeader>
+            <div className="mx-auto w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center mb-4">
+              <CheckCircle2 className="text-emerald-500" size={32} />
+            </div>
+            <DialogTitle className="text-2xl font-black uppercase italic tracking-tighter">Venda Concluída!</DialogTitle>
+            <DialogDescription className="text-[#a0a0a0]">Deseja imprimir o cupom não fiscal?</DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <Button onClick={printReceipt} className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-bold uppercase tracking-widest">
+              <Printer className="mr-2" size={18} /> Imprimir Cupom
+            </Button>
+            <Button variant="ghost" onClick={() => setIsReceiptOpen(false)} className="w-full text-[#71717a] hover:text-white">
+              Continuar sem Imprimir
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
 function InventoryManager({ 
   inventory = [], 
