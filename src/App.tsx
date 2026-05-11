@@ -2565,15 +2565,26 @@ export default function MainApp() {
     if (tabName === 'super-admin') return isSuperAdmin;
 
     // SaaS specific menu restriction
-    if (currentCompany?.enabledMenus && !currentCompany.enabledMenus.includes(tabName)) {
-      // Common tabs that should ALWAYS be accessible if they were not explicitly disabled
-      const essentialTabs = ['settings', 'dashboard'];
-      if (!essentialTabs.includes(tabName)) {
-        return false;
+    if (currentCompany?.enabledMenus) {
+      // Normalize tabName for backward compatibility with old IDs
+      let normalizedTabName = tabName;
+      if (tabName === 'dashboard') normalizedTabName = 'resumo';
+      if (tabName === 'service-orders') normalizedTabName = 'os';
+
+      if (!currentCompany.enabledMenus.includes(tabName) && !currentCompany.enabledMenus.includes(normalizedTabName)) {
+        // Common tabs that should ALWAYS be accessible if they were not explicitly disabled
+        const essentialTabs = ['settings', 'dashboard'];
+        if (!essentialTabs.includes(tabName)) {
+          return false;
+        }
       }
     } else if (!currentCompany?.enabledMenus) {
       // Default menus for companies without specific settings
-      const defaultMenus = ['resumo', 'visits', 'receipts', 'clients', 'financial', 'inventory', 'os', 'budgets', 'settings', 'pdv'];
+      const defaultMenus = [
+        'dashboard', 'visits', 'receipts', 'clients', 'financial', 
+        'inventory', 'service-orders', 'budgets', 'settings', 'pdv',
+        'suppliers', 'reports', 'users', 'logs'
+      ];
       if (!defaultMenus.includes(tabName)) return false;
     }
 
@@ -7636,15 +7647,18 @@ function SuperAdminPanel({
                   </div>
                   <div className="grid grid-cols-2 gap-2 p-3 bg-[#0f1115]/50 border border-[#2d3139] rounded-lg">
                     {[
-                      {id: 'resumo', label: 'Dashboard'},
+                      {id: 'dashboard', label: 'Dashboard'},
                       {id: 'visits', label: 'Atendimentos'},
                       {id: 'receipts', label: 'Recibos'},
                       {id: 'clients', label: 'Clientes'},
                       {id: 'financial', label: 'Financeiro'},
                       {id: 'inventory', label: 'Estoque'},
-                      {id: 'os', label: 'Ordens de Serviço'},
+                      {id: 'service-orders', label: 'Ordens de Serviço'},
                       {id: 'budgets', label: 'Orçamentos'},
                       {id: 'pdv', label: 'PDV (Vendas)'},
+                      {id: 'suppliers', label: 'Fornecedores'},
+                      {id: 'reports', label: 'Relatórios'},
+                      {id: 'users', label: 'Equipe'},
                       {id: 'settings', label: 'Configurações'}
                     ].map(menu => (
                       <div key={menu.id} className="flex items-center space-x-2">
@@ -7652,7 +7666,11 @@ function SuperAdminPanel({
                           id={`menu-${menu.id}`} 
                           checked={editingCompany?.enabledMenus ? editingCompany.enabledMenus.includes(menu.id) : true}
                           onCheckedChange={(checked) => {
-                            const current = editingCompany?.enabledMenus || ['resumo', 'visits', 'receipts', 'clients', 'financial', 'inventory', 'os', 'budgets', 'settings', 'pdv'];
+                            const current = editingCompany?.enabledMenus || [
+                              'dashboard', 'visits', 'receipts', 'clients', 'financial', 
+                              'inventory', 'service-orders', 'budgets', 'settings', 'pdv',
+                              'suppliers', 'reports', 'users', 'logs'
+                            ];
                             let updated;
                             if (checked) {
                               updated = [...current, menu.id];
@@ -14928,17 +14946,17 @@ function PDVManager({
             {selectedClient}
           </div>
         </div>
-        <div className="md:col-span-2 space-y-1">
-          <Label className="text-[9px] uppercase font-black text-[#71717a] tracking-widest">Vincular Ordem de Serviço (OS) (F5)</Label>
+          <div className="md:col-span-2 space-y-1">
+          <Label className="text-[9px] uppercase font-black text-[#71717a] tracking-widest">OS Vínculo (F5)</Label>
           <div className="flex gap-2">
             <Input 
-              placeholder="Nº da OS para vínculo..." 
-              className="h-10 bg-[#0f1115] border-[#2d3139] text-white text-sm"
+              placeholder="Nº da OS..." 
+              className="h-9 bg-[#0f1115] border-[#2d3139] text-white text-xs"
               value={linkedOS}
               onChange={e => setLinkedOS(e.target.value)}
             />
-            <Button variant="outline" className="border-[#2d3139] text-[10px] font-bold uppercase h-10 px-3">
-              <Zap size={14} className="mr-1 text-yellow-500" /> Inserir OS
+            <Button variant="outline" className="border-[#2d3139] text-[9px] font-black uppercase h-9 px-2 min-w-[80px]">
+              <Zap size={12} className="mr-1 text-yellow-500" /> Inserir
             </Button>
           </div>
         </div>
@@ -15002,58 +15020,58 @@ function PDVManager({
         </div>
       </Card>
 
-      {/* Payment Summary Area - Below as requested */}
-      <Card className="bg-[#1a1d23] border-[#2d3139] shadow-2xl relative overflow-hidden">
+      {/* Payment Summary Area */}
+      <Card className="bg-[#1a1d23] border-[#2d3139] shadow-2xl relative overflow-hidden flex-shrink-0">
         <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500" />
-        <div className="p-4 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+        <div className="p-3 grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
           
           {/* Payment Method Selection */}
-          <div className="lg:col-span-4 space-y-3">
-            <Label className="text-[10px] uppercase font-black text-[#71717a] tracking-widest">Forma de Recebimento</Label>
-            <div className="flex gap-2">
+          <div className="lg:col-span-4 space-y-2">
+            <Label className="text-[9px] uppercase font-black text-[#71717a] tracking-widest">Recebimento</Label>
+            <div className="grid grid-cols-3 gap-1.5">
               {[
-                {id: 'Dinheiro', icon: <DollarSign size={16} />},
-                {id: 'Cartão', icon: <CreditCard size={16} />},
-                {id: 'PIX', icon: <Zap size={16} />}
+                {id: 'Dinheiro', icon: <DollarSign size={14} />},
+                {id: 'Cartão', icon: <CreditCard size={14} />},
+                {id: 'PIX', icon: <Zap size={14} />}
               ].map((m: any) => (
                 <button
                   key={m.id}
                   onClick={() => setPaymentMethod(m.id)}
                   className={cn(
-                    "flex-1 h-12 rounded-lg border flex items-center justify-center gap-2 transition-all",
+                    "h-9 rounded border flex items-center justify-center gap-1.5 transition-all outline-none",
                     paymentMethod === m.id 
                       ? "bg-emerald-500 text-white border-emerald-400 font-bold shadow-lg shadow-emerald-500/20" 
                       : "bg-[#0f1115] border-[#2d3139] text-[#71717a] hover:border-[#3b82f6]/50"
                   )}
                 >
                   {m.icon}
-                  <span className="text-[10px] uppercase tracking-widest">{m.id}</span>
+                  <span className="text-[9px] font-bold uppercase">{m.id}</span>
                 </button>
               ))}
             </div>
           </div>
 
           {/* Totals Summary */}
-          <div className="lg:col-span-5 grid grid-cols-3 gap-4 border-l border-r border-[#2d3139]/50 px-6">
+          <div className="lg:col-span-5 grid grid-cols-3 gap-2 border-l border-r border-[#2d3139]/50 px-4">
             <div className="text-center">
-              <span className="text-[9px] text-[#71717a] font-black uppercase block mb-1">Subtotal</span>
-              <span className="text-lg font-bold text-white">R$ {subtotal.toFixed(2)}</span>
+              <span className="text-[8px] text-[#71717a] font-black uppercase block mb-1">Subtotal</span>
+              <span className="text-base font-bold text-white block truncate">R$ {subtotal.toFixed(2)}</span>
             </div>
             <div className="text-center">
                <div className="flex items-center justify-center gap-1 mb-1">
-                <span className="text-[9px] text-[#71717a] font-black uppercase">Desconto (F8)</span>
+                <span className="text-[8px] text-[#71717a] font-black uppercase italic">Desconto</span>
                 <button onClick={() => {
                     const val = prompt("Valor do desconto:");
                     if (val !== null) setDiscount(Number(val) || 0);
                 }} className="text-blue-500 hover:text-blue-400">
-                    <Pencil size={10} />
+                    <Pencil size={8} />
                 </button>
               </div>
-              <span className="text-lg font-bold text-red-500">- R$ {discount.toFixed(2)}</span>
+              <span className="text-base font-bold text-red-500 block truncate leading-none">- R$ {discount.toFixed(2)}</span>
             </div>
             <div className="text-center">
-              <span className="text-[9px] text-emerald-500 font-black uppercase block mb-1">Total a Pagar</span>
-              <span className="text-2xl font-black text-emerald-500 italic tracking-tighter">R$ {total.toFixed(2)}</span>
+              <span className="text-[8px] text-emerald-500 font-black uppercase block mb-1 tracking-tighter">Total Geral</span>
+              <span className="text-xl font-black text-emerald-500 italic tracking-tighter block truncate leading-none">R$ {total.toFixed(2)}</span>
             </div>
           </div>
 
@@ -15062,9 +15080,9 @@ function PDVManager({
             <Button 
               onClick={handleFinishSale}
               disabled={cart.length === 0 || isFinishing}
-              className="w-full h-16 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase italic tracking-tighter text-xl shadow-xl shadow-emerald-600/20"
+              className="w-full h-14 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase italic tracking-tighter text-lg shadow-xl shadow-emerald-600/20"
             >
-              {isFinishing ? <Loader2 className="animate-spin" /> : "FINALIZAR VENDA (F10)"}
+              {isFinishing ? <Loader2 className="animate-spin" /> : "FINALIZAR (F10)"}
             </Button>
           </div>
         </div>
