@@ -10,6 +10,7 @@ import {
   LayoutDashboard, 
   Calendar as CalendarIcon, 
   DollarSign, 
+  CreditCard,
   FileText, 
   LogOut, 
   Search,
@@ -1137,10 +1138,18 @@ interface Budget {
   address: string;
   items: { description: string; quantity: number; price: number }[];
   total: number;
-  status: 'Pendente' | 'Aprovado' | 'Rejeitado';
+  status: 'Pendente' | 'Aprovado' | 'Rejeitado' | 'Em Negociação';
   pixAccountId?: string;
-  paymentMethod?: 'Dinheiro' | 'Cartão' | 'PIX';
+  paymentMethod?: 'Dinheiro' | 'Cartão' | 'PIX' | 'Cartão com Juros';
   installments?: number;
+  selectedCardBrand?: 'VISA' | 'MASTERCARD' | 'AMERICA' | 'ELO';
+  interestType?: 'none' | 'with_interest';
+  selectedInstallmentPlanId?: string;
+  installmentValue?: number;
+  cashAcceptancePercent?: number;
+  cashAcceptanceValue?: number;
+  cashDeliveryPercent?: number;
+  cashDeliveryValue?: number;
   observations?: string;
   clientSignature?: string;
   createdAt: any;
@@ -1424,6 +1433,7 @@ interface AppSettings {
   companyPhone?: string;
   companyEmail?: string;
   signatureUrl?: string;
+  installmentPlans?: { id: string, brand: 'VISA' | 'MASTERCARD' | 'AMERICA' | 'ELO', type: 'DÉBITO' | 'CRÉDITO', installments: number, interestRate: number }[];
 }
 
 interface LogRecord {
@@ -4481,11 +4491,9 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
                 </div>
                 <div className="space-y-2">
                   <Label className="text-[#a0a0a0]">Nível de Acesso</Label>
-                  <Select value={editingUser.role} onValueChange={(val: any) => setEditingUser({...editingUser, role: val})}>
+                  <Select value={editingUser.role || ''} onValueChange={(val: any) => setEditingUser({...editingUser, role: val})}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue>
-                      {userRoles.find(r => r.id === editingUser.role)?.label || 'Selecione o nível'}
-                      </SelectValue>
+                      <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-[#e0e0e0]">
                       {userRoles.map(role => (
@@ -4598,7 +4606,8 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
     type: 'Avulso',
     serviceObjects: [],
     paymentMethods: [],
-    paymentDay: ''
+    paymentDay: '',
+    pixAccountId: ''
   });
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -4930,11 +4939,7 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
                         <Label className="text-[#a0a0a0]">Conta PIX Preferencial</Label>
                         <Select value={newClient.pixAccountId} onValueChange={(val) => setNewClient({...newClient, pixAccountId: val})}>
                           <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                            <SelectValue placeholder="Selecione a conta PIX">
-                              {pixSettings.accounts?.find(a => a.id === newClient.pixAccountId) 
-                                ? `${pixSettings.accounts.find(a => a.id === newClient.pixAccountId)?.label} (${pixSettings.accounts.find(a => a.id === newClient.pixAccountId)?.bank} - ${pixSettings.accounts.find(a => a.id === newClient.pixAccountId)?.document})`
-                                : null}
-                            </SelectValue>
+                            <SelectValue placeholder="Selecione a conta PIX" />
                           </SelectTrigger>
                           <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                             {pixSettings.accounts?.map(acc => (
@@ -5018,7 +5023,7 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Tipo de Cliente</Label>
-                    <Select value={editingClient.type} onValueChange={(val: any) => setEditingClient({...editingClient, type: val})}>
+                    <Select value={editingClient.type || ''} onValueChange={(val: any) => setEditingClient({...editingClient, type: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
                         <SelectValue>
                           {editingClient.type || "Selecione"}
@@ -5048,13 +5053,9 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
                 {editingClient.paymentMethods?.includes('PIX') && (
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Conta PIX Preferencial</Label>
-                    <Select value={editingClient.pixAccountId} onValueChange={(val) => setEditingClient({...editingClient, pixAccountId: val})}>
+                    <Select value={editingClient.pixAccountId || ''} onValueChange={(val) => setEditingClient({...editingClient, pixAccountId: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                        <SelectValue placeholder="Selecione a conta PIX">
-                          {pixSettings.accounts?.find(a => a.id === editingClient.pixAccountId) 
-                            ? `${pixSettings.accounts.find(a => a.id === editingClient.pixAccountId)?.label} (${pixSettings.accounts.find(a => a.id === editingClient.pixAccountId)?.bank} - ${pixSettings.accounts.find(a => a.id === editingClient.pixAccountId)?.document})`
-                            : null}
-                        </SelectValue>
+                        <SelectValue placeholder="Selecione a conta PIX" />
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         {pixSettings.accounts?.map(acc => (
@@ -5673,7 +5674,9 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
     clientType: 'Avulso',
     status: 'Aguardando Pagamento',
     referenceMonth: '',
-    observations: ''
+    observations: '',
+    clientId: '',
+    pixAccountId: ''
   });
 
   const clientsWithReceipts = useMemo(() => {
@@ -6024,7 +6027,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
               <div className="grid gap-4 py-4">
                 <div className="space-y-2">
                   <Label className="text-[#a0a0a0]">Selecionar Cliente Existente (Opcional)</Label>
-                  <Select onValueChange={(clientId) => {
+                  <Select value={newReceipt.clientId || ''} onValueChange={(clientId) => {
                     const client = clients.find(c => c.id === clientId);
                     if (client) {
                       setNewReceipt({
@@ -6039,9 +6042,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                     }
                   }}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue placeholder="Escolha um cliente...">
-                        {clients.find(c => c.name === newReceipt.clientName)?.name || newReceipt.clientName || null}
-                      </SelectValue>
+                      <SelectValue placeholder="Escolha um cliente..." />
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       <div className="p-2 sticky top-0 bg-[#1a1d23] z-10 border-b border-[#2d3139]">
@@ -6239,7 +6240,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Tipo de Recibo</Label>
                     <Select 
-                      value={editingReceipt.clientType} 
+                      value={editingReceipt.clientType || ''} 
                       onValueChange={(val: any) => {
                         const isContract = val === 'Contrato';
                         const client = clients.find(c => c.name === editingReceipt.clientName);
@@ -6294,7 +6295,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                   </div>
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Forma de Pagamento</Label>
-                    <Select value={editingReceipt.paymentMethod} onValueChange={(val: any) => setEditingReceipt({...editingReceipt, paymentMethod: val})}>
+                    <Select value={editingReceipt.paymentMethod || ''} onValueChange={(val: any) => setEditingReceipt({...editingReceipt, paymentMethod: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
                         <SelectValue />
                       </SelectTrigger>
@@ -6307,7 +6308,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                   </div>
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Status do Pagamento</Label>
-                    <Select value={editingReceipt.status} onValueChange={(val: any) => setEditingReceipt({...editingReceipt, status: val})}>
+                    <Select value={editingReceipt.status || ''} onValueChange={(val: any) => setEditingReceipt({...editingReceipt, status: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
                         <SelectValue />
                       </SelectTrigger>
@@ -6321,7 +6322,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                   {editingReceipt.paymentMethod === 'PIX' && (
                     <div className="space-y-2">
                       <Label className="text-[#a0a0a0]">Conta PIX para Recebimento</Label>
-                      <Select value={editingReceipt.pixAccountId} onValueChange={(val) => setEditingReceipt({...editingReceipt, pixAccountId: val})}>
+                      <Select value={editingReceipt.pixAccountId || ''} onValueChange={(val) => setEditingReceipt({...editingReceipt, pixAccountId: val})}>
                         <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
                           <SelectValue placeholder="Selecione a conta PIX" />
                         </SelectTrigger>
@@ -7807,6 +7808,7 @@ function RolePermissionManager({ companyId, user, userRoles, currentUserData }: 
                    <Checkbox 
                      checked={rolePermissions[selectedRole]?.menus?.includes(item.id)}
                      onCheckedChange={() => togglePermission(item.id, 'menus')}
+                     disabled={selectedRole === 'owner' && !isMaster}
                      className="data-[state=checked]:bg-[#3b82f6] data-[state=checked]:border-[#3b82f6]"
                    />
                  </label>
@@ -7834,6 +7836,7 @@ function RolePermissionManager({ companyId, user, userRoles, currentUserData }: 
                    <Checkbox 
                      checked={rolePermissions[selectedRole]?.lists?.includes(item.id)}
                      onCheckedChange={() => togglePermission(item.id, 'lists')}
+                     disabled={selectedRole === 'owner' && !isMaster}
                      className="data-[state=checked]:bg-yellow-500 data-[state=checked]:border-yellow-500"
                    />
                  </label>
@@ -8030,6 +8033,16 @@ function SettingsManager({
   const [currentPix, setCurrentPix] = useState<Partial<PixAccount>>({});
   const [editingPixId, setEditingPixId] = useState<string | null>(null);
 
+  // Installment plans states
+  const [isInstallmentDialogOpen, setIsInstallmentDialogOpen] = useState(false);
+  const [currentPlan, setCurrentPlan] = useState<{id?: string, brand: 'VISA' | 'MASTERCARD' | 'AMERICA' | 'ELO', type: 'DÉBITO' | 'CRÉDITO', installments: number, interestRate: number}>({ brand: 'VISA', type: 'CRÉDITO', installments: 1, interestRate: 0 });
+  const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
+  const [planBrandFilter, setPlanBrandFilter] = useState<'ALL' | 'VISA' | 'MASTERCARD' | 'AMERICA' | 'ELO' | 'NONE'>('NONE');
+  const [planTypeFilter, setPlanTypeFilter] = useState<'ALL' | 'DÉBITO' | 'CRÉDITO'>('ALL');
+  const [planInstallmentFilter, setPlanInstallmentFilter] = useState<string>('');
+  const [lastUsedBrand, setLastUsedBrand] = useState<'VISA' | 'MASTERCARD' | 'AMERICA' | 'ELO'>('VISA');
+  const [lastUsedType, setLastUsedType] = useState<'DÉBITO' | 'CRÉDITO'>('CRÉDITO');
+
   // Keep state in sync with props
   useEffect(() => {
     if (appSettings && Object.keys(appSettings).length > 0) {
@@ -8129,6 +8142,98 @@ function SettingsManager({
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleSaveInstallmentPlan = async () => {
+    if (currentPlan.installments <= 0) {
+      toast.error('Número de parcelas deve ser maior que zero.');
+      return;
+    }
+    let updatedPlans = [...(localApp.installmentPlans || [])];
+    if (editingPlanId) {
+      updatedPlans = updatedPlans.map(p => p.id === editingPlanId ? { ...p, ...currentPlan } as any : p);
+    } else {
+      updatedPlans.push({ ...currentPlan, id: Date.now().toString() } as any);
+    }
+    
+    try {
+      setIsSubmitting(true);
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'general'), { installmentPlans: updatedPlans }, { merge: true });
+      setLocalApp({ ...localApp, installmentPlans: updatedPlans });
+      setLastUsedBrand(currentPlan.brand);
+      setLastUsedType(currentPlan.type);
+      toast.success(editingPlanId ? 'Plano atualizado!' : 'Novo plano adicionado!');
+      setIsInstallmentDialogOpen(false);
+      setCurrentPlan({ brand: currentPlan.brand, type: currentPlan.type, installments: 1, interestRate: 0 });
+      setEditingPlanId(null);
+    } catch (error) {
+      toast.error('Erro ao salvar plano de parcelamento.');
+      handleFirestoreError(error, OperationType.UPDATE, `companies/${companyId}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteInstallmentPlan = async (id: string) => {
+    const updatedPlans = (localApp.installmentPlans || []).filter(p => p.id !== id);
+    try {
+      setIsSubmitting(true);
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'general'), { installmentPlans: updatedPlans }, { merge: true });
+      setLocalApp({ ...localApp, installmentPlans: updatedPlans });
+      toast.success('Plano removido!');
+    } catch (error) {
+      toast.error('Erro ao remover plano de parcelamento.');
+      handleFirestoreError(error, OperationType.UPDATE, `companies/${companyId}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const generateInstallmentPlansPDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 20;
+    
+    // Filtered data for PDF
+    const filtered = (localApp.installmentPlans || [])
+      .filter(p => {
+        const matchBrand = planBrandFilter === 'ALL' ? true : (planBrandFilter === 'NONE' ? false : p.brand === planBrandFilter);
+        const matchType = planTypeFilter === 'ALL' ? true : p.type === planTypeFilter;
+        const matchInstallment = planInstallmentFilter === '' ? true : p.installments === Number(planInstallmentFilter);
+        return matchBrand && matchType && matchInstallment;
+      })
+      .sort((a, b) => {
+        if (a.brand !== b.brand) return (a.brand || '').localeCompare(b.brand || '');
+        if (a.type !== b.type) return (a.type || '').localeCompare(b.type || '');
+        return a.installments - b.installments;
+      });
+
+    if (filtered.length === 0) {
+      toast.error('Nenhum dado filtrado para gerar o PDF.');
+      return;
+    }
+
+    doc.setFontSize(18);
+    doc.setTextColor(59, 130, 246);
+    doc.text('TABELA DE TAXAS E JUROS', pageWidth / 2, 20, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    const filterInfo = `Filtros: ${planBrandFilter === 'ALL' ? 'Todas' : (planBrandFilter === 'NONE' ? 'Nenhuma' : planBrandFilter)} | Tipo: ${planTypeFilter}${planInstallmentFilter ? ` | Parcela: ${planInstallmentFilter}` : ''}`;
+    doc.text(filterInfo, pageWidth / 2, 28, { align: 'center' });
+    doc.text(`Empresa: ${localApp.companyName || 'Sua Empresa'}`, pageWidth / 2, 34, { align: 'center' });
+    
+    autoTable(doc, {
+      startY: 40,
+      head: [['BANDEIRA', 'TIPO', 'PARCELAS', 'TAXA DE JUROS (%)']],
+      body: filtered.map(p => [p.brand, p.type, `${p.installments}x`, `${p.interestRate.toFixed(2)}%`]),
+      headStyles: { fillColor: [59, 130, 246], textColor: [255, 255, 255], fontStyle: 'bold' },
+      styles: { halign: 'center', fontSize: 9 },
+      columnStyles: { 0: { halign: 'left' } }
+    });
+
+    const fileName = `taxas_juros_${format(new Date(), 'dd_MM_yyyy')}.pdf`;
+    doc.save(fileName);
   };
 
   const handleUpdateProfile = async () => {
@@ -8617,6 +8722,120 @@ function SettingsManager({
               <CardHeader className="flex flex-row items-center justify-between">
                 <div className="space-y-1">
                   <CardTitle className="flex items-center gap-2">
+                    <CreditCard className="text-[#3b82f6]" size={20} />
+                    Planos de Parcelamento (Com Juros)
+                  </CardTitle>
+                  <CardDescription className="text-[#71717a]">
+                    Cadastre taxas de juros para parcelamento no cartão.
+                  </CardDescription>
+                </div>
+                <Button size="sm" className="bg-[#3b82f6] hover:bg-[#2563eb] text-white h-8" onClick={() => {
+                  setCurrentPlan({ brand: lastUsedBrand, installments: 1, interestRate: 0 });
+                  setEditingPlanId(null);
+                  setIsInstallmentDialogOpen(true);
+                }}>
+                  <Plus size={14} />
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <div className="mb-4 flex flex-col sm:flex-row gap-2">
+                  <Select value={planBrandFilter} onValueChange={(val: any) => setPlanBrandFilter(val)}>
+                    <SelectTrigger className="w-fit min-w-[110px] bg-[#0f1115] border-[#2d3139] text-white h-10 px-3">
+                      <SelectValue placeholder="Bandeira" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="NONE">Nenhum</SelectItem>
+                      <SelectItem value="ALL">Todas</SelectItem>
+                      <SelectItem value="VISA">VISA</SelectItem>
+                      <SelectItem value="MASTERCARD">MASTERCARD</SelectItem>
+                      <SelectItem value="AMERICA">AMEX</SelectItem>
+                      <SelectItem value="ELO">ELO</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={planTypeFilter} onValueChange={(val: any) => setPlanTypeFilter(val)}>
+                    <SelectTrigger className="flex-1 bg-[#0f1115] border-[#2d3139] text-white h-10">
+                      <SelectValue placeholder="Tipo" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="ALL">Todos Tipos</SelectItem>
+                      <SelectItem value="DÉBITO">DÉBITO</SelectItem>
+                      <SelectItem value="CRÉDITO">CRÉDITO</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Input 
+                    type="number" 
+                    placeholder="Parcelas" 
+                    value={planInstallmentFilter}
+                    onChange={e => setPlanInstallmentFilter(e.target.value)}
+                    className="w-full sm:w-24 bg-[#0f1115] border-[#2d3139] text-white h-10"
+                  />
+
+                  <Button 
+                    variant="outline" 
+                    onClick={generateInstallmentPlansPDF}
+                    className="bg-[#0f1115] border-[#2d3139] hover:bg-[#1a1d23] hover:text-[#3b82f6] text-white h-10 flex gap-2 items-center"
+                  >
+                    <Download className="h-4 w-4" />
+                    PDF
+                  </Button>
+                </div>
+
+                    <div className="space-y-3">
+                      {(localApp.installmentPlans || []).filter(p => {
+                        const matchBrand = planBrandFilter === 'ALL' ? true : (planBrandFilter === 'NONE' ? false : p.brand === planBrandFilter);
+                        const matchType = planTypeFilter === 'ALL' ? true : p.type === planTypeFilter;
+                        const matchInstallment = planInstallmentFilter === '' ? true : p.installments === Number(planInstallmentFilter);
+                        return matchBrand && matchType && matchInstallment;
+                      }).length === 0 ? (
+                        <div className="p-4 text-center text-[#71717a] text-[10px] uppercase font-bold bg-[#0f1115] rounded-xl border border-dashed border-[#2d3139]">
+                          {planBrandFilter === 'NONE' ? 'Selecione uma bandeira para ver os planos' : 'Nenhum plano encontrado com os filtros selecionados'}
+                        </div>
+                      ) : (
+                        (localApp.installmentPlans || [])
+                          .filter(p => {
+                            const matchBrand = planBrandFilter === 'ALL' ? true : (planBrandFilter === 'NONE' ? false : p.brand === planBrandFilter);
+                            const matchType = planTypeFilter === 'ALL' ? true : p.type === planTypeFilter;
+                            const matchInstallment = planInstallmentFilter === '' ? true : p.installments === Number(planInstallmentFilter);
+                            return matchBrand && matchType && matchInstallment;
+                          })
+                          .sort((a, b) => {
+                            if (a.brand !== b.brand) return (a.brand || '').localeCompare(b.brand || '');
+                            if (a.type !== b.type) return (a.type || '').localeCompare(b.type || '');
+                            return a.installments - b.installments;
+                          })
+                          .map(plan => (
+                          <div key={plan.id} className="flex items-center justify-between p-4 bg-[#0f1115] border border-[#2d3139] rounded-xl group transition-all hover:border-[#3b82f6]/50">
+                            <div className="flex items-center gap-4">
+                              <div className="h-10 w-10 rounded-full bg-[#3b82f6]/10 flex items-center justify-center text-[#3b82f6] font-bold text-[10px]">
+                                {plan.brand ? plan.brand[0] : 'P'}
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="text-white font-bold text-sm tracking-tight uppercase">{plan.brand} - {plan.type} - {plan.installments}x</span>
+                                <span className="text-[#a0a0a0] text-[10px] font-medium uppercase tracking-widest">Taxa: {plan.interestRate}%</span>
+                              </div>
+                            </div>
+                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Button size="icon" variant="ghost" className="h-7 w-7 text-blue-400" onClick={() => {
+                                setCurrentPlan(plan);
+                                setEditingPlanId(plan.id);
+                                setIsInstallmentDialogOpen(true);
+                              }}><Settings size={12} /></Button>
+                              <Button size="icon" variant="ghost" className="h-7 w-7 text-red-400" onClick={() => handleDeleteInstallmentPlan(plan.id)}><Trash2 size={12} /></Button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+              </CardContent>
+            </Card>
+
+            <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div className="space-y-1">
+                  <CardTitle className="flex items-center gap-2">
                     <DollarSign className="text-[#3b82f6]" size={20} />
                     Contas PIX
                   </CardTitle>
@@ -8732,6 +8951,73 @@ function SettingsManager({
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsPixDialogOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
               <Button onClick={handleSavePixAccount} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Salvar</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={isInstallmentDialogOpen} onOpenChange={setIsInstallmentDialogOpen}>
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+            <DialogHeader>
+              <DialogTitle>{editingPlanId ? 'Editar Plano' : 'Novo Plano de Parcelamento'}</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Bandeira do Cartão</Label>
+                  <Select value={currentPlan.brand} onValueChange={(val: any) => setCurrentPlan({...currentPlan, brand: val})}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                      <SelectValue placeholder="Bandeira" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="VISA">VISA</SelectItem>
+                      <SelectItem value="MASTERCARD">MASTERCARD</SelectItem>
+                      <SelectItem value="AMERICA">AMEX</SelectItem>
+                      <SelectItem value="ELO">ELO</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Tipo</Label>
+                  <Select value={currentPlan.type} onValueChange={(val: any) => setCurrentPlan({...currentPlan, type: val, installments: val === 'DÉBITO' ? 1 : currentPlan.installments})}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                      <SelectValue placeholder="Tipo" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="DÉBITO">DÉBITO</SelectItem>
+                      <SelectItem value="CRÉDITO">CRÉDITO</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Quantidade de Parcelas</Label>
+                  <Input 
+                    type="number"
+                    disabled={currentPlan.type === 'DÉBITO'}
+                    value={currentPlan.installments || ''} 
+                    onChange={e => setCurrentPlan({...currentPlan, installments: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                    min={1}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Taxa de Juros (%)</Label>
+                  <Input 
+                    type="number"
+                    step="0.01"
+                    value={currentPlan.interestRate === 0 ? '' : currentPlan.interestRate} 
+                    onChange={e => setCurrentPlan({...currentPlan, interestRate: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsInstallmentDialogOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
+              <Button onClick={handleSaveInstallmentPlan} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Salvar Plano</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -9535,10 +9821,12 @@ function VisitsManager({
     expectedDate: new Date(),
     expectedTime: '',
     technicianName: user.displayName || '',
+    technicianId: user.uid || '',
     responsibleName: '',
     serviceAddress: '',
     totalValue: 0,
-    parts: []
+    parts: [],
+    clientId: ''
   });
 
   // Update technician name when user changes
@@ -10082,7 +10370,7 @@ function VisitsManager({
               <div className="grid gap-4 py-4">
                 <div className="space-y-2">
                   <Label className="text-[#a0a0a0]">Selecionar Cliente Existente (Opcional)</Label>
-                  <Select onValueChange={(clientId) => {
+                  <Select value={newVisit.clientId || ''} onValueChange={(clientId) => {
                     const client = clients.find(c => c.id === clientId);
                     if (client) {
                       setNewVisit({
@@ -10096,9 +10384,7 @@ function VisitsManager({
                     }
                   }}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue placeholder="Escolha um cliente...">
-                        {clients.find(c => c.name === newVisit.clientName)?.name || newVisit.clientName || null}
-                      </SelectValue>
+                      <SelectValue placeholder="Escolha um cliente..." />
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       <div className="p-2 sticky top-0 bg-[#1a1d23] z-10 border-b border-[#2d3139]">
@@ -10258,10 +10544,10 @@ function VisitsManager({
                             type="number"
                             className="col-span-2 bg-[#0f1115] border-[#2d3139] h-8 text-xs" 
                             placeholder="Qtd"
-                            value={p.quantity} 
+                            value={p.quantity === 0 ? '' : p.quantity} 
                             onChange={e => {
                               const next = [...(newVisit.parts || [])];
-                              next[i].quantity = Number(e.target.value);
+                              next[i].quantity = e.target.value === '' ? 0 : Number(e.target.value);
                               setNewVisit({...newVisit, parts: next});
                             }}
                           />
@@ -10269,10 +10555,10 @@ function VisitsManager({
                             type="number"
                             className="col-span-3 bg-[#0f1115] border-[#2d3139] h-8 text-xs" 
                             placeholder="Preço"
-                            value={p.price} 
+                            value={p.price === 0 ? '' : p.price} 
                             onChange={e => {
                               const next = [...(newVisit.parts || [])];
-                              next[i].price = Number(e.target.value);
+                              next[i].price = e.target.value === '' ? 0 : Number(e.target.value);
                               setNewVisit({...newVisit, parts: next});
                             }}
                           />
@@ -10384,10 +10670,10 @@ function VisitsManager({
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-col gap-1.5">
-                      <Select 
-                        value={visit.status} 
-                        onValueChange={(val: any) => updateStatus(visit.id, val)}
-                      >
+                    <Select 
+                      value={visit.status || ''} 
+                      onValueChange={(val: any) => updateStatus(visit.id, val)}
+                    >
                         <SelectTrigger className="h-6 w-[120px] text-[9px] bg-[#0f1115] border-[#2d3139] text-white p-1">
                           <SelectValue />
                         </SelectTrigger>
@@ -10592,7 +10878,7 @@ function VisitsManager({
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Tipo de Serviço</Label>
-                    <Select value={editingVisit.type} onValueChange={(val: any) => setEditingVisit({...editingVisit, type: val})}>
+                    <Select value={editingVisit.type || ''} onValueChange={(val: any) => setEditingVisit({...editingVisit, type: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
                         <SelectValue>
                           {editingVisit.type || "Selecione o tipo"}
@@ -10693,10 +10979,10 @@ function VisitsManager({
                             type="number"
                             className="col-span-2 bg-[#0f1115] border-[#2d3139] h-8 text-xs" 
                             placeholder="Qtd"
-                            value={p.quantity} 
+                            value={p.quantity === 0 ? '' : p.quantity} 
                             onChange={e => {
                               const next = [...(editingVisit.parts || [])];
-                              next[i].quantity = Number(e.target.value);
+                              next[i].quantity = e.target.value === '' ? 0 : Number(e.target.value);
                               setEditingVisit({...editingVisit, parts: next});
                             }}
                           />
@@ -10704,10 +10990,10 @@ function VisitsManager({
                             type="number"
                             className="col-span-3 bg-[#0f1115] border-[#2d3139] h-8 text-xs" 
                             placeholder="Preço"
-                            value={p.price} 
+                            value={p.price === 0 ? '' : p.price} 
                             onChange={e => {
                               const next = [...(editingVisit.parts || [])];
-                              next[i].price = Number(e.target.value);
+                              next[i].price = e.target.value === '' ? 0 : Number(e.target.value);
                               setEditingVisit({...editingVisit, parts: next});
                             }}
                           />
@@ -10728,7 +11014,7 @@ function VisitsManager({
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Status</Label>
-                    <Select value={editingVisit.status} onValueChange={(val: any) => setEditingVisit({...editingVisit, status: val})}>
+                    <Select value={editingVisit.status || ''} onValueChange={(val: any) => setEditingVisit({...editingVisit, status: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
                         <SelectValue>
                           {editingVisit.status || "Selecione o status"}
@@ -10966,7 +11252,12 @@ function FinancialManager({
     type: 'Receita',
     date: new Date(),
     value: 0,
-    serviceType: 'Serviço Normal'
+    serviceType: 'Serviço Normal',
+    category: '',
+    paymentMethod: 'PIX',
+    pixAccountId: '',
+    clientId: '',
+    description: ''
   });
 
   const filteredClientsForSelect = useMemo(() => {
@@ -11607,7 +11898,7 @@ function FinancialManager({
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Tipo</Label>
-                    <Select value={editingRecord.type} onValueChange={(val: any) => setEditingRecord({...editingRecord, type: val})}>
+                    <Select value={editingRecord.type || ''} onValueChange={(val: any) => setEditingRecord({...editingRecord, type: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
                         <SelectValue />
                       </SelectTrigger>
@@ -11633,7 +11924,7 @@ function FinancialManager({
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Forma de Pagto</Label>
-                    <Select value={editingRecord.paymentMethod} onValueChange={(val: any) => setEditingRecord({...editingRecord, paymentMethod: val})}>
+                    <Select value={editingRecord.paymentMethod || ''} onValueChange={(val: any) => setEditingRecord({...editingRecord, paymentMethod: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
                         <SelectValue placeholder="Selecione" />
                       </SelectTrigger>
@@ -11647,7 +11938,7 @@ function FinancialManager({
                   {editingRecord.paymentMethod === 'PIX' && (
                     <div className="space-y-2">
                       <Label className="text-[#a0a0a0]">Conta PIX</Label>
-                      <Select value={editingRecord.pixAccountId} onValueChange={(val) => setEditingRecord({...editingRecord, pixAccountId: val})}>
+                      <Select value={editingRecord.pixAccountId || ''} onValueChange={(val) => setEditingRecord({...editingRecord, pixAccountId: val})}>
                         <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
                           <SelectValue placeholder="Conta" />
                         </SelectTrigger>
@@ -11790,6 +12081,9 @@ function ServiceOrdersManager({
     totalValue: 0,
     startDateTime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
     endDateTime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+    clientId: '',
+    technicianId: user.uid || '',
+    pixAccountId: ''
   });
 
   const filteredClients = useMemo(() => {
@@ -12090,7 +12384,7 @@ function ServiceOrdersManager({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Cliente</Label>
-                  <Select onValueChange={(val) => {
+                  <Select value={newOS.clientId || ''} onValueChange={(val) => {
                     const c = clients.find(cl => cl.id === val);
                     if (c) setNewOS({ 
                       ...newOS, 
@@ -12102,9 +12396,7 @@ function ServiceOrdersManager({
                     });
                   }}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
-                      <SelectValue>
-                        {clients.find(c => c.id === newOS.clientId)?.name || "Selecione um cliente"}
-                      </SelectValue>
+                      <SelectValue placeholder="Selecione um cliente" />
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       <div className="p-2 border-b border-[#2d3139]">
@@ -12123,14 +12415,12 @@ function ServiceOrdersManager({
                 </div>
                 <div className="space-y-2">
                   <Label>Técnico Responsável</Label>
-                  <Select onValueChange={(val) => {
+                  <Select value={newOS.technicianId || ''} onValueChange={(val) => {
                     const u = users.find(usr => usr.uid === val);
                     if (u) setNewOS({ ...newOS, technicianId: u.uid, technicianName: u.displayName || u.email });
                   }}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
-                      <SelectValue>
-                        {users.find(u => u.uid === newOS.technicianId)?.displayName || users.find(u => u.uid === newOS.technicianId)?.email || "Selecione o técnico"}
-                      </SelectValue>
+                      <SelectValue placeholder="Selecione o técnico" />
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       {users.map(u => <SelectItem key={u.uid} value={u.uid}>{u.displayName || u.email}</SelectItem>)}
@@ -12245,10 +12535,10 @@ function ServiceOrdersManager({
                       type="number"
                       className="col-span-2 bg-[#0f1115] border-[#2d3139] h-8 text-xs" 
                       placeholder="Qtd"
-                      value={p.quantity} 
+                      value={p.quantity === 0 ? '' : p.quantity} 
                       onChange={e => {
                         const next = [...(newOS.parts || [])];
-                        next[i].quantity = Number(e.target.value);
+                        next[i].quantity = e.target.value === '' ? 0 : Number(e.target.value);
                         setNewOS({...newOS, parts: next});
                       }}
                     />
@@ -12256,10 +12546,10 @@ function ServiceOrdersManager({
                       type="number"
                       className="col-span-3 bg-[#0f1115] border-[#2d3139] h-8 text-xs" 
                       placeholder="Preço"
-                      value={p.price} 
+                      value={p.price === 0 ? '' : p.price} 
                       onChange={e => {
                         const next = [...(newOS.parts || [])];
-                        next[i].price = Number(e.target.value);
+                        next[i].price = e.target.value === '' ? 0 : Number(e.target.value);
                         setNewOS({...newOS, parts: next});
                       }}
                     />
@@ -12332,8 +12622,8 @@ function ServiceOrdersManager({
                     <Input 
                       type="number" 
                       className="bg-[#0f1115] border-[#2d3139]" 
-                      value={newOS.laborValue} 
-                      onChange={e => setNewOS({...newOS, laborValue: Number(e.target.value)})}
+                      value={newOS.laborValue === 0 ? '' : newOS.laborValue} 
+                      onChange={e => setNewOS({...newOS, laborValue: e.target.value === '' ? 0 : Number(e.target.value)})}
                     />
                   </div>
                 </div>
@@ -12482,7 +12772,7 @@ function ServiceOrdersManager({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Status</Label>
-                    <Select value={editingOS.status} onValueChange={(val: any) => setEditingOS({...editingOS, status: val})}>
+                    <Select value={editingOS.status || ''} onValueChange={(val: any) => setEditingOS({...editingOS, status: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
                         <SelectValue>
                           {editingOS.status || "Selecione o status"}
@@ -12498,7 +12788,7 @@ function ServiceOrdersManager({
                   </div>
                   <div className="space-y-2">
                     <Label>Técnico Responsável</Label>
-                    <Select value={editingOS.technicianId} onValueChange={(val) => {
+                    <Select value={editingOS.technicianId || ''} onValueChange={(val) => {
                       const u = users.find(usr => usr.uid === val);
                       if (u) setEditingOS({ ...editingOS, technicianId: u.uid, technicianName: u.displayName || u.email });
                     }}>
@@ -12525,7 +12815,7 @@ function ServiceOrdersManager({
                   </div>
                   <div className="space-y-2">
                     <Label>Tipo de Serviço</Label>
-                    <Select value={editingOS.serviceType} onValueChange={(val: any) => setEditingOS({...editingOS, serviceType: val})}>
+                    <Select value={editingOS.serviceType || ''} onValueChange={(val: any) => setEditingOS({...editingOS, serviceType: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
                         <SelectValue>
                           {editingOS.serviceType || "Selecione o tipo"}
@@ -12601,14 +12891,14 @@ function ServiceOrdersManager({
                           setEditingOS({...editingOS, parts: next});
                         }} />
                       </div>
-                      <Input type="number" className="col-span-2 bg-[#0f1115] border-[#2d3139] h-8 text-xs" value={p.quantity} onChange={e => {
+                      <Input type="number" className="col-span-2 bg-[#0f1115] border-[#2d3139] h-8 text-xs" value={p.quantity === 0 ? '' : p.quantity} onChange={e => {
                         const next = [...(editingOS.parts || [])];
-                        next[i].quantity = Number(e.target.value);
+                        next[i].quantity = e.target.value === '' ? 0 : Number(e.target.value);
                         setEditingOS({...editingOS, parts: next});
                       }} />
-                      <Input type="number" className="col-span-3 bg-[#0f1115] border-[#2d3139] h-8 text-xs" value={p.price} onChange={e => {
+                      <Input type="number" className="col-span-3 bg-[#0f1115] border-[#2d3139] h-8 text-xs" value={p.price === 0 ? '' : p.price} onChange={e => {
                         const next = [...(editingOS.parts || [])];
-                        next[i].price = Number(e.target.value);
+                        next[i].price = e.target.value === '' ? 0 : Number(e.target.value);
                         setEditingOS({...editingOS, parts: next});
                       }} />
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-[#ef4444]" onClick={() => setEditingOS({...editingOS, parts: editingOS.parts?.filter((_, idx) => idx !== i)})}><X size={14} /></Button>
@@ -12646,7 +12936,7 @@ function ServiceOrdersManager({
                     </div>
                     <div className="space-y-2">
                       <Label>Mão de Obra (R$)</Label>
-                      <Input type="number" className="bg-[#0f1115] border-[#2d3139]" value={editingOS.laborValue} onChange={e => setEditingOS({...editingOS, laborValue: Number(e.target.value)})} />
+                      <Input type="number" className="bg-[#0f1115] border-[#2d3139]" value={editingOS.laborValue === 0 ? '' : editingOS.laborValue} onChange={e => setEditingOS({...editingOS, laborValue: e.target.value === '' ? 0 : Number(e.target.value)})} />
                     </div>
                   </div>
                 </div>
@@ -12858,7 +13148,11 @@ function BudgetsManager({
     items: [{ description: '', quantity: 1, price: 0 }],
     status: 'Pendente',
     observations: '',
-    paymentMethod: 'Dinheiro'
+    paymentMethod: 'Dinheiro',
+    clientId: '',
+    selectedCardBrand: 'VISA',
+    selectedInstallmentPlanId: '',
+    pixAccountId: ''
   });
   
   const [profitMargin, setProfitMargin] = useState<number>(0);
@@ -13003,27 +13297,20 @@ function BudgetsManager({
     }
   };
 
-  const handleApproveBudget = async (budget: Budget) => {
+  const handleUpdateStatus = async (id: string, status: any) => {
     try {
-      await updateDoc(doc(db, 'budgets', budget.id), { status: 'Aprovado' });
-      
-      // Create Financial Record
-      await addDoc(collection(db, 'financial'), {
-        type: 'Receita',
-        category: 'Orçamento',
-        description: `Orçamento Aprovado ${formatRecordNumber(budget.number, budget.createdAt)} - ${budget.clientName}`,
-        value: budget.total,
-        date: Timestamp.now(),
-        serviceType: 'Serviço Normal',
-        clientId: budget.clientId || null,
-        companyId,
-        createdAt: Timestamp.now()
-      });
-      
-      toast.success('Orçamento aprovado e financeiro atualizado!');
+      await updateDoc(doc(db, 'budgets', id), { status });
+      toast.success('Status atualizado!');
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'budgets');
     }
+  };
+
+  const calculateInstallmentValue = (total: number, planId: string) => {
+    const plan = appSettings.installmentPlans?.find(p => p.id === planId);
+    if (!plan) return total;
+    const interest = plan.interestRate / 100;
+    return (total * (1 + interest)) / plan.installments;
   };
 
   const generateBudgetPDF = (budget: Budget) => {
@@ -13083,12 +13370,22 @@ function BudgetsManager({
       finalY += 10;
       doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
-      doc.text(`Forma de Pagamento: ${budget.paymentMethod}`, 20, finalY);
+      doc.text(`Forma de Pagamento: ${budget.paymentMethod}${budget.selectedCardBrand ? ` (${budget.selectedCardBrand})` : ''}`, 20, finalY);
       
       if (budget.paymentMethod === 'Cartão' && budget.installments) {
         doc.setFont('helvetica', 'normal');
         doc.text(`Pagamento em até ${budget.installments}x sem juros no cartão`, 20, finalY + 7);
         finalY += 12;
+      } else if (budget.paymentMethod === 'Cartão com Juros' && budget.selectedInstallmentPlanId) {
+        const plan = appSettings.installmentPlans?.find(p => p.id === budget.selectedInstallmentPlanId);
+        if (plan) {
+          doc.setFont('helvetica', 'normal');
+          const value = calculateInstallmentValue(budget.total || 0, plan.id);
+          const totalFinanced = value * plan.installments;
+          doc.text(`Pagamento em ${plan.installments}x de R$ ${value.toFixed(2)} (${plan.interestRate}% juros)`, 20, finalY + 7);
+          doc.text(`Total Financiado: R$ ${totalFinanced.toFixed(2)}`, 20, finalY + 14);
+          finalY += 19;
+        }
       } else if (budget.paymentMethod === 'PIX' && budget.pixAccountId) {
         const selectedPix = pixSettings.accounts.find(a => a.id === budget.pixAccountId);
         if (selectedPix) {
@@ -13231,9 +13528,7 @@ function BudgetsManager({
 
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[100px]">
-                <SelectValue>
-                  {statusFilter === 'Todas' ? "Status: Todos" : statusFilter}
-                </SelectValue>
+                <SelectValue />
               </SelectTrigger>
               <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                 <SelectItem value="Todas">Status: Todos</SelectItem>
@@ -13272,7 +13567,7 @@ function BudgetsManager({
               <div className="grid gap-4 py-4">
                 <div className="space-y-2">
                   <Label className="text-[#a0a0a0]">Selecionar Cliente Existente (Opcional)</Label>
-                  <Select onValueChange={(clientId) => {
+                  <Select value={newBudget.clientId || ''} onValueChange={(clientId) => {
                     const client = clients.find(c => c.id === clientId);
                     if (client) {
                       setNewBudget({
@@ -13286,9 +13581,7 @@ function BudgetsManager({
                     }
                   }}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue placeholder="Escolha um cliente...">
-                        {clients.find(c => c.name === newBudget.clientName)?.name || newBudget.clientName || null}
-                      </SelectValue>
+                      <SelectValue placeholder="Escolha um cliente..." />
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       <div className="p-2 sticky top-0 bg-[#1a1d23] z-10 border-b border-[#2d3139]">
@@ -13327,44 +13620,206 @@ function BudgetsManager({
                   <Input value={newBudget.address || ''} onChange={e => setNewBudget({...newBudget, address: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
                 
-                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Forma de Pagamento</Label>
-                    <Select value={newBudget.paymentMethod || 'Dinheiro'} onValueChange={(val: any) => setNewBudget({...newBudget, paymentMethod: val})}>
-                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                        <SelectValue placeholder="Selecione..." />
-                      </SelectTrigger>
-                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                        <SelectItem value="Dinheiro">Dinheiro</SelectItem>
-                        <SelectItem value="Cartão">Cartão</SelectItem>
-                        <SelectItem value="PIX">PIX</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <div className="flex gap-1">
+                      {['Dinheiro', 'Cartão', 'PIX'].map((method) => (
+                        <Button
+                          key={method}
+                          type="button"
+                          variant={newBudget.paymentMethod === method ? 'default' : 'outline'}
+                          size="sm"
+                          className={cn(
+                            "flex-1 h-9 text-[10px] font-bold uppercase",
+                            newBudget.paymentMethod === method ? "bg-[#3b82f6] text-white" : "border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]"
+                          )}
+                          onClick={() => {
+                            setNewBudget({
+                              ...newBudget, 
+                              paymentMethod: method as any,
+                              interestType: 'none',
+                              selectedCardBrand: undefined,
+                              selectedInstallmentPlanId: undefined,
+                              installments: 1,
+                              cashAcceptancePercent: method === 'Dinheiro' ? 50 : undefined,
+                              cashDeliveryPercent: method === 'Dinheiro' ? 50 : undefined
+                            });
+                          }}
+                        >
+                          {method}
+                        </Button>
+                      ))}
+                    </div>
                   </div>
                   {newBudget.paymentMethod === 'Cartão' && (
                     <div className="space-y-2">
-                      <Label className="text-[#a0a0a0]">Parcelas sem juros</Label>
-                      <Input 
-                        type="number" 
-                        value={newBudget.installments || 1} 
-                        onChange={e => setNewBudget({...newBudget, installments: Number(e.target.value)})} 
-                        className="bg-[#0f1115] border-[#2d3139] text-white" 
-                        min={1}
-                      />
+                      <Label className="text-[#a0a0a0]">Tipo de Parcelamento</Label>
+                      <div className="flex gap-1">
+                        <Button
+                          type="button"
+                          variant={newBudget.interestType === 'none' ? 'default' : 'outline'}
+                          size="sm"
+                          className={cn(
+                            "flex-1 h-9 text-[10px] font-bold uppercase",
+                            newBudget.interestType === 'none' ? "bg-[#3b82f6] text-white" : "border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]"
+                          )}
+                          onClick={() => setNewBudget({...newBudget, interestType: 'none', installments: 1})}
+                        >
+                          Débito
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={newBudget.interestType === 'with_interest' ? 'default' : 'outline'}
+                          size="sm"
+                          className={cn(
+                            "flex-1 h-9 text-[10px] font-bold uppercase",
+                            newBudget.interestType === 'with_interest' ? "bg-[#3b82f6] text-white" : "border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]"
+                          )}
+                          onClick={() => setNewBudget({...newBudget, interestType: 'with_interest', installments: 1})}
+                        >
+                          Crédito
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>
+
+                  {newBudget.paymentMethod === 'Cartão' && (
+                    <div className="grid grid-cols-2 gap-4">
+                      {newBudget.interestType === 'none' ? (
+                        <div className="space-y-2 col-span-2">
+                          <Label className="text-[#a0a0a0]">Parcelas sem juros</Label>
+                          <Input 
+                            type="number" 
+                            value={newBudget.installments || ''} 
+                            onChange={e => setNewBudget({...newBudget, installments: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                            className="bg-[#0f1115] border-[#2d3139] text-white" 
+                            min={1}
+                          />
+                        </div>
+                      ) : (
+                        <>
+                          <div className="space-y-2">
+                            <Label className="text-[#a0a0a0]">Bandeira do Cartão</Label>
+                            <Select value={newBudget.selectedCardBrand} onValueChange={(val: any) => {
+                              setNewBudget({
+                                ...newBudget, 
+                                selectedCardBrand: val,
+                                selectedInstallmentPlanId: undefined,
+                                installments: 1,
+                                installmentValue: undefined
+                              });
+                            }}>
+                              <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                                <SelectValue placeholder="Selecione..." />
+                              </SelectTrigger>
+                              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                                <SelectItem value="VISA">VISA</SelectItem>
+                                <SelectItem value="MASTERCARD">MASTERCARD</SelectItem>
+                                <SelectItem value="AMERICA">AMEX</SelectItem>
+                                <SelectItem value="ELO">ELO</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label className="text-[#a0a0a0]">Plano de Parcelamento</Label>
+                            <Select value={newBudget.selectedInstallmentPlanId} onValueChange={(val) => {
+                              const plan = appSettings.installmentPlans?.find(p => p.id === val);
+                              const total = (newBudget.items || []).reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
+                              const instVal = calculateInstallmentValue(total, val);
+                              setNewBudget({
+                                ...newBudget, 
+                                selectedInstallmentPlanId: val, 
+                                installments: plan?.installments || 1,
+                                installmentValue: instVal
+                              });
+                            }} disabled={!newBudget.selectedCardBrand}>
+                              <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                                <SelectValue placeholder="Selecione..." />
+                              </SelectTrigger>
+                              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                                {appSettings.installmentPlans?.filter(p => p.brand === newBudget.selectedCardBrand).map(plan => (
+                                  <SelectItem key={plan.id} value={plan.id}>{plan.type} - {plan.installments}x ({plan.interestRate}% juros)</SelectItem>
+                                ))}
+                                {(!appSettings.installmentPlans || appSettings.installmentPlans.filter(p => p.brand === newBudget.selectedCardBrand).length === 0) && (
+                                  <SelectItem value="none" disabled>Nenhum plano cadastrado</SelectItem>
+                                )}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {newBudget.paymentMethod === 'Cartão' && newBudget.interestType === 'with_interest' && newBudget.installmentValue && (
+                    <div className="bg-[#3b82f6]/10 p-3 rounded-lg border border-[#3b82f6]/30">
+                      <p className="text-[10px] text-[#3b82f6] uppercase font-bold tracking-wider mb-1">Resumo das Parcelas</p>
+                      <p className="text-sm text-white font-bold">{newBudget.installments}x de R$ {newBudget.installmentValue.toFixed(2)}</p>
+                      <p className="text-[10px] text-[#a0a0a0] mt-1">Total financiado: R$ {(newBudget.installmentValue * (newBudget.installments || 1)).toFixed(2)}</p>
+                    </div>
+                  )}
+
+
+                {newBudget.paymentMethod === 'Dinheiro' && (
+                  <div className="grid grid-cols-2 gap-4 bg-[#0f1115] p-3 rounded-lg border border-[#2d3139]">
+                    <div className="space-y-2">
+                      <Label className="text-[#a0a0a0] text-xs">Aceite da Proposta (%)</Label>
+                      <div className="flex items-center gap-2">
+                        <Input 
+                          type="number" 
+                          value={newBudget.cashAcceptancePercent || ''} 
+                          onChange={e => {
+                            const val = e.target.value;
+                            const pct = val === '' ? 0 : Number(val);
+                            const total = (newBudget.items || []).reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
+                            setNewBudget({
+                              ...newBudget, 
+                              cashAcceptancePercent: pct,
+                              cashAcceptanceValue: (total * pct) / 100,
+                              cashDeliveryPercent: 100 - pct,
+                              cashDeliveryValue: (total * (100 - pct)) / 100
+                            });
+                          }} 
+                          className="bg-[#1a1d23] border-[#2d3139] h-8 text-white"
+                        />
+                        <span className="text-[10px] text-zinc-500">R$ {((newBudget.cashAcceptanceValue || 0)).toFixed(2)}</span>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[#a0a0a0] text-xs">Entrega do Serviço (%)</Label>
+                      <div className="flex items-center gap-2">
+                        <Input 
+                          type="number" 
+                          value={newBudget.cashDeliveryPercent || ''} 
+                          onChange={e => {
+                            const val = e.target.value;
+                            const pct = val === '' ? 0 : Number(val);
+                            const total = (newBudget.items || []).reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
+                            setNewBudget({
+                              ...newBudget, 
+                              cashDeliveryPercent: pct,
+                              cashDeliveryValue: (total * pct) / 100,
+                              cashAcceptancePercent: 100 - pct,
+                              cashAcceptanceValue: (total * (100 - pct)) / 100
+                            });
+                          }} 
+                          className="bg-[#1a1d23] border-[#2d3139] h-8 text-white"
+                        />
+                        <span className="text-[10px] text-zinc-500">R$ {((newBudget.cashDeliveryValue || 0)).toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {newBudget.paymentMethod === 'PIX' && (
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Conta PIX (Para exibir no orçamento)</Label>
                     <Select value={newBudget.pixAccountId} onValueChange={(val) => setNewBudget({...newBudget, pixAccountId: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                        <SelectValue placeholder="Selecione a conta PIX">
-                          {pixSettings.accounts?.find(a => a.id === newBudget.pixAccountId) 
-                            ? `${pixSettings.accounts.find(a => a.id === newBudget.pixAccountId)?.label} (${pixSettings.accounts.find(a => a.id === newBudget.pixAccountId)?.bank} - ${pixSettings.accounts.find(a => a.id === newBudget.pixAccountId)?.document})`
-                            : null}
-                        </SelectValue>
+                        <SelectValue placeholder="Selecione a conta PIX" />
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         {pixSettings.accounts?.map(acc => (
@@ -13514,8 +13969,8 @@ function BudgetsManager({
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">Ações</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">Orç / Data</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Cliente / Descrição</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Status / Total</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider text-right">Valor</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[150px]">Status</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider text-right w-[120px]">Total</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -13526,7 +13981,7 @@ function BudgetsManager({
                     "border-[#2d3139] transition-all h-[70px] cursor-pointer hover:bg-[#25282e]/30"
                   )}
                 >
-                  <TableCell className="w-[150px] p-2">
+                  <TableCell className="w-[120px] p-2">
                     <div className="flex items-center gap-1.5 flex-nowrap">
                       <Button variant="outline" size="icon" title="Editar" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={() => onEditClick('budget', budget)}>
                         <Pencil size={12} />
@@ -13540,14 +13995,9 @@ function BudgetsManager({
                       }}>
                         <Trash2 size={12} />
                       </Button>
-                      {budget.status === 'Pendente' && (
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-emerald-500 hover:bg-emerald-500/10" title="Aprovar" onClick={() => handleApproveBudget(budget)}>
-                          <CheckCircle2 size={12} />
-                        </Button>
-                      )}
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="w-[100px]">
                     <div className="flex flex-col">
                       <span className="text-[11px] font-mono text-[#3b82f6] font-bold">{formatRecordNumber(budget.number, budget.createdAt)}</span>
                       <span className="text-[10px] text-[#71717a]">{format(budget.createdAt instanceof Timestamp ? budget.createdAt.toDate() : new Date(budget.createdAt), 'dd/MM/yy')}</span>
@@ -13561,16 +14011,26 @@ function BudgetsManager({
                       </span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex flex-col items-end">
-                      <Badge variant="outline" className={cn(
-                        "text-[9px] uppercase mb-1 border-[#2d3139] px-1 h-3.5",
-                        budget.status === 'Aprovado' ? "text-emerald-500" : "text-blue-500"
+                  <TableCell className="w-[150px]">
+                    <Select value={budget.status || ''} onValueChange={(val) => handleUpdateStatus(budget.id, val)}>
+                      <SelectTrigger className={cn(
+                        "h-8 bg-[#0f1115] border-[#2d3139] text-[10px] uppercase font-bold",
+                        budget.status === 'Aprovado' ? "text-emerald-500" : 
+                        budget.status === 'Em Negociação' ? "text-yellow-500" : 
+                        budget.status === 'Rejeitado' ? "text-red-500" : "text-blue-500"
                       )}>
-                        {budget.status || 'Pendente'}
-                      </Badge>
-                      <span className="font-bold text-white text-[13px]">R$ {(budget.total || 0).toFixed(2)}</span>
-                    </div>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="Pendente">Pendente</SelectItem>
+                        <SelectItem value="Em Negociação">Em Negociação</SelectItem>
+                        <SelectItem value="Aprovado">Aprovado</SelectItem>
+                        <SelectItem value="Rejeitado">Rejeitado</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
+                  <TableCell className="text-right w-[120px]">
+                    <span className="font-bold text-white text-[13px]">R$ {(budget.total || 0).toFixed(2)}</span>
                   </TableCell>
                 </TableRow>
               ))}
@@ -13611,44 +14071,206 @@ function BudgetsManager({
                 <Input value={editingBudget.address || ''} onChange={e => setEditingBudget({...editingBudget, address: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label className="text-[#a0a0a0]">Forma de Pagamento</Label>
-                  <Select value={editingBudget.paymentMethod || 'Dinheiro'} onValueChange={(val: any) => setEditingBudget({...editingBudget, paymentMethod: val})}>
-                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue placeholder="Selecione..." />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      <SelectItem value="Dinheiro">Dinheiro</SelectItem>
-                      <SelectItem value="Cartão">Cartão</SelectItem>
-                      <SelectItem value="PIX">PIX</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <div className="flex gap-1">
+                    {['Dinheiro', 'Cartão', 'PIX'].map((method) => (
+                      <Button
+                        key={method}
+                        type="button"
+                        variant={editingBudget.paymentMethod === method ? 'default' : 'outline'}
+                        size="sm"
+                        className={cn(
+                          "flex-1 h-9 text-[10px] font-bold uppercase",
+                          editingBudget.paymentMethod === method ? "bg-[#3b82f6] text-white" : "border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]"
+                        )}
+                        onClick={() => {
+                          setEditingBudget({
+                            ...editingBudget, 
+                            paymentMethod: method as any,
+                            interestType: 'none',
+                            selectedCardBrand: undefined,
+                            selectedInstallmentPlanId: undefined,
+                            installments: 1,
+                            cashAcceptancePercent: method === 'Dinheiro' ? 50 : undefined,
+                            cashDeliveryPercent: method === 'Dinheiro' ? 50 : undefined
+                          });
+                        }}
+                      >
+                        {method}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
                 {editingBudget.paymentMethod === 'Cartão' && (
                   <div className="space-y-2">
-                    <Label className="text-[#a0a0a0]">Parcelas sem juros</Label>
-                    <Input 
-                      type="number" 
-                      value={editingBudget.installments || 1} 
-                      onChange={e => setEditingBudget({...editingBudget, installments: Number(e.target.value)})} 
-                      className="bg-[#0f1115] border-[#2d3139] text-white" 
-                      min={1}
-                    />
+                    <Label className="text-[#a0a0a0]">Tipo de Parcelamento</Label>
+                    <div className="flex gap-1">
+                      <Button
+                        type="button"
+                        variant={editingBudget.interestType === 'none' ? 'default' : 'outline'}
+                        size="sm"
+                        className={cn(
+                          "flex-1 h-9 text-[10px] font-bold uppercase",
+                          editingBudget.interestType === 'none' ? "bg-[#3b82f6] text-white" : "border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]"
+                        )}
+                        onClick={() => setEditingBudget({...editingBudget, interestType: 'none', installments: 1})}
+                      >
+                        Débito
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={editingBudget.interestType === 'with_interest' ? 'default' : 'outline'}
+                        size="sm"
+                        className={cn(
+                          "flex-1 h-9 text-[10px] font-bold uppercase",
+                          editingBudget.interestType === 'with_interest' ? "bg-[#3b82f6] text-white" : "border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]"
+                        )}
+                        onClick={() => setEditingBudget({...editingBudget, interestType: 'with_interest', installments: 1})}
+                      >
+                        Crédito
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>
 
+              {editingBudget.paymentMethod === 'Cartão' && (
+                <div className="grid grid-cols-2 gap-4">
+                  {editingBudget.interestType === 'none' ? (
+                    <div className="space-y-2 col-span-2">
+                      <Label className="text-[#a0a0a0]">Parcelas sem juros</Label>
+                      <Input 
+                        type="number" 
+                        value={editingBudget.installments || ''} 
+                        onChange={e => setEditingBudget({...editingBudget, installments: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                        className="bg-[#0f1115] border-[#2d3139] text-white" 
+                        min={1}
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="space-y-2">
+                        <Label className="text-[#a0a0a0]">Bandeira do Cartão</Label>
+                        <Select value={editingBudget.selectedCardBrand || ''} onValueChange={(val: any) => {
+                          setEditingBudget({
+                            ...editingBudget, 
+                            selectedCardBrand: val,
+                            selectedInstallmentPlanId: undefined,
+                            installments: 1,
+                            installmentValue: undefined
+                          });
+                        }}>
+                          <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                            <SelectValue placeholder="Selecione..." />
+                          </SelectTrigger>
+                          <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                            <SelectItem value="VISA">VISA</SelectItem>
+                            <SelectItem value="MASTERCARD">MASTERCARD</SelectItem>
+                            <SelectItem value="AMERICA">AMEX</SelectItem>
+                            <SelectItem value="ELO">ELO</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-[#a0a0a0]">Plano de Parcelamento</Label>
+                        <Select value={editingBudget.selectedInstallmentPlanId || ''} onValueChange={(val) => {
+                          const plan = appSettings.installmentPlans?.find(p => p.id === val);
+                          const total = (editingBudget.items || []).reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
+                          const instVal = calculateInstallmentValue(total, val);
+                          setEditingBudget({
+                            ...editingBudget, 
+                            selectedInstallmentPlanId: val, 
+                            installments: plan?.installments || 1,
+                            installmentValue: instVal
+                          });
+                        }} disabled={!editingBudget.selectedCardBrand}>
+                          <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                            <SelectValue placeholder="Selecione..." />
+                          </SelectTrigger>
+                          <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                            {appSettings.installmentPlans?.filter(p => p.brand === editingBudget.selectedCardBrand).map(plan => (
+                              <SelectItem key={plan.id} value={plan.id}>{plan.type} - {plan.installments}x ({plan.interestRate}% juros)</SelectItem>
+                            ))}
+                            {(!appSettings.installmentPlans || appSettings.installmentPlans.filter(p => p.brand === editingBudget.selectedCardBrand).length === 0) && (
+                              <SelectItem value="none" disabled>Nenhum plano cadastrado</SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {editingBudget.paymentMethod === 'Cartão' && editingBudget.interestType === 'with_interest' && editingBudget.installmentValue && (
+                <div className="bg-[#3b82f6]/10 p-3 rounded-lg border border-[#3b82f6]/30">
+                  <p className="text-[10px] text-[#3b82f6] uppercase font-bold tracking-wider mb-1">Resumo das Parcelas</p>
+                  <p className="text-sm text-white font-bold">{editingBudget.installments}x de R$ {editingBudget.installmentValue.toFixed(2)}</p>
+                  <p className="text-[10px] text-[#a0a0a0] mt-1">Total financiado: R$ {(editingBudget.installmentValue * (editingBudget.installments || 1)).toFixed(2)}</p>
+                </div>
+              )}
+
+
+              {editingBudget.paymentMethod === 'Dinheiro' && (
+                <div className="grid grid-cols-2 gap-4 bg-[#0f1115] p-3 rounded-lg border border-[#2d3139]">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0] text-xs">Aceite da Proposta (%)</Label>
+                    <div className="flex items-center gap-2">
+                      <Input 
+                        type="number" 
+                        value={editingBudget.cashAcceptancePercent || ''} 
+                        onChange={e => {
+                          const val = e.target.value;
+                          const pct = val === '' ? 0 : Number(val);
+                          const total = (editingBudget.items || []).reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
+                          setEditingBudget({
+                            ...editingBudget, 
+                            cashAcceptancePercent: pct,
+                            cashAcceptanceValue: (total * pct) / 100,
+                            cashDeliveryPercent: 100 - pct,
+                            cashDeliveryValue: (total * (100 - pct)) / 100
+                          });
+                        }} 
+                        className="bg-[#1a1d23] border-[#2d3139] h-8 text-white"
+                      />
+                      <span className="text-[10px] text-zinc-500">R$ {((editingBudget.cashAcceptanceValue || 0)).toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0] text-xs">Entrega do Serviço (%)</Label>
+                    <div className="flex items-center gap-2">
+                      <Input 
+                        type="number" 
+                        value={editingBudget.cashDeliveryPercent || ''} 
+                        onChange={e => {
+                          const val = e.target.value;
+                          const pct = val === '' ? 0 : Number(val);
+                          const total = (editingBudget.items || []).reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
+                          setEditingBudget({
+                            ...editingBudget, 
+                            cashDeliveryPercent: pct,
+                            cashDeliveryValue: (total * pct) / 100,
+                            cashAcceptancePercent: 100 - pct,
+                            cashAcceptanceValue: (total * (100 - pct)) / 100
+                          });
+                        }} 
+                        className="bg-[#1a1d23] border-[#2d3139] h-8 text-white"
+                      />
+                      <span className="text-[10px] text-zinc-500">R$ {((editingBudget.cashDeliveryValue || 0)).toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {editingBudget.paymentMethod === 'PIX' && (
                 <div className="space-y-2">
                   <Label className="text-[#a0a0a0]">Conta PIX (Para exibir no orçamento)</Label>
-                  <Select value={editingBudget.pixAccountId} onValueChange={(val) => setEditingBudget({...editingBudget, pixAccountId: val})}>
+                  <Select value={editingBudget.pixAccountId || ''} onValueChange={(val) => setEditingBudget({...editingBudget, pixAccountId: val})}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue placeholder="Selecione a conta PIX">
-                        {pixSettings.accounts?.find(a => a.id === editingBudget.pixAccountId) 
-                          ? `${pixSettings.accounts.find(a => a.id === editingBudget.pixAccountId)?.label} (${pixSettings.accounts.find(a => a.id === editingBudget.pixAccountId)?.bank} - ${pixSettings.accounts.find(a => a.id === editingBudget.pixAccountId)?.document})`
-                          : null}
-                      </SelectValue>
+                      <SelectValue placeholder="Selecione a conta PIX" />
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       {pixSettings.accounts?.map(acc => (
@@ -14307,8 +14929,8 @@ function InventoryManager({
                 <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Estoque Atual</Label>
                 <Input 
                   type="number"
-                  value={selectedItem.quantity} 
-                  onChange={e => setSelectedItem({...selectedItem, quantity: Number(e.target.value)})} 
+                  value={selectedItem.quantity === 0 ? '' : selectedItem.quantity} 
+                  onChange={e => setSelectedItem({...selectedItem, quantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
                   className="bg-[#0f1115] border-[#2d3139]" 
                 />
               </div>
@@ -14316,8 +14938,8 @@ function InventoryManager({
                 <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Mínimo para Alerta</Label>
                 <Input 
                   type="number"
-                  value={selectedItem.minQuantity} 
-                  onChange={e => setSelectedItem({...selectedItem, minQuantity: Number(e.target.value)})} 
+                  value={selectedItem.minQuantity === 0 ? '' : selectedItem.minQuantity} 
+                  onChange={e => setSelectedItem({...selectedItem, minQuantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
                   className="bg-[#0f1115] border-[#2d3139]" 
                 />
               </div>
@@ -14483,8 +15105,8 @@ function InventoryManager({
                 <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Quantidade ({transactionType === 'entry' ? 'Recebida' : 'Utilizada'})</Label>
                 <Input 
                   type="number" 
-                  value={newTransaction.quantity} 
-                  onChange={e => setNewTransaction({...newTransaction, quantity: Number(e.target.value)})} 
+                  value={newTransaction.quantity === 0 ? '' : newTransaction.quantity} 
+                  onChange={e => setNewTransaction({...newTransaction, quantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
                   className="bg-[#0f1115] border-[#2d3139] h-11 text-lg font-mono font-bold text-center" 
                 />
               </div>
