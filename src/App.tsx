@@ -14976,33 +14976,33 @@ function PDVManager({
           <div className="col-span-2 text-right">Total</div>
         </div>
         
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
           <div className="min-h-full">
             {cart.map((c, idx) => (
               <div key={idx} className="grid grid-cols-12 gap-2 p-3 border-b border-[#2d3139]/30 items-center hover:bg-blue-500/5 group text-white">
                 <div className="col-span-1 text-xs font-mono text-[#71717a] uppercase">{c.item.code || '-'}</div>
-                <div className="col-span-6 text-sm font-bold">{c.item.name}</div>
+                <div className="col-span-6 text-sm font-bold truncate">{c.item.name}</div>
                 <div className="col-span-1 flex justify-center">
                   <input 
                     type="number" 
                     value={c.quantity} 
                     onChange={(e) => updateQuantity(c.item.id, parseInt(e.target.value) || 0)}
-                    className="w-12 bg-transparent border-b border-dashed border-[#2d3139] text-center text-sm font-bold focus:border-blue-500 outline-none"
+                    className="w-12 bg-[#0f1115] border border-[#2d3139] rounded text-center text-xs font-bold focus:border-blue-500 outline-none p-1"
                   />
                 </div>
                 <div className="col-span-2 text-right text-sm">R$ {c.price.toFixed(2)}</div>
                 <div className="col-span-2 text-right text-sm font-black text-blue-400 flex items-center justify-end gap-3">
                   R$ {(c.quantity * c.price).toFixed(2)}
-                  <button onClick={() => removeFromCart(c.item.id)} className="opacity-0 group-hover:opacity-100 text-red-500/50 hover:text-red-500 transition-all">
-                    <Trash2 size={14} />
+                  <button onClick={() => removeFromCart(c.item.id)} className="p-1 hover:bg-red-500/10 rounded-full transition-all text-red-500/50 hover:text-red-500">
+                    <Trash2 size={12} />
                   </button>
                 </div>
               </div>
             ))}
             {cart.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-20 text-[#333]">
-                 <ShoppingCart size={80} className="mb-4 opacity-10" />
-                 <p className="text-sm italic font-bold">AGUARDANDO PRODUTOS... [F3 PARA BUSCAR]</p>
+              <div className="flex flex-col items-center justify-center h-full text-[#71717a] py-10">
+                 <ShoppingCart size={48} className="mb-2 opacity-20" />
+                 <p className="text-xs italic font-bold uppercase tracking-widest">Aguardando Produtos... [F3]</p>
               </div>
             )}
           </div>
@@ -15018,8 +15018,8 @@ function PDVManager({
             <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23]">F10</Badge> FINALIZAR</span>
           </div>
           <div className="text-right">
-            <span className="text-xs text-[#71717a] font-bold uppercase mr-2 tracking-widest">Subtotal Bruto:</span>
-            <span className="text-2xl font-black italic tracking-tighter text-blue-400">R$ {subtotal.toFixed(2)}</span>
+            <span className="text-[10px] text-[#71717a] font-bold uppercase mr-2 tracking-widest">Subtotal:</span>
+            <span className="text-base font-black italic tracking-tighter text-blue-400">R$ {subtotal.toFixed(2)}</span>
           </div>
         </div>
       </Card>
@@ -15056,14 +15056,14 @@ function PDVManager({
           </div>
 
           {/* Row 2: Totals Summary */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 py-3 border-t border-b border-[#2d3139]/50">
-            <div className="text-center">
-              <span className="text-[9px] text-[#71717a] font-black uppercase block">Subtotal</span>
-              <span className="text-xl font-bold text-white">R$ {subtotal.toFixed(2)}</span>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 py-3 border-t border-b border-[#2d3139]/50">
+            <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-[#0f1115]/30">
+              <span className="text-[9px] text-[#71717a] font-black uppercase block mb-1">Subtotal</span>
+              <span className="text-xl font-bold text-white leading-none">R$ {subtotal.toFixed(2)}</span>
             </div>
-            <div className="text-center">
-               <div className="flex items-center justify-center gap-1.5">
-                <span className="text-[9px] text-[#71717a] font-black uppercase italic">Desconto (F6)</span>
+            <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-[#0f1115]/30 border border-red-500/10">
+               <div className="flex items-center justify-center gap-1.5 mb-1">
+                <span className="text-[9px] text-red-500/70 font-black uppercase italic">Desconto (F6)</span>
                 <button onClick={() => {
                     const val = prompt("Valor do desconto:");
                     if (val !== null) setDiscount(Number(val) || 0);
@@ -15071,11 +15071,11 @@ function PDVManager({
                     <Pencil size={8} />
                 </button>
               </div>
-              <span className="text-xl font-bold text-red-500 italic block leading-tight">- R$ {discount.toFixed(2)}</span>
+              <span className="text-xl font-bold text-red-500 italic block leading-none">- R$ {discount.toFixed(2)}</span>
             </div>
-            <div className="text-center bg-emerald-500/5 rounded-lg py-1">
-              <span className="text-[10px] text-emerald-500 font-black uppercase block tracking-widest">Total Geral</span>
-              <span className="text-3xl font-black text-emerald-500 italic tracking-tighter block leading-tight">R$ {total.toFixed(2)}</span>
+            <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+              <span className="text-[10px] text-emerald-500 font-black uppercase block tracking-widest mb-1">Total Geral</span>
+              <span className="text-3xl font-black text-emerald-500 italic tracking-tighter block leading-none">R$ {total.toFixed(2)}</span>
             </div>
           </div>
 
