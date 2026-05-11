@@ -14782,7 +14782,11 @@ function PDVManager({
         e.preventDefault();
         setIsProductSearchOpen(true);
       }
-      if (e.key === 'F8') {
+      if (e.key === 'F5') {
+        e.preventDefault();
+        // Focus linked OS or open search
+      }
+      if (e.key === 'F6') {
         e.preventDefault();
         const value = prompt("Informe o valor do desconto (R$):");
         if (value !== null) setDiscount(Number(value) || 0);
@@ -15004,18 +15008,18 @@ function PDVManager({
           </div>
         </ScrollArea>
 
-        <div className="p-3 bg-[#0f1115] border-t border-[#2d3139] flex justify-between items-center text-white">
-          <div className="flex gap-4 text-[9px] font-black uppercase tracking-tighter opacity-40">
-            <span>F1-NOVA</span>
-            <span>F2-CLIENTE</span>
-            <span>F3-PRODUTO</span>
-            <span>F5-OS/SERV</span>
-            <span>F8-DESC</span>
-            <span>F10-FINALIZAR</span>
+        <div className="p-3 bg-[#0f1115] border-t border-[#2d3139] flex justify-between items-center text-white z-10 relative">
+          <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-tighter text-[#71717a]">
+            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23]">F1</Badge> NOVA</span>
+            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23]">F2</Badge> CLIENTE</span>
+            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23]">F3</Badge> PRODUTO</span>
+            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23]">F5</Badge> OS/SERV</span>
+            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23]">F6</Badge> DESC</span>
+            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23]">F10</Badge> FINALIZAR</span>
           </div>
           <div className="text-right">
             <span className="text-xs text-[#71717a] font-bold uppercase mr-2 tracking-widest">Subtotal Bruto:</span>
-            <span className="text-lg font-black italic tracking-tighter">R$ {subtotal.toFixed(2)}</span>
+            <span className="text-2xl font-black italic tracking-tighter text-blue-400">R$ {subtotal.toFixed(2)}</span>
           </div>
         </div>
       </Card>
@@ -15023,66 +15027,66 @@ function PDVManager({
       {/* Payment Summary Area */}
       <Card className="bg-[#1a1d23] border-[#2d3139] shadow-2xl relative overflow-hidden flex-shrink-0">
         <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500" />
-        <div className="p-3 grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
+        <div className="p-4 flex flex-col gap-6">
           
-          {/* Payment Method Selection */}
-          <div className="lg:col-span-4 space-y-2">
-            <Label className="text-[9px] uppercase font-black text-[#71717a] tracking-widest">Recebimento</Label>
-            <div className="grid grid-cols-3 gap-1.5">
+          {/* Row 1: Payment Method Selection */}
+          <div className="space-y-2">
+            <Label className="text-[10px] font-black text-[#71717a] tracking-widest text-center block uppercase">Forma de Recebimento</Label>
+            <div className="flex justify-center gap-4 max-w-2xl mx-auto w-full">
               {[
-                {id: 'Dinheiro', icon: <DollarSign size={14} />},
-                {id: 'Cartão', icon: <CreditCard size={14} />},
-                {id: 'PIX', icon: <Zap size={14} />}
+                {id: 'Dinheiro', icon: <DollarSign size={16} />},
+                {id: 'Cartão', icon: <CreditCard size={16} />},
+                {id: 'PIX', icon: <Zap size={16} />}
               ].map((m: any) => (
                 <button
                   key={m.id}
                   onClick={() => setPaymentMethod(m.id)}
                   className={cn(
-                    "h-9 rounded border flex items-center justify-center gap-1.5 transition-all outline-none",
+                    "flex-1 h-12 rounded-lg border flex items-center justify-center gap-2 transition-all outline-none",
                     paymentMethod === m.id 
-                      ? "bg-emerald-500 text-white border-emerald-400 font-bold shadow-lg shadow-emerald-500/20" 
+                      ? "bg-emerald-500 text-white border-emerald-400 font-bold shadow-lg shadow-emerald-500/20 scale-[1.05]" 
                       : "bg-[#0f1115] border-[#2d3139] text-[#71717a] hover:border-[#3b82f6]/50"
                   )}
                 >
                   {m.icon}
-                  <span className="text-[9px] font-bold uppercase">{m.id}</span>
+                  <span className="text-xs uppercase tracking-widest">{m.id}</span>
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Totals Summary */}
-          <div className="lg:col-span-5 grid grid-cols-3 gap-2 border-l border-r border-[#2d3139]/50 px-4">
+          {/* Row 2: Totals Summary */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4 border-t border-b border-[#2d3139]/50">
             <div className="text-center">
-              <span className="text-[8px] text-[#71717a] font-black uppercase block mb-1">Subtotal</span>
-              <span className="text-base font-bold text-white block truncate">R$ {subtotal.toFixed(2)}</span>
+              <span className="text-[10px] text-[#71717a] font-black uppercase block mb-1">Subtotal</span>
+              <span className="text-2xl font-bold text-white">R$ {subtotal.toFixed(2)}</span>
             </div>
             <div className="text-center">
-               <div className="flex items-center justify-center gap-1 mb-1">
-                <span className="text-[8px] text-[#71717a] font-black uppercase italic">Desconto</span>
+               <div className="flex items-center justify-center gap-2 mb-1">
+                <span className="text-[10px] text-[#71717a] font-black uppercase italic">Desconto (F6)</span>
                 <button onClick={() => {
                     const val = prompt("Valor do desconto:");
                     if (val !== null) setDiscount(Number(val) || 0);
-                }} className="text-blue-500 hover:text-blue-400">
-                    <Pencil size={8} />
+                }} className="text-blue-500 hover:text-blue-400 p-1 bg-[#0f1115] rounded border border-[#2d3139]">
+                    <Pencil size={10} />
                 </button>
               </div>
-              <span className="text-base font-bold text-red-500 block truncate leading-none">- R$ {discount.toFixed(2)}</span>
+              <span className="text-2xl font-bold text-red-500 italic">- R$ {discount.toFixed(2)}</span>
             </div>
             <div className="text-center">
-              <span className="text-[8px] text-emerald-500 font-black uppercase block mb-1 tracking-tighter">Total Geral</span>
-              <span className="text-xl font-black text-emerald-500 italic tracking-tighter block truncate leading-none">R$ {total.toFixed(2)}</span>
+              <span className="text-[11px] text-emerald-500 font-black uppercase block mb-1 tracking-widest">Total Geral</span>
+              <span className="text-4xl font-black text-emerald-500 italic tracking-tighter">R$ {total.toFixed(2)}</span>
             </div>
           </div>
 
-          {/* Action Button */}
-          <div className="lg:col-span-3">
+          {/* Row 3: Action Button */}
+          <div className="max-w-md mx-auto w-full">
             <Button 
               onClick={handleFinishSale}
               disabled={cart.length === 0 || isFinishing}
-              className="w-full h-14 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase italic tracking-tighter text-lg shadow-xl shadow-emerald-600/20"
+              className="w-full h-16 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase italic tracking-tighter text-2xl shadow-xl shadow-emerald-600/20"
             >
-              {isFinishing ? <Loader2 className="animate-spin" /> : "FINALIZAR (F10)"}
+              {isFinishing ? <Loader2 className="animate-spin" /> : "FINALIZAR VENDA (F10)"}
             </Button>
           </div>
         </div>
