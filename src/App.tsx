@@ -5775,6 +5775,11 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
       toast.error('Preencha os campos obrigatórios.');
       return;
     }
+
+    if (!companyId) {
+      toast.error('Erro de identificação do sistema. Selecione uma empresa ou recarregue a página.');
+      return;
+    }
     setIsSubmitting(true);
     try {
       const year = new Date().getFullYear();
@@ -5791,6 +5796,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
 
       const receiptData = {
         ...newReceipt,
+        pixAccountId: newReceipt.pixAccountId || null,
         number: nextNum,
         status: newReceipt.status || 'Aguardando Pagamento',
         date: Timestamp.fromDate(newReceipt.date instanceof Date ? newReceipt.date : new Date()),
@@ -5839,6 +5845,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
       const { id, ...data } = editingReceipt;
       const receiptData = {
         ...data,
+        pixAccountId: editingReceipt.pixAccountId || null,
         date: editingReceipt.date instanceof Timestamp ? editingReceipt.date : Timestamp.fromDate(new Date(editingReceipt.date))
       };
       
@@ -7096,9 +7103,14 @@ function SuperAdminPanel({
                   <SelectValue placeholder="Selecione a Empresa" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                  {companies.map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.companyName || c.name || c.tradeName || c.id}</SelectItem>
-                  ))}
+                  {companies.map(c => {
+                    const companyName = c.name || c.companyName || c.tradeName || c.trade_name || c.id;
+                    return (
+                      <SelectItem key={c.id} value={c.id}>
+                        {companyName}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -7700,8 +7712,8 @@ function RolePermissionManager({ companyId, user, userRoles, currentUserData }: 
   }, [companyId]);
 
   const togglePermission = async (menuId: string, type: 'menus' | 'lists') => {
-    if (selectedRole === 'owner' && currentUserData?.role !== 'owner' && !isMaster) {
-      toast.error('As permissões do nível Proprietário só podem ser alteradas pelo próprio Proprietário ou Admin SaaS.');
+    if (selectedRole === 'owner' && !isMaster) {
+      toast.error('As permissões do Proprietário são protegidas e só podem ser alteradas pelo Master do Sistema.');
       return;
     }
     const current = rolePermissions[selectedRole] || { menus: [], lists: [] };
@@ -10967,10 +10979,16 @@ function FinancialManager({
       return;
     }
 
+    if (!companyId) {
+      toast.error('Erro de identificação do sistema. Selecione uma empresa ou recarregue a página.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const docRef = await addDoc(collection(db, 'financial'), {
         ...newRecord,
+        pixAccountId: newRecord.pixAccountId || null,
         date: Timestamp.fromDate(newRecord.date instanceof Date ? newRecord.date : new Date()),
         companyId,
         createdAt: Timestamp.now()
@@ -12888,6 +12906,11 @@ function BudgetsManager({
       return;
     }
 
+    if (!companyId) {
+      toast.error('Erro de identificação do sistema. Selecione uma empresa ou recarregue a página.');
+      return;
+    }
+
     if (!newBudget.items || newBudget.items.length === 0 || !newBudget.items[0].description) {
       toast.error('Adicione pelo menos um item ao orçamento.');
       return;
@@ -12903,6 +12926,7 @@ function BudgetsManager({
 
       const savedDoc = await addDoc(collection(db, 'budgets'), {
         ...newBudget,
+        pixAccountId: newBudget.pixAccountId || null,
         items: itemsToSave,
         number: nextNumber,
         total: finalTotal,
@@ -12938,6 +12962,7 @@ function BudgetsManager({
     try {
       await updateDoc(doc(db, 'budgets', editingBudget.id), {
         ...editingBudget,
+        pixAccountId: editingBudget.pixAccountId || null,
         items: itemsToSave,
         total: finalTotal,
         updatedAt: Timestamp.now()
