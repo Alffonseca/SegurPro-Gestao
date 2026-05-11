@@ -7652,7 +7652,7 @@ function SuperAdminPanel({
                           id={`menu-${menu.id}`} 
                           checked={editingCompany?.enabledMenus ? editingCompany.enabledMenus.includes(menu.id) : true}
                           onCheckedChange={(checked) => {
-                            const current = editingCompany?.enabledMenus || ['resumo', 'visits', 'receipts', 'clients', 'financial', 'inventory', 'os', 'budgets', 'settings'];
+                            const current = editingCompany?.enabledMenus || ['resumo', 'visits', 'receipts', 'clients', 'financial', 'inventory', 'os', 'budgets', 'settings', 'pdv'];
                             let updated;
                             if (checked) {
                               updated = [...current, menu.id];
@@ -14929,148 +14929,146 @@ function PDVManager({
           </div>
         </div>
         <div className="md:col-span-2 space-y-1">
-          <Label className="text-[9px] uppercase font-black text-[#71717a] tracking-widest">Vincular Ordem de Serviço (OS)</Label>
-          <Input 
-            placeholder="Nº da OS para vínculo..." 
-            className="h-10 bg-[#0f1115] border-[#2d3139] text-white text-sm"
-            value={linkedOS}
-            onChange={e => setLinkedOS(e.target.value)}
-          />
+          <Label className="text-[9px] uppercase font-black text-[#71717a] tracking-widest">Vincular Ordem de Serviço (OS) (F5)</Label>
+          <div className="flex gap-2">
+            <Input 
+              placeholder="Nº da OS para vínculo..." 
+              className="h-10 bg-[#0f1115] border-[#2d3139] text-white text-sm"
+              value={linkedOS}
+              onChange={e => setLinkedOS(e.target.value)}
+            />
+            <Button variant="outline" className="border-[#2d3139] text-[10px] font-bold uppercase h-10 px-3">
+              <Zap size={14} className="mr-1 text-yellow-500" /> Inserir OS
+            </Button>
+          </div>
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Main Cart Area */}
-        <div className="lg:col-span-9 flex flex-col min-h-0">
-          <Card className="flex-1 bg-[#1a1d23] border-[#2d3139] flex flex-col overflow-hidden">
-            <div className="p-3 bg-[#0f1115]/50 border-b border-[#2d3139] grid grid-cols-12 gap-2 text-[10px] font-black text-[#71717a] uppercase tracking-widest">
-              <div className="col-span-1">Cód.</div>
-              <div className="col-span-6">Descrição do Produto/Serviço</div>
-              <div className="col-span-1 text-center">Qtd</div>
-              <div className="col-span-2 text-right">Valor Unit.</div>
-              <div className="col-span-2 text-right">Total</div>
-            </div>
-            
-            <ScrollArea className="flex-1">
-              <div className="min-h-full">
-                {cart.map((c, idx) => (
-                  <div key={idx} className="grid grid-cols-12 gap-2 p-3 border-b border-[#2d3139]/30 items-center hover:bg-blue-500/5 group text-white">
-                    <div className="col-span-1 text-xs font-mono text-[#71717a] uppercase">{c.item.code || '-'}</div>
-                    <div className="col-span-6 text-sm font-bold">{c.item.name}</div>
-                    <div className="col-span-1 flex justify-center">
-                      <input 
-                        type="number" 
-                        value={c.quantity} 
-                        onChange={(e) => updateQuantity(c.item.id, parseInt(e.target.value) || 0)}
-                        className="w-12 bg-transparent border-b border-dashed border-[#2d3139] text-center text-sm font-bold focus:border-blue-500 outline-none"
-                      />
-                    </div>
-                    <div className="col-span-2 text-right text-sm">R$ {c.price.toFixed(2)}</div>
-                    <div className="col-span-2 text-right text-sm font-black text-blue-400 flex items-center justify-end gap-3">
-                      R$ {(c.quantity * c.price).toFixed(2)}
-                      <button onClick={() => removeFromCart(c.item.id)} className="opacity-0 group-hover:opacity-100 text-red-500/50 hover:text-red-500 transition-all">
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {cart.length === 0 && (
-                  <div className="flex flex-col items-center justify-center py-32 text-[#333]">
-                     <ShoppingCart size={80} className="mb-4 opacity-10" />
-                     <p className="text-sm italic font-bold">AGUARDANDO PRODUTOS... [F3 PARA BUSCAR]</p>
-                  </div>
-                )}
-              </div>
-            </ScrollArea>
-
-            <div className="p-4 bg-[#0f1115] border-t border-[#2d3139] flex justify-between items-center text-white">
-              <div className="flex gap-4 text-[10px] font-black uppercase tracking-tighter opacity-50">
-                <span>F1 - NOVA</span>
-                <span>F2 - CLIENTE</span>
-                <span>F3 - PRODUTO</span>
-                <span>F8 - DESCONTO</span>
-                <span>F10 - FINALIZAR</span>
-              </div>
-              <div className="text-right">
-                <span className="text-xs text-[#71717a] font-bold uppercase mr-2 tracking-widest">Subtotal Bruto:</span>
-                <span className="text-xl font-black italic tracking-tighter">R$ {subtotal.toFixed(2)}</span>
-              </div>
-            </div>
-          </Card>
+      {/* Main Cart Area */}
+      <Card className="flex-1 bg-[#1a1d23] border-[#2d3139] flex flex-col overflow-hidden shadow-2xl">
+        <div className="p-3 bg-[#0f1115]/50 border-b border-[#2d3139] grid grid-cols-12 gap-2 text-[10px] font-black text-[#71717a] uppercase tracking-widest">
+          <div className="col-span-1">Cód.</div>
+          <div className="col-span-6">Descrição do Produto/Serviço</div>
+          <div className="col-span-1 text-center">Qtd</div>
+          <div className="col-span-2 text-right">Valor Unit.</div>
+          <div className="col-span-2 text-right">Total</div>
         </div>
-
-        {/* Payment Summary Sidebar */}
-        <div className="lg:col-span-3 flex flex-col gap-4">
-          <Card className="flex-1 bg-[#1a1d23] border-[#2d3139] flex flex-col shadow-2xl relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500" />
-            <div className="p-4 border-b border-[#2d3139] bg-[#0f1115]/50">
-              <h3 className="text-[10px] font-black text-white uppercase tracking-widest flex items-center gap-2">
-                <CreditCard size={14} className="text-emerald-500" /> Resumo de Pagamento
-              </h3>
-            </div>
-
-            <div className="p-6 flex-1 space-y-6">
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-[#71717a] font-bold uppercase">Subtotal:</span>
-                  <span className="text-lg font-bold text-white">R$ {subtotal.toFixed(2)}</span>
+        
+        <ScrollArea className="flex-1">
+          <div className="min-h-full">
+            {cart.map((c, idx) => (
+              <div key={idx} className="grid grid-cols-12 gap-2 p-3 border-b border-[#2d3139]/30 items-center hover:bg-blue-500/5 group text-white">
+                <div className="col-span-1 text-xs font-mono text-[#71717a] uppercase">{c.item.code || '-'}</div>
+                <div className="col-span-6 text-sm font-bold">{c.item.name}</div>
+                <div className="col-span-1 flex justify-center">
+                  <input 
+                    type="number" 
+                    value={c.quantity} 
+                    onChange={(e) => updateQuantity(c.item.id, parseInt(e.target.value) || 0)}
+                    className="w-12 bg-transparent border-b border-dashed border-[#2d3139] text-center text-sm font-bold focus:border-blue-500 outline-none"
+                  />
                 </div>
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-[#71717a] font-bold uppercase">Desconto (F8):</span>
-                    <button onClick={() => {
-                        const val = prompt("Valor do desconto:");
-                        if (val !== null) setDiscount(Number(val) || 0);
-                    }} className="p-1 rounded bg-[#0f1115] border border-[#2d3139] hover:border-blue-500 text-blue-500">
-                        <Pencil size={10} />
-                    </button>
-                  </div>
-                  <span className="text-lg font-bold text-red-500">- R$ {discount.toFixed(2)}</span>
-                </div>
-                <div className="pt-4 border-t border-[#2d3139] flex justify-between items-end">
-                  <span className="text-xs text-[#71717a] font-black uppercase mb-1">Total a Pagar:</span>
-                  <span className="text-3xl font-black text-emerald-500 italic tracking-tighter leading-none pulse">R$ {total.toFixed(2)}</span>
+                <div className="col-span-2 text-right text-sm">R$ {c.price.toFixed(2)}</div>
+                <div className="col-span-2 text-right text-sm font-black text-blue-400 flex items-center justify-end gap-3">
+                  R$ {(c.quantity * c.price).toFixed(2)}
+                  <button onClick={() => removeFromCart(c.item.id)} className="opacity-0 group-hover:opacity-100 text-red-500/50 hover:text-red-500 transition-all">
+                    <Trash2 size={14} />
+                  </button>
                 </div>
               </div>
-
-              <div className="space-y-2">
-                <Label className="text-[10px] uppercase font-black text-[#71717a] tracking-widest">Forma de Recebimento</Label>
-                <div className="grid grid-cols-1 gap-2">
-                  {[
-                    {id: 'Dinheiro', icon: <DollarSign size={16} />},
-                    {id: 'Cartão', icon: <CreditCard size={16} />},
-                    {id: 'PIX', icon: <Zap size={16} />}
-                  ].map((m: any) => (
-                    <button
-                      key={m.id}
-                      onClick={() => setPaymentMethod(m.id)}
-                      className={cn(
-                        "w-full h-12 rounded-lg border flex items-center px-4 gap-3 transition-all",
-                        paymentMethod === m.id 
-                          ? "bg-emerald-500 text-white border-emerald-400 font-bold shadow-lg shadow-emerald-500/20 scale-[1.02]" 
-                          : "bg-[#0f1115] border-[#2d3139] text-[#71717a] hover:border-[#3b82f6]/50"
-                      )}
-                    >
-                      {m.icon}
-                      <span className="text-xs uppercase tracking-widest">{m.id}</span>
-                    </button>
-                  ))}
-                </div>
+            ))}
+            {cart.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-20 text-[#333]">
+                 <ShoppingCart size={80} className="mb-4 opacity-10" />
+                 <p className="text-sm italic font-bold">AGUARDANDO PRODUTOS... [F3 PARA BUSCAR]</p>
               </div>
-            </div>
+            )}
+          </div>
+        </ScrollArea>
 
-            <div className="p-4 bg-[#0f1115] border-t border-[#2d3139]">
-              <Button 
-                onClick={handleFinishSale}
-                disabled={cart.length === 0 || isFinishing}
-                className="w-full h-16 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase italic tracking-tighter text-2xl shadow-xl shadow-emerald-600/20"
-              >
-                {isFinishing ? <Loader2 className="animate-spin" /> : "FINALIZAR VENDA (F10)"}
-              </Button>
-            </div>
-          </Card>
+        <div className="p-3 bg-[#0f1115] border-t border-[#2d3139] flex justify-between items-center text-white">
+          <div className="flex gap-4 text-[9px] font-black uppercase tracking-tighter opacity-40">
+            <span>F1-NOVA</span>
+            <span>F2-CLIENTE</span>
+            <span>F3-PRODUTO</span>
+            <span>F5-OS/SERV</span>
+            <span>F8-DESC</span>
+            <span>F10-FINALIZAR</span>
+          </div>
+          <div className="text-right">
+            <span className="text-xs text-[#71717a] font-bold uppercase mr-2 tracking-widest">Subtotal Bruto:</span>
+            <span className="text-lg font-black italic tracking-tighter">R$ {subtotal.toFixed(2)}</span>
+          </div>
         </div>
-      </div>
+      </Card>
+
+      {/* Payment Summary Area - Below as requested */}
+      <Card className="bg-[#1a1d23] border-[#2d3139] shadow-2xl relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500" />
+        <div className="p-4 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+          
+          {/* Payment Method Selection */}
+          <div className="lg:col-span-4 space-y-3">
+            <Label className="text-[10px] uppercase font-black text-[#71717a] tracking-widest">Forma de Recebimento</Label>
+            <div className="flex gap-2">
+              {[
+                {id: 'Dinheiro', icon: <DollarSign size={16} />},
+                {id: 'Cartão', icon: <CreditCard size={16} />},
+                {id: 'PIX', icon: <Zap size={16} />}
+              ].map((m: any) => (
+                <button
+                  key={m.id}
+                  onClick={() => setPaymentMethod(m.id)}
+                  className={cn(
+                    "flex-1 h-12 rounded-lg border flex items-center justify-center gap-2 transition-all",
+                    paymentMethod === m.id 
+                      ? "bg-emerald-500 text-white border-emerald-400 font-bold shadow-lg shadow-emerald-500/20" 
+                      : "bg-[#0f1115] border-[#2d3139] text-[#71717a] hover:border-[#3b82f6]/50"
+                  )}
+                >
+                  {m.icon}
+                  <span className="text-[10px] uppercase tracking-widest">{m.id}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Totals Summary */}
+          <div className="lg:col-span-5 grid grid-cols-3 gap-4 border-l border-r border-[#2d3139]/50 px-6">
+            <div className="text-center">
+              <span className="text-[9px] text-[#71717a] font-black uppercase block mb-1">Subtotal</span>
+              <span className="text-lg font-bold text-white">R$ {subtotal.toFixed(2)}</span>
+            </div>
+            <div className="text-center">
+               <div className="flex items-center justify-center gap-1 mb-1">
+                <span className="text-[9px] text-[#71717a] font-black uppercase">Desconto (F8)</span>
+                <button onClick={() => {
+                    const val = prompt("Valor do desconto:");
+                    if (val !== null) setDiscount(Number(val) || 0);
+                }} className="text-blue-500 hover:text-blue-400">
+                    <Pencil size={10} />
+                </button>
+              </div>
+              <span className="text-lg font-bold text-red-500">- R$ {discount.toFixed(2)}</span>
+            </div>
+            <div className="text-center">
+              <span className="text-[9px] text-emerald-500 font-black uppercase block mb-1">Total a Pagar</span>
+              <span className="text-2xl font-black text-emerald-500 italic tracking-tighter">R$ {total.toFixed(2)}</span>
+            </div>
+          </div>
+
+          {/* Action Button */}
+          <div className="lg:col-span-3">
+            <Button 
+              onClick={handleFinishSale}
+              disabled={cart.length === 0 || isFinishing}
+              className="w-full h-16 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase italic tracking-tighter text-xl shadow-xl shadow-emerald-600/20"
+            >
+              {isFinishing ? <Loader2 className="animate-spin" /> : "FINALIZAR VENDA (F10)"}
+            </Button>
+          </div>
+        </div>
+      </Card>
 
       {/* Modal Pesquisa de Produto (F3) */}
       <Dialog open={isProductSearchOpen} onOpenChange={setIsProductSearchOpen}>
