@@ -3804,6 +3804,7 @@ export default function MainApp() {
               onSignatureClick={onSignatureClick}
               externalEditAction={interpretedEditAction?.type === 'service-order' ? interpretedEditAction.data : null}
               onExternalEditHandled={() => setInterpretedEditAction(null)}
+              user={user}
             />
           )}
           {activeTab === 'clients' && (
@@ -12022,7 +12023,8 @@ function ServiceOrdersManager({
   onEditClick, 
   onSignatureClick, 
   externalEditAction, 
-  onExternalEditHandled 
+  onExternalEditHandled,
+  user 
 }: { 
   serviceOrders?: ServiceOrder[], 
   clients?: Client[], 
