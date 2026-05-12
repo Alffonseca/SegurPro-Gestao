@@ -2366,6 +2366,15 @@ export default function MainApp() {
     }
   };
 
+  // --- POS (PDV) Persistent State ---
+  const [posCart, setPosCart] = useState<{item: any, quantity: number, price: number}[]>([]);
+  const [posDiscount, setPosDiscount] = useState(0);
+  const [posSelectedClient, setPosSelectedClient] = useState<string>('Avulso');
+  const [posPaymentMethod, setPosPaymentMethod] = useState<'Dinheiro' | 'Cartão' | 'PIX'>('Dinheiro');
+  const [posLinkedOS, setPosLinkedOS] = useState('');
+  const [posCardDetails, setPosCardDetails] = useState({ brand: '', type: 'crédito', installments: 1 });
+  const [posSelectedPixAccountId, setPosSelectedPixAccountId] = useState<string>('');
+
   // Log system
   const logAction = async (action: string, resourceType: string, details: string, resourceId?: string) => {
     if (!user || !effectiveCompanyId) return;
@@ -3922,6 +3931,20 @@ export default function MainApp() {
               pixSettings={pixSettings}
               appSettings={appSettings}
               user={user}
+              cart={posCart}
+              setCart={setPosCart}
+              discount={posDiscount}
+              setDiscount={setPosDiscount}
+              selectedClient={posSelectedClient}
+              setSelectedClient={setPosSelectedClient}
+              paymentMethod={posPaymentMethod}
+              setPaymentMethod={setPosPaymentMethod}
+              linkedOS={posLinkedOS}
+              setLinkedOS={setPosLinkedOS}
+              cardDetails={posCardDetails}
+              setCardDetails={setPosCardDetails}
+              selectedPixAccountId={posSelectedPixAccountId}
+              setSelectedPixAccountId={setPosSelectedPixAccountId}
             />
           )}
 
@@ -14744,7 +14767,21 @@ function PDVManager({
   logAction,
   pixSettings,
   appSettings,
-  user
+  user,
+  cart,
+  setCart,
+  discount,
+  setDiscount,
+  selectedClient,
+  setSelectedClient,
+  paymentMethod,
+  setPaymentMethod,
+  linkedOS,
+  setLinkedOS,
+  cardDetails,
+  setCardDetails,
+  selectedPixAccountId,
+  setSelectedPixAccountId
 }: {
   inventory: any[],
   clients: Client[],
@@ -14753,20 +14790,30 @@ function PDVManager({
   logAction?: any,
   pixSettings: PixSettings,
   appSettings: AppSettings,
-  user: any
+  user: any,
+  cart: any[],
+  setCart: React.Dispatch<React.SetStateAction<any[]>>,
+  discount: number,
+  setDiscount: React.Dispatch<React.SetStateAction<number>>,
+  selectedClient: string,
+  setSelectedClient: React.Dispatch<React.SetStateAction<string>>,
+  paymentMethod: 'Dinheiro' | 'Cartão' | 'PIX',
+  setPaymentMethod: React.Dispatch<React.SetStateAction<'Dinheiro' | 'Cartão' | 'PIX'>>,
+  linkedOS: string,
+  setLinkedOS: React.Dispatch<React.SetStateAction<string>>,
+  cardDetails: any,
+  setCardDetails: React.Dispatch<React.SetStateAction<any>>,
+  selectedPixAccountId: string,
+  setSelectedPixAccountId: React.Dispatch<React.SetStateAction<string>>
 }) {
-  const [cart, setCart] = useState<{item: any, quantity: number, price: number}[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [discount, setDiscount] = useState(0);
-  const [selectedClient, setSelectedClient] = useState<string>('Avulso');
-  const [paymentMethod, setPaymentMethod] = useState<'Dinheiro' | 'Cartão' | 'PIX'>('Dinheiro');
   const [isFinishing, setIsFinishing] = useState(false);
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
   const [lastSale, setLastSale] = useState<any>(null);
   
   const [isProductSearchOpen, setIsProductSearchOpen] = useState(false);
   const [isClientSearchOpen, setIsClientSearchOpen] = useState(false);
-  const [linkedOS, setLinkedOS] = useState('');
+  const [isDiscountDialogOpen, setIsDiscountDialogOpen] = useState(false);
 
   const subtotal = cart.reduce((acc, curr) => acc + (curr.quantity * curr.price), 0);
   const total = Math.max(0, subtotal - discount);
@@ -14795,8 +14842,7 @@ function PDVManager({
       }
       if (e.key === 'F6') {
         e.preventDefault();
-        const value = prompt("Informe o valor do desconto (R$):");
-        if (value !== null) setDiscount(Number(value) || 0);
+        setIsDiscountDialogOpen(true);
       }
       if (e.key === 'F10') {
         e.preventDefault();
@@ -14860,6 +14906,7 @@ function PDVManager({
         discount,
         total,
         paymentMethod,
+        paymentDetails: paymentMethod === 'Cartão' ? cardDetails : (paymentMethod === 'PIX' ? { pixAccountId: selectedPixAccountId } : null),
         clientName: selectedClient,
         companyId,
         linkedOS,
@@ -14990,7 +15037,7 @@ function PDVManager({
       </div>
 
       {/* Main Cart Area */}
-      <Card className="flex-1 min-h-0 bg-[#1a1d23] border-[#2d3139] flex flex-col overflow-hidden shadow-2xl">
+      <Card className="flex-[3] min-h-0 bg-[#1a1d23] border-[#2d3139] flex flex-col overflow-hidden shadow-2xl">
         <div className="flex-shrink-0 p-2 md:p-3 bg-[#0f1115]/50 border-b border-[#2d3139] grid grid-cols-12 gap-2 text-[9px] md:text-[10px] font-black text-[#71717a] uppercase tracking-widest">
           <div className="col-span-1">COD</div>
           <div className="col-span-6">DESCRIÇÃO DO PRODUTO/SERVIÇO</div>
@@ -14999,7 +15046,7 @@ function PDVManager({
           <div className="col-span-2 text-right">TOTAL</div>
         </div>
         
-        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar bg-[#0f1115]/10">
+        <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#0f1115]/10 min-h-0">
           <div className="flex flex-col divide-y divide-[#2d3139]/20">
             {cart.map((c, idx) => (
               <div key={idx} className="grid grid-cols-12 gap-2 p-2 border-b border-[#2d3139]/30 items-center hover:bg-blue-500/5 group text-white">
@@ -15038,34 +15085,105 @@ function PDVManager({
         <div className="p-2 md:p-3 flex flex-col gap-2 md:gap-4">
           
           {/* Row 1: Payment Method Selection */}
-          <div className="space-y-1 text-center">
-            <Label className="text-[9px] font-black text-[#71717a] tracking-widest uppercase">Forma de Recebimento</Label>
-            <div className="flex justify-center gap-2 max-w-xl mx-auto w-full">
-              {[
-                {id: 'Dinheiro', icon: <DollarSign size={14} />},
-                {id: 'Cartão', icon: <CreditCard size={14} />},
-                {id: 'PIX', icon: (
-                  <svg width="14" height="14" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-emerald-400">
-                    <path d="M256 0L480 224L256 448L32 224L256 0Z" stroke="currentColor" strokeWidth="40" strokeLinecap="round" strokeLinejoin="round" />
-                    <path d="M256 120L360 224L256 328L152 224L256 120Z" fill="currentColor" />
-                    <path d="M256 50V90M256 358V398M113 224H153M359 224H399" stroke="currentColor" strokeWidth="30" strokeLinecap="round" />
-                  </svg>
-                )}
-              ].map((m: any) => (
-                <button
-                  key={m.id}
-                  onClick={() => setPaymentMethod(m.id)}
-                  className={cn(
-                    "flex-1 h-8 rounded-lg border flex items-center justify-center gap-2 transition-all outline-none",
-                    paymentMethod === m.id 
-                      ? "bg-emerald-500 text-white border-emerald-400 font-bold shadow-lg shadow-emerald-500/20" 
-                      : "bg-[#0f1115] border-[#2d3139] text-[#71717a] hover:border-[#3b82f6]/50"
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <Label className="text-[9px] font-black text-[#71717a] tracking-widest uppercase">Forma de Recebimento</Label>
+              <div className="flex justify-center gap-2 w-full">
+                {[
+                  {id: 'Dinheiro', icon: <DollarSign size={14} />},
+                  {id: 'Cartão', icon: <CreditCard size={14} />},
+                  {id: 'PIX', icon: (
+                    <svg width="14" height="14" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-emerald-400">
+                      <path d="M256 32L480 256L256 480L32 256L256 32Z" stroke="currentColor" strokeWidth="40" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M256 128L384 256L256 384L128 256L256 128Z" fill="currentColor" />
+                    </svg>
                   )}
-                >
-                  {m.icon}
-                  <span className="text-[9px] font-bold uppercase">{m.id}</span>
-                </button>
-              ))}
+                ].map((m: any) => (
+                  <button
+                    key={m.id}
+                    onClick={() => setPaymentMethod(m.id)}
+                    className={cn(
+                      "flex-1 h-8 rounded-lg border flex items-center justify-center gap-2 transition-all outline-none",
+                      paymentMethod === m.id 
+                        ? "bg-emerald-500 text-white border-emerald-400 font-bold shadow-lg shadow-emerald-500/20" 
+                        : "bg-[#0f1115] border-[#2d3139] text-[#71717a] hover:border-[#3b82f6]/50"
+                    )}
+                  >
+                    {m.icon}
+                    <span className="text-[9px] font-bold uppercase">{m.id}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Payment Sub-details */}
+            <div className="space-y-1">
+              {paymentMethod === 'Cartão' && (
+                 <div className="grid grid-cols-4 gap-2">
+                    <div className="space-y-0.5">
+                      <Label className="text-[8px] uppercase font-black text-[#71717a]">Bandeira</Label>
+                      <select 
+                        className="w-full h-8 bg-[#0f1115] border border-[#2d3139] rounded text-[10px] text-white px-1"
+                        value={cardDetails.brand}
+                        onChange={e => setCardDetails({...cardDetails, brand: e.target.value})}
+                      >
+                        <option value="">Selecione...</option>
+                        <option value="Visa">Visa</option>
+                        <option value="Mastercard">Mastercard</option>
+                        <option value="Elo">Elo</option>
+                        <option value="Hipercard">Hipercard</option>
+                        <option value="Amex">Amex</option>
+                      </select>
+                    </div>
+                    <div className="space-y-0.5">
+                      <Label className="text-[8px] uppercase font-black text-[#71717a]">Tipo</Label>
+                      <select 
+                        className="w-full h-8 bg-[#0f1115] border border-[#2d3139] rounded text-[10px] text-white px-1"
+                        value={cardDetails.type}
+                        onChange={e => setCardDetails({...cardDetails, type: e.target.value})}
+                      >
+                        <option value="crédito">Crédito</option>
+                        <option value="débito">Débito</option>
+                      </select>
+                    </div>
+                    <div className="space-y-0.5">
+                      <Label className="text-[8px] uppercase font-black text-[#71717a]">Parc.</Label>
+                      <select 
+                        className="w-full h-8 bg-[#0f1115] border border-[#2d3139] rounded text-[10px] text-white px-1"
+                        value={cardDetails.installments}
+                        onChange={e => setCardDetails({...cardDetails, installments: Number(e.target.value)})}
+                      >
+                        {[1,2,3,4,5,6,7,8,9,10,12].map(n => <option key={n} value={n}>{n}x</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-0.5">
+                      <Label className="text-[8px] uppercase font-black text-[#71717a]">Valor Parc.</Label>
+                      <div className="h-8 bg-[#0f1115] border border-[#2d3139] rounded flex items-center justify-center text-[10px] font-bold text-blue-400">
+                        R$ {(total / (cardDetails.installments || 1)).toFixed(2)}
+                      </div>
+                    </div>
+                 </div>
+              )}
+              {paymentMethod === 'PIX' && (
+                <div className="space-y-0.5">
+                  <Label className="text-[8px] uppercase font-black text-[#71717a]">Conta PIX</Label>
+                  <select 
+                    className="w-full h-8 bg-[#0f1115] border border-[#2d3139] rounded text-[10px] text-white px-2"
+                    value={selectedPixAccountId}
+                    onChange={e => setSelectedPixAccountId(e.target.value)}
+                  >
+                    <option value="">Selecione uma conta...</option>
+                    {pixSettings.accounts.map(acc => (
+                      <option key={acc.id} value={acc.id}>{acc.bankName} - {acc.pixKey}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {paymentMethod === 'Dinheiro' && (
+                <div className="flex items-center justify-center h-8 text-[9px] font-black text-emerald-500 uppercase tracking-widest italic">
+                   Pagamento em Espécie
+                </div>
+              )}
             </div>
           </div>
 
@@ -15078,10 +15196,7 @@ function PDVManager({
             <div className="flex flex-col items-center justify-center p-1.5 rounded-lg bg-[#0f1115]/30 border border-red-500/10">
                <div className="flex items-center justify-center gap-1.5 mb-0.5">
                 <span className="text-[8px] text-red-500/70 font-black uppercase italic">Desconto</span>
-                <button onClick={() => {
-                    const val = prompt("Valor do desconto (R$):");
-                    if (val !== null) setDiscount(Number(val) || 0);
-                }} className="text-blue-500 hover:text-blue-400 p-0.5 bg-[#0f1115] rounded border border-[#2d3139]">
+                <button onClick={() => setIsDiscountDialogOpen(true)} className="text-blue-500 hover:text-blue-400 p-0.5 bg-[#0f1115] rounded border border-[#2d3139]">
                     <Pencil size={8} />
                 </button>
               </div>
@@ -15107,6 +15222,53 @@ function PDVManager({
           </div>
         </div>
       </Card>
+
+      {/* Modal Desconto (F6) */}
+      <Dialog open={isDiscountDialogOpen} onOpenChange={setIsDiscountDialogOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Percent size={18} className="text-red-500" />
+              Aplicar Desconto
+            </DialogTitle>
+            <DialogDescription className="text-[#a0a0a0]">
+              Informe o valor em reais (R$) a ser descontado do total.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+             <div className="space-y-1.5">
+               <Label className="text-[#71717a] font-bold uppercase text-[10px]">Valor do Desconto</Label>
+               <div className="relative">
+                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#71717a] font-bold">R$</span>
+                 <Input 
+                   type="number" 
+                   className="pl-10 bg-[#0f1115] border-[#2d3139] h-12 text-lg font-black text-red-500 italic" 
+                   placeholder="0,00"
+                   value={discount === 0 ? '' : discount}
+                   onChange={e => setDiscount(Math.max(0, Number(e.target.value) || 0))}
+                   onKeyDown={e => e.key === 'Enter' && setIsDiscountDialogOpen(false)}
+                   autoFocus
+                 />
+               </div>
+             </div>
+             <div className="grid grid-cols-2 gap-2 pt-2 text-[10px] uppercase font-black">
+                <div className="p-2 rounded bg-[#0f1115] border border-[#2d3139] flex flex-col items-center">
+                   <span className="text-[#71717a]">Subtotal</span>
+                   <span className="text-white">R$ {subtotal.toFixed(2)}</span>
+                </div>
+                <div className="p-2 rounded bg-[#0f1115] border border-[#2d3139] flex flex-col items-center">
+                   <span className="text-red-500">Novo Total</span>
+                   <span className="text-white">R$ {total.toFixed(2)}</span>
+                </div>
+             </div>
+          </div>
+          <DialogFooter>
+             <Button onClick={() => setIsDiscountDialogOpen(false)} className="w-full bg-red-500 hover:bg-red-600 font-black uppercase italic">
+               Confirmar Desconto
+             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal Pesquisa de Produto (F3) */}
       <Dialog open={isProductSearchOpen} onOpenChange={setIsProductSearchOpen}>
