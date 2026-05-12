@@ -7071,7 +7071,12 @@ function SuperAdminPanel({
         billingCycle: editingCompany.billingCycle || 'mensal',
         customPrice: Number(editingCompany.customPrice) || 0,
         receivesUpdates: editingCompany.receivesUpdates ?? true,
-        isExempt: editingCompany.isExempt || false
+        isExempt: editingCompany.isExempt || false,
+        enabledMenus: editingCompany.enabledMenus || [
+          'dashboard', 'visits', 'receipts', 'clients', 'financial', 
+          'inventory', 'service-orders', 'budgets', 'settings', 'pdv',
+          'suppliers', 'reports', 'users', 'logs'
+        ]
       });
       toast.success("Plano da empresa atualizado!");
       setIsEditCompanyOpen(false);
@@ -14784,7 +14789,7 @@ function PDVManager({
         e.preventDefault();
         setIsProductSearchOpen(true);
       }
-      if (e.key === 'F5') {
+      if (e.key === 'F4') {
         e.preventDefault();
         // Focus linked OS or open search
       }
@@ -14935,9 +14940,26 @@ function PDVManager({
   };
 
   return (
-    <div className="p-4 h-[calc(100vh-80px)] flex flex-col gap-4 bg-[#0f1115]">
+    <div className="p-2 md:p-4 h-[calc(100vh-80px)] flex flex-col gap-3 bg-[#0f1115] overflow-hidden">
+      {/* Header Hotkeys Barra Superior */}
+      <div className="flex-shrink-0 flex flex-wrap items-center justify-between gap-2 p-2 px-4 rounded-xl bg-[#1a1d23] border border-[#2d3139] shadow-lg">
+        <div className="flex flex-wrap items-center gap-3 md:gap-5 text-[10px] font-black uppercase tracking-tighter text-[#71717a]">
+            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-blue-500">F1</Badge> NOVA</span>
+            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-blue-500">F2</Badge> CLIENTE</span>
+            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-blue-500">F3</Badge> PRODUTO</span>
+            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-blue-500">F4</Badge> OS/SERV</span>
+            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-blue-500">F6</Badge> DESC</span>
+            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-emerald-500">F10</Badge> FINALIZAR</span>
+            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-[#71717a]">F5</Badge> ATUALIZAR</span>
+        </div>
+        <div className="hidden lg:flex items-center gap-2">
+           <span className="text-[9px] uppercase font-black text-[#71717a]">Status do Caixa:</span>
+           <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-[9px] font-black italic">ABERTO</Badge>
+        </div>
+      </div>
+
       {/* Header Identificação */}
-      <div className="flex-shrink-0 grid grid-cols-1 md:grid-cols-4 gap-4 p-4 rounded-xl bg-[#1a1d23] border border-[#2d3139] shadow-xl">
+      <div className="flex-shrink-0 grid grid-cols-1 md:grid-cols-4 gap-3 p-3 rounded-xl bg-[#1a1d23] border border-[#2d3139] shadow-md">
         <div className="space-y-1">
           <Label className="text-[9px] uppercase font-black text-[#71717a] tracking-widest">Vendedor / Técnico</Label>
           <div className="flex items-center gap-2 text-white font-bold text-sm bg-[#0f1115] p-2 rounded border border-[#2d3139]">
@@ -14953,7 +14975,7 @@ function PDVManager({
           </div>
         </div>
           <div className="md:col-span-2 space-y-1">
-          <Label className="text-[9px] uppercase font-black text-[#71717a] tracking-widest">OS Vínculo (F5)</Label>
+          <Label className="text-[9px] uppercase font-black text-[#71717a] tracking-widest">OS Vínculo (F4)</Label>
           <div className="flex gap-2">
             <Input 
               placeholder="Nº da OS..." 
@@ -14962,38 +14984,38 @@ function PDVManager({
               onChange={e => setLinkedOS(e.target.value)}
             />
             <Button variant="outline" className="border-[#2d3139] text-[9px] font-black uppercase h-9 px-2 min-w-[80px]">
-              <Zap size={12} className="mr-1 text-yellow-500" /> Inserir
+              <FileText size={12} className="mr-1 text-blue-500" /> Inserir
             </Button>
           </div>
         </div>
       </div>
 
       {/* Main Cart Area */}
-      <Card className="flex-1 min-h-0 bg-[#1a1d23] border-[#2d3139] flex flex-col overflow-hidden shadow-2xl">
+      <Card className="flex-1 min-h-[300px] md:min-h-0 bg-[#1a1d23] border-[#2d3139] flex flex-col overflow-hidden shadow-2xl">
         <div className="flex-shrink-0 p-3 bg-[#0f1115]/50 border-b border-[#2d3139] grid grid-cols-12 gap-2 text-[10px] font-black text-[#71717a] uppercase tracking-widest">
-          <div className="col-span-1">Cód.</div>
-          <div className="col-span-6">Descrição do Produto/Serviço</div>
-          <div className="col-span-1 text-center">Qtd</div>
-          <div className="col-span-2 text-right">Valor Unit.</div>
-          <div className="col-span-2 text-right">Total</div>
+          <div className="col-span-1">COD</div>
+          <div className="col-span-6">DESCRIÇÃO DO PRODUTO/SERVIÇO</div>
+          <div className="col-span-1 text-center">QTD</div>
+          <div className="col-span-2 text-right">VALOR UNIT.</div>
+          <div className="col-span-2 text-right">TOTAL</div>
         </div>
         
-        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
-          <div className="min-h-full">
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar bg-[#0f1115]/20">
+          <div className="flex flex-col">
             {cart.map((c, idx) => (
-              <div key={idx} className="grid grid-cols-12 gap-2 p-3 border-b border-[#2d3139]/30 items-center hover:bg-blue-500/5 group text-white">
-                <div className="col-span-1 text-xs font-mono text-[#71717a] uppercase">{c.item.code || '-'}</div>
-                <div className="col-span-6 text-sm font-bold truncate">{c.item.name}</div>
+              <div key={idx} className="grid grid-cols-12 gap-2 p-2 border-b border-[#2d3139]/30 items-center hover:bg-blue-500/5 group text-white">
+                <div className="col-span-1 text-[10px] font-mono text-[#71717a] uppercase">{c.item.code || '-'}</div>
+                <div className="col-span-6 text-xs font-bold truncate">{c.item.name}</div>
                 <div className="col-span-1 flex justify-center">
                   <input 
                     type="number" 
                     value={c.quantity} 
                     onChange={(e) => updateQuantity(c.item.id, parseInt(e.target.value) || 0)}
-                    className="w-12 bg-[#0f1115] border border-[#2d3139] rounded text-center text-xs font-bold focus:border-blue-500 outline-none p-1"
+                    className="w-10 bg-[#0f1115] border border-[#2d3139] rounded text-center text-[10px] font-bold focus:border-blue-500 outline-none p-0.5"
                   />
                 </div>
-                <div className="col-span-2 text-right text-sm">R$ {c.price.toFixed(2)}</div>
-                <div className="col-span-2 text-right text-sm font-black text-blue-400 flex items-center justify-end gap-3">
+                <div className="col-span-2 text-right text-xs">R$ {c.price.toFixed(2)}</div>
+                <div className="col-span-2 text-right text-xs font-black text-blue-400 flex items-center justify-end gap-2">
                   R$ {(c.quantity * c.price).toFixed(2)}
                   <button onClick={() => removeFromCart(c.item.id)} className="p-1 hover:bg-red-500/10 rounded-full transition-all text-red-500/50 hover:text-red-500">
                     <Trash2 size={12} />
@@ -15002,26 +15024,11 @@ function PDVManager({
               </div>
             ))}
             {cart.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full text-[#71717a] py-10">
-                 <ShoppingCart size={48} className="mb-2 opacity-20" />
-                 <p className="text-xs italic font-bold uppercase tracking-widest">Aguardando Produtos... [F3]</p>
+              <div className="flex flex-col items-center justify-center py-20 text-[#71717a]">
+                 <ShoppingCart size={40} className="mb-2 opacity-20" />
+                 <p className="text-[10px] italic font-bold uppercase tracking-widest">Aguardando Produtos... [F3]</p>
               </div>
             )}
-          </div>
-        </div>
-
-        <div className="flex-shrink-0 p-3 bg-[#0f1115] border-t border-[#2d3139] flex justify-between items-center text-white z-10 relative">
-          <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-tighter text-[#71717a]">
-            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23]">F1</Badge> NOVA</span>
-            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23]">F2</Badge> CLIENTE</span>
-            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23]">F3</Badge> PRODUTO</span>
-            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23]">F5</Badge> OS/SERV</span>
-            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23]">F6</Badge> DESC</span>
-            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23]">F10</Badge> FINALIZAR</span>
-          </div>
-          <div className="text-right">
-            <span className="text-[10px] text-[#71717a] font-bold uppercase mr-2 tracking-widest">Subtotal:</span>
-            <span className="text-base font-black italic tracking-tighter text-blue-400">R$ {subtotal.toFixed(2)}</span>
           </div>
         </div>
       </Card>
@@ -15029,55 +15036,61 @@ function PDVManager({
       {/* Payment Summary Area */}
       <Card className="bg-[#1a1d23] border-[#2d3139] shadow-2xl relative overflow-hidden flex-shrink-0">
         <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500" />
-        <div className="p-3 flex flex-col gap-4">
+        <div className="p-2 md:p-3 flex flex-col gap-2 md:gap-4">
           
           {/* Row 1: Payment Method Selection */}
-          <div className="space-y-1.5 text-center">
-            <Label className="text-[10px] font-black text-[#71717a] tracking-widest uppercase">Forma de Recebimento</Label>
-            <div className="flex justify-center gap-3 max-w-xl mx-auto w-full">
+          <div className="space-y-1 text-center">
+            <Label className="text-[9px] font-black text-[#71717a] tracking-widest uppercase">Forma de Recebimento</Label>
+            <div className="flex justify-center gap-2 max-w-xl mx-auto w-full">
               {[
                 {id: 'Dinheiro', icon: <DollarSign size={14} />},
                 {id: 'Cartão', icon: <CreditCard size={14} />},
-                {id: 'PIX', icon: <Zap size={14} />}
+                {id: 'PIX', icon: (
+                  <svg width="14" height="14" viewBox="0 0 512 512" fill="currentColor" className="text-emerald-500">
+                    <path d="M256 120 L392 256 L256 392 L120 256 Z M256 180 L332 256 L256 332 L180 256 Z" />
+                  </svg>
+                )}
               ].map((m: any) => (
                 <button
                   key={m.id}
                   onClick={() => setPaymentMethod(m.id)}
                   className={cn(
-                    "flex-1 h-9 rounded-lg border flex items-center justify-center gap-2 transition-all outline-none",
+                    "flex-1 h-8 rounded-lg border flex items-center justify-center gap-2 transition-all outline-none",
                     paymentMethod === m.id 
                       ? "bg-emerald-500 text-white border-emerald-400 font-bold shadow-lg shadow-emerald-500/20" 
                       : "bg-[#0f1115] border-[#2d3139] text-[#71717a] hover:border-[#3b82f6]/50"
                   )}
                 >
                   {m.icon}
-                  <span className="text-[10px] font-bold uppercase">{m.id}</span>
+                  <span className="text-[9px] font-bold uppercase">{m.id}</span>
                 </button>
               ))}
             </div>
           </div>
 
           {/* Row 2: Totals Summary */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 py-3 border-t border-b border-[#2d3139]/50">
-            <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-[#0f1115]/30">
-              <span className="text-[9px] text-[#71717a] font-black uppercase block mb-1">Subtotal</span>
-              <span className="text-xl font-bold text-white leading-none">R$ {subtotal.toFixed(2)}</span>
+          <div className="grid grid-cols-3 gap-2 py-2 border-t border-b border-[#2d3139]/50">
+            <div className="flex flex-col items-center justify-center p-1.5 rounded-lg bg-[#0f1115]/30">
+              <span className="text-[8px] text-[#71717a] font-black uppercase block mb-0.5">Subtotal</span>
+              <span className="text-sm md:text-lg font-bold text-white leading-none">R$ {subtotal.toFixed(2)}</span>
             </div>
-            <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-[#0f1115]/30 border border-red-500/10">
-               <div className="flex items-center justify-center gap-1.5 mb-1">
-                <span className="text-[9px] text-red-500/70 font-black uppercase italic">Desconto (F6)</span>
+            <div className="flex flex-col items-center justify-center p-1.5 rounded-lg bg-[#0f1115]/30 border border-red-500/10">
+               <div className="flex items-center justify-center gap-1.5 mb-0.5">
+                <span className="text-[8px] text-red-500/70 font-black uppercase italic">Desconto</span>
                 <button onClick={() => {
-                    const val = prompt("Valor do desconto:");
+                    const val = prompt("Valor do desconto (R$):");
                     if (val !== null) setDiscount(Number(val) || 0);
                 }} className="text-blue-500 hover:text-blue-400 p-0.5 bg-[#0f1115] rounded border border-[#2d3139]">
                     <Pencil size={8} />
                 </button>
               </div>
-              <span className="text-xl font-bold text-red-500 italic block leading-none">- R$ {discount.toFixed(2)}</span>
+              <div className="flex items-center gap-1">
+                <span className="text-sm md:text-lg font-bold text-red-500 italic block leading-none">- R$ {discount.toFixed(2)}</span>
+              </div>
             </div>
-            <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-              <span className="text-[10px] text-emerald-500 font-black uppercase block tracking-widest mb-1">Total Geral</span>
-              <span className="text-3xl font-black text-emerald-500 italic tracking-tighter block leading-none">R$ {total.toFixed(2)}</span>
+            <div className="flex flex-col items-center justify-center p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+              <span className="text-[9px] text-emerald-500 font-black uppercase block tracking-widest mb-0.5">Total Geral</span>
+              <span className="text-xl md:text-2xl font-black text-emerald-500 italic tracking-tighter block leading-none">R$ {total.toFixed(2)}</span>
             </div>
           </div>
 
@@ -15086,7 +15099,7 @@ function PDVManager({
             <Button 
               onClick={handleFinishSale}
               disabled={cart.length === 0 || isFinishing}
-              className="w-full h-12 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase italic tracking-tighter text-xl shadow-xl shadow-emerald-600/20"
+              className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase italic tracking-tighter text-lg shadow-xl shadow-emerald-600/20"
             >
               {isFinishing ? <Loader2 className="animate-spin" /> : "FINALIZAR VENDA (F10)"}
             </Button>
