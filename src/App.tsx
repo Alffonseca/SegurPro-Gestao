@@ -14940,7 +14940,7 @@ function PDVManager({
   };
 
   return (
-    <div className="p-2 md:p-4 h-[calc(100vh-80px)] flex flex-col gap-3 bg-[#0f1115] overflow-y-auto md:overflow-hidden custom-scrollbar">
+    <div className="p-2 md:p-4 h-[calc(100vh-80px)] flex flex-col gap-2 md:gap-3 bg-[#0f1115] overflow-hidden">
       {/* Header Hotkeys Barra Superior */}
       <div className="flex-shrink-0 flex items-center justify-between gap-2 p-2 px-4 rounded-xl bg-[#1a1d23] border border-[#2d3139] shadow-lg">
         <div className="flex-1 flex flex-wrap items-center gap-2 md:gap-5 text-[10px] font-black uppercase tracking-tighter text-[#71717a]">
@@ -14990,8 +14990,8 @@ function PDVManager({
       </div>
 
       {/* Main Cart Area */}
-      <Card className="flex-1 min-h-[250px] md:min-h-0 bg-[#1a1d23] border-[#2d3139] flex flex-col overflow-hidden shadow-2xl">
-        <div className="flex-shrink-0 p-3 bg-[#0f1115]/50 border-b border-[#2d3139] grid grid-cols-12 gap-2 text-[10px] font-black text-[#71717a] uppercase tracking-widest">
+      <Card className="flex-1 min-h-0 bg-[#1a1d23] border-[#2d3139] flex flex-col overflow-hidden shadow-2xl">
+        <div className="flex-shrink-0 p-2 md:p-3 bg-[#0f1115]/50 border-b border-[#2d3139] grid grid-cols-12 gap-2 text-[9px] md:text-[10px] font-black text-[#71717a] uppercase tracking-widest">
           <div className="col-span-1">COD</div>
           <div className="col-span-6">DESCRIÇÃO DO PRODUTO/SERVIÇO</div>
           <div className="col-span-1 text-center">QTD</div>
@@ -14999,8 +14999,8 @@ function PDVManager({
           <div className="col-span-2 text-right">TOTAL</div>
         </div>
         
-        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar bg-[#0f1115]/20">
-          <div className="flex flex-col">
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar bg-[#0f1115]/10">
+          <div className="flex flex-col divide-y divide-[#2d3139]/20">
             {cart.map((c, idx) => (
               <div key={idx} className="grid grid-cols-12 gap-2 p-2 border-b border-[#2d3139]/30 items-center hover:bg-blue-500/5 group text-white">
                 <div className="col-span-1 text-[10px] font-mono text-[#71717a] uppercase">{c.item.code || '-'}</div>
