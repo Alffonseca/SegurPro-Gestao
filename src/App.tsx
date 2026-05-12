@@ -2372,7 +2372,7 @@ export default function MainApp() {
   const [posSelectedClient, setPosSelectedClient] = useState<string>('Avulso');
   const [posPaymentMethod, setPosPaymentMethod] = useState<'Dinheiro' | 'Cartão' | 'PIX'>('Dinheiro');
   const [posLinkedOS, setPosLinkedOS] = useState('');
-  const [posCardDetails, setPosCardDetails] = useState({ brand: '', type: 'crédito', installments: 1 });
+  const [posCardDetails, setPosCardDetails] = useState({ brand: '', type: 'crédito', installments: 1, interestPercent: 0 });
   const [posSelectedPixAccountId, setPosSelectedPixAccountId] = useState<string>('');
 
   // Log system
@@ -14814,9 +14814,13 @@ function PDVManager({
   const [isProductSearchOpen, setIsProductSearchOpen] = useState(false);
   const [isClientSearchOpen, setIsClientSearchOpen] = useState(false);
   const [isDiscountDialogOpen, setIsDiscountDialogOpen] = useState(false);
+  const [isCardDialogOpen, setIsCardDialogOpen] = useState(false);
+  const [isPixDialogOpen, setIsPixDialogOpen] = useState(false);
 
   const subtotal = cart.reduce((acc, curr) => acc + (curr.quantity * curr.price), 0);
-  const total = Math.max(0, subtotal - discount);
+  const totalAfterDiscount = Math.max(0, subtotal - discount);
+  const interestAmount = (totalAfterDiscount * (cardDetails.interestPercent || 0)) / 100;
+  const total = totalAfterDiscount + interestAmount;
 
   // Keyboard Shortcuts
   useEffect(() => {
@@ -15037,7 +15041,7 @@ function PDVManager({
       </div>
 
       {/* Main Cart Area */}
-      <Card className="flex-[3] min-h-0 bg-[#1a1d23] border-[#2d3139] flex flex-col overflow-hidden shadow-2xl">
+      <Card className="flex-[5] min-h-0 bg-[#1a1d23] border-[#2d3139] flex flex-col overflow-hidden shadow-2xl">
         <div className="flex-shrink-0 p-2 md:p-3 bg-[#0f1115]/50 border-b border-[#2d3139] grid grid-cols-12 gap-2 text-[9px] md:text-[10px] font-black text-[#71717a] uppercase tracking-widest">
           <div className="col-span-1">COD</div>
           <div className="col-span-6">DESCRIÇÃO DO PRODUTO/SERVIÇO</div>
@@ -15046,7 +15050,7 @@ function PDVManager({
           <div className="col-span-2 text-right">TOTAL</div>
         </div>
         
-        <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#0f1115]/10 min-h-0">
+        <div className="flex-1 overflow-y-scroll custom-scrollbar bg-[#0f1115]/10 min-h-0">
           <div className="flex flex-col divide-y divide-[#2d3139]/20">
             {cart.map((c, idx) => (
               <div key={idx} className="grid grid-cols-12 gap-2 p-2 border-b border-[#2d3139]/30 items-center hover:bg-blue-500/5 group text-white">
@@ -15085,105 +15089,67 @@ function PDVManager({
         <div className="p-2 md:p-3 flex flex-col gap-2 md:gap-4">
           
           {/* Row 1: Payment Method Selection */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1">
+          <div className="flex flex-col md:flex-row items-center gap-4">
+            <div className="flex-1 space-y-1 w-full">
               <Label className="text-[9px] font-black text-[#71717a] tracking-widest uppercase">Forma de Recebimento</Label>
               <div className="flex justify-center gap-2 w-full">
                 {[
-                  {id: 'Dinheiro', icon: <DollarSign size={14} />},
-                  {id: 'Cartão', icon: <CreditCard size={14} />},
+                  {id: 'Dinheiro', icon: <DollarSign size={14} />, onClick: () => setPaymentMethod('Dinheiro')},
+                  {id: 'Cartão', icon: <CreditCard size={14} />, onClick: () => { setPaymentMethod('Cartão'); setIsCardDialogOpen(true); }},
                   {id: 'PIX', icon: (
                     <svg width="14" height="14" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-emerald-400">
                       <path d="M256 32L480 256L256 480L32 256L256 32Z" stroke="currentColor" strokeWidth="40" strokeLinecap="round" strokeLinejoin="round" />
                       <path d="M256 128L384 256L256 384L128 256L256 128Z" fill="currentColor" />
                     </svg>
-                  )}
+                  ), onClick: () => { setPaymentMethod('PIX'); setIsPixDialogOpen(true); }}
                 ].map((m: any) => (
                   <button
                     key={m.id}
-                    onClick={() => setPaymentMethod(m.id)}
+                    onClick={m.onClick}
                     className={cn(
-                      "flex-1 h-8 rounded-lg border flex items-center justify-center gap-2 transition-all outline-none",
+                      "flex-1 h-10 rounded-lg border flex items-center justify-center gap-2 transition-all outline-none",
                       paymentMethod === m.id 
                         ? "bg-emerald-500 text-white border-emerald-400 font-bold shadow-lg shadow-emerald-500/20" 
                         : "bg-[#0f1115] border-[#2d3139] text-[#71717a] hover:border-[#3b82f6]/50"
                     )}
                   >
                     {m.icon}
-                    <span className="text-[9px] font-bold uppercase">{m.id}</span>
+                    <span className="text-[10px] font-bold uppercase">{m.id}</span>
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Payment Sub-details */}
-            <div className="space-y-1">
-              {paymentMethod === 'Cartão' && (
-                 <div className="grid grid-cols-4 gap-2">
-                    <div className="space-y-0.5">
-                      <Label className="text-[8px] uppercase font-black text-[#71717a]">Bandeira</Label>
-                      <select 
-                        className="w-full h-8 bg-[#0f1115] border border-[#2d3139] rounded text-[10px] text-white px-1"
-                        value={cardDetails.brand}
-                        onChange={e => setCardDetails({...cardDetails, brand: e.target.value})}
-                      >
-                        <option value="">Selecione...</option>
-                        <option value="Visa">Visa</option>
-                        <option value="Mastercard">Mastercard</option>
-                        <option value="Elo">Elo</option>
-                        <option value="Hipercard">Hipercard</option>
-                        <option value="Amex">Amex</option>
-                      </select>
+            {/* Payment Status Info */}
+            <div className="flex-1 flex gap-2 w-full">
+               {paymentMethod === 'Cartão' && (
+                 <div className="flex-1 bg-[#0f1115] border border-blue-500/20 rounded-lg p-2 flex items-center justify-between cursor-pointer hover:bg-blue-500/5 transition-colors" onClick={() => setIsCardDialogOpen(true)}>
+                    <div className="flex flex-col">
+                      <span className="text-[8px] uppercase font-black text-[#71717a]">Plano de Cartão</span>
+                      <span className="text-[10px] text-white font-bold">{cardDetails.brand || 'Selecione'} - {cardDetails.type} {cardDetails.installments}x</span>
                     </div>
-                    <div className="space-y-0.5">
-                      <Label className="text-[8px] uppercase font-black text-[#71717a]">Tipo</Label>
-                      <select 
-                        className="w-full h-8 bg-[#0f1115] border border-[#2d3139] rounded text-[10px] text-white px-1"
-                        value={cardDetails.type}
-                        onChange={e => setCardDetails({...cardDetails, type: e.target.value})}
-                      >
-                        <option value="crédito">Crédito</option>
-                        <option value="débito">Débito</option>
-                      </select>
-                    </div>
-                    <div className="space-y-0.5">
-                      <Label className="text-[8px] uppercase font-black text-[#71717a]">Parc.</Label>
-                      <select 
-                        className="w-full h-8 bg-[#0f1115] border border-[#2d3139] rounded text-[10px] text-white px-1"
-                        value={cardDetails.installments}
-                        onChange={e => setCardDetails({...cardDetails, installments: Number(e.target.value)})}
-                      >
-                        {[1,2,3,4,5,6,7,8,9,10,12].map(n => <option key={n} value={n}>{n}x</option>)}
-                      </select>
-                    </div>
-                    <div className="space-y-0.5">
-                      <Label className="text-[8px] uppercase font-black text-[#71717a]">Valor Parc.</Label>
-                      <div className="h-8 bg-[#0f1115] border border-[#2d3139] rounded flex items-center justify-center text-[10px] font-bold text-blue-400">
-                        R$ {(total / (cardDetails.installments || 1)).toFixed(2)}
-                      </div>
+                    <div className="text-right">
+                       <span className="text-[8px] uppercase font-black text-blue-400">Juros</span>
+                       <div className="text-[10px] font-black text-white">{cardDetails.interestPercent}%</div>
                     </div>
                  </div>
-              )}
-              {paymentMethod === 'PIX' && (
-                <div className="space-y-0.5">
-                  <Label className="text-[8px] uppercase font-black text-[#71717a]">Conta PIX</Label>
-                  <select 
-                    className="w-full h-8 bg-[#0f1115] border border-[#2d3139] rounded text-[10px] text-white px-2"
-                    value={selectedPixAccountId}
-                    onChange={e => setSelectedPixAccountId(e.target.value)}
-                  >
-                    <option value="">Selecione uma conta...</option>
-                    {pixSettings.accounts.map(acc => (
-                      <option key={acc.id} value={acc.id}>{acc.bankName} - {acc.pixKey}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              {paymentMethod === 'Dinheiro' && (
-                <div className="flex items-center justify-center h-8 text-[9px] font-black text-emerald-500 uppercase tracking-widest italic">
-                   Pagamento em Espécie
-                </div>
-              )}
+               )}
+               {paymentMethod === 'PIX' && (
+                 <div className="flex-1 bg-[#0f1115] border border-emerald-500/20 rounded-lg p-2 flex items-center justify-between cursor-pointer hover:bg-emerald-500/5 transition-colors" onClick={() => setIsPixDialogOpen(true)}>
+                    <div className="flex flex-col">
+                      <span className="text-[8px] uppercase font-black text-[#71717a]">Conta PIX Selecionada</span>
+                      <span className="text-[10px] text-white font-bold">
+                        {(pixSettings?.accounts || []).find(a => a.id === selectedPixAccountId)?.label || 'Clique p/ Selecionar'}
+                      </span>
+                    </div>
+                    <ChevronRight size={14} className="text-emerald-500" />
+                 </div>
+               )}
+               {paymentMethod === 'Dinheiro' && (
+                 <div className="flex-1 bg-[#0f1115] border border-[#2d3139] rounded-lg p-2 flex items-center justify-center text-[10px] font-bold text-[#71717a] uppercase italic">
+                    Recebimento em Dinheiro (Sem detalhes adicionais)
+                 </div>
+               )}
             </div>
           </div>
 
@@ -15263,8 +15229,139 @@ function PDVManager({
              </div>
           </div>
           <DialogFooter>
-             <Button onClick={() => setIsDiscountDialogOpen(false)} className="w-full bg-red-500 hover:bg-red-600 font-black uppercase italic">
+             <Button onClick={() => setIsDiscountDialogOpen(false)} className="w-full bg-red-500 hover:bg-neutral-600 font-black uppercase italic">
                Confirmar Desconto
+             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Pagamento Cartão */}
+      <Dialog open={isCardDialogOpen} onOpenChange={setIsCardDialogOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CreditCard size={18} className="text-blue-500" />
+              Detalhes do Pagamento em Cartão
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+             <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-[#71717a] font-bold uppercase text-[10px]">Bandeira</Label>
+                  <select 
+                    className="w-full h-12 bg-[#0f1115] border-[#2d3139] rounded-lg text-sm text-white px-3 font-bold"
+                    value={cardDetails.brand}
+                    onChange={e => setCardDetails({...cardDetails, brand: e.target.value})}
+                  >
+                    <option value="">Selecione...</option>
+                    <option value="Visa">Visa</option>
+                    <option value="Mastercard">Mastercard</option>
+                    <option value="Elo">Elo</option>
+                    <option value="Hipercard">Hipercard</option>
+                    <option value="Amex">Amex</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[#71717a] font-bold uppercase text-[10px]">Tipo</Label>
+                  <select 
+                    className="w-full h-12 bg-[#0f1115] border-[#2d3139] rounded-lg text-sm text-white px-3 font-bold"
+                    value={cardDetails.type}
+                    onChange={e => setCardDetails({...cardDetails, type: e.target.value})}
+                  >
+                    <option value="crédito">Crédito</option>
+                    <option value="débito">Débito</option>
+                  </select>
+                </div>
+             </div>
+
+             <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-[#71717a] font-bold uppercase text-[10px]">Parcelas</Label>
+                  <select 
+                    className="w-full h-12 bg-[#0f1115] border-[#2d3139] rounded-lg text-sm text-white px-3 font-bold"
+                    value={cardDetails.installments}
+                    onChange={e => setCardDetails({...cardDetails, installments: Number(e.target.value)})}
+                  >
+                    {[1,2,3,4,5,6,7,8,9,10,12].map(n => <option key={n} value={n}>{n}x</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[#71717a] font-bold uppercase text-[10px]">Taxa de Juros (%)</Label>
+                  <div className="relative">
+                    <Input 
+                      type="number"
+                      className="bg-[#0f1115] border-[#2d3139] h-12 text-sm font-black text-blue-400 text-center"
+                      value={cardDetails.interestPercent === 0 ? '' : cardDetails.interestPercent}
+                      onChange={e => setCardDetails({...cardDetails, interestPercent: Math.max(0, Number(e.target.value) || 0)})}
+                      placeholder="0"
+                    />
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                       <Percent size={14} className="text-[#71717a]" />
+                       {cardDetails.interestPercent > 0 && (
+                         <button onClick={() => setCardDetails({...cardDetails, interestPercent: 0})} className="text-[9px] uppercase font-bold text-red-500 hover:underline">Zerar</button>
+                       )}
+                    </div>
+                  </div>
+                </div>
+             </div>
+
+             <div className="p-4 rounded-xl bg-[#0f1115] border border-[#2d3139] grid grid-cols-2 gap-4">
+                <div className="flex flex-col">
+                   <span className="text-xs text-[#71717a] font-bold uppercase">Total Final</span>
+                   <span className="text-xl font-black text-white">R$ {total.toFixed(2)}</span>
+                </div>
+                <div className="flex flex-col items-end">
+                   <span className="text-xs text-[#71717a] font-bold uppercase">Parcelas</span>
+                   <span className="text-lg font-black text-blue-400">
+                     {cardDetails.installments}x R$ {(total / (cardDetails.installments || 1)).toFixed(2)}
+                   </span>
+                </div>
+             </div>
+          </div>
+          <DialogFooter>
+             <Button onClick={() => setIsCardDialogOpen(false)} className="w-full bg-blue-600 hover:bg-blue-700 font-black uppercase italic">
+               Confirmar Dados do Cartão
+             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Seleção PIX */}
+      <Dialog open={isPixDialogOpen} onOpenChange={setIsPixDialogOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <svg width="18" height="18" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-emerald-400">
+                <path d="M256 32L480 256L256 480L32 256L256 32Z" stroke="currentColor" strokeWidth="40" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M256 128L384 256L256 384L128 256L256 128Z" fill="currentColor" />
+              </svg>
+              Selecionar Conta PIX
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+             <div className="space-y-1.5">
+               <Label className="text-[#71717a] font-bold uppercase text-[10px]">Conta de Destino</Label>
+               <select 
+                 className="w-full h-12 bg-[#0f1115] border-[#2d3139] rounded-lg text-sm text-white px-3 font-bold"
+                 value={selectedPixAccountId}
+                 onChange={e => setSelectedPixAccountId(e.target.value)}
+               >
+                 <option value="">Selecione uma conta...</option>
+                 {(pixSettings?.accounts || []).map(acc => (
+                   <option key={acc.id} value={acc.id}>{acc.label} ({acc.bank}) - {acc.key}</option>
+                 ))}
+               </select>
+             </div>
+             {(pixSettings?.accounts || []).length === 0 && (
+               <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-500 text-xs italic text-center">
+                 Nenhuma conta PIX cadastrada no sistema. Vá em Configurações para cadastrar.
+               </div>
+             )}
+          </div>
+          <DialogFooter>
+             <Button onClick={() => setIsPixDialogOpen(false)} className="w-full bg-emerald-600 hover:bg-emerald-700 font-black uppercase italic">
+               Confirmar Conta PIX
              </Button>
           </DialogFooter>
         </DialogContent>
