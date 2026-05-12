@@ -14942,19 +14942,18 @@ function PDVManager({
   return (
     <div className="p-2 md:p-4 h-[calc(100vh-80px)] flex flex-col gap-3 bg-[#0f1115] overflow-hidden">
       {/* Header Hotkeys Barra Superior */}
-      <div className="flex-shrink-0 flex flex-wrap items-center justify-between gap-2 p-2 px-4 rounded-xl bg-[#1a1d23] border border-[#2d3139] shadow-lg">
-        <div className="flex flex-wrap items-center gap-3 md:gap-5 text-[10px] font-black uppercase tracking-tighter text-[#71717a]">
+      <div className="flex-shrink-0 flex items-center justify-between gap-2 p-2 px-4 rounded-xl bg-[#1a1d23] border border-[#2d3139] shadow-lg">
+        <div className="flex-1 flex flex-wrap items-center gap-3 md:gap-5 text-[10px] font-black uppercase tracking-tighter text-[#71717a]">
             <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-blue-500">F1</Badge> NOVA</span>
             <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-blue-500">F2</Badge> CLIENTE</span>
             <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-blue-500">F3</Badge> PRODUTO</span>
             <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-blue-500">F4</Badge> OS/SERV</span>
             <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-blue-500">F6</Badge> DESC</span>
             <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-emerald-500">F10</Badge> FINALIZAR</span>
-            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-[#71717a]">F5</Badge> ATUALIZAR</span>
         </div>
-        <div className="hidden lg:flex items-center gap-2">
-           <span className="text-[9px] uppercase font-black text-[#71717a]">Status do Caixa:</span>
-           <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-[9px] font-black italic">ABERTO</Badge>
+        <div className="flex-shrink-0 flex items-center gap-2 ml-auto">
+           <span className="hidden sm:inline text-[9px] uppercase font-black text-[#71717a] tracking-widest">Status:</span>
+           <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-[10px] font-black italic px-3 h-6">ABERTO</Badge>
         </div>
       </div>
 
@@ -14991,7 +14990,7 @@ function PDVManager({
       </div>
 
       {/* Main Cart Area */}
-      <Card className="flex-1 min-h-[300px] md:min-h-0 bg-[#1a1d23] border-[#2d3139] flex flex-col overflow-hidden shadow-2xl">
+      <Card className="flex-1 min-h-[320px] md:min-h-0 bg-[#1a1d23] border-[#2d3139] flex flex-col overflow-hidden shadow-2xl">
         <div className="flex-shrink-0 p-3 bg-[#0f1115]/50 border-b border-[#2d3139] grid grid-cols-12 gap-2 text-[10px] font-black text-[#71717a] uppercase tracking-widest">
           <div className="col-span-1">COD</div>
           <div className="col-span-6">DESCRIÇÃO DO PRODUTO/SERVIÇO</div>
@@ -15046,8 +15045,9 @@ function PDVManager({
                 {id: 'Dinheiro', icon: <DollarSign size={14} />},
                 {id: 'Cartão', icon: <CreditCard size={14} />},
                 {id: 'PIX', icon: (
-                  <svg width="14" height="14" viewBox="0 0 512 512" fill="currentColor" className="text-emerald-500">
-                    <path d="M256 120 L392 256 L256 392 L120 256 Z M256 180 L332 256 L256 332 L180 256 Z" />
+                  <svg width="18" height="18" viewBox="0 0 512 512" fill="currentColor" className="text-emerald-400">
+                    <path d="M256,0,32,224,256,448,480,224ZM256,366.5,113.5,224,256,81.5,398.5,224Z" opacity="0.3" />
+                    <path d="M256,128,158,224,256,320,354,224Z" />
                   </svg>
                 )}
               ].map((m: any) => (
