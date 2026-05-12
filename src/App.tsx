@@ -14958,39 +14958,39 @@ function PDVManager({
       </div>
 
       {/* Header Identificação */}
-      <div className="flex-shrink-0 grid grid-cols-1 md:grid-cols-4 gap-3 p-3 rounded-xl bg-[#1a1d23] border border-[#2d3139] shadow-md">
-        <div className="space-y-1">
-          <Label className="text-[9px] uppercase font-black text-[#71717a] tracking-widest">Vendedor / Técnico</Label>
-          <div className="flex items-center gap-2 text-white font-bold text-sm bg-[#0f1115] p-2 rounded border border-[#2d3139]">
-            <User size={14} className="text-blue-500" />
+      <div className="flex-shrink-0 grid grid-cols-1 md:grid-cols-4 gap-2 p-2 rounded-xl bg-[#1a1d23] border border-[#2d3139] shadow-md">
+        <div className="space-y-0.5">
+          <Label className="text-[8px] uppercase font-black text-[#71717a] tracking-widest">Vendedor / Técnico</Label>
+          <div className="flex items-center gap-2 text-white font-bold text-xs bg-[#0f1115] p-1.5 rounded border border-[#2d3139]">
+            <User size={12} className="text-blue-500" />
             {user?.displayName || user?.email || 'Sistema'}
           </div>
         </div>
-        <div className="space-y-1">
-          <Label className="text-[9px] uppercase font-black text-[#71717a] tracking-widest">Cliente (F2)</Label>
-          <div className="flex items-center gap-2 text-white font-bold text-sm bg-[#0f1115] p-2 rounded border border-[#2d3139] cursor-pointer hover:border-blue-500/50" onClick={() => setIsClientSearchOpen(true)}>
-            <Search size={14} className="text-blue-500" />
-            {selectedClient}
+        <div className="space-y-0.5">
+          <Label className="text-[8px] uppercase font-black text-[#71717a] tracking-widest">Cliente (F2)</Label>
+          <div className="flex items-center gap-2 text-white font-bold text-xs bg-[#0f1115] p-1.5 rounded border border-[#2d3139] cursor-pointer hover:border-blue-500/50" onClick={() => setIsClientSearchOpen(true)}>
+            <Search size={12} className="text-blue-500" />
+            <span className="truncate">{selectedClient}</span>
           </div>
         </div>
-          <div className="md:col-span-2 space-y-1">
-          <Label className="text-[9px] uppercase font-black text-[#71717a] tracking-widest">OS Vínculo (F4)</Label>
+          <div className="md:col-span-2 space-y-0.5">
+          <Label className="text-[8px] uppercase font-black text-[#71717a] tracking-widest">OS Vínculo (F4)</Label>
           <div className="flex gap-2">
             <Input 
               placeholder="Nº da OS..." 
-              className="h-9 bg-[#0f1115] border-[#2d3139] text-white text-xs"
+              className="h-8 bg-[#0f1115] border-[#2d3139] text-white text-[11px]"
               value={linkedOS}
               onChange={e => setLinkedOS(e.target.value)}
             />
-            <Button variant="outline" className="border-[#2d3139] text-[9px] font-black uppercase h-9 px-2 min-w-[80px]">
-              <FileText size={12} className="mr-1 text-blue-500" /> Inserir
+            <Button variant="outline" className="border-[#2d3139] text-[8px] font-black uppercase h-8 px-2 min-w-[70px]">
+              <FileText size={10} className="mr-1 text-blue-500" /> Inserir
             </Button>
           </div>
         </div>
       </div>
 
       {/* Main Cart Area */}
-      <Card className="flex-1 min-h-[320px] md:min-h-0 bg-[#1a1d23] border-[#2d3139] flex flex-col overflow-hidden shadow-2xl">
+      <Card className="flex-1 min-h-[420px] bg-[#1a1d23] border-[#2d3139] flex flex-col overflow-hidden shadow-2xl">
         <div className="flex-shrink-0 p-3 bg-[#0f1115]/50 border-b border-[#2d3139] grid grid-cols-12 gap-2 text-[10px] font-black text-[#71717a] uppercase tracking-widest">
           <div className="col-span-1">COD</div>
           <div className="col-span-6">DESCRIÇÃO DO PRODUTO/SERVIÇO</div>
