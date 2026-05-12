@@ -2372,7 +2372,7 @@ export default function MainApp() {
   const [posSelectedClient, setPosSelectedClient] = useState<string>('Avulso');
   const [posPaymentMethod, setPosPaymentMethod] = useState<'Dinheiro' | 'Cartão' | 'PIX'>('Dinheiro');
   const [posLinkedOS, setPosLinkedOS] = useState('');
-  const [posCardDetails, setPosCardDetails] = useState({ brand: '', type: 'crédito', installments: 1, interestPercent: 0 });
+  const [posCardDetails, setPosCardDetails] = useState({ brand: '', type: 'crédito', installments: 1, interestPercent: 0, useInterest: false });
   const [posSelectedPixAccountId, setPosSelectedPixAccountId] = useState<string>('');
 
   // Log system
@@ -14817,6 +14817,19 @@ function PDVManager({
   const [isCardDialogOpen, setIsCardDialogOpen] = useState(false);
   const [isPixDialogOpen, setIsPixDialogOpen] = useState(false);
 
+  const findInterestRate = (brand: string, type: string, installments: number) => {
+    if (!appSettings.installmentPlans || !brand) return 0;
+    let searchBrand = brand.toUpperCase();
+    if (searchBrand === 'AMEX') searchBrand = 'AMERICA';
+    let searchType = type.toUpperCase();
+    const plan = appSettings.installmentPlans.find(p => 
+      p.brand === searchBrand && 
+      p.type === searchType && 
+      p.installments === installments
+    );
+    return plan ? plan.interestRate : 0;
+  };
+
   const subtotal = cart.reduce((acc, curr) => acc + (curr.quantity * curr.price), 0);
   const totalAfterDiscount = Math.max(0, subtotal - discount);
   const interestAmount = (totalAfterDiscount * (cardDetails.interestPercent || 0)) / 100;
@@ -15126,7 +15139,10 @@ function PDVManager({
                  <div className="flex-1 bg-[#0f1115] border border-blue-500/20 rounded-lg p-2 flex items-center justify-between cursor-pointer hover:bg-blue-500/5 transition-colors" onClick={() => setIsCardDialogOpen(true)}>
                     <div className="flex flex-col">
                       <span className="text-[8px] uppercase font-black text-[#71717a]">Plano de Cartão</span>
-                      <span className="text-[10px] text-white font-bold">{cardDetails.brand || 'Selecione'} - {cardDetails.type} {cardDetails.installments}x</span>
+                      <span className="text-[10px] text-white font-bold">
+                        {cardDetails.brand || 'Selecione'} - {cardDetails.type} {cardDetails.installments}x 
+                        {cardDetails.interestPercent > 0 ? ` (${cardDetails.interestPercent}% juros)` : ' (Sem Juros)'}
+                      </span>
                     </div>
                     <div className="text-right">
                        <span className="text-[8px] uppercase font-black text-blue-400">Juros</span>
@@ -15252,7 +15268,11 @@ function PDVManager({
                   <select 
                     className="w-full h-12 bg-[#0f1115] border-[#2d3139] rounded-lg text-sm text-white px-3 font-bold"
                     value={cardDetails.brand}
-                    onChange={e => setCardDetails({...cardDetails, brand: e.target.value})}
+                    onChange={e => {
+                      const newBrand = e.target.value;
+                      const rate = cardDetails.useInterest ? findInterestRate(newBrand, cardDetails.type, cardDetails.installments) : cardDetails.interestPercent;
+                      setCardDetails({...cardDetails, brand: newBrand, interestPercent: rate});
+                    }}
                   >
                     <option value="">Selecione...</option>
                     <option value="Visa">Visa</option>
@@ -15267,7 +15287,11 @@ function PDVManager({
                   <select 
                     className="w-full h-12 bg-[#0f1115] border-[#2d3139] rounded-lg text-sm text-white px-3 font-bold"
                     value={cardDetails.type}
-                    onChange={e => setCardDetails({...cardDetails, type: e.target.value})}
+                    onChange={e => {
+                      const newType = e.target.value;
+                      const rate = cardDetails.useInterest ? findInterestRate(cardDetails.brand, newType, cardDetails.installments) : cardDetails.interestPercent;
+                      setCardDetails({...cardDetails, type: newType, interestPercent: rate});
+                    }}
                   >
                     <option value="crédito">Crédito</option>
                     <option value="débito">Débito</option>
@@ -15281,29 +15305,54 @@ function PDVManager({
                   <select 
                     className="w-full h-12 bg-[#0f1115] border-[#2d3139] rounded-lg text-sm text-white px-3 font-bold"
                     value={cardDetails.installments}
-                    onChange={e => setCardDetails({...cardDetails, installments: Number(e.target.value)})}
+                    onChange={e => {
+                      const newInst = Number(e.target.value);
+                      const rate = cardDetails.useInterest ? findInterestRate(cardDetails.brand, cardDetails.type, newInst) : cardDetails.interestPercent;
+                      setCardDetails({...cardDetails, installments: newInst, interestPercent: rate});
+                    }}
                   >
                     {[1,2,3,4,5,6,7,8,9,10,12].map(n => <option key={n} value={n}>{n}x</option>)}
                   </select>
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-[#71717a] font-bold uppercase text-[10px]">Taxa de Juros (%)</Label>
-                  <div className="relative">
-                    <Input 
-                      type="number"
-                      className="bg-[#0f1115] border-[#2d3139] h-12 text-sm font-black text-blue-400 text-center"
-                      value={cardDetails.interestPercent === 0 ? '' : cardDetails.interestPercent}
-                      onChange={e => setCardDetails({...cardDetails, interestPercent: Math.max(0, Number(e.target.value) || 0)})}
-                      placeholder="0"
-                    />
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                       <Percent size={14} className="text-[#71717a]" />
-                       {cardDetails.interestPercent > 0 && (
-                         <button onClick={() => setCardDetails({...cardDetails, interestPercent: 0})} className="text-[9px] uppercase font-bold text-red-500 hover:underline">Zerar</button>
-                       )}
-                    </div>
-                  </div>
-                </div>
+                     <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <Label className="text-[#71717a] font-bold uppercase text-[10px]">Juros</Label>
+                          <select 
+                            className="w-full h-12 bg-[#0f1115] border-[#2d3139] rounded-lg text-sm text-white px-3 font-bold"
+                            value={cardDetails.useInterest ? 'with' : 'none'}
+                            onChange={e => {
+                               const useInt = e.target.value === 'with';
+                               let rate = 0;
+                               if (useInt) {
+                                 rate = findInterestRate(cardDetails.brand, cardDetails.type, cardDetails.installments);
+                               }
+                               setCardDetails({...cardDetails, useInterest: useInt, interestPercent: rate});
+                            }}
+                          >
+                            <option value="none">Sem Juros</option>
+                            <option value="with">Com Juros (Plano)</option>
+                          </select>
+                          {cardDetails.useInterest && cardDetails.brand && cardDetails.interestPercent === 0 && (
+                            <div className="text-[8px] text-amber-500 font-bold uppercase mt-1">Nenhum plano encontrado</div>
+                          )}
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-[#71717a] font-bold uppercase text-[10px]">Taxa Aplicada (%)</Label>
+                          <div className="relative">
+                            <Input 
+                              type="number"
+                              className="bg-[#0f1115] border-[#2d3139] h-12 text-sm font-black text-blue-400 text-center"
+                              value={cardDetails.interestPercent === 0 ? '0' : cardDetails.interestPercent}
+                              readOnly={cardDetails.useInterest}
+                              onChange={e => !cardDetails.useInterest && setCardDetails({...cardDetails, interestPercent: Math.max(0, Number(e.target.value) || 0)})}
+                              placeholder="0"
+                            />
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                               <Percent size={14} className="text-[#71717a]" />
+                            </div>
+                          </div>
+                        </div>
+                     </div>
              </div>
 
              <div className="p-4 rounded-xl bg-[#0f1115] border border-[#2d3139] grid grid-cols-2 gap-4">
