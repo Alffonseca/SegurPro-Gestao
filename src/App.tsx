@@ -2374,6 +2374,7 @@ export default function MainApp() {
   const [posLinkedOS, setPosLinkedOS] = useState('');
   const [posCardDetails, setPosCardDetails] = useState({ brand: '', type: 'crédito', installments: 1, interestPercent: 0, useInterest: false });
   const [posSelectedPixAccountId, setPosSelectedPixAccountId] = useState<string>('');
+  const [sales, setSales] = useState<any[]>([]);
 
   // Log system
   const logAction = async (action: string, resourceType: string, details: string, resourceId?: string) => {
@@ -2772,6 +2773,7 @@ export default function MainApp() {
     let logsUnsubscribe = () => {};
     let pixUnsubscribe = () => {};
     let appSettingsUnsubscribe = () => {};
+    let salesUnsubscribe = () => {};
 
     if (companyId) {
       // Existing subscriptions...
@@ -2920,6 +2922,18 @@ export default function MainApp() {
           }
         }
       );
+
+      salesUnsubscribe = onSnapshot(
+        query(collection(db, 'companies', companyId, 'sales')),
+        (snapshot) => {
+          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setSales(data.sort((a: any, b: any) => {
+            const timeA = a.createdAt?.seconds || 0;
+            const timeB = b.createdAt?.seconds || 0;
+            return timeB - timeA;
+          }));
+        }
+      );
     }
 
     return () => {
@@ -2936,6 +2950,7 @@ export default function MainApp() {
       logsUnsubscribe();
       pixUnsubscribe();
       appSettingsUnsubscribe();
+      salesUnsubscribe();
       if (allCompaniesUnsubscribe) allCompaniesUnsubscribe();
       if (allFinancialsUnsubscribe) allFinancialsUnsubscribe();
       if (saasSettingsUnsubscribe) saasSettingsUnsubscribe();
@@ -3945,6 +3960,8 @@ export default function MainApp() {
               setCardDetails={setPosCardDetails}
               selectedPixAccountId={posSelectedPixAccountId}
               setSelectedPixAccountId={setPosSelectedPixAccountId}
+              sales={sales}
+              currentUserData={currentUserData}
             />
           )}
 
@@ -14781,7 +14798,10 @@ function PDVManager({
   cardDetails,
   setCardDetails,
   selectedPixAccountId,
-  setSelectedPixAccountId
+  setSelectedPixAccountId,
+  sales = [],
+  currentUserData,
+  isSuperAdmin
 }: {
   inventory: any[],
   clients: Client[],
@@ -14804,7 +14824,10 @@ function PDVManager({
   cardDetails: any,
   setCardDetails: React.Dispatch<React.SetStateAction<any>>,
   selectedPixAccountId: string,
-  setSelectedPixAccountId: React.Dispatch<React.SetStateAction<string>>
+  setSelectedPixAccountId: React.Dispatch<React.SetStateAction<string>>,
+  sales?: any[],
+  currentUserData?: any,
+  isSuperAdmin?: boolean
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [isFinishing, setIsFinishing] = useState(false);
@@ -14816,6 +14839,13 @@ function PDVManager({
   const [isDiscountDialogOpen, setIsDiscountDialogOpen] = useState(false);
   const [isCardDialogOpen, setIsCardDialogOpen] = useState(false);
   const [isPixDialogOpen, setIsPixDialogOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [saleSearchTerm, setSaleSearchTerm] = useState('');
+  const [editingSale, setEditingSale] = useState<any>(null);
+  const [isDeleteSaleConfirmOpen, setIsDeleteSaleConfirmOpen] = useState(false);
+  const [saleToDelete, setSaleToDelete] = useState<any>(null);
+
+  const canManageSales = ['Proprietário', 'Administrador', 'SuperAdmin'].includes(currentUserData?.role) || isSuperAdmin;
 
   const findInterestRate = (brand: string, type: string, installments: number) => {
     if (!appSettings.installmentPlans || !brand) return 0;
@@ -14865,6 +14895,10 @@ function PDVManager({
         e.preventDefault();
         if (cart.length > 0) handleFinishSale();
       }
+      if (e.altKey && e.key.toLowerCase() === 'h') {
+        e.preventDefault();
+        if (canManageSales) setIsHistoryOpen(true);
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -14911,8 +14945,18 @@ function PDVManager({
 
     setIsFinishing(true);
     try {
-      const saleId = doc(collection(db, 'sales')).id;
+      // Generate Sale Number matching format 000001/24
+      const currentYear = format(new Date(), 'yy');
+      const salesThisYear = sales.filter(s => {
+        const saleDate = s.createdAt?.toDate();
+        return saleDate && format(saleDate, 'yy') === currentYear;
+      });
+      const nextNum = salesThisYear.length + 1;
+      const saleNumberFormatted = `${nextNum.toString().padStart(6, '0')}/${currentYear}`;
+
+      const saleId = doc(collection(db, 'companies', companyId, 'sales')).id;
       const saleData = {
+        number: saleNumberFormatted,
         items: cart.map(c => ({ 
           itemId: c.item.id, 
           name: c.item.name, 
@@ -14931,13 +14975,33 @@ function PDVManager({
         createdAt: Timestamp.now()
       };
 
-      await addDoc(collection(db, 'sales'), saleData);
+      await setDoc(doc(db, 'companies', companyId, 'sales', saleId), saleData);
       
+      // Financial Integration
+      const pixAccount = pixSettings.accounts?.find(a => a.id === selectedPixAccountId);
+      const accInfo = paymentMethod === 'PIX' ? (pixAccount ? `${pixAccount.label} (${pixAccount.bank})` : 'PIX') : (paymentMethod === 'Cartão' ? 'Máquina de Cartão' : 'Espécie');
+
+      await addDoc(collection(db, 'companies', companyId, 'financial'), {
+        companyId,
+        type: 'receipt', // Receita
+        description: 'Venda PDV',
+        origin: saleNumberFormatted,
+        value: total,
+        category: 'Vendas',
+        paymentMethod,
+        account: accInfo,
+        date: Timestamp.now(),
+        status: 'paid',
+        createdAt: Timestamp.now(),
+        createdByEmail: user?.email,
+        details: `Venda PDV nº ${saleNumberFormatted} para ${selectedClient}`
+      });
+
       const stockParts = cart.map(c => ({ description: c.item.name, quantity: c.quantity }));
       await updateStock(stockParts, 'exit', saleId, 'os');
 
       if (logAction) {
-        logAction('create', 'sale', `Venda PDV - Total: R$ ${total.toFixed(2)}`, saleId);
+        logAction('create', 'sale', `Venda PDV nº ${saleNumberFormatted} - Total: R$ ${total.toFixed(2)}`, saleId);
       }
 
       setLastSale(saleData);
@@ -15003,6 +15067,37 @@ function PDVManager({
     printWindow.document.close();
   };
 
+  const filteredSales = (sales || []).filter(s => 
+    s.number?.toLowerCase().includes(saleSearchTerm.toLowerCase()) ||
+    s.clientName?.toLowerCase().includes(saleSearchTerm.toLowerCase()) ||
+    s.vendorName?.toLowerCase().includes(saleSearchTerm.toLowerCase())
+  );
+
+  const handleDeleteSale = async () => {
+    if (!saleToDelete) return;
+    try {
+      await deleteDoc(doc(db, 'companies', companyId, 'sales', saleToDelete.id));
+      const stockParts = saleToDelete.items.map((i: any) => ({ description: i.name, quantity: i.quantity }));
+      await updateStock(stockParts, 'entry', saleToDelete.id, 'os');
+      
+      const financialRef = collection(db, 'companies', companyId, 'financial');
+      const qFin = query(financialRef, where('origin', '==', saleToDelete.number));
+      const finSnap = await getDocs(qFin);
+      for (const finDoc of finSnap.docs) {
+        await deleteDoc(doc(db, 'companies', companyId, 'financial', finDoc.id));
+      }
+
+      if (logAction) {
+        logAction('delete', 'sale', `Excluiu venda nº ${saleToDelete.number}`, saleToDelete.id);
+      }
+      toast.success("Venda excluída com sucesso!");
+      setIsDeleteSaleConfirmOpen(false);
+      setSaleToDelete(null);
+    } catch (err) {
+      toast.error("Erro ao excluir venda.");
+    }
+  };
+
   return (
     <div className="p-2 md:p-4 h-[calc(100vh-80px)] flex flex-col gap-2 md:gap-3 bg-[#0f1115] overflow-hidden">
       {/* Header Hotkeys Barra Superior */}
@@ -15014,6 +15109,15 @@ function PDVManager({
             <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-blue-500 px-1 py-0 h-5">F4</Badge> OS/SERV</span>
             <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-blue-500 px-1 py-0 h-5">F6</Badge> DESC</span>
             <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-emerald-500 px-1 py-0 h-5">F10</Badge> FINALIZAR</span>
+            {canManageSales && (
+              <button 
+                onClick={() => setIsHistoryOpen(true)}
+                className="flex items-center gap-1 hover:text-blue-400 transition-colors"
+                title="Histórico de Vendas"
+              >
+                <Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-amber-500 px-1 py-0 h-5">ALT+H</Badge> HISTÓRICO
+              </button>
+            )}
         </div>
         <div className="flex-shrink-0 flex items-center gap-2 ml-2">
            <span className="hidden lg:inline text-[9px] uppercase font-black text-[#71717a] tracking-widest">Status:</span>
@@ -15054,7 +15158,7 @@ function PDVManager({
       </div>
 
       {/* Main Cart Area */}
-      <Card className="flex-[5] min-h-0 bg-[#1a1d23] border-[#2d3139] flex flex-col overflow-hidden shadow-2xl">
+      <Card className="flex-[8] min-h-0 bg-[#1a1d23] border-[#2d3139] flex flex-col overflow-hidden shadow-2xl">
         <div className="flex-shrink-0 p-2 md:p-3 bg-[#0f1115]/50 border-b border-[#2d3139] grid grid-cols-12 gap-2 text-[9px] md:text-[10px] font-black text-[#71717a] uppercase tracking-widest">
           <div className="col-span-1">COD</div>
           <div className="col-span-6">DESCRIÇÃO DO PRODUTO/SERVIÇO</div>
@@ -15512,6 +15616,93 @@ function PDVManager({
               Continuar sem Imprimir
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Histórico de Vendas */}
+      <Dialog open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-4xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History size={18} className="text-blue-500" />
+              Histórico de Vendas
+            </DialogTitle>
+            <DialogDescription className="text-[#71717a]">Pesquise por número da venda, cliente ou vendedor.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+             <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#71717a]" size={18} />
+                <Input 
+                  placeholder="Número (Ex: 000001/24), Cliente..." 
+                  className="pl-10 h-10 bg-[#0f1115] border-[#2d3139] text-white"
+                  value={saleSearchTerm}
+                  onChange={e => setSaleSearchTerm(e.target.value)}
+                />
+             </div>
+             <ScrollArea className="h-[450px]">
+                <div className="space-y-2 pr-4">
+                   {filteredSales.map(sale => (
+                     <div key={sale.id} className="p-3 rounded-lg bg-[#0f1115] border border-[#2d3139] flex justify-between items-center group">
+                        <div className="space-y-1">
+                           <div className="flex items-center gap-2">
+                              <span className="text-blue-500 font-mono font-bold text-xs">#{sale.number}</span>
+                              <span className="text-white font-bold text-sm truncate max-w-[200px]">{sale.clientName}</span>
+                           </div>
+                           <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-[#71717a]">
+                              <span className="flex items-center gap-1"><Calendar size={10} /> {sale.createdAt?.toDate ? format(sale.createdAt.toDate(), 'dd/MM/yyyy HH:mm') : '-'}</span>
+                              <span className="flex items-center gap-1"><User size={10} /> {sale.vendorName}</span>
+                              <span className="flex items-center gap-1 font-bold text-emerald-500">{sale.paymentMethod}</span>
+                           </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                           <div className="text-right">
+                              <p className="text-blue-400 font-black text-sm">R$ {sale.total.toFixed(2)}</p>
+                              <p className="text-[9px] text-[#71717a] uppercase font-black">{sale.items.length} itens</p>
+                           </div>
+                           {canManageSales && (
+                             <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="h-8 w-8 text-red-500 hover:bg-red-500/10"
+                                  onClick={() => {
+                                    setSaleToDelete(sale);
+                                    setIsDeleteSaleConfirmOpen(true);
+                                  }}
+                                >
+                                   <Trash2 size={14} />
+                                </Button>
+                             </div>
+                           )}
+                        </div>
+                     </div>
+                   ))}
+                   {filteredSales.length === 0 && (
+                     <div className="text-center py-10 text-[#71717a] text-sm italic">
+                        Nenhuma venda encontrada para "{saleSearchTerm}"
+                     </div>
+                   )}
+                </div>
+             </ScrollArea>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmação de Exclusão de Venda */}
+      <Dialog open={isDeleteSaleConfirmOpen} onOpenChange={setIsDeleteSaleConfirmOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+          <DialogHeader>
+            <DialogTitle>Excluir Venda</DialogTitle>
+            <DialogDescription className="text-[#a0a0a0]">
+              Tem certeza que deseja excluir a venda <span className="text-red-500 font-bold">{saleToDelete?.number}</span>?
+              <br/><br/>
+              Isso irá estornar o financeiro e o estoque associados a esta venda. Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setIsDeleteSaleConfirmOpen(false)} className="border-[#2d3139]">Cancelar</Button>
+            <Button variant="destructive" onClick={handleDeleteSale} className="bg-red-500 hover:bg-red-600 font-black uppercase italic">Excluir Permanentemente</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
