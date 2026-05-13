@@ -327,7 +327,10 @@ interface UserRole {
 
 const DEFAULT_ROLES: UserRole[] = [
   { id: 'owner', label: 'Proprietário' },
-  { id: 'admin', label: 'Administrador' },
+  { id: 'admin', label: 'Administrador' }
+];
+
+const SUGGESTED_INITIAL_ROLES: UserRole[] = [
   { id: 'tecnico', label: 'Técnico' },
   { id: 'secretaria', label: 'Secretaria' },
   { id: 'auxiliar', label: 'Auxiliar' }
@@ -2377,9 +2380,20 @@ export default function MainApp() {
   const [posSelectedPixAccountId, setPosSelectedPixAccountId] = useState<string>('');
   const [sales, setSales] = useState<any[]>([]);
 
+  const isSuperAdmin = user?.email ? SUPER_ADMIN_EMAILS.includes(user.email.toLowerCase().trim()) || currentUserData?.role === 'super_admin' : false;
+
+  const effectiveCompanyId = useMemo(() => {
+    return isSuperAdmin && selectedCompanyId ? selectedCompanyId : currentUserData?.companyId;
+  }, [isSuperAdmin, selectedCompanyId, currentUserData?.companyId]);
+
   // Log system
-  const logAction = async (action: string, resourceType: string, details: string, resourceId?: string) => {
+  const logAction = async (action: string, resourceType: string, details: string, resourceId?: string, resourceName?: string) => {
     if (!user || !effectiveCompanyId) return;
+    
+    // Anonymity for Super Admins viewing other companies
+    const isViewingOtherCompany = isSuperAdmin && effectiveCompanyId !== currentUserData?.companyId;
+    if (isViewingOtherCompany) return;
+
     try {
       await addDoc(collection(db, 'logs'), {
         userId: user.uid,
@@ -2388,6 +2402,7 @@ export default function MainApp() {
         action,
         resourceType,
         resourceId: resourceId || '',
+        resourceName: resourceName || '',
         details,
         timestamp: Timestamp.now(),
         companyId: effectiveCompanyId
@@ -2400,6 +2415,9 @@ export default function MainApp() {
   // User Heartbeat (Online Status)
   useEffect(() => {
     if (!user || !currentUserData?.companyId) return;
+    
+    // Anonymity: Don't update heartbeat if Super Admin is in another company view
+    if (isSuperAdmin && effectiveCompanyId !== currentUserData?.companyId) return;
 
     const updateStatus = async () => {
       try {
@@ -2414,7 +2432,7 @@ export default function MainApp() {
     updateStatus();
     const interval = setInterval(updateStatus, 60000); // 1 minute heartbeat
     return () => clearInterval(interval);
-  }, [user, currentUserData?.companyId]);
+  }, [user, currentUserData?.companyId, isSuperAdmin, effectiveCompanyId]);
 
   // 1. Auth Listener
   useEffect(() => {
@@ -2526,12 +2544,6 @@ export default function MainApp() {
     return () => unsubscribeUser();
   }, [user]);
 
-  const isSuperAdmin = user?.email ? SUPER_ADMIN_EMAILS.includes(user.email.toLowerCase().trim()) || currentUserData?.role === 'super_admin' : false;
-
-  const effectiveCompanyId = useMemo(() => {
-    return isSuperAdmin && selectedCompanyId ? selectedCompanyId : currentUserData?.companyId;
-  }, [isSuperAdmin, selectedCompanyId, currentUserData?.companyId]);
-
   // 3. Current Company Listener
   useEffect(() => {
     if (!effectiveCompanyId) {
@@ -2566,7 +2578,11 @@ export default function MainApp() {
     };
   }, [currentUserData?.companyId, selectedCompanyId, isSuperAdmin]);
 
-  const userRoles = useMemo(() => [...DEFAULT_ROLES, ...customRoles], [customRoles]);
+  const userRoles = useMemo(() => {
+    // If customRoles is empty, we show the suggested ones as virtual custom roles for existing companies
+    const effectiveCustom = customRoles.length > 0 ? customRoles : SUGGESTED_INITIAL_ROLES;
+    return [...DEFAULT_ROLES, ...effectiveCustom];
+  }, [customRoles]);
 
   // Access Helper for Sidebar
   const canAccess = (tabName: string) => {
@@ -2624,6 +2640,17 @@ export default function MainApp() {
     }
     
     // Default fallback
+    return false;
+  };
+
+  const canManage = (tabName: string) => {
+    const role = currentUserData?.role;
+    if (isSuperAdmin || role === 'admin' || role === 'owner') return true;
+    
+    if (rolePermissions && rolePermissions[role]) {
+      return rolePermissions[role].manage?.includes(tabName) || false;
+    }
+    
     return false;
   };
 
@@ -3963,6 +3990,8 @@ export default function MainApp() {
               setSelectedPixAccountId={setPosSelectedPixAccountId}
               sales={sales}
               currentUserData={currentUserData}
+              isSuperAdmin={isSuperAdmin}
+              canManageSales={canManage('pdv')}
             />
           )}
 
@@ -4154,7 +4183,11 @@ export default function MainApp() {
                                     log.resourceType === 'user' ? 'Usuário' :
                                     log.resourceType === 'menu' ? 'Menu' : log.resourceType
                                   }</span>
-                                  {log.resourceId && <span className="text-[10px] bg-[#0f1115] px-1.5 py-0.5 rounded border border-[#2d3139] font-mono">#{log.resourceId.slice(-6)}</span>}
+                                  {log.resourceName ? (
+                                    <span className="text-[10px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/20 font-bold">{log.resourceName}</span>
+                                  ) : log.resourceId ? (
+                                    <span className="text-[10px] bg-[#0f1115] px-1.5 py-0.5 rounded border border-[#2d3139] font-mono">#{log.resourceId.slice(-6)}</span>
+                                  ) : null}
                                 </div>
                               </td>
                               <td className="p-4 text-sm text-[#71717a] italic">
@@ -4802,7 +4835,7 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
         createdAt: Timestamp.now()
       };
       const docRef = await addDoc(collection(db, 'clients'), clientData);
-      await logAction('create', 'client', `Cadastrou cliente ${clientData.name}`, docRef.id);
+      await logAction('create', 'client', `Cadastrou cliente ${clientData.name}`, docRef.id, clientData.name);
       
       setNewClient({ type: 'Avulso' });
       setIsAddOpen(false);
@@ -4841,7 +4874,7 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
       };
       await updateDoc(doc(db, 'clients', id), updatedData);
       if (logAction) {
-        await logAction('update', 'client', `Atualizou dados do cliente ${updatedData.name}`, id);
+        await logAction('update', 'client', `Atualizou dados do cliente ${updatedData.name}`, id, updatedData.name);
       }
       
       setEditingClient(null);
@@ -5391,7 +5424,7 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
                 try {
                   await deleteDoc(doc(db, 'clients', clientToDelete.id));
                   if (logAction) {
-                    await logAction('delete', 'client', `Excluiu o cliente ${clientToDelete.name}`, clientToDelete.id);
+                    await logAction('delete', 'client', `Excluiu o cliente ${clientToDelete.name}`, clientToDelete.id, clientToDelete.name);
                   }
                   toast.success('Cliente removido.');
                   setIsDeleteConfirmOpen(false);
@@ -6515,7 +6548,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[80px]">Nº / Data</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Informações do Cliente</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Conta / Pagamento</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Valor</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">VALOR/STATUS</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -6581,11 +6614,21 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex flex-col items-end">
-                      <Badge variant="outline" className={cn(
-                        "text-[9px] uppercase mb-1 border-[#2d3139] text-[#a0a0a0] px-1 h-3.5"
-                      )}>
-                        {receipt.status}
-                      </Badge>
+                      <Select 
+                        value={receipt.status} 
+                        onValueChange={(newStatus: any) => updateReceiptStatus(receipt.id, newStatus, receipt)}
+                      >
+                        <SelectTrigger className={cn(
+                          "h-6 text-[9px] uppercase mb-1 border-[#2d3139] px-2 w-fit",
+                          receipt.status === 'Recebido' ? "text-emerald-500 bg-emerald-500/10 border-emerald-500/20" : "text-[#a0a0a0] bg-[#0f1115]"
+                        )}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                          <SelectItem value="Aguardando Pagamento">Aguardando Pagamento</SelectItem>
+                          <SelectItem value="Recebido">Recebido</SelectItem>
+                        </SelectContent>
+                      </Select>
                       <span className="font-bold text-emerald-500 text-[13px]">R$ {Number(receipt.value).toFixed(2)}</span>
                     </div>
                   </TableCell>
@@ -7275,7 +7318,9 @@ function SuperAdminPanel({
             <div className="w-full md:w-64">
               <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
                 <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                  <SelectValue placeholder="Selecione a Empresa" />
+                  <SelectValue placeholder="Selecione a Empresa">
+                    {selectedCompanyId ? (companies.find(c => c.id === selectedCompanyId)?.name || companies.find(c => c.id === selectedCompanyId)?.companyName || selectedCompanyId) : "Selecione a Empresa"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                   {companies.map(c => {
@@ -7990,12 +8035,12 @@ function RolePermissionManager({ companyId, user, userRoles, currentUserData }: 
     return () => unsub();
   }, [companyId]);
 
-  const togglePermission = async (menuId: string, type: 'menus' | 'lists') => {
+  const togglePermission = async (menuId: string, type: 'menus' | 'lists' | 'manage') => {
     if (selectedRole === 'owner' && !isMaster) {
       toast.error('As permissões do Proprietário são protegidas e só podem ser alteradas pelo Master do Sistema.');
       return;
     }
-    const current = rolePermissions[selectedRole] || { menus: [], lists: [] };
+    const current = rolePermissions[selectedRole] || { menus: [], lists: [], manage: [] };
     const list = current[type] || [];
     const newList = list.includes(menuId)
       ? list.filter((id: string) => id !== menuId)
@@ -8064,7 +8109,7 @@ function RolePermissionManager({ companyId, user, userRoles, currentUserData }: 
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        <div className="grid grid-cols-1 md:grid-cols-2 divide-x divide-[#2d3139]">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 divide-x divide-[#2d3139]">
            <div className="p-6 space-y-4">
              <div className="flex items-center gap-2 mb-2">
                <Menu className="text-[#3b82f6]" size={16} />
@@ -8093,12 +8138,12 @@ function RolePermissionManager({ companyId, user, userRoles, currentUserData }: 
                ))}
              </div>
            </div>
-           <div className="p-6 space-y-4">
+           <div className="p-6 space-y-4 border-l border-[#2d3139]">
              <div className="flex items-center gap-2 mb-2">
                <Eye className="text-yellow-500" size={16} />
                <h4 className="font-bold text-xs text-yellow-500 uppercase tracking-wider">Visualizar Listagens de Dados</h4>
              </div>
-             <p className="text-[10px] text-[#71717a]">Se desmarcado, o usuário acessa a tela mas verá o aviso de "Acesso Negado" na lista.</p>
+             <p className="text-[10px] text-[#71717a]">Se desmarcado, o usuário acessa a tela mas verá o aviso de "Acesso Negado".</p>
              <div className="grid grid-cols-1 gap-1">
                {ALL_MENU_ITEMS.map(item => (
                  <label 
@@ -8120,6 +8165,34 @@ function RolePermissionManager({ companyId, user, userRoles, currentUserData }: 
                  </label>
                ))}
              </div>
+           </div>
+           <div className="p-6 space-y-4 border-l border-[#2d3139]">
+              <div className="flex items-center gap-2 mb-2">
+                <Settings className="text-emerald-500" size={16} />
+                <h4 className="font-bold text-xs text-emerald-500 uppercase tracking-wider">Gerenciar (Alterar / Excluir)</h4>
+              </div>
+              <p className="text-[10px] text-[#71717a]">Permite criar, editar ou remover itens nestes módulos.</p>
+              <div className="grid grid-cols-1 gap-1">
+                {ALL_MENU_ITEMS.map(item => (
+                  <label 
+                    key={item.id} 
+                    className={cn(
+                      "flex items-center justify-between p-3 rounded-lg border transition-all cursor-pointer",
+                      rolePermissions[selectedRole]?.manage?.includes(item.id) 
+                        ? "bg-emerald-500/5 border-emerald-500/20 text-white" 
+                        : "bg-transparent border-[#2d3139] text-[#71717a] hover:bg-white/5"
+                    )}
+                  >
+                    <span className="text-xs font-medium">{item.label}</span>
+                    <Checkbox 
+                      checked={rolePermissions[selectedRole]?.manage?.includes(item.id)}
+                      onCheckedChange={() => togglePermission(item.id, 'manage')}
+                      disabled={selectedRole === 'owner' && !isMaster}
+                      className="data-[state=checked]:bg-emerald-500 data-[state=checked]:border-emerald-500"
+                    />
+                  </label>
+                ))}
+              </div>
            </div>
         </div>
       </CardContent>
@@ -8162,9 +8235,11 @@ function RoleSettings({
       isCustom: true
     };
 
+    const currentBaseRoles = customRoles.length > 0 ? customRoles : SUGGESTED_INITIAL_ROLES;
+
     try {
       await setDoc(doc(db, 'companies', companyId, 'settings', 'roles'), {
-        roles: [...customRoles, newRole]
+        roles: [...currentBaseRoles, newRole]
       });
       setNewRoleLabel('');
       setIsAdding(false);
@@ -8176,9 +8251,15 @@ function RoleSettings({
   };
 
   const handleDeleteRole = async (roleId: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir este nível de acesso? Isso pode afetar usuários vinculados a ele.')) return;
+    // Standard roles cannot be deleted
+    if (['owner', 'admin'].includes(roleId)) {
+      toast.error('Níveis de acesso padrão não podem ser deletados.');
+      return;
+    }
+
+    const currentBaseRoles = customRoles.length > 0 ? customRoles : SUGGESTED_INITIAL_ROLES;
+    const updated = currentBaseRoles.filter(r => r.id !== roleId);
     
-    const updated = customRoles.filter(r => r.id !== roleId);
     try {
       await setDoc(doc(db, 'companies', companyId, 'settings', 'roles'), {
         roles: updated
@@ -8228,35 +8309,46 @@ function RoleSettings({
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {DEFAULT_ROLES.map(role => (
-            <div key={role.id} className="flex items-center justify-between p-3 rounded-xl bg-[#0f1115] border border-[#2d3139] opacity-70">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">
-                  <Lock size={14} className="text-[#71717a]" />
+          {userRoles.map(role => {
+            const isSystemRole = role.id === 'owner' || role.id === 'admin';
+            return (
+              <div key={role.id} className={cn(
+                "flex items-center justify-between p-3 rounded-xl bg-[#0f1115] border transition-all group",
+                isSystemRole ? "border-[#2d3139] opacity-70" : "border-[#3b82f6]/20 hover:border-[#3b82f6]/50"
+              )}>
+                <div className="flex items-center gap-3">
+                  <div className={cn(
+                    "w-8 h-8 rounded-full flex items-center justify-center",
+                    isSystemRole ? "bg-white/5" : "bg-[#3b82f6]/10"
+                  )}>
+                    {isSystemRole ? <Lock size={14} className="text-[#71717a]" /> : <Shield size={14} className="text-[#3b82f6]" />}
+                  </div>
+                  <span className={cn(
+                    "text-sm font-medium text-white",
+                    !isSystemRole && "uppercase italic font-black tracking-tight"
+                  )}>{role.label}</span>
                 </div>
-                <span className="text-sm font-medium text-white">{role.label}</span>
+                {isSystemRole ? (
+                  <Badge variant="outline" className="text-[9px] border-[#2d3139] text-[#71717a]">SISTEMA</Badge>
+                ) : (
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-8 w-8 text-[#ef4444] hover:bg-[#ef4444]/10"
+                      onClick={() => {
+                        if (window.confirm(`AVISO: Verifique se existe algum usuário com o nível "${role.label}" antes de excluir. Esta ação é irreversível. Deseja continuar?`)) {
+                          handleDeleteRole(role.id);
+                        }
+                      }}
+                    >
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
+                )}
               </div>
-              <Badge variant="outline" className="text-[9px] border-[#2d3139] text-[#71717a]">PADRÃO</Badge>
-            </div>
-          ))}
-          {customRoles.map(role => (
-            <div key={role.id} className="flex items-center justify-between p-3 rounded-xl bg-[#0f1115] border border-[#3b82f6]/20 hover:border-[#3b82f6]/50 transition-all group">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-[#3b82f6]/10 flex items-center justify-center">
-                  <Shield size={14} className="text-[#3b82f6]" />
-                </div>
-                <span className="text-sm font-medium text-white">{role.label}</span>
-              </div>
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="h-8 w-8 text-[#ef4444] hover:bg-[#ef4444]/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                onClick={() => handleDeleteRole(role.id)}
-              >
-                <Trash2 size={14} />
-              </Button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </CardContent>
     </Card>
@@ -8920,47 +9012,6 @@ function SettingsManager({
             <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <UserIcon className="text-[#3b82f6]" size={20} />
-                  Perfil do Usuário
-                </CardTitle>
-                <CardDescription className="text-[#71717a]">
-                  Atualize seu nome e senha.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="profileName" className="text-[#a0a0a0]">Nome de Exibição</Label>
-                  <Input 
-                    id="profileName" 
-                    value={newDisplayName} 
-                    onChange={e => setNewDisplayName(e.target.value)} 
-                    className="bg-[#0f1115] border-[#2d3139] text-white" 
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="profilePass" className="text-[#a0a0a0]">Alterar Senha</Label>
-                  <Input 
-                    id="profilePass" 
-                    type="password"
-                    value={newPassword} 
-                    onChange={e => setNewPassword(e.target.value)} 
-                    placeholder="Deixe vazio para manter"
-                    className="bg-[#0f1115] border-[#2d3139] text-white" 
-                  />
-                </div>
-                <Button 
-                  onClick={handleUpdateProfile} 
-                  disabled={isUpdatingProfile}
-                  className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white font-bold uppercase tracking-widest text-xs h-10"
-                >
-                  {isUpdatingProfile ? 'Salvando...' : 'Atualizar Perfil'}
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
                   <Database className="text-[#3b82f6]" size={20} />
                   Backup e Segurança
                 </CardTitle>
@@ -9025,7 +9076,9 @@ function SettingsManager({
                 <div className="mb-4 flex flex-col sm:flex-row gap-2">
                   <Select value={planBrandFilter} onValueChange={(val: any) => setPlanBrandFilter(val)}>
                     <SelectTrigger className="w-fit min-w-[110px] bg-[#0f1115] border-[#2d3139] text-white h-10 px-3">
-                      <SelectValue placeholder="Bandeira" />
+                      <SelectValue placeholder="Bandeira">
+                        {planBrandFilter === 'ALL' ? 'Todas' : (planBrandFilter === 'NONE' ? 'Nenhuma' : planBrandFilter)}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       <SelectItem value="NONE">Nenhum</SelectItem>
@@ -9039,10 +9092,12 @@ function SettingsManager({
 
                   <Select value={planTypeFilter} onValueChange={(val: any) => setPlanTypeFilter(val)}>
                     <SelectTrigger className="flex-1 bg-[#0f1115] border-[#2d3139] text-white h-10">
-                      <SelectValue placeholder="Tipo" />
+                      <SelectValue placeholder="Tipo">
+                        {planTypeFilter === 'ALL' ? 'Todos os Tipos' : planTypeFilter}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      <SelectItem value="ALL">Todos Tipos</SelectItem>
+                      <SelectItem value="ALL">Todos os Tipos</SelectItem>
                       <SelectItem value="DÉBITO">DÉBITO</SelectItem>
                       <SelectItem value="CRÉDITO">CRÉDITO</SelectItem>
                     </SelectContent>
@@ -9096,7 +9151,9 @@ function SettingsManager({
                                 {plan.brand ? plan.brand[0] : 'P'}
                               </div>
                               <div className="flex flex-col">
-                                <span className="text-white font-bold text-sm tracking-tight uppercase">{plan.brand} - {plan.type} - {plan.installments}x</span>
+                                <span className="text-white font-bold text-sm tracking-tight uppercase">
+                                  {plan.brand === 'AMERICA' ? 'AMEX' : (plan.brand === 'all' ? 'TODAS AS BANDEIRAS' : plan.brand)} - {plan.type === 'all' ? 'TODOS OS TIPOS' : (plan.type === 'CRÉDITO' ? 'CRÉDITO' : (plan.type === 'DÉBITO' ? 'DÉBITO' : plan.type))} - {plan.installments}x
+                                </span>
                                 <span className="text-[#a0a0a0] text-[10px] font-medium uppercase tracking-widest">Taxa: {plan.interestRate}%</span>
                               </div>
                             </div>
@@ -10156,7 +10213,7 @@ function VisitsManager({
         await updateStock(newVisit.parts as any[], 'exit', docRef.id, 'visit');
       }
 
-      await logAction('create', 'visit', `Agendou visita para ${newVisit.clientName}`, docRef.id);
+      await logAction('create', 'visit', `Agendou visita para ${newVisit.clientName}`, docRef.id, newVisit.clientName);
       setNewVisit({ 
         type: 'CFTV', 
         status: 'Agendada', 
@@ -10187,7 +10244,7 @@ function VisitsManager({
       const oldStatus = visit.status;
       await updateDoc(doc(db, 'visits', id), { status });
       if (logAction) {
-        await logAction('update', 'visit', `${visit.clientName}: de ${oldStatus} para ${status}`, id);
+        await logAction('update', 'visit', `${visit.clientName}: de ${oldStatus} para ${status}`, id, visit.clientName);
       }
       
       if (status === 'Concluída' && oldStatus !== 'Concluída' && generateReceipt) {
@@ -12125,11 +12182,15 @@ function FinancialManager({
                 <TableCell>
                   <div className="flex flex-col">
                     <span className="font-medium text-white text-[12px] truncate max-w-[180px]">
-                      {record.description?.replace('Recebido Recibo:', '').trim()}
+                      {record.description?.replace(/^(Recebido de:|Pagamento de:|Recebido Recibo:|Venda PDV nº:|Entrada de:|Saída de:)/i, '').trim() || record.description}
                     </span>
                     {record.origin && (
                       <span className="text-[10px] text-blue-400 font-medium">
-                        {record.origin.replace('Recibo Nº ', 'Recib #')}
+                        {record.origin
+                          .replace(/Recibo Nº\s*/i, 'Rc-')
+                          .replace(/Ordem de Serviço Nº\s*/i, 'Os-')
+                          .replace(/Orçamento Nº\s*/i, 'Oç-')
+                          .replace(/Recib #/i, 'Rc-')}
                       </span>
                     )}
                   </div>
@@ -12420,7 +12481,7 @@ function ServiceOrdersManager({
       }
 
       if (logAction) {
-        await logAction('create', 'service_order', `Criou O.S. #${nextNumber} para ${osData.clientName}`, docRef.id);
+        await logAction('create', 'service_order', `Criou O.S. #${nextNumber} para ${osData.clientName}`, docRef.id, osData.clientName);
       }
 
       setIsAddOpen(false);
@@ -12465,7 +12526,7 @@ function ServiceOrdersManager({
 
       await updateDoc(doc(db, 'serviceOrders', editingOS.id), osData);
       if (logAction) {
-        await logAction('update', 'service_order', `Atualizou O.S. #${editingOS.number} (${editingOS.clientName})`, editingOS.id);
+        await logAction('update', 'service_order', `Atualizou O.S. #${editingOS.number} (${editingOS.clientName})`, editingOS.id, editingOS.clientName);
       }
       setIsEditOpen(false);
       toast.success('Ordem de serviço atualizada!');
@@ -12487,7 +12548,7 @@ function ServiceOrdersManager({
     try {
       await deleteDoc(doc(db, 'serviceOrders', osToDelete.id));
       if (logAction) {
-        await logAction('delete', 'service_order', `Removeu O.S. #${osToDelete.number} (${osToDelete.clientName})`, osToDelete.id);
+        await logAction('delete', 'service_order', `Removeu O.S. #${osToDelete.number} (${osToDelete.clientName})`, osToDelete.id, osToDelete.clientName);
       }
       setIsDeleteConfirmOpen(false);
       toast.success('Ordem de serviço excluída com sucesso.');
@@ -12994,11 +13055,32 @@ function ServiceOrdersManager({
                   <TableCell>
                     <div className="flex flex-col gap-1">
                       <span className="font-bold text-white text-[12px] truncate max-w-[150px]">{os.clientName}</span>
-                      <Badge variant="outline" className={cn(
-                        "text-[9px] uppercase border-[#2d3139] text-[#a0a0a0] px-1 h-3.5 w-fit"
-                      )}>
-                        {os.status}
-                      </Badge>
+                      <Select 
+                        value={os.status} 
+                        onValueChange={async (newStatus: any) => {
+                          try {
+                            await updateDoc(doc(db, 'service_orders', os.id), { status: newStatus });
+                            toast.success(`Status da O.S. atualizado para ${newStatus}`);
+                            if (logAction) logAction('update', 'service_order', `Status atualizado para ${newStatus}`, os.id, os.clientName);
+                          } catch (err) {
+                            handleFirestoreError(err, OperationType.UPDATE, `service_orders/${os.id}`);
+                          }
+                        }}
+                      >
+                        <SelectTrigger className={cn(
+                          "h-6 text-[9px] uppercase border-[#2d3139] px-2 w-fit",
+                          os.status === 'Finalizado' ? "text-emerald-500 bg-emerald-500/10" : 
+                          os.status === 'Em Andamento' ? "text-blue-500 bg-blue-500/10" : "text-[#a0a0a0] bg-[#0f1115]"
+                        )}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                          <SelectItem value="Aberto">Aberto</SelectItem>
+                          <SelectItem value="Em Andamento">Em Andamento</SelectItem>
+                          <SelectItem value="Finalizado">Finalizado</SelectItem>
+                          <SelectItem value="Cancelado">Cancelado</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -13433,6 +13515,12 @@ function BudgetsManager({
       if (data.createdAt instanceof Timestamp) data.createdAt = data.createdAt.toDate();
       if (data.validUntil instanceof Timestamp) data.validUntil = data.validUntil.toDate();
       
+      // Derive interestType if missing
+      if (!data.interestType) {
+        if (data.paymentMethod === 'Cartão com Juros') data.interestType = 'with_interest';
+        else if (data.paymentMethod === 'Cartão') data.interestType = 'none';
+      }
+
       setEditingBudget(data);
       setIsEditOpen(true);
       onExternalEditHandled();
@@ -13511,7 +13599,7 @@ function BudgetsManager({
       const nextNumber = budgetNumbers.length > 0 ? Math.max(...budgetNumbers) + 1 : 1;
       
       const itemsToSave = applyProfitMargin(newBudget.items || [], profitMargin);
-      const finalTotal = itemsToSave.reduce((acc, item) => acc + (item.quantity * item.price), 0);
+      const { finalTotal, installmentValue } = getBudgetCalculations({ ...newBudget, items: itemsToSave });
 
       const savedDoc = await addDoc(collection(db, 'budgets'), {
         ...newBudget,
@@ -13519,12 +13607,13 @@ function BudgetsManager({
         items: itemsToSave,
         number: nextNumber,
         total: finalTotal,
+        installmentValue: installmentValue || 0,
         companyId,
         createdAt: Timestamp.now()
       });
       
       if (logAction) {
-        logAction('create', 'budget', `Orçamento #${nextNumber} criado para ${newBudget.clientName}`, savedDoc.id);
+        logAction('create', 'budget', `Orçamento #${nextNumber} criado para ${newBudget.clientName}`, savedDoc.id, newBudget.clientName);
       }
 
       setNewBudget({ items: [{ description: '', quantity: 1, price: 0, imageUrl: '' }], status: 'Pendente', observations: '', clientName: '', clientPhone: '', address: '' });
@@ -13546,19 +13635,31 @@ function BudgetsManager({
     
     // Apply margin if any
     const itemsToSave = applyProfitMargin(editingBudget.items || [], editProfitMargin);
-    const finalTotal = itemsToSave.reduce((acc, item) => acc + (item.quantity * item.price), 0);
+    const { finalTotal, installmentValue } = getBudgetCalculations({ ...editingBudget, items: itemsToSave });
 
     try {
-      await updateDoc(doc(db, 'budgets', editingBudget.id), {
-        ...editingBudget,
-        pixAccountId: editingBudget.pixAccountId || null,
+      const { id, ...dataToUpdate } = editingBudget;
+      
+      // Sanitize data: remove interestType which is UI-only, and handle nulls
+      const cleanData: any = {
+        ...dataToUpdate,
+        pixAccountId: dataToUpdate.pixAccountId || null,
         items: itemsToSave,
         total: finalTotal,
+        installmentValue: installmentValue || 0,
         updatedAt: Timestamp.now()
-      });
+      };
+      
+      // Remove any helper fields that shouldn't go to Firestore if they exist
+      if ('interestType' in cleanData) delete cleanData.interestType;
+
+      // Remove undefined values to avoid Firestore errors
+      Object.keys(cleanData).forEach(key => cleanData[key] === undefined && delete cleanData[key]);
+
+      await updateDoc(doc(db, 'budgets', id!), cleanData);
       
       if (logAction) {
-        logAction('update', 'budget', `Orçamento #${editingBudget.number} atualizado`, editingBudget.id);
+        logAction('update', 'budget', `Orçamento #${editingBudget.number} atualizado`, editingBudget.id, editingBudget.clientName);
       }
 
       setIsEditOpen(false);
@@ -13579,7 +13680,7 @@ function BudgetsManager({
     try {
       await deleteDoc(doc(db, 'budgets', budgetToDelete.id));
       if (logAction) {
-        logAction('delete', 'budget', `Orçamento #${budgetToDelete.number} excluído`, budgetToDelete.id);
+        logAction('delete', 'budget', `Orçamento #${budgetToDelete.number} excluído`, budgetToDelete.id, budgetToDelete.clientName);
       }
       setIsDeleteConfirmOpen(false);
       setBudgetToDelete(null);
@@ -13596,9 +13697,34 @@ function BudgetsManager({
     try {
       await updateDoc(doc(db, 'budgets', id), { status });
       toast.success('Status atualizado!');
+      const b = budgets.find(x => x.id === id);
+      if (logAction) logAction('update', 'budget', `Status alterado para ${status}`, id, b?.clientName);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'budgets');
     }
+  };
+
+  const getBudgetCalculations = (budget: any) => {
+    const baseTotal = (budget.items || []).reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
+    let finalTotal = baseTotal;
+    
+    // If an installment plan is selected, we MUST apply the interest/fee to the total
+    if (budget.selectedInstallmentPlanId) {
+      const plan = appSettings.installmentPlans?.find(p => p.id === budget.selectedInstallmentPlanId);
+      if (plan) {
+        const interest = (plan.interestRate || 0) / 100;
+        // Formula: Total = Base * (1 + rate/100)
+        finalTotal = baseTotal * (1 + interest);
+      }
+    } else if (budget.interestPercent && budget.interestPercent > 0) {
+      // Direct percentage override
+      finalTotal = baseTotal * (1 + (budget.interestPercent / 100));
+    }
+    
+    const installments = budget.installments || 1;
+    const installmentValue = finalTotal / installments;
+    
+    return { baseTotal, finalTotal, installmentValue };
   };
 
   const calculateInstallmentValue = (total: number, planId: string) => {
@@ -13714,27 +13840,35 @@ function BudgetsManager({
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
-    doc.text(`VALOR TOTAL: R$ ${(budget.total || 0).toFixed(2)}`, 190, finalY, { align: 'right' });
+    const { baseTotal, finalTotal } = getBudgetCalculations(budget);
+    doc.text(`VALOR TOTAL: R$ ${finalTotal.toFixed(2)}`, 190, finalY, { align: 'right' });
 
     if (budget.paymentMethod) {
       finalY += 10;
       doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
-      doc.text(`Forma de Pagamento: ${budget.paymentMethod}${budget.selectedCardBrand ? ` (${budget.selectedCardBrand})` : ''}`, 20, finalY);
       
-      if (budget.paymentMethod === 'Cartão' && budget.installments) {
+      const isCardPayment = budget.paymentMethod === 'Cartão' || budget.paymentMethod === 'Cartão com Juros';
+      const shouldShowBrand = isCardPayment && budget.selectedCardBrand;
+      
+      doc.text(`Forma de Pagamento: ${budget.paymentMethod}${shouldShowBrand ? ` (${budget.selectedCardBrand})` : ''}`, 20, finalY);
+      
+      if (isCardPayment) {
         doc.setFont('helvetica', 'normal');
-        doc.text(`Pagamento em até ${budget.installments}x sem juros no cartão`, 20, finalY + 7);
-        finalY += 12;
-      } else if (budget.paymentMethod === 'Cartão com Juros' && budget.selectedInstallmentPlanId) {
-        const plan = appSettings.installmentPlans?.find(p => p.id === budget.selectedInstallmentPlanId);
-        if (plan) {
-          doc.setFont('helvetica', 'normal');
-          const value = calculateInstallmentValue(budget.total || 0, plan.id);
-          const totalFinanced = value * plan.installments;
-          doc.text(`Pagamento em ${plan.installments}x de R$ ${value.toFixed(2)} (${plan.interestRate}% juros)`, 20, finalY + 7);
-          doc.text(`Total Financiado: R$ ${totalFinanced.toFixed(2)}`, 20, finalY + 14);
-          finalY += 19;
+        if (budget.paymentMethod === 'Cartão com Juros' && budget.selectedInstallmentPlanId) {
+          const plan = appSettings.installmentPlans?.find(p => p.id === budget.selectedInstallmentPlanId);
+          if (plan) {
+            const value = calculateInstallmentValue(baseTotal, plan.id);
+            const totalFinanced = value * plan.installments;
+            doc.text(`Pagamento em ${plan.installments}x de R$ ${value.toFixed(2)} (${plan.interestRate}% juros - Com Juros)`, 20, finalY + 7);
+            doc.text(`Total Financiado: R$ ${totalFinanced.toFixed(2)}`, 20, finalY + 14);
+            finalY += 19;
+          }
+        } else {
+          const installments = budget.installments || 1;
+          const valuePerInstallment = baseTotal / installments;
+          doc.text(`Pagamento em ${installments}x de R$ ${valuePerInstallment.toFixed(2)} (Sem Juros)`, 20, finalY + 7);
+          finalY += 12;
         }
       } else if (budget.paymentMethod === 'PIX' && budget.pixAccountId) {
         const selectedPix = pixSettings.accounts.find(a => a.id === budget.pixAccountId);
@@ -13978,11 +14112,11 @@ function BudgetsManager({
                         <Button
                           key={method}
                           type="button"
-                          variant={newBudget.paymentMethod === method ? 'default' : 'outline'}
+                          variant={newBudget.paymentMethod?.includes(method) || (method === 'Cartão' && newBudget.paymentMethod === 'Cartão com Juros') ? 'default' : 'outline'}
                           size="sm"
                           className={cn(
                             "flex-1 h-9 text-[10px] font-bold uppercase",
-                            newBudget.paymentMethod === method ? "bg-[#3b82f6] text-white" : "border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]"
+                            (newBudget.paymentMethod?.includes(method) || (method === 'Cartão' && newBudget.paymentMethod === 'Cartão com Juros')) ? "bg-[#3b82f6] text-white" : "border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]"
                           )}
                           onClick={() => {
                             setNewBudget({
@@ -14002,7 +14136,7 @@ function BudgetsManager({
                       ))}
                     </div>
                   </div>
-                  {newBudget.paymentMethod === 'Cartão' && (
+                  {newBudget.paymentMethod?.includes('Cartão') && (
                     <div className="space-y-2">
                       <Label className="text-[#a0a0a0]">Tipo de Parcelamento</Label>
                       <div className="flex gap-1">
@@ -14014,7 +14148,7 @@ function BudgetsManager({
                             "flex-1 h-9 text-[10px] font-bold uppercase",
                             newBudget.interestType === 'none' ? "bg-[#3b82f6] text-white" : "border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]"
                           )}
-                          onClick={() => setNewBudget({...newBudget, interestType: 'none', installments: 1})}
+                          onClick={() => setNewBudget({...newBudget, interestType: 'none', installments: 1, paymentMethod: 'Cartão'})}
                         >
                           Débito
                         </Button>
@@ -14026,7 +14160,7 @@ function BudgetsManager({
                             "flex-1 h-9 text-[10px] font-bold uppercase",
                             newBudget.interestType === 'with_interest' ? "bg-[#3b82f6] text-white" : "border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]"
                           )}
-                          onClick={() => setNewBudget({...newBudget, interestType: 'with_interest', installments: 1})}
+                          onClick={() => setNewBudget({...newBudget, interestType: 'with_interest', installments: 1, paymentMethod: 'Cartão com Juros'})}
                         >
                           Crédito
                         </Button>
@@ -14035,98 +14169,85 @@ function BudgetsManager({
                   )}
                 </div>
 
-                  {newBudget.paymentMethod === 'Cartão' && (
-                    <div className="grid grid-cols-2 gap-4">
-                      {newBudget.interestType === 'none' ? (
-                        <div className="space-y-2 col-span-2">
-                          <Label className="text-[#a0a0a0]">Parcelas sem juros</Label>
-                          <Input 
-                            type="number" 
-                            value={newBudget.installments || ''} 
-                            onChange={e => setNewBudget({...newBudget, installments: e.target.value === '' ? 0 : Number(e.target.value)})} 
-                            className="bg-[#0f1115] border-[#2d3139] text-white" 
-                            min={1}
-                          />
-                        </div>
-                      ) : (
-                        <>
-                          <div className="space-y-2">
-                            <Label className="text-[#a0a0a0]">Bandeira do Cartão</Label>
-                            <Select value={newBudget.selectedCardBrand} onValueChange={(val: any) => {
-                              setNewBudget({
-                                ...newBudget, 
-                                selectedCardBrand: val,
-                                selectedInstallmentPlanId: undefined,
-                                installments: 1,
-                                installmentValue: undefined
-                              });
-                            }}>
-                              <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                                <SelectValue placeholder="Selecione..." />
-                              </SelectTrigger>
-                              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                                <SelectItem value="VISA">VISA</SelectItem>
-                                <SelectItem value="MASTERCARD">MASTERCARD</SelectItem>
-                                <SelectItem value="AMERICA">AMEX</SelectItem>
-                                <SelectItem value="ELO">ELO</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label className="text-[#a0a0a0]">Plano de Parcelamento</Label>
-                            <Select value={newBudget.selectedInstallmentPlanId} onValueChange={(val) => {
-                              const plan = appSettings.installmentPlans?.find(p => p.id === val);
-                              const total = (newBudget.items || []).reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
-                              const instVal = calculateInstallmentValue(total, val);
-                              setNewBudget({
-                                ...newBudget, 
-                                selectedInstallmentPlanId: val, 
-                                installments: plan?.installments || 1,
-                                installmentValue: instVal
-                              });
-                            }} disabled={!newBudget.selectedCardBrand}>
-                              <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                                <SelectValue placeholder="Selecione...">
-                                  {newBudget.selectedInstallmentPlanId ? (
-                                    (() => {
-                                      const plan = appSettings.installmentPlans?.find(p => p.id === newBudget.selectedInstallmentPlanId);
-                                      return plan ? `${plan.type} - ${plan.installments}x de R$ ${(newBudget.installmentValue || 0).toFixed(2)}` : 'Selecione...';
-                                    })()
-                                  ) : 'Selecione...'}
-                                </SelectValue>
-                              </SelectTrigger>
-                              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                                {appSettings.installmentPlans?.filter(p => p.brand === newBudget.selectedCardBrand).map(plan => {
-                                   const total = (newBudget.items || []).reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
-                                   const instVal = calculateInstallmentValue(total, plan.id);
-                                   return (
-                                     <SelectItem key={plan.id} value={plan.id}>
-                                        <div className="flex justify-between items-center gap-4 w-full">
-                                          <span>{plan.type} - {plan.installments}x ({plan.interestRate}% juros)</span>
-                                          <span className="font-bold text-blue-400">R$ {instVal.toFixed(2)} / parc</span>
-                                        </div>
-                                     </SelectItem>
-                                   );
-                                })}
-                                {(!appSettings.installmentPlans || appSettings.installmentPlans.filter(p => p.brand === newBudget.selectedCardBrand).length === 0) && (
-                                  <SelectItem value="none" disabled>Nenhum plano cadastrado</SelectItem>
-                                )}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </>
-                      )}
+                {newBudget.paymentMethod?.includes('Cartão') && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-[#a0a0a0]">Bandeira do Cartão</Label>
+                      <Select value={newBudget.selectedCardBrand} onValueChange={(val: any) => {
+                        setNewBudget({
+                          ...newBudget, 
+                          selectedCardBrand: val,
+                          selectedInstallmentPlanId: undefined,
+                          installments: 1,
+                          installmentValue: undefined
+                        });
+                      }}>
+                        <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                          <SelectItem value="VISA">VISA</SelectItem>
+                          <SelectItem value="MASTERCARD">MASTERCARD</SelectItem>
+                          <SelectItem value="AMERICA">AMEX</SelectItem>
+                          <SelectItem value="ELO">ELO</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
-                  )}
 
-                  {newBudget.paymentMethod === 'Cartão' && newBudget.interestType === 'with_interest' && newBudget.installmentValue && (
+                    <div className="space-y-2">
+                      <Label className="text-[#a0a0a0]">Plano / Parcelas</Label>
+                      <Select value={newBudget.selectedInstallmentPlanId} onValueChange={(val) => {
+                        const plan = appSettings.installmentPlans?.find(p => p.id === val);
+                        setNewBudget({
+                          ...newBudget, 
+                          selectedInstallmentPlanId: val, 
+                          installments: plan?.installments || 1
+                        });
+                      }} disabled={!newBudget.selectedCardBrand}>
+                        <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                          <SelectValue placeholder="Selecione...">
+                            {newBudget.selectedInstallmentPlanId ? (
+                              (() => {
+                                const plan = appSettings.installmentPlans?.find(p => p.id === newBudget.selectedInstallmentPlanId);
+                                const { installmentValue } = getBudgetCalculations(newBudget);
+                                return plan ? `${plan.type} - ${plan.installments}x de R$ ${installmentValue.toFixed(2)}` : 'Selecione...';
+                              })()
+                            ) : 'Selecione...'}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                          {appSettings.installmentPlans?.filter(p => 
+                            p.brand === newBudget.selectedCardBrand && 
+                            (newBudget.interestType === 'none' ? p.type === 'DÉBITO' : p.type === 'CRÉDITO')
+                          ).map(plan => {
+                            const { baseTotal } = getBudgetCalculations(newBudget);
+                            const instVal = calculateInstallmentValue(baseTotal, plan.id);
+                        <SelectItem key={plan.id} value={plan.id}>
+                          <div className="flex justify-between items-center gap-4 w-full">
+                            <span className="flex items-center gap-2"><span className="font-bold text-blue-400">{plan.brand}</span> {plan.installments}x ({plan.interestRate}% juros)</span>
+                            <span className="font-bold text-emerald-500">R$ {instVal.toFixed(2)} / parc</span>
+                          </div>
+                        </SelectItem>
+                          })}
+                          {(!appSettings.installmentPlans || appSettings.installmentPlans.filter(p => 
+                            p.brand === newBudget.selectedCardBrand && 
+                            (newBudget.interestType === 'none' ? p.type === 'DÉBITO' : p.type === 'CRÉDITO')
+                          ).length === 0) && (
+                            <SelectItem value="none" disabled>Nenhum plano cadastrado</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
+
+                  {getBudgetCalculations(newBudget).finalTotal > getBudgetCalculations(newBudget).baseTotal && (
                     <div className="bg-[#3b82f6]/10 p-3 rounded-lg border border-[#3b82f6]/30">
                       <div className="flex justify-between items-center">
                         <div>
                           <p className="text-[10px] text-[#3b82f6] uppercase font-bold tracking-wider mb-1">Resumo das Parcelas</p>
-                          <p className="text-sm text-white font-bold">{newBudget.installments}x de R$ {newBudget.installmentValue.toFixed(2)}</p>
-                          <p className="text-[10px] text-[#a0a0a0] mt-1">Total financiado: R$ {(newBudget.installmentValue * (newBudget.installments || 1)).toFixed(2)}</p>
+                          <p className="text-sm text-white font-bold">{newBudget.installments}x de R$ {getBudgetCalculations(newBudget).installmentValue.toFixed(2)}</p>
+                          <p className="text-[10px] text-[#a0a0a0] mt-1">Total financiado: R$ {getBudgetCalculations(newBudget).finalTotal.toFixed(2)}</p>
                         </div>
                         <div className="text-right">
                            <p className="text-[10px] text-[#a0a0a0] uppercase font-bold">Bandeira</p>
@@ -14328,9 +14449,7 @@ function BudgetsManager({
             </div>
             <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23] flex items-center justify-between sm:justify-between">
               <div className="text-lg font-bold text-white">
-                Total: R$ {newBudget.paymentMethod === 'Cartão com Juros' && newBudget.installmentValue 
-                  ? (newBudget.installmentValue * (newBudget.installments || 1)).toFixed(2) 
-                  : (newBudget.items || []).reduce((acc, item) => acc + (item.quantity * item.price), 0).toFixed(2)}
+                Total: R$ {getBudgetCalculations(newBudget).finalTotal.toFixed(2)}
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setIsAddOpen(false)} disabled={isSubmitting} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
@@ -14478,11 +14597,11 @@ function BudgetsManager({
                       <Button
                         key={method}
                         type="button"
-                        variant={editingBudget.paymentMethod === method ? 'default' : 'outline'}
+                        variant={editingBudget.paymentMethod?.includes(method) || (method === 'Cartão' && editingBudget.paymentMethod === 'Cartão com Juros') ? 'default' : 'outline'}
                         size="sm"
                         className={cn(
                           "flex-1 h-9 text-[10px] font-bold uppercase",
-                          editingBudget.paymentMethod === method ? "bg-[#3b82f6] text-white" : "border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]"
+                          (editingBudget.paymentMethod?.includes(method) || (method === 'Cartão' && editingBudget.paymentMethod === 'Cartão com Juros')) ? "bg-[#3b82f6] text-white" : "border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]"
                         )}
                         onClick={() => {
                           setEditingBudget({
@@ -14502,7 +14621,7 @@ function BudgetsManager({
                     ))}
                   </div>
                 </div>
-                {editingBudget.paymentMethod === 'Cartão' && (
+                {editingBudget.paymentMethod?.includes('Cartão') && (
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Tipo de Parcelamento</Label>
                     <div className="flex gap-1">
@@ -14514,7 +14633,7 @@ function BudgetsManager({
                           "flex-1 h-9 text-[10px] font-bold uppercase",
                           editingBudget.interestType === 'none' ? "bg-[#3b82f6] text-white" : "border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]"
                         )}
-                        onClick={() => setEditingBudget({...editingBudget, interestType: 'none', installments: 1})}
+                        onClick={() => setEditingBudget({...editingBudget, interestType: 'none', installments: 1, paymentMethod: 'Cartão'})}
                       >
                         Débito
                       </Button>
@@ -14526,7 +14645,7 @@ function BudgetsManager({
                           "flex-1 h-9 text-[10px] font-bold uppercase",
                           editingBudget.interestType === 'with_interest' ? "bg-[#3b82f6] text-white" : "border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139]"
                         )}
-                        onClick={() => setEditingBudget({...editingBudget, interestType: 'with_interest', installments: 1})}
+                        onClick={() => setEditingBudget({...editingBudget, interestType: 'with_interest', installments: 1, paymentMethod: 'Cartão com Juros'})}
                       >
                         Crédito
                       </Button>
@@ -14535,98 +14654,90 @@ function BudgetsManager({
                 )}
               </div>
 
-              {editingBudget.paymentMethod === 'Cartão' && (
+              {editingBudget.paymentMethod?.includes('Cartão') && (
                 <div className="grid grid-cols-2 gap-4">
-                  {editingBudget.interestType === 'none' ? (
-                    <div className="space-y-2 col-span-2">
-                      <Label className="text-[#a0a0a0]">Parcelas sem juros</Label>
-                      <Input 
-                        type="number" 
-                        value={editingBudget.installments || ''} 
-                        onChange={e => setEditingBudget({...editingBudget, installments: e.target.value === '' ? 0 : Number(e.target.value)})} 
-                        className="bg-[#0f1115] border-[#2d3139] text-white" 
-                        min={1}
-                      />
-                    </div>
-                  ) : (
-                    <>
-                      <div className="space-y-2">
-                        <Label className="text-[#a0a0a0]">Bandeira do Cartão</Label>
-                        <Select value={editingBudget.selectedCardBrand || ''} onValueChange={(val: any) => {
-                          setEditingBudget({
-                            ...editingBudget, 
-                            selectedCardBrand: val,
-                            selectedInstallmentPlanId: undefined,
-                            installments: 1,
-                            installmentValue: undefined
-                          });
-                        }}>
-                          <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                            <SelectValue placeholder="Selecione..." />
-                          </SelectTrigger>
-                          <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                            <SelectItem value="VISA">VISA</SelectItem>
-                            <SelectItem value="MASTERCARD">MASTERCARD</SelectItem>
-                            <SelectItem value="AMERICA">AMEX</SelectItem>
-                            <SelectItem value="ELO">ELO</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Bandeira do Cartão</Label>
+                    <Select value={editingBudget.selectedCardBrand || ''} onValueChange={(val: any) => {
+                      setEditingBudget({
+                        ...editingBudget, 
+                        selectedCardBrand: val,
+                        selectedInstallmentPlanId: undefined,
+                        installments: 1,
+                        installmentValue: undefined
+                      });
+                    }}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue placeholder="Selecione..." />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="VISA">VISA</SelectItem>
+                        <SelectItem value="MASTERCARD">MASTERCARD</SelectItem>
+                        <SelectItem value="AMERICA">AMEX</SelectItem>
+                        <SelectItem value="ELO">ELO</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                      <div className="space-y-2">
-                        <Label className="text-[#a0a0a0]">Plano de Parcelamento</Label>
-                        <Select value={editingBudget.selectedInstallmentPlanId || ''} onValueChange={(val) => {
-                          const plan = appSettings.installmentPlans?.find(p => p.id === val);
-                          const total = (editingBudget.items || []).reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
-                          const instVal = calculateInstallmentValue(total, val);
-                          setEditingBudget({
-                            ...editingBudget, 
-                            selectedInstallmentPlanId: val, 
-                            installments: plan?.installments || 1,
-                            installmentValue: instVal
-                          });
-                        }} disabled={!editingBudget.selectedCardBrand}>
-                          <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                            <SelectValue placeholder="Selecione...">
-                              {editingBudget.selectedInstallmentPlanId ? (
-                                (() => {
-                                  const plan = appSettings.installmentPlans?.find(p => p.id === editingBudget.selectedInstallmentPlanId);
-                                  return plan ? `${plan.type} - ${plan.installments}x de R$ ${(editingBudget.installmentValue || 0).toFixed(2)}` : 'Selecione...';
-                                })()
-                              ) : 'Selecione...'}
-                            </SelectValue>
-                          </SelectTrigger>
-                          <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                            {appSettings.installmentPlans?.filter(p => p.brand === editingBudget.selectedCardBrand).map(plan => {
-                               const total = (editingBudget.items || []).reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
-                               const instVal = calculateInstallmentValue(total, plan.id);
-                               return (
-                                 <SelectItem key={plan.id} value={plan.id}>
-                                   <div className="flex justify-between items-center gap-4 w-full">
-                                     <span>{plan.type} - {plan.installments}x ({plan.interestRate}% juros)</span>
-                                     <span className="font-bold text-blue-400">R$ {instVal.toFixed(2)} / parc</span>
-                                   </div>
-                                 </SelectItem>
-                               );
-                            })}
-                            {(!appSettings.installmentPlans || appSettings.installmentPlans.filter(p => p.brand === editingBudget.selectedCardBrand).length === 0) && (
-                              <SelectItem value="none" disabled>Nenhum plano cadastrado</SelectItem>
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </>
-                  )}
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Plano / Parcelas</Label>
+                    <Select value={editingBudget.selectedInstallmentPlanId || ''} onValueChange={(val) => {
+                      const plan = appSettings.installmentPlans?.find(p => p.id === val);
+                      const total = (editingBudget.items || []).reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
+                      const instVal = calculateInstallmentValue(total, val);
+                      setEditingBudget({
+                        ...editingBudget, 
+                        selectedInstallmentPlanId: val, 
+                        installments: plan?.installments || 1,
+                        installmentValue: instVal
+                      });
+                    }} disabled={!editingBudget.selectedCardBrand}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue placeholder="Selecione o plano...">
+                          {editingBudget.selectedInstallmentPlanId ? (
+                            (() => {
+                              const plan = appSettings.installmentPlans?.find(p => p.id === editingBudget.selectedInstallmentPlanId);
+                              const { installmentValue } = getBudgetCalculations(editingBudget);
+                              return plan ? `${plan.brand} - ${plan.type} - ${plan.installments}x de R$ ${installmentValue.toFixed(2)}` : 'Selecione...';
+                            })()
+                          ) : 'Selecione...'}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        {appSettings.installmentPlans?.filter(p => 
+                          p.brand === editingBudget.selectedCardBrand && 
+                          (editingBudget.interestType === 'none' ? p.type === 'DÉBITO' : p.type === 'CRÉDITO')
+                        ).map(plan => {
+                           const { baseTotal } = getBudgetCalculations(editingBudget);
+                           const instVal = calculateInstallmentValue(baseTotal, plan.id);
+                           return (
+                             <SelectItem key={plan.id} value={plan.id}>
+                               <div className="flex justify-between items-center gap-4 w-full">
+                                 <span>{plan.installments}x ({plan.interestRate}% juros)</span>
+                                 <span className="font-bold text-blue-400">R$ {instVal.toFixed(2)} / parc</span>
+                               </div>
+                             </SelectItem>
+                           );
+                        })}
+                        {(!appSettings.installmentPlans || appSettings.installmentPlans.filter(p => 
+                          p.brand === editingBudget.selectedCardBrand && 
+                          (editingBudget.interestType === 'none' ? p.type === 'DÉBITO' : p.type === 'CRÉDITO')
+                        ).length === 0) && (
+                          <SelectItem value="none" disabled>Nenhum plano cadastrado</SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               )}
 
-              {editingBudget.paymentMethod === 'Cartão com Juros' && editingBudget.installmentValue && (
+              {getBudgetCalculations(editingBudget).finalTotal > getBudgetCalculations(editingBudget).baseTotal && (
                 <div className="bg-[#3b82f6]/10 p-3 rounded-lg border border-[#3b82f6]/30">
                   <div className="flex justify-between items-center">
                     <div>
                       <p className="text-[10px] text-[#3b82f6] uppercase font-bold tracking-wider mb-1">Resumo das Parcelas</p>
-                      <p className="text-sm text-white font-bold">{editingBudget.installments}x de R$ {editingBudget.installmentValue.toFixed(2)}</p>
-                      <p className="text-[10px] text-[#a0a0a0] mt-1">Total financiado: R$ {(editingBudget.installmentValue * (editingBudget.installments || 1)).toFixed(2)}</p>
+                      <p className="text-sm text-white font-bold">{editingBudget.installments}x de R$ {getBudgetCalculations(editingBudget).installmentValue.toFixed(2)}</p>
+                      <p className="text-[10px] text-[#a0a0a0] mt-1">Total financiado: R$ {getBudgetCalculations(editingBudget).finalTotal.toFixed(2)}</p>
                     </div>
                     <div className="text-right">
                        <p className="text-[10px] text-[#a0a0a0] uppercase font-bold">Bandeira</p>
@@ -14833,9 +14944,7 @@ function BudgetsManager({
           </div>
           <DialogFooter className="p-6 border-t border-[#2d3139] flex justify-between items-center sm:justify-between">
             <div className="text-lg font-bold text-white">
-              Total: R$ {editingBudget.paymentMethod === 'Cartão com Juros' && editingBudget.installmentValue 
-                ? (editingBudget.installmentValue * (editingBudget.installments || 1)).toFixed(2) 
-                : (editingBudget.items || []).reduce((acc, item) => acc + (item.quantity * item.price), 0).toFixed(2)}
+              Total: R$ {getBudgetCalculations(editingBudget).finalTotal.toFixed(2)}
             </div>
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139]">Cancelar</Button>
@@ -14893,7 +15002,8 @@ function PDVManager({
   setSelectedPixAccountId,
   sales = [],
   currentUserData,
-  isSuperAdmin
+  isSuperAdmin,
+  canManageSales = false
 }: {
   inventory: any[],
   clients: Client[],
@@ -14911,15 +15021,16 @@ function PDVManager({
   setSelectedClient: React.Dispatch<React.SetStateAction<string>>,
   paymentMethod: 'Dinheiro' | 'Cartão' | 'PIX',
   setPaymentMethod: React.Dispatch<React.SetStateAction<'Dinheiro' | 'Cartão' | 'PIX'>>,
-  linkedOS: string,
-  setLinkedOS: React.Dispatch<React.SetStateAction<string>>,
+  linkedOS: any,
+  setLinkedOS: React.Dispatch<React.SetStateAction<any>>,
   cardDetails: any,
   setCardDetails: React.Dispatch<React.SetStateAction<any>>,
   selectedPixAccountId: string,
   setSelectedPixAccountId: React.Dispatch<React.SetStateAction<string>>,
   sales?: any[],
-  currentUserData?: any,
-  isSuperAdmin?: boolean
+  currentUserData: any,
+  isSuperAdmin: boolean,
+  canManageSales?: boolean
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [isFinishing, setIsFinishing] = useState(false);
@@ -14953,7 +15064,6 @@ function PDVManager({
     }
   }, [isPixDialogOpen]);
 
-  const canManageSales = ['Proprietário', 'Administrador', 'SuperAdmin'].includes(currentUserData?.role) || isSuperAdmin;
 
   const findInterestRate = (brand: string, type: string, installments: number) => {
     if (!appSettings.installmentPlans || !brand) return 0;
@@ -14981,6 +15091,11 @@ function PDVManager({
   const totalAfterDiscount = Math.max(0, subtotal - discount);
   const interestAmount = (totalAfterDiscount * (cardDetails.interestPercent || 0)) / 100;
   const total = totalAfterDiscount + interestAmount;
+
+  // The main view's total should only show the interest after confirmation.
+  // We use this displayTotal for the summary card.
+  // When in Card Dialog, show subtotal in the main view (to fulfill user request).
+  const displayTotal = (paymentMethod === 'Cartão' && isCardDialogOpen) ? totalAfterDiscount : total;
 
   // Local card total for preview in dialog
   const localInterestAmount = localCardDetails ? (totalAfterDiscount * (localCardDetails.interestPercent || 0)) / 100 : 0;
@@ -15303,34 +15418,90 @@ function PDVManager({
 
       {/* Main Cart Area */}
       <Card className="flex-[8] min-h-0 bg-[#1a1d23] border-[#2d3139] flex flex-col overflow-hidden shadow-2xl">
-        <div className="flex-shrink-0 p-2 md:p-3 bg-[#0f1115]/50 border-b border-[#2d3139] grid grid-cols-12 gap-2 text-[9px] md:text-[10px] font-black text-[#71717a] uppercase tracking-widest">
-          <div className="col-span-1">COD</div>
-          <div className="col-span-6">DESCRIÇÃO DO PRODUTO/SERVIÇO</div>
-          <div className="col-span-1 text-center">QTD</div>
-          <div className="col-span-2 text-right">VALOR UNIT.</div>
-          <div className="col-span-2 text-right">TOTAL</div>
+        <div className="flex-shrink-0 p-2 md:p-3 bg-[#0f1115]/50 border-b border-[#2d3139] flex items-center justify-between">
+          <Label className="text-[10px] font-black text-[#71717a] uppercase tracking-widest">Itens do Carrinho</Label>
+          <div className="text-[9px] font-black text-[#71717a] uppercase tracking-[0.2em]">Total Parcial: R$ {subtotal.toFixed(2)}</div>
         </div>
         
-        <div className="flex-1 overflow-y-scroll custom-scrollbar bg-[#0f1115]/10 min-h-0">
-          <div className="flex flex-col divide-y divide-[#2d3139]/20">
+        <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#0f1115]/10 min-h-0 p-2">
+          <div className="space-y-3">
             {cart.map((c, idx) => (
-              <div key={idx} className="grid grid-cols-12 gap-2 p-2 border-b border-[#2d3139]/30 items-center hover:bg-blue-500/5 group text-white">
-                <div className="col-span-1 text-[10px] font-mono text-[#71717a] uppercase">{c.item.code || '-'}</div>
-                <div className="col-span-6 text-xs font-bold truncate">{c.item.name}</div>
-                <div className="col-span-1 flex justify-center">
-                  <input 
+              <div key={idx} className="grid grid-cols-12 gap-2 pb-3 border-b border-[#2d3139]/20 items-end last:border-0 hover:bg-blue-500/[0.02] transition-colors rounded p-1 group">
+                <div className="col-span-12 sm:col-span-6 flex items-center gap-2">
+                  <InventorySelector 
+                    inventory={inventory} 
+                    onSelect={(selected) => {
+                      const newCart = [...cart];
+                      newCart[idx] = { 
+                        ...newCart[idx], 
+                        item: selected, 
+                        price: selected.price || newCart[idx].price 
+                      };
+                      setCart(newCart);
+                    }} 
+                  />
+                  <div className="w-9 h-9 rounded bg-[#1a1d23] border border-[#2d3139] overflow-hidden flex items-center justify-center flex-shrink-0 shadow-inner">
+                    {c.item.imageUrl ? (
+                      <img src={c.item.imageUrl} alt={c.item.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    ) : (
+                      <Package className="text-[#71717a] opacity-30" size={14} />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <Input 
+                      placeholder="Descrição do item..." 
+                      value={c.item.name} 
+                      onChange={e => {
+                        const newCart = [...cart];
+                        newCart[idx].item = { ...newCart[idx].item, name: e.target.value };
+                        setCart(newCart);
+                      }} 
+                      className="bg-[#1a1d23] border-[#2d3139] text-white h-9 text-xs font-bold focus:ring-1 focus:ring-blue-500/50" 
+                    />
+                    <div className="mt-1 flex items-center gap-2">
+                       <span className="text-[9px] font-mono text-[#71717a] font-bold">COD: {c.item.code || '-'}</span>
+                       <span className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter bg-emerald-500/5 px-1 rounded">R$ {(c.quantity * c.price).toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="col-span-4 sm:col-span-2">
+                  <Label className="text-[8px] text-[#71717a] uppercase font-black mb-1 block tracking-widest pl-1">Qtd</Label>
+                  <Input 
                     type="number" 
-                    value={c.quantity} 
-                    onChange={(e) => updateQuantity(c.item.id, parseInt(e.target.value) || 0)}
-                    className="w-10 bg-[#0f1115] border border-[#2d3139] rounded text-center text-[10px] font-bold focus:border-blue-500 outline-none p-0.5"
+                    placeholder="0" 
+                    value={c.quantity === 0 ? '' : c.quantity} 
+                    onChange={e => updateQuantity(c.item.id, Number(e.target.value) || 0)} 
+                    className="bg-[#1a1d23] border-[#2d3139] text-white h-9 text-center font-black italic text-blue-400" 
+                    onFocus={(e) => e.target.select()} 
                   />
                 </div>
-                <div className="col-span-2 text-right text-xs">R$ {c.price.toFixed(2)}</div>
-                <div className="col-span-2 text-right text-xs font-black text-blue-400 flex items-center justify-end gap-2">
-                  R$ {(c.quantity * c.price).toFixed(2)}
-                  <button onClick={() => removeFromCart(c.item.id)} className="p-1 hover:bg-red-500/10 rounded-full transition-all text-red-500/50 hover:text-red-500">
-                    <Trash2 size={12} />
-                  </button>
+                <div className="col-span-6 sm:col-span-3">
+                   <Label className="text-[8px] text-[#71717a] uppercase font-black mb-1 block tracking-widest pl-1">Preço Unit.</Label>
+                   <div className="relative">
+                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-[#71717a] font-black">R$</span>
+                     <Input 
+                       type="number" 
+                       placeholder="0.00" 
+                       value={c.price === 0 ? '' : c.price} 
+                       onChange={e => {
+                        const newCart = [...cart];
+                        newCart[idx].price = Number(e.target.value) || 0;
+                        setCart(newCart);
+                       }} 
+                       className="bg-[#1a1d23] border-[#2d3139] text-white h-9 pl-7 font-black text-xs" 
+                       onFocus={(e) => e.target.select()} 
+                     />
+                   </div>
+                </div>
+                <div className="col-span-2 sm:col-span-1 flex justify-center">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="text-[#ef4444] hover:bg-[#ef4444]/10 h-9 w-9 transition-colors" 
+                    onClick={() => removeFromCart(c.item.id)}
+                  >
+                    <Trash2 size={16} />
+                  </Button>
                 </div>
               </div>
             ))}
@@ -15436,7 +15607,7 @@ function PDVManager({
             </div>
             <div className="flex flex-col items-center justify-center p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
               <span className="text-[9px] text-emerald-500 font-black uppercase block tracking-widest mb-0.5">Total Geral</span>
-              <span className="text-xl md:text-2xl font-black text-emerald-500 italic tracking-tighter block leading-none">R$ {total.toFixed(2)}</span>
+              <span className="text-xl md:text-2xl font-black text-emerald-500 italic tracking-tighter block leading-none">R$ {displayTotal.toFixed(2)}</span>
             </div>
           </div>
 
@@ -15996,7 +16167,7 @@ function InventoryManager({
       });
 
       if (logAction) {
-        await logAction('create', 'inventory', `Cadastrou item no estoque: ${newItem.name} (${newItem.code})`, docRef.id);
+        await logAction('create', 'inventory', `Cadastrou item no estoque: ${newItem.name} (${newItem.code})`, docRef.id, newItem.name);
       }
 
       setIsAddOpen(false);
@@ -16021,7 +16192,7 @@ function InventoryManager({
       });
 
       if (logAction) {
-        await logAction('update', 'inventory', `Atualizou item no estoque: ${selectedItem.name}`, selectedItem.id);
+        await logAction('update', 'inventory', `Atualizou item no estoque: ${selectedItem.name}`, selectedItem.id, selectedItem.name);
       }
 
       setIsEditOpen(false);
@@ -16043,7 +16214,7 @@ function InventoryManager({
       await deleteDoc(doc(db, 'inventory', itemToDelete.id));
       
       if (logAction) {
-        await logAction('delete', 'inventory', `Removeu item do estoque: ${itemToDelete.name}`, itemToDelete.id);
+        await logAction('delete', 'inventory', `Removeu item do estoque: ${itemToDelete.name}`, itemToDelete.id, itemToDelete.name);
       }
 
       setIsDeleteConfirmOpen(false);
