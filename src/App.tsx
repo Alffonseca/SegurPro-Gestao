@@ -306,6 +306,7 @@ const ALL_MENU_ITEMS = [
   { id: 'dashboard', label: 'Painel Geral' },
   { id: 'clients', label: 'Clientes' },
   { id: 'suppliers', label: 'Fornecedores' },
+  { id: 'pdv', label: 'PDV / Caixa' },
   { id: 'financial', label: 'Financeiro' },
   { id: 'receipts', label: 'Recibos' },
   { id: 'reports', label: 'Relatórios' },
@@ -1139,7 +1140,7 @@ interface Budget {
   clientName: string;
   clientPhone: string;
   address: string;
-  items: { description: string; quantity: number; price: number }[];
+  items: { description: string; quantity: number; price: number; imageUrl?: string }[];
   total: number;
   status: 'Pendente' | 'Aprovado' | 'Rejeitado' | 'Em Negociação';
   pixAccountId?: string;
@@ -7694,7 +7695,7 @@ function SuperAdminPanel({
                   <div className="grid grid-cols-2 gap-2 p-3 bg-[#0f1115]/50 border border-[#2d3139] rounded-lg">
                     {[
                       {id: 'dashboard', label: 'Dashboard'},
-                      {id: 'visits', label: 'Atendimentos'},
+                      {id: 'visits', label: 'Visitas Técnicas'},
                       {id: 'receipts', label: 'Recibos'},
                       {id: 'clients', label: 'Clientes'},
                       {id: 'financial', label: 'Financeiro'},
@@ -8300,6 +8301,12 @@ function SettingsManager({
     document: '',
     signatureUrl: ''
   });
+
+  useEffect(() => {
+    if (appSettings) {
+      setLocalApp(prev => ({ ...prev, ...appSettings }));
+    }
+  }, [appSettings]);
   const [newDisplayName, setNewDisplayName] = useState(user?.displayName || '');
   const [newPassword, setNewPassword] = useState('');
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
@@ -12532,7 +12539,7 @@ function ServiceOrdersManager({
     <div className="space-y-6">
       <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
         <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest text-[#3b82f6]">Ordens de Serviço</h2>
-        <p className="text-[#a0a0a0] text-sm">Gerencie ordens de serviço técnicas e atendimentos em campo.</p>
+        <p className="text-[#a0a0a0] text-sm">Gerencie ordens de serviço técnicas e visitas técnicas em campo.</p>
       </div>
 
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
@@ -12656,7 +12663,7 @@ function ServiceOrdersManager({
             <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-[90vw] md:max-w-[800px] max-h-[85vh] flex flex-col p-0 overflow-hidden shadow-2xl">
             <DialogHeader className="p-6 pb-2 border-b border-[#2d3139] flex-shrink-0">
               <DialogTitle>Abrir Ordem de Serviço</DialogTitle>
-              <DialogDescription className="text-[#71717a]">Preencha os detalhes técnicos do atendimento.</DialogDescription>
+              <DialogDescription className="text-[#71717a]">Preencha os detalhes técnicos da visita técnica.</DialogDescription>
             </DialogHeader>
             <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 custom-scrollbar">
               {/* Client Selection */}
@@ -12888,7 +12895,7 @@ function ServiceOrdersManager({
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Conclusão do Atendimento</Label>
+                    <Label>Conclusão da Visita Técnica</Label>
                     <Input 
                       type="datetime-local" 
                       className="bg-[#0f1115] border-[#2d3139]" 
@@ -13043,7 +13050,7 @@ function ServiceOrdersManager({
         <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-[90vw] md:max-w-[800px] max-h-[85vh] flex flex-col p-0 overflow-hidden shadow-2xl">
           <DialogHeader className="p-6 pb-2 border-b border-[#2d3139] flex-shrink-0">
             <DialogTitle>Editar Ordem de Serviço</DialogTitle>
-            <DialogDescription className="text-[#71717a]">Atualize os detalhes técnicos do atendimento.</DialogDescription>
+            <DialogDescription className="text-[#71717a]">Atualize os detalhes técnicos da visita técnica.</DialogDescription>
           </DialogHeader>
           <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 custom-scrollbar">
             {editingOS && (
@@ -13342,20 +13349,29 @@ function InventorySelector({
           {filtered.length > 0 ? (
             <div className="p-1">
               {filtered.map(item => (
-                <button
+                  <button
                   key={item.id}
-                  className="w-full text-left p-2 hover:bg-[#2d3139] rounded transition-colors group flex items-center justify-between"
+                  className="w-full text-left p-2 hover:bg-[#2d3139] rounded transition-colors group flex items-center gap-3"
                   onClick={() => onSelect(item)}
                 >
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold text-white">{item.name}</span>
-                    <span className="text-[9px] text-[#71717a] uppercase font-mono">{item.code} {item.location ? `• ${item.location}` : ''}</span>
+                  <div className="w-8 h-8 rounded bg-[#0f1115] border border-[#2d3139] overflow-hidden flex items-center justify-center flex-shrink-0">
+                    {item.imageUrl ? (
+                      <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    ) : (
+                      <Package className="text-[#71717a]" size={14} />
+                    )}
                   </div>
-                  <div className="flex flex-col items-end">
-                    <span className={cn("text-[10px] font-black", (item.quantity <= (item.minQuantity || 0)) ? 'text-amber-500' : 'text-emerald-500')}>
-                      {item.quantity} {item.unit || 'un'}
-                    </span>
-                    {item.price && <span className="text-[9px] text-blue-400 font-bold">R$ {item.price.toFixed(2)}</span>}
+                  <div className="flex-1 flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-white">{item.name}</span>
+                      <span className="text-[9px] text-[#71717a] uppercase font-mono">{item.code} {item.location ? `• ${item.location}` : ''}</span>
+                    </div>
+                    <div className="flex flex-col items-end">
+                      <span className={cn("text-[10px] font-black", (item.quantity <= (item.minQuantity || 0)) ? 'text-amber-500' : 'text-emerald-500')}>
+                        {item.quantity} {item.unit || 'un'}
+                      </span>
+                      {item.price && <span className="text-[9px] text-blue-400 font-bold">R$ {item.price.toFixed(2)}</span>}
+                    </div>
                   </div>
                 </button>
               ))}
@@ -13424,7 +13440,7 @@ function BudgetsManager({
   }, [externalEditAction, onExternalEditHandled]);
   
   const [newBudget, setNewBudget] = useState<Partial<Budget>>({
-    items: [{ description: '', quantity: 1, price: 0 }],
+    items: [{ description: '', quantity: 1, price: 0, imageUrl: '' }],
     status: 'Pendente',
     observations: '',
     paymentMethod: 'Dinheiro',
@@ -13439,7 +13455,7 @@ function BudgetsManager({
   const [prevItems, setPrevItems] = useState<any[] | null>(null);
   const [prevEditItems, setPrevEditItems] = useState<any[] | null>(null);
 
-  const applyProfitMargin = (items: { description: string, quantity: number, price: number }[], margin: number) => {
+  const applyProfitMargin = (items: { description: string, quantity: number, price: number, imageUrl?: string }[], margin: number) => {
     if (margin <= 0) return items;
     return items.map(item => ({
       ...item,
@@ -13469,7 +13485,7 @@ function BudgetsManager({
   const handleAddItem = () => {
     setNewBudget({
       ...newBudget,
-      items: [...(newBudget.items || []), { description: '', quantity: 1, price: 0 }]
+      items: [...(newBudget.items || []), { description: '', quantity: 1, price: 0, imageUrl: '' }]
     });
   };
 
@@ -13511,7 +13527,7 @@ function BudgetsManager({
         logAction('create', 'budget', `Orçamento #${nextNumber} criado para ${newBudget.clientName}`, savedDoc.id);
       }
 
-      setNewBudget({ items: [{ description: '', quantity: 1, price: 0 }], status: 'Pendente', observations: '', clientName: '', clientPhone: '', address: '' });
+      setNewBudget({ items: [{ description: '', quantity: 1, price: 0, imageUrl: '' }], status: 'Pendente', observations: '', clientName: '', clientPhone: '', address: '' });
       setProfitMargin(0);
       setPrevItems(null);
       setIsAddOpen(false);
@@ -13592,14 +13608,49 @@ function BudgetsManager({
     return (total * (1 + interest)) / plan.installments;
   };
 
-  const generateBudgetPDF = (budget: Budget) => {
+  const generateBudgetPDF = async (budget: Budget) => {
     const doc = new jsPDF();
     const dateStr = format(budget.createdAt instanceof Timestamp ? budget.createdAt.toDate() : new Date(budget.createdAt), 'dd/MM/yyyy');
     
+    // Helper to load image
+    const loadImage = (url: string): Promise<string | null> => {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'Anonymous';
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0);
+            try {
+              resolve(canvas.toDataURL('image/png'));
+            } catch (e) {
+              console.error("CORS Error loading image:", url);
+              resolve(null);
+            }
+          } else {
+            resolve(null);
+          }
+        };
+        img.onerror = () => resolve(null);
+        img.src = url;
+      });
+    };
+
+    // Pre-load all item images
+    const itemImages: (string | null)[] = await Promise.all(
+      budget.items.map(item => item.imageUrl ? loadImage(item.imageUrl) : Promise.resolve(null))
+    );
+
     // Logo
     if (appSettings.logoUrl) {
       try {
-        doc.addImage(appSettings.logoUrl, 'PNG', 20, 10, 18, 18);
+        const logoData = await loadImage(appSettings.logoUrl);
+        if (logoData) {
+          doc.addImage(logoData, 'PNG', 20, 10, 18, 18);
+        }
       } catch (e) {
         console.error("Erro ao adicionar logo ao PDF:", e);
       }
@@ -13623,20 +13674,40 @@ function BudgetsManager({
     doc.line(20, 77, 190, 77);
     
     // Items Table
-    const tableData = budget.items.map(item => [
-      item.description,
-      item.quantity.toString(),
-      `R$ ${(item.price || 0).toFixed(2)}`,
-      `R$ ${((item.quantity || 0) * (item.price || 0)).toFixed(2)}`
-    ]);
+    const hasImages = budget.items.some(item => item.imageUrl);
+    const tableHead = hasImages 
+      ? [['', 'Descrição', 'Qtd', 'Preço Unit.', 'Total']]
+      : [['Descrição', 'Qtd', 'Preço Unit.', 'Total']];
+
+    const tableData = budget.items.map((item, idx) => {
+      const row = [
+        item.description,
+        item.quantity.toString(),
+        `R$ ${(item.price || 0).toFixed(2)}`,
+        `R$ ${((item.quantity || 0) * (item.price || 0)).toFixed(2)}`
+      ];
+      if (hasImages) {
+        row.unshift(''); // Placeholder for image
+      }
+      return row;
+    });
 
     autoTable(doc, {
       startY: 82,
-      head: [['Descrição', 'Qtd', 'Preço Unit.', 'Total']],
+      head: tableHead,
       body: tableData,
       theme: 'grid',
       headStyles: { fillColor: [59, 130, 246] },
-      styles: { fontSize: 9 }
+      styles: { fontSize: 9, valign: 'middle' },
+      columnStyles: hasImages ? { 0: { cellWidth: 15 } } : {},
+      didDrawCell: (data) => {
+        if (hasImages && data.section === 'body' && data.column.index === 0) {
+          const imgData = itemImages[data.row.index];
+          if (imgData) {
+            doc.addImage(imgData, 'PNG', data.cell.x + 2, data.cell.y + 2, 11, 11);
+          }
+        }
+      }
     });
 
     let finalY = (doc as any).lastAutoTable.finalY + 10;
@@ -14206,9 +14277,17 @@ function BudgetsManager({
                               const items = [...(newBudget.items || [])];
                               items[idx].description = selected.name;
                               if (selected.price) items[idx].price = selected.price;
+                              if (selected.imageUrl) items[idx].imageUrl = selected.imageUrl;
                               setNewBudget({...newBudget, items});
                             }} 
                           />
+                          <div className="w-9 h-9 rounded bg-[#1a1d23] border border-[#2d3139] overflow-hidden flex items-center justify-center flex-shrink-0">
+                            {item.imageUrl ? (
+                              <img src={item.imageUrl} alt={item.description} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              <Package className="text-[#71717a]" size={14} />
+                            )}
+                          </div>
                           <Input placeholder="Descrição" value={item.description} onChange={e => {
                             const items = [...(newBudget.items || [])];
                             items[idx].description = e.target.value;
@@ -14687,11 +14766,11 @@ function BudgetsManager({
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <Label className="text-[#a0a0a0]">Itens do Orçamento</Label>
-                  <Button variant="outline" size="sm" onClick={() => setEditingBudget({...editingBudget, items: [...(editingBudget.items || []), { description: '', quantity: 1, price: 0 }]})} className="border-[#2d3139]">Adicionar Item</Button>
+                  <Button variant="outline" size="sm" onClick={() => setEditingBudget({...editingBudget, items: [...(editingBudget.items || []), { description: '', quantity: 1, price: 0, imageUrl: '' }]})} className="border-[#2d3139]">Adicionar Item</Button>
                 </div>
                 <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
                   {(editingBudget.items || []).map((item, idx) => (
-                    <div key={idx} className="grid grid-cols-12 gap-2 mb-2">
+                    <div key={idx} className="grid grid-cols-12 gap-2 mb-2 items-end">
                       <div className="col-span-6 flex items-center gap-2">
                         <InventorySelector 
                           inventory={inventory} 
@@ -14699,31 +14778,44 @@ function BudgetsManager({
                             const items = [...(editingBudget.items || [])];
                             items[idx].description = selected.name;
                             if (selected.price) items[idx].price = selected.price;
+                            if (selected.imageUrl) items[idx].imageUrl = selected.imageUrl;
                             setEditingBudget({...editingBudget, items});
                           }} 
                         />
-                        <Input value={item.description} onChange={e => {
+                        <div className="w-9 h-9 rounded bg-[#1a1d23] border border-[#2d3139] overflow-hidden flex items-center justify-center flex-shrink-0">
+                          {item.imageUrl ? (
+                            <img src={item.imageUrl} alt={item.description} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          ) : (
+                            <Package className="text-[#71717a]" size={14} />
+                          )}
+                        </div>
+                        <Input placeholder="Descrição" value={item.description} onChange={e => {
                           const items = [...(editingBudget.items || [])];
                           items[idx].description = e.target.value;
                           setEditingBudget({...editingBudget, items});
-                        }} className="bg-[#0f1115] border-[#2d3139] flex-1" placeholder="Descrição" />
+                        }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9 flex-1" />
                       </div>
                       <div className="col-span-2">
-                        <Input type="number" value={item.quantity === 0 ? '' : item.quantity} onChange={e => {
+                        <Input type="number" placeholder="Qtd" value={item.quantity === 0 ? '' : item.quantity} onChange={e => {
                           const items = [...(editingBudget.items || [])];
                           items[idx].quantity = e.target.value === '' ? 0 : Number(e.target.value);
                           setEditingBudget({...editingBudget, items});
-                        }} className="bg-[#0f1115] border-[#2d3139]" onFocus={(e) => e.target.select()} />
+                        }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9" onFocus={(e) => e.target.select()} />
                       </div>
                       <div className="col-span-3">
-                        <Input type="number" value={item.price === 0 ? '' : item.price} onChange={e => {
+                        <Input type="number" placeholder="Preço" value={item.price === 0 ? '' : item.price} onChange={e => {
                           const items = [...(editingBudget.items || [])];
                           items[idx].price = e.target.value === '' ? 0 : Number(e.target.value);
                           setEditingBudget({...editingBudget, items});
-                        }} className="bg-[#0f1115] border-[#2d3139]" onFocus={(e) => e.target.select()} />
+                        }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9" onFocus={(e) => e.target.select()} />
                       </div>
                       <div className="col-span-1">
-                        <Button variant="ghost" size="icon" className="text-red-500" onClick={() => setEditingBudget({...editingBudget, items: editingBudget.items?.filter((_, i) => i !== idx)})}><Trash2 size={14} /></Button>
+                        <Button variant="ghost" size="icon" className="text-[#ef4444] hover:bg-[#ef4444]/10 h-9" onClick={() => {
+                          const items = (editingBudget.items || []).filter((_, i) => i !== idx);
+                          setEditingBudget({...editingBudget, items});
+                        }}>
+                          <Trash2 size={14} />
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -14845,18 +14937,43 @@ function PDVManager({
   const [isDeleteSaleConfirmOpen, setIsDeleteSaleConfirmOpen] = useState(false);
   const [saleToDelete, setSaleToDelete] = useState<any>(null);
 
+  // Local states for dialogs to prevent premature updates on main view
+  const [localCardDetails, setLocalCardDetails] = useState<any>(null);
+  const [localPixAccountId, setLocalPixAccountId] = useState(selectedPixAccountId);
+
+  useEffect(() => {
+    if (isCardDialogOpen) {
+      setLocalCardDetails({ ...cardDetails });
+    }
+  }, [isCardDialogOpen]);
+
+  useEffect(() => {
+    if (isPixDialogOpen) {
+      setLocalPixAccountId(selectedPixAccountId);
+    }
+  }, [isPixDialogOpen]);
+
   const canManageSales = ['Proprietário', 'Administrador', 'SuperAdmin'].includes(currentUserData?.role) || isSuperAdmin;
 
   const findInterestRate = (brand: string, type: string, installments: number) => {
     if (!appSettings.installmentPlans || !brand) return 0;
-    let searchBrand = brand.toUpperCase();
+    
+    // Normalize search terms: Uppercase, trim, and handle AMEX alias
+    let searchBrand = brand.trim().toUpperCase();
     if (searchBrand === 'AMEX') searchBrand = 'AMERICA';
-    let searchType = type.toUpperCase();
-    const plan = appSettings.installmentPlans.find(p => 
-      p.brand === searchBrand && 
-      p.type === searchType && 
-      p.installments === installments
-    );
+    
+    // Normalize type: Uppercase and trim
+    let searchType = type.trim().toUpperCase();
+    
+    const plan = appSettings.installmentPlans.find(p => {
+      const pBrand = (p.brand || '').trim().toUpperCase();
+      const pType = (p.type || '').trim().toUpperCase();
+      
+      return pBrand === searchBrand && 
+             pType === searchType && 
+             Number(p.installments) === Number(installments);
+    });
+    
     return plan ? plan.interestRate : 0;
   };
 
@@ -14865,23 +14982,38 @@ function PDVManager({
   const interestAmount = (totalAfterDiscount * (cardDetails.interestPercent || 0)) / 100;
   const total = totalAfterDiscount + interestAmount;
 
+  // Local card total for preview in dialog
+  const localInterestAmount = localCardDetails ? (totalAfterDiscount * (localCardDetails.interestPercent || 0)) / 100 : 0;
+  const localTotal = totalAfterDiscount + localInterestAmount;
+
+  const handleNewSale = () => {
+    setCart([]);
+    setDiscount(0);
+    setLinkedOS('');
+    setSelectedClient('Avulso');
+    setPaymentMethod('Dinheiro');
+    setCardDetails({ brand: '', type: 'crédito', installments: 1, interestPercent: 0, useInterest: false });
+    toast.info("Nova venda iniciada!");
+  };
+
+  const handleOpenClientSearch = () => setIsClientSearchOpen(true);
+  const handleOpenProductSearch = () => setIsProductSearchOpen(true);
+  const handleOpenDiscount = () => setIsDiscountDialogOpen(true);
+
   // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F1') {
         e.preventDefault();
-        setCart([]);
-        setDiscount(0);
-        setSelectedClient('Avulso');
-        toast.info("Nova venda iniciada!");
+        handleNewSale();
       }
       if (e.key === 'F2') {
         e.preventDefault();
-        setIsClientSearchOpen(true);
+        handleOpenClientSearch();
       }
       if (e.key === 'F3') {
         e.preventDefault();
-        setIsProductSearchOpen(true);
+        handleOpenProductSearch();
       }
       if (e.key === 'F4') {
         e.preventDefault();
@@ -14889,7 +15021,7 @@ function PDVManager({
       }
       if (e.key === 'F6') {
         e.preventDefault();
-        setIsDiscountDialogOpen(true);
+        handleOpenDiscount();
       }
       if (e.key === 'F10') {
         e.preventDefault();
@@ -14903,7 +15035,7 @@ function PDVManager({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cart, paymentMethod]);
+  }, [cart, paymentMethod, canManageSales]);
 
   const addToCart = (item: any) => {
     const existing = cart.find(c => c.item.id === item.id);
@@ -15103,19 +15235,31 @@ function PDVManager({
       {/* Header Hotkeys Barra Superior */}
       <div className="flex-shrink-0 flex items-center justify-between gap-2 p-2 px-4 rounded-xl bg-[#1a1d23] border border-[#2d3139] shadow-lg">
         <div className="flex-1 flex flex-wrap items-center gap-2 md:gap-5 text-[10px] font-black uppercase tracking-tighter text-[#71717a]">
-            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-blue-500 px-1 py-0 h-5">F1</Badge> NOVA</span>
-            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-blue-500 px-1 py-0 h-5">F2</Badge> CLIENTE</span>
-            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-blue-500 px-1 py-0 h-5">F3</Badge> PRODUTO</span>
-            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-blue-500 px-1 py-0 h-5">F4</Badge> OS/SERV</span>
-            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-blue-500 px-1 py-0 h-5">F6</Badge> DESC</span>
-            <span className="flex items-center gap-1"><Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-emerald-500 px-1 py-0 h-5">F10</Badge> FINALIZAR</span>
+            <button onClick={handleNewSale} className="flex items-center gap-1 hover:text-blue-400 transition-colors">
+              <Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-blue-500 px-1 py-0 h-5 cursor-pointer">F1</Badge> NOVA
+            </button>
+            <button onClick={handleOpenClientSearch} className="flex items-center gap-1 hover:text-blue-400 transition-colors">
+              <Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-blue-500 px-1 py-0 h-5 cursor-pointer">F2</Badge> CLIENTE
+            </button>
+            <button onClick={handleOpenProductSearch} className="flex items-center gap-1 hover:text-blue-400 transition-colors">
+              <Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-blue-500 px-1 py-0 h-5 cursor-pointer">F3</Badge> PRODUTO
+            </button>
+            <button className="flex items-center gap-1 hover:text-blue-400 transition-colors">
+              <Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-blue-500 px-1 py-0 h-5 cursor-pointer">F4</Badge> OS/SERV
+            </button>
+            <button onClick={handleOpenDiscount} className="flex items-center gap-1 hover:text-blue-400 transition-colors">
+              <Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-blue-500 px-1 py-0 h-5 cursor-pointer">F6</Badge> DESC
+            </button>
+            <button onClick={() => { if (cart.length > 0) handleFinishSale(); }} className="flex items-center gap-1 hover:text-emerald-400 transition-colors">
+              <Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-emerald-500 px-1 py-0 h-5 cursor-pointer">F10</Badge> FINALIZAR
+            </button>
             {canManageSales && (
               <button 
                 onClick={() => setIsHistoryOpen(true)}
                 className="flex items-center gap-1 hover:text-blue-400 transition-colors"
                 title="Histórico de Vendas"
               >
-                <Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-amber-500 px-1 py-0 h-5">ALT+H</Badge> HISTÓRICO
+                <Badge variant="outline" className="bg-[#1a1d23] border-[#2d3139] text-amber-500 px-1 py-0 h-5 cursor-pointer">ALT+H</Badge> HISTÓRICO
               </button>
             )}
         </div>
@@ -15371,11 +15515,11 @@ function PDVManager({
                   <Label className="text-[#71717a] font-bold uppercase text-[10px]">Bandeira</Label>
                   <select 
                     className="w-full h-12 bg-[#0f1115] border-[#2d3139] rounded-lg text-sm text-white px-3 font-bold"
-                    value={cardDetails.brand}
+                    value={localCardDetails?.brand || ''}
                     onChange={e => {
                       const newBrand = e.target.value;
-                      const rate = cardDetails.useInterest ? findInterestRate(newBrand, cardDetails.type, cardDetails.installments) : cardDetails.interestPercent;
-                      setCardDetails({...cardDetails, brand: newBrand, interestPercent: rate});
+                      const rate = localCardDetails?.useInterest ? findInterestRate(newBrand, localCardDetails.type, localCardDetails.installments) : (localCardDetails?.interestPercent || 0);
+                      setLocalCardDetails({...localCardDetails, brand: newBrand, interestPercent: rate});
                     }}
                   >
                     <option value="">Selecione...</option>
@@ -15390,11 +15534,11 @@ function PDVManager({
                   <Label className="text-[#71717a] font-bold uppercase text-[10px]">Tipo</Label>
                   <select 
                     className="w-full h-12 bg-[#0f1115] border-[#2d3139] rounded-lg text-sm text-white px-3 font-bold"
-                    value={cardDetails.type}
+                    value={localCardDetails?.type || 'crédito'}
                     onChange={e => {
                       const newType = e.target.value;
-                      const rate = cardDetails.useInterest ? findInterestRate(cardDetails.brand, newType, cardDetails.installments) : cardDetails.interestPercent;
-                      setCardDetails({...cardDetails, type: newType, interestPercent: rate});
+                      const rate = localCardDetails?.useInterest ? findInterestRate(localCardDetails.brand, newType, localCardDetails.installments) : (localCardDetails?.interestPercent || 0);
+                      setLocalCardDetails({...localCardDetails, type: newType, interestPercent: rate});
                     }}
                   >
                     <option value="crédito">Crédito</option>
@@ -15408,11 +15552,11 @@ function PDVManager({
                   <Label className="text-[#71717a] font-bold uppercase text-[10px]">Parcelas</Label>
                   <select 
                     className="w-full h-12 bg-[#0f1115] border-[#2d3139] rounded-lg text-sm text-white px-3 font-bold"
-                    value={cardDetails.installments}
+                    value={localCardDetails?.installments || 1}
                     onChange={e => {
                       const newInst = Number(e.target.value);
-                      const rate = cardDetails.useInterest ? findInterestRate(cardDetails.brand, cardDetails.type, newInst) : cardDetails.interestPercent;
-                      setCardDetails({...cardDetails, installments: newInst, interestPercent: rate});
+                      const rate = localCardDetails?.useInterest ? findInterestRate(localCardDetails.brand, localCardDetails.type, newInst) : (localCardDetails?.interestPercent || 0);
+                      setLocalCardDetails({...localCardDetails, installments: newInst, interestPercent: rate});
                     }}
                   >
                     {[1,2,3,4,5,6,7,8,9,10,12].map(n => <option key={n} value={n}>{n}x</option>)}
@@ -15423,20 +15567,20 @@ function PDVManager({
                           <Label className="text-[#71717a] font-bold uppercase text-[10px]">Juros</Label>
                           <select 
                             className="w-full h-12 bg-[#0f1115] border-[#2d3139] rounded-lg text-sm text-white px-3 font-bold"
-                            value={cardDetails.useInterest ? 'with' : 'none'}
+                            value={localCardDetails?.useInterest ? 'with' : 'none'}
                             onChange={e => {
                                const useInt = e.target.value === 'with';
                                let rate = 0;
                                if (useInt) {
-                                 rate = findInterestRate(cardDetails.brand, cardDetails.type, cardDetails.installments);
+                                 rate = findInterestRate(localCardDetails?.brand || '', localCardDetails?.type || 'crédito', localCardDetails?.installments || 1);
                                }
-                               setCardDetails({...cardDetails, useInterest: useInt, interestPercent: rate});
+                               setLocalCardDetails({...localCardDetails, useInterest: useInt, interestPercent: rate});
                             }}
                           >
                             <option value="none">Sem Juros</option>
                             <option value="with">Com Juros (Plano)</option>
                           </select>
-                          {cardDetails.useInterest && cardDetails.brand && cardDetails.interestPercent === 0 && (
+                          {localCardDetails?.useInterest && localCardDetails?.brand && localCardDetails?.interestPercent === 0 && (
                             <div className="text-[8px] text-amber-500 font-bold uppercase mt-1">Nenhum plano encontrado</div>
                           )}
                         </div>
@@ -15446,9 +15590,9 @@ function PDVManager({
                             <Input 
                               type="number"
                               className="bg-[#0f1115] border-[#2d3139] h-12 text-sm font-black text-blue-400 text-center"
-                              value={cardDetails.interestPercent === 0 ? '0' : cardDetails.interestPercent}
-                              readOnly={cardDetails.useInterest}
-                              onChange={e => !cardDetails.useInterest && setCardDetails({...cardDetails, interestPercent: Math.max(0, Number(e.target.value) || 0)})}
+                              value={localCardDetails?.interestPercent === 0 ? '0' : localCardDetails?.interestPercent}
+                              readOnly={localCardDetails?.useInterest}
+                              onChange={e => !localCardDetails?.useInterest && setLocalCardDetails({...localCardDetails, interestPercent: Math.max(0, Number(e.target.value) || 0)})}
                               placeholder="0"
                             />
                             <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
@@ -15462,18 +15606,18 @@ function PDVManager({
              <div className="p-4 rounded-xl bg-[#0f1115] border border-[#2d3139] grid grid-cols-2 gap-4">
                 <div className="flex flex-col">
                    <span className="text-xs text-[#71717a] font-bold uppercase">Total Final</span>
-                   <span className="text-xl font-black text-white">R$ {total.toFixed(2)}</span>
+                   <span className="text-xl font-black text-white">R$ {localTotal.toFixed(2)}</span>
                 </div>
                 <div className="flex flex-col items-end">
                    <span className="text-xs text-[#71717a] font-bold uppercase">Parcelas</span>
                    <span className="text-lg font-black text-blue-400">
-                     {cardDetails.installments}x R$ {(total / (cardDetails.installments || 1)).toFixed(2)}
+                     {(localCardDetails?.installments || 1)}x R$ {(localTotal / (localCardDetails?.installments || 1)).toFixed(2)}
                    </span>
                 </div>
              </div>
           </div>
           <DialogFooter>
-             <Button onClick={() => setIsCardDialogOpen(false)} className="w-full bg-blue-600 hover:bg-blue-700 font-black uppercase italic">
+             <Button onClick={() => { setCardDetails(localCardDetails); setIsCardDialogOpen(false); }} className="w-full bg-blue-600 hover:bg-blue-700 font-black uppercase italic">
                Confirmar Dados do Cartão
              </Button>
           </DialogFooter>
@@ -15497,8 +15641,8 @@ function PDVManager({
                <Label className="text-[#71717a] font-bold uppercase text-[10px]">Conta de Destino</Label>
                <select 
                  className="w-full h-12 bg-[#0f1115] border-[#2d3139] rounded-lg text-sm text-white px-3 font-bold"
-                 value={selectedPixAccountId}
-                 onChange={e => setSelectedPixAccountId(e.target.value)}
+                 value={localPixAccountId}
+                 onChange={e => setLocalPixAccountId(e.target.value)}
                >
                  <option value="">Selecione uma conta...</option>
                  {(pixSettings?.accounts || []).map(acc => (
@@ -15511,9 +15655,46 @@ function PDVManager({
                  Nenhuma conta PIX cadastrada no sistema. Vá em Configurações para cadastrar.
                </div>
              )}
+             
+             {localPixAccountId && (
+               <div className="bg-[#0f1115] border border-[#2d3139] rounded-xl p-4 space-y-3">
+                  {(() => {
+                    const acc = (pixSettings?.accounts || []).find(a => a.id === localPixAccountId);
+                    if (!acc) return null;
+                    return (
+                      <>
+                        <div className="flex justify-between items-start">
+                          <div className="space-y-1">
+                            <p className="text-[10px] text-[#71717a] font-bold uppercase">Favorecido</p>
+                            <p className="text-white font-bold">{acc.favored}</p>
+                          </div>
+                          <div className="bg-white p-2 rounded-lg">
+                            <QRCodeCanvas 
+                              value={acc.key || ''} 
+                              size={100}
+                              level="H"
+                              includeMargin={true}
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                           <div className="space-y-1">
+                              <p className="text-[10px] text-[#71717a] font-bold uppercase">Chave PIX</p>
+                              <p className="text-xs text-emerald-400 font-mono break-all">{acc.key}</p>
+                           </div>
+                           <div className="space-y-1">
+                              <p className="text-[10px] text-[#71717a] font-bold uppercase">CPF/CNPJ</p>
+                              <p className="text-xs text-white">{acc.document || '-'}</p>
+                           </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+               </div>
+             )}
           </div>
           <DialogFooter>
-             <Button onClick={() => setIsPixDialogOpen(false)} className="w-full bg-emerald-600 hover:bg-emerald-700 font-black uppercase italic">
+             <Button onClick={() => { setSelectedPixAccountId(localPixAccountId); setIsPixDialogOpen(false); }} className="w-full bg-emerald-600 hover:bg-emerald-700 font-black uppercase italic">
                Confirmar Conta PIX
              </Button>
           </DialogFooter>
@@ -15545,10 +15726,19 @@ function PDVManager({
                       onClick={() => addToCart(p)}
                       className="p-4 rounded-lg bg-[#0f1115] border border-[#2d3139] hover:border-blue-500/50 flex justify-between items-center group"
                     >
-                      <div className="text-left">
-                        <p className="text-[10px] font-mono text-[#71717a]">#{p.code}</p>
-                        <p className="font-bold text-white group-hover:text-blue-400 transition-colors">{p.name}</p>
-                        <p className="text-xs text-[#71717a]">Estoque: {p.quantity} {p.unit || 'UN'}</p>
+                      <div className="text-left flex items-center gap-3">
+                        <div className="w-12 h-12 rounded bg-[#1a1d23] border border-[#2d3139] overflow-hidden flex items-center justify-center flex-shrink-0">
+                          {p.imageUrl ? (
+                            <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          ) : (
+                            <Package className="text-[#71717a]" size={20} />
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-mono text-[#71717a]">#{p.code}</p>
+                          <p className="font-bold text-white group-hover:text-blue-400 transition-colors">{p.name}</p>
+                          <p className="text-xs text-[#71717a]">Estoque: {p.quantity} {p.unit || 'UN'}</p>
+                        </div>
                       </div>
                       <div className="text-right">
                         <p className="text-lg font-black text-emerald-500 italic">R$ {(p.price || 0).toFixed(2)}</p>
@@ -15746,7 +15936,8 @@ function InventoryManager({
     unit: 'un',
     price: 0,
     location: '',
-    category: ''
+    category: '',
+    imageUrl: ''
   });
 
   const [newTransaction, setNewTransaction] = useState({
@@ -15809,7 +16000,7 @@ function InventoryManager({
       }
 
       setIsAddOpen(false);
-      setNewItem({ code: '', name: '', description: '', quantity: 0, minQuantity: 5, unit: 'un', location: '', category: '' });
+      setNewItem({ code: '', name: '', description: '', quantity: 0, minQuantity: 5, unit: 'un', location: '', category: '', imageUrl: '' });
       toast.success('Item cadastrado com sucesso!');
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'inventory');
@@ -16015,6 +16206,7 @@ function InventoryManager({
                 <TableHeader className="bg-[#0f1115]">
                   <TableRow className="hover:bg-transparent border-[#2d3139]">
                     <TableHead className="text-[#71717a] text-[10px] uppercase font-black px-4 py-3">Cod.</TableHead>
+                    <TableHead className="text-[#71717a] text-[10px] uppercase font-black px-4 py-3 w-[60px]"></TableHead>
                     <TableHead className="text-[#71717a] text-[10px] uppercase font-black px-4 py-3">Peça / Componente</TableHead>
                     <TableHead className="text-[#71717a] text-[10px] uppercase font-black text-center px-4 py-3">Quant.</TableHead>
                     <TableHead className="text-[#71717a] text-[10px] uppercase font-black text-center px-4 py-3">Min.</TableHead>
@@ -16029,6 +16221,15 @@ function InventoryManager({
                       return (
                         <TableRow key={item.id} className="border-[#2d3139] hover:bg-[#2d3139]/20 transition-colors group">
                           <TableCell className="font-mono text-[10px] text-blue-400 px-4 py-3 tracking-tighter uppercase">#{item.code}</TableCell>
+                          <TableCell className="px-4 py-3">
+                            <div className="w-10 h-10 rounded-lg bg-[#0f1115] border border-[#2d3139] overflow-hidden flex items-center justify-center">
+                              {item.imageUrl ? (
+                                <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              ) : (
+                                <Package className="text-[#71717a]" size={16} />
+                              )}
+                            </div>
+                          </TableCell>
                           <TableCell className="px-4 py-3">
                             <div className="flex flex-col">
                               <span className="text-sm font-bold text-white tracking-tight">{item.name}</span>
@@ -16241,6 +16442,15 @@ function InventoryManager({
                 />
               </div>
               <div className="col-span-2 space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Link da Imagem do Produto (URL)</Label>
+                <Input 
+                  value={selectedItem.imageUrl || ''} 
+                  onChange={e => setSelectedItem({...selectedItem, imageUrl: e.target.value})} 
+                  placeholder="https://exemplo.com/imagem.jpg"
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                />
+              </div>
+              <div className="col-span-2 space-y-2">
                 <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Observações</Label>
                 <Input 
                   value={selectedItem.description} 
@@ -16331,6 +16541,15 @@ function InventoryManager({
                 onChange={e => setNewItem({...newItem, price: e.target.value === '' ? 0 : Number(e.target.value)})} 
                 onFocus={(e) => e.target.select()}
                 className="bg-[#0f1115] border-[#2d3139]" 
+              />
+            </div>
+            <div className="col-span-2 space-y-2">
+              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Link da Imagem do Produto (URL)</Label>
+              <Input 
+                value={newItem.imageUrl || ''} 
+                onChange={e => setNewItem({...newItem, imageUrl: e.target.value})} 
+                className="bg-[#0f1115] border-[#2d3139] focus:ring-blue-500" 
+                placeholder="https://exemplo.com/imagem.jpg"
               />
             </div>
             <div className="col-span-2 space-y-2">
