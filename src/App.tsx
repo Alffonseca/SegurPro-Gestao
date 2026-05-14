@@ -55,6 +55,7 @@ import {
   Key,
   Navigation,
   Phone,
+  Briefcase,
   Package,
   Box,
   ShoppingCart,
@@ -117,6 +118,7 @@ import {
 } from 'recharts';
 import { motion } from 'motion/react';
 import { jsPDF } from 'jspdf';
+import QRCode from 'qrcode';
 import autoTable from 'jspdf-autotable';
 
 import { db, auth, handleFirestoreError, OperationType, firebaseConfig } from './firebase';
@@ -290,10 +292,36 @@ function valorPorExtenso(valor: number = 0) {
 const formatRecordNumber = (number?: number | string, date?: any) => {
   if (!number) return '---';
   const numStr = number.toString();
-  if (numStr.includes('/')) return numStr; // Already formatted (e.g. old receipts)
+  if (numStr.includes('/')) return numStr; // Already formatted
   const d = date instanceof Timestamp ? date.toDate() : (date ? new Date(date) : new Date());
   const year = format(d, 'yy');
   return `${numStr.padStart(5, '0')}/${year}`;
+};
+
+const getNextFormattedNumber = (items: any[], prefix: string) => {
+  const currentYear = format(new Date(), 'yy');
+  const itemsThisYear = items.filter(item => {
+    const itemDate = item.createdAt?.toDate ? item.createdAt.toDate() : (item.date?.toDate ? item.date.toDate() : new Date());
+    return itemDate && format(itemDate, 'yy') === currentYear;
+  });
+  
+  let nextNum = 1;
+  if (itemsThisYear.length > 0) {
+    const numbers = itemsThisYear.map(item => {
+      const num = item.number;
+      if (typeof num === 'number') return num;
+      if (typeof num === 'string' && num.includes('-')) {
+        const parts = num.split('-');
+        const lastPart = parts[parts.length - 1]; // e.g. 00001/26
+        const numeric = lastPart.split('/')[0];
+        return parseInt(numeric, 10) || 0;
+      }
+      return 0;
+    });
+    nextNum = Math.max(...numbers) + 1;
+  }
+  
+  return `${prefix}${nextNum.toString().padStart(5, '0')}/${currentYear}`;
 };
 
 const formatFullDateWithCity = (date: any, appSettings: AppSettings) => {
@@ -840,7 +868,7 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, pix
 
     // PIX Info in OS PDF
     if (os.pixAccountId) {
-      const selectedPix = pixSettings.accounts?.find(a => a.id === os.pixAccountId);
+      const selectedPix = pixSettings.accounts?.find(a => a.id === os.pixAccountId) || pixSettings.accounts?.[0];
       if (selectedPix) {
         checkPageBreak(20);
         doc.setFont('helvetica', 'bold');
@@ -1044,7 +1072,7 @@ const generateOSLabelsPDF = (selectedOSs: ServiceOrder[], appSettings: AppSettin
 
 interface ServiceOrder {
   id: string;
-  number?: number;
+  number?: number | string;
   date: any; // Firestore Timestamp
   technicianId: string;
   technicianName: string;
@@ -1117,7 +1145,7 @@ interface TechnicalVisit {
   clientSignature?: string;
   technicianSignature?: string;
   createdAt: any;
-  number?: number;
+  number?: number | string;
 }
 
 interface FinancialRecord {
@@ -1160,7 +1188,7 @@ interface Budget {
   observations?: string;
   clientSignature?: string;
   createdAt: any;
-  number?: number;
+  number?: number | string;
 }
 
 interface Client {
@@ -1187,7 +1215,7 @@ interface Client {
 
 interface Receipt {
   id: string;
-  number?: number;
+  number?: number | string;
   clientId?: string;
   visitId?: string;
   clientName: string;
@@ -1329,7 +1357,7 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
   
   // PIX Info (Only if payment method is PIX)
   if (receipt.paymentMethod === 'PIX') {
-    const selectedPix = pixSettings.accounts.find(a => a.id === receipt.pixAccountId) || pixSettings.accounts[0];
+    const selectedPix = pixSettings.accounts?.find(a => a.id === receipt.pixAccountId || a.label === receipt.pixAccountId) || (pixSettings.accounts?.[0]);
     if (selectedPix && selectedPix.key) {
       doc.setTextColor(0, 0, 0);
       doc.setFontSize(9);
@@ -1441,6 +1469,7 @@ interface AppSettings {
   companyEmail?: string;
   signatureUrl?: string;
   installmentPlans?: { id: string, brand: 'VISA' | 'MASTERCARD' | 'AMERICA' | 'ELO', type: 'DÉBITO' | 'CRÉDITO', installments: number, interestRate: number }[];
+  serviceTypes?: string[];
 }
 
 interface LogRecord {
@@ -2237,6 +2266,7 @@ export default function MainApp() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [allGlobalUsers, setAllGlobalUsers] = useState<any[]>([]);
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
   const [logSearchUser, setLogSearchUser] = useState<string>('all');
   const [logSearchDate, setLogSearchDate] = useState<string>('');
@@ -2287,7 +2317,8 @@ export default function MainApp() {
     city: '',
     cep: '',
     document: '',
-    signatureUrl: ''
+    signatureUrl: '',
+    serviceTypes: ['CFTV', 'Alarme', 'Cerca Elétrica', 'Motor de Portão', 'Redes', 'Outros']
   });
 
   const [generatedSignatureInfo, setGeneratedSignatureInfo] = useState<{
@@ -2786,6 +2817,22 @@ export default function MainApp() {
           }
         }
       );
+
+      // Global users listener for Super Admin (to support user management across companies)
+      const allUsersUnsubscribe = onSnapshot(
+        collection(db, 'users'),
+        (snapshot) => {
+          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setAllGlobalUsers(data);
+        }
+      );
+      
+      // Add allUsersUnsubscribe to cleanup
+      const originalAllCompaniesUnsubscribe = allCompaniesUnsubscribe;
+      allCompaniesUnsubscribe = () => {
+        originalAllCompaniesUnsubscribe?.();
+        allUsersUnsubscribe();
+      };
     }
 
     let visitsUnsubscribe = () => {};
@@ -3945,6 +3992,7 @@ export default function MainApp() {
               receipts={receipts} 
               serviceOrders={serviceOrders}
               suppliers={suppliers}
+              sales={sales}
               appSettings={appSettings} 
               companyId={effectiveCompanyId || ''}
               showList={canViewList('reports')}
@@ -4207,6 +4255,7 @@ export default function MainApp() {
             <SuperAdminPanel 
               companies={allCompanies} 
               allFinancials={allFinancials} 
+              allUsers={allGlobalUsers}
               saasSettings={saasSettings}
               user={user}
               selectedCompanyId={selectedCompanyId}
@@ -5847,7 +5896,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
         await addDoc(collection(db, 'financial'), {
           type: 'Receita',
           category: receiptData.clientType === 'Contrato' ? 'Mensalidade Contrato' : 'Serviço Avulso',
-          description: `${receiptData.clientName} - ${receiptData.referenceMonth || format(new Date(), 'MMMM/yyyy', { locale: ptBR })}`,
+          description: `${formatRecordNumber(receiptData.number, receiptData.date)} - ${receiptData.clientName} - ${receiptData.referenceMonth || format(new Date(), 'MMMM/yyyy', { locale: ptBR })}`,
           origin: receiptData.number ? formatRecordNumber(receiptData.number, receiptData.date) : 'Recibo',
           value: Number(receiptData.value),
           date: Timestamp.now(), // Usar data atual do recebimento
@@ -5921,22 +5970,12 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
     }
     setIsSubmitting(true);
     try {
-      const year = new Date().getFullYear();
-      const currentYearReceipts = (receipts || []).filter(r => {
-        const d = r.date instanceof Timestamp ? r.date.toDate() : new Date(r.date);
-        return d.getFullYear() === year;
-      });
+      const formattedNumber = getNextFormattedNumber(receipts, 'RC-');
       
-      let nextNum = 1;
-      if (currentYearReceipts.length > 0) {
-        const numbers = currentYearReceipts.map(r => Number(r.number) || 0);
-        nextNum = Math.max(...numbers) + 1;
-      }
-
       const receiptData = {
         ...newReceipt,
         pixAccountId: newReceipt.pixAccountId || null,
-        number: nextNum,
+        number: formattedNumber,
         status: newReceipt.status || 'Aguardando Pagamento',
         date: Timestamp.fromDate(newReceipt.date instanceof Date ? newReceipt.date : new Date()),
         companyId,
@@ -6608,7 +6647,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-col text-[10px] text-[#a0a0a0]">
-                      <span className="text-[#e0e0e0] font-medium truncate max-w-[120px]">{pixSettings.accounts?.find(a => a.id === receipt.pixAccountId)?.label || 'C. Corrente'}</span>
+                      <span className="text-[#e0e0e0] font-medium truncate max-w-[120px]">{pixSettings.accounts?.find(a => a.id === receipt.pixAccountId)?.label || pixSettings.accounts?.[0]?.label || 'C. Corrente'}</span>
                       <span className="uppercase text-[9px]">{receipt.paymentMethod}</span>
                     </div>
                   </TableCell>
@@ -6747,6 +6786,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
 function SuperAdminPanel({ 
   companies = [], 
   allFinancials = [], 
+  allUsers = [],
   saasSettings, 
   user, 
   selectedCompanyId, 
@@ -6761,6 +6801,7 @@ function SuperAdminPanel({
 }: { 
   companies: any[], 
   allFinancials: any[], 
+  allUsers: any[],
   saasSettings: any, 
   user: any, 
   selectedCompanyId: string, 
@@ -6779,6 +6820,71 @@ function SuperAdminPanel({
   const [isMigrationFinished, setIsMigrationFinished] = useState(false);
   const [lastMigrationTargetName, setLastMigrationTargetName] = useState('');
   const [deepSearchQuery, setDeepSearchQuery] = useState('');
+  const [selectedUserToClear, setSelectedUserToClear] = useState('');
+  const [selectedCompanyIdForClear, setSelectedCompanyIdForClear] = useState('');
+  const [isClearingUserHistory, setIsClearingUserHistory] = useState(false);
+
+  const companyUsersForClear = allUsers.filter(u => u.companyId === selectedCompanyIdForClear);
+  const companyUsers = allUsers.filter(u => u.companyId === selectedCompanyId);
+
+  const [isClearHistoryConfirmOpen, setIsClearHistoryConfirmOpen] = useState(false);
+  const [userToClearObj, setUserToClearObj] = useState<any>(null);
+
+  const handleClearUserHistory = async () => {
+    if (!selectedCompanyIdForClear || !selectedUserToClear) {
+      toast.error("Por favor, selecione uma empresa e um usuário.");
+      return;
+    }
+
+    const userToClear = companyUsersForClear.find(u => u.id === selectedUserToClear);
+    if (!userToClear) return;
+    setUserToClearObj(userToClear);
+    setIsClearHistoryConfirmOpen(true);
+  };
+
+  const confirmClearUserHistory = async () => {
+    if (!userToClearObj) return;
+    const userEmail = userToClearObj.email;
+
+    setIsClearingUserHistory(true);
+    setIsClearHistoryConfirmOpen(false);
+    try {
+      let totalDeleted = 0;
+      const collections = ['visits', 'receipts', 'financial', 'budgets', 'serviceOrders'];
+      
+      for (const col of collections) {
+        const q = query(
+          collection(db, col), 
+          where('companyId', '==', selectedCompanyIdForClear),
+          where('createdByEmail', '==', userEmail)
+        );
+        const snap = await getDocs(q);
+        for (const d of snap.docs) {
+          await deleteDoc(doc(db, col, d.id));
+          totalDeleted++;
+        }
+      }
+
+      // PDV Sales subcollection
+      const salesRef = collection(db, 'companies', selectedCompanyIdForClear, 'sales');
+      const salesSnap = await getDocs(salesRef);
+      for (const d of salesSnap.docs) {
+        const data = d.data();
+        if (data.vendorEmail === userEmail || (data.vendorName && data.vendorName.includes(userEmail))) {
+           await deleteDoc(doc(db, 'companies', selectedCompanyIdForClear, 'sales', d.id));
+           totalDeleted++;
+        }
+      }
+
+      toast.success(`Limpeza concluída! ${totalDeleted} registros removidos.`);
+      setSelectedUserToClear('');
+    } catch (error) {
+      console.error("Clear history error:", error);
+      toast.error("Erro ao limpar histórico do usuário.");
+    } finally {
+      setIsClearingUserHistory(false);
+    }
+  };
   const [deepSearchResults, setDeepSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
@@ -7318,13 +7424,11 @@ function SuperAdminPanel({
             <div className="w-full md:w-64">
               <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
                 <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                  <SelectValue placeholder="Selecione a Empresa">
-                    {selectedCompanyId ? (companies.find(c => c.id === selectedCompanyId)?.name || companies.find(c => c.id === selectedCompanyId)?.companyName || selectedCompanyId) : "Selecione a Empresa"}
-                  </SelectValue>
+                  <SelectValue placeholder="Selecione a Empresa" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                   {companies.map(c => {
-                    const companyName = c.name || c.companyName || c.tradeName || c.trade_name || c.id;
+                    const companyName = c.name || c.tradeName || c.companyName || c.id;
                     return (
                       <SelectItem key={c.id} value={c.id}>
                         {companyName}
@@ -7493,7 +7597,66 @@ function SuperAdminPanel({
               </div>
             )}
           </div>
+
+          <div className="flex flex-col gap-4 mt-8 pt-8 border-t border-[#2d3139]">
+            <div className="flex items-center gap-3 text-red-500 mb-2">
+              <Trash2 size={20} />
+              <span className="text-sm font-bold uppercase tracking-wider">Limpar Histórico de Usuário:</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <Select value={selectedCompanyIdForClear} onValueChange={(val) => { setSelectedCompanyIdForClear(val); setSelectedUserToClear(''); }}>
+                <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white h-10">
+                  <SelectValue placeholder="Selecione a Empresa" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                  {companies.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name || c.tradeName || c.companyName || c.trade_name || c.id}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={selectedUserToClear} onValueChange={setSelectedUserToClear}>
+                <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white h-10">
+                  <SelectValue placeholder="Selecione o Usuário" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                  {companyUsersForClear.map(u => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.displayName || u.email} ({u.role})
+                    </SelectItem>
+                  ))}
+                  {companyUsersForClear.length === 0 && <SelectItem value="none" disabled>Nenhum usuário nesta empresa</SelectItem>}
+                </SelectContent>
+              </Select>
+              <Button 
+                onClick={handleClearUserHistory}
+                disabled={!selectedUserToClear || isClearingUserHistory}
+                variant="destructive"
+                className="h-10 font-bold uppercase text-[10px] tracking-widest"
+              >
+                {isClearingUserHistory ? <RefreshCw className="animate-spin mr-2" size={14} /> : <Trash2 className="mr-2" size={14} />}
+                Apagar Histórico
+              </Button>
+            </div>
+          </div>
         </Card>
+
+        <Dialog open={isClearHistoryConfirmOpen} onOpenChange={setIsClearHistoryConfirmOpen}>
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+            <DialogHeader>
+              <DialogTitle className="text-red-500 flex items-center gap-2 font-black italic">
+                <AlertTriangle size={20} />
+                Atenção: Ação Irreversível
+              </DialogTitle>
+              <DialogDescription className="text-[#a0a0a0]">
+                Exclusão <span className="text-white font-bold italic">PERMANENTE</span> do histórico de <span className="text-emerald-500 font-bold">{userToClearObj?.displayName || userToClearObj?.email}</span> nesta empresa.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setIsClearHistoryConfirmOpen(false)} className="border-[#2d3139] flex-1">Cancelar</Button>
+              <Button onClick={confirmClearUserHistory} className="bg-red-600 hover:bg-red-700 font-black uppercase text-xs tracking-tighter flex-1">Confirmar Exclusão</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Card className="lg:col-span-2 bg-[#1a1d23] border-[#2d3139] overflow-hidden flex flex-col min-h-[450px] shadow-2xl">
           <CardHeader className="bg-blue-500/5 border-b border-[#2d3139] px-6 py-5">
@@ -8250,26 +8413,58 @@ function RoleSettings({
     }
   };
 
-  const handleDeleteRole = async (roleId: string) => {
+  const handleDeleteRole = (role: UserRole) => {
     // Standard roles cannot be deleted
-    if (['owner', 'admin'].includes(roleId)) {
+    if (['owner', 'admin'].includes(role.id)) {
       toast.error('Níveis de acesso padrão não podem ser deletados.');
       return;
     }
+    setRoleToDelete(role);
+    setIsDeleteRoleConfirmOpen(true);
+  };
 
+  const confirmDeleteRole = async () => {
+    if (!roleToDelete) return;
     const currentBaseRoles = customRoles.length > 0 ? customRoles : SUGGESTED_INITIAL_ROLES;
-    const updated = currentBaseRoles.filter(r => r.id !== roleId);
+    const updated = currentBaseRoles.filter(r => r.id !== roleToDelete.id);
     
     try {
       await setDoc(doc(db, 'companies', companyId, 'settings', 'roles'), {
         roles: updated
       });
       toast.success('Nível de acesso removido!');
+      setIsDeleteRoleConfirmOpen(false);
+      setRoleToDelete(null);
     } catch (error) {
       toast.error('Erro ao remover nível de acesso.');
       handleFirestoreError(error, OperationType.UPDATE, `companies/${companyId}/settings/roles`);
     }
   };
+
+  const [editingRole, setEditingRole] = useState<UserRole | null>(null);
+  const [editRoleLabel, setEditRoleLabel] = useState('');
+
+  const handleUpdateRole = async () => {
+    if (!editingRole || !editRoleLabel.trim()) return;
+    
+    const currentBaseRoles = customRoles.length > 0 ? customRoles : SUGGESTED_INITIAL_ROLES;
+    const updated = currentBaseRoles.map(r => 
+      r.id === editingRole.id ? { ...r, label: editRoleLabel.trim() } : r
+    );
+
+    try {
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'roles'), {
+        roles: updated
+      });
+      toast.success('Nível de acesso atualizado!');
+      setEditingRole(null);
+    } catch (error) {
+      toast.error('Erro ao atualizar nível de acesso.');
+    }
+  };
+
+  const [roleToDelete, setRoleToDelete] = useState<UserRole | null>(null);
+  const [isDeleteRoleConfirmOpen, setIsDeleteRoleConfirmOpen] = useState(false);
 
   return (
     <Card className="bg-[#1a1d23] border-[#2d3139] overflow-hidden">
@@ -8335,12 +8530,19 @@ function RoleSettings({
                     <Button 
                       variant="ghost" 
                       size="icon" 
-                      className="h-8 w-8 text-[#ef4444] hover:bg-[#ef4444]/10"
+                      className="h-8 w-8 text-blue-400 hover:bg-blue-400/10"
                       onClick={() => {
-                        if (window.confirm(`AVISO: Verifique se existe algum usuário com o nível "${role.label}" antes de excluir. Esta ação é irreversível. Deseja continuar?`)) {
-                          handleDeleteRole(role.id);
-                        }
+                        setEditingRole(role);
+                        setEditRoleLabel(role.label);
                       }}
+                    >
+                      <Pencil size={14} />
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-8 w-8 text-[#ef4444] hover:bg-[#ef4444]/10"
+                      onClick={() => handleDeleteRole(role)}
                     >
                       <Trash2 size={14} />
                     </Button>
@@ -8351,6 +8553,41 @@ function RoleSettings({
           })}
         </div>
       </CardContent>
+
+      <Dialog open={!!editingRole} onOpenChange={() => setEditingRole(null)}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+          <DialogHeader>
+            <DialogTitle>Editar Nível de Acesso</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <Label className="text-[#a0a0a0]">Nome do Nível</Label>
+            <Input 
+              value={editRoleLabel}
+              onChange={e => setEditRoleLabel(e.target.value)}
+              className="bg-[#0f1115] border-[#2d3139] text-white mt-2"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingRole(null)} className="border-[#2d3139]">Cancelar</Button>
+            <Button onClick={handleUpdateRole} className="bg-purple-500 hover:bg-purple-600">Salvar Alterações</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isDeleteRoleConfirmOpen} onOpenChange={setIsDeleteRoleConfirmOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+          <DialogHeader>
+            <DialogTitle>Excluir Nível de Acesso</DialogTitle>
+            <DialogDescription className="text-[#a0a0a0]">
+              AVISO: Verifique se existe algum usuário com o nível <span className="text-red-500 font-bold">"{roleToDelete?.label}"</span> antes de excluir. Esta ação é irreversível.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteRoleConfirmOpen(false)} className="border-[#2d3139]">Cancelar</Button>
+            <Button onClick={confirmDeleteRole} className="bg-red-500 hover:bg-red-600">Excluir Permanente</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
@@ -8403,6 +8640,36 @@ function SettingsManager({
   const [newPassword, setNewPassword] = useState('');
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  const [newServiceType, setNewServiceType] = useState('');
+
+  const handleAddServiceType = () => {
+    if (!newServiceType.trim()) return;
+    if (localApp.serviceTypes?.includes(newServiceType.trim())) {
+      toast.error('Este tipo de serviço já existe.');
+      return;
+    }
+    const updatedTypes = [...(localApp.serviceTypes || []), newServiceType.trim()];
+    setLocalApp({ ...localApp, serviceTypes: updatedTypes });
+    setNewServiceType('');
+  };
+
+  const handleRemoveServiceType = (typeToRemove: string) => {
+    const updatedTypes = (localApp.serviceTypes || []).filter(t => t !== typeToRemove);
+    setLocalApp({ ...localApp, serviceTypes: updatedTypes });
+  };
+
+  const [editingServiceType, setEditingServiceType] = useState<string | null>(null);
+  const [editServiceTypeLabel, setEditServiceTypeLabel] = useState('');
+
+  const handleUpdateServiceType = () => {
+    if (!editingServiceType || !editServiceTypeLabel.trim()) return;
+    const updatedTypes = (localApp.serviceTypes || []).map(t => 
+      t === editingServiceType ? editServiceTypeLabel.trim() : t
+    );
+    setLocalApp({ ...localApp, serviceTypes: updatedTypes });
+    setEditingServiceType(null);
+  };
 
   // Multi-PIX states
   const [isPixDialogOpen, setIsPixDialogOpen] = useState(false);
@@ -9054,6 +9321,69 @@ function SettingsManager({
             </Card>
 
             <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Briefcase className="text-[#3b82f6]" size={20} />
+                  Tipos de Serviço
+                </CardTitle>
+                <CardDescription className="text-[#71717a]">
+                  Personalize os tipos de serviços exibidos.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex gap-2">
+                   <Input 
+                     placeholder="Ex: Instalação Solar" 
+                     className="bg-[#0f1115] border-[#2d3139] text-white h-10"
+                     value={newServiceType}
+                     onChange={e => setNewServiceType(e.target.value)}
+                     onKeyDown={e => e.key === 'Enter' && handleAddServiceType()}
+                   />
+                   <Button onClick={handleAddServiceType} className="bg-[#3b82f6] hover:bg-[#2563eb] h-10">
+                     <Plus size={16} />
+                   </Button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                   {(localApp.serviceTypes || ['CFTV', 'Alarme', 'Cerca Elétrica', 'Motor de Portão', 'Redes', 'Outros']).map(type => (
+                     <Badge key={type} className="bg-[#0f1115] border border-[#2d3139] text-[#a0a0a0] py-1.5 px-3 flex gap-2 items-center group hover:border-[#3b82f6]/50">
+                        {type}
+                        <div className="flex gap-1">
+                          <button onClick={() => {
+                            setEditingServiceType(type);
+                            setEditServiceTypeLabel(type);
+                          }} className="text-[#555] hover:text-blue-500 transition-colors">
+                            <Pencil size={10} />
+                          </button>
+                          <button onClick={() => handleRemoveServiceType(type)} className="text-[#555] hover:text-red-500 transition-colors">
+                            <X size={12} />
+                          </button>
+                        </div>
+                     </Badge>
+                   ))}
+                </div>
+              </CardContent>
+
+              <Dialog open={!!editingServiceType} onOpenChange={() => setEditingServiceType(null)}>
+                <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-sm">
+                  <DialogHeader>
+                    <DialogTitle>Editar Tipo de Serviço</DialogTitle>
+                  </DialogHeader>
+                  <div className="py-4">
+                    <Input 
+                      value={editServiceTypeLabel}
+                      onChange={e => setEditServiceTypeLabel(e.target.value)}
+                      className="bg-[#0f1115] border-[#2d3139] text-white"
+                    />
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setEditingServiceType(null)} className="border-[#2d3139]">Cancelar</Button>
+                    <Button onClick={handleUpdateServiceType} className="bg-[#3b82f6] hover:bg-[#2563eb]">Salvar</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </Card>
+
+            <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
               <CardHeader className="flex flex-row items-center justify-between">
                 <div className="space-y-1">
                   <CardTitle className="flex items-center gap-2">
@@ -9377,6 +9707,7 @@ function ReportsManager({
   receipts = [], 
   serviceOrders = [],
   suppliers = [],
+  sales = [],
   appSettings, 
   companyId,
   showList
@@ -9388,6 +9719,7 @@ function ReportsManager({
   receipts: Receipt[], 
   serviceOrders: ServiceOrder[],
   suppliers: Supplier[],
+  sales: any[],
   appSettings: AppSettings, 
   companyId: string,
   showList: boolean
@@ -9501,6 +9833,16 @@ function ReportsManager({
         s.phone || '-',
         s.cityState || '-'
       ]);
+    } else if (category === 'Vendas PDV') {
+      filteredData = sales.filter(s => isMatch(s.createdAt));
+      tableHeaders = ['Nº Venda', 'Cliente', 'Vendedor', 'Pagamento', 'Valor'];
+      tableRows = filteredData.map(s => [
+        s.number || 'PDV-00000/00',
+        s.clientName || 'CONSUMIDOR',
+        s.vendorName || 'SISTEMA',
+        s.paymentMethod,
+        `R$ ${(s.total || 0).toFixed(2)}`
+      ]);
     }
 
     if (tableRows.length === 0) {
@@ -9605,6 +9947,7 @@ function ReportsManager({
                 { label: 'Recibos Emitidos', icon: <ReceiptIcon size={24} />, cat: 'Recibos', color: '#f59e0b' },
                 { label: 'Orçamentos', icon: <FileText size={24} />, cat: 'Orçamentos', color: '#8b5cf6' },
                 { label: 'Ordens de Serviço', icon: <Settings size={24} />, cat: 'Ordem de Serviço', color: '#6366f1' },
+                { label: 'Vendas PDV', icon: <ShoppingCart size={24} />, cat: 'Vendas PDV', color: '#10b981' },
                 { label: 'Fornecedores', icon: <Database size={24} />, cat: 'Fornecedores', color: '#8b5cf6' },
                 { label: 'Base de Clientes', icon: <UserIcon size={24} />, cat: 'Clientes', color: '#ec4899' },
               ].map(item => (
@@ -10189,15 +10532,14 @@ function VisitsManager({
 
     setIsSubmitting(true);
     try {
-      const visitNumbers = (visits || []).map(v => v.number).filter(n => typeof n === 'number' && !isNaN(n));
-      const nextNumber = visitNumbers.length > 0 ? Math.max(...visitNumbers) + 1 : 1;
+      const formattedNumber = getNextFormattedNumber(visits, 'VT-');
       
       const partsValue = (newVisit.parts || []).reduce((acc, p) => acc + (p.quantity * p.price), 0);
       const finalTotal = (newVisit.totalValue || 0) + partsValue;
 
       const docRef = await addDoc(collection(db, 'visits'), {
         ...newVisit,
-        number: nextNumber,
+        number: formattedNumber,
         totalValue: finalTotal, // Sum of labor + parts
         partsValue,
         date: Timestamp.fromDate(newVisit.date instanceof Date ? newVisit.date : new Date()),
@@ -10251,21 +10593,11 @@ function VisitsManager({
         const client = visit.clientId ? clients.find(c => c.id === visit.clientId) : clients.find(c => c.name === visit.clientName);
         
         // 0. Calculate Receipt Number
-        const year = new Date().getFullYear();
-        const currentYearReceipts = (receipts || []).filter(r => {
-          const d = r.date instanceof Timestamp ? r.date.toDate() : new Date(r.date);
-          return d.getFullYear() === year;
-        });
-        
-        let nextReceiptNum = 1;
-        if (currentYearReceipts.length > 0) {
-          const numbers = currentYearReceipts.map(r => Number(r.number) || 0);
-          nextReceiptNum = Math.max(...numbers) + 1;
-        }
+        const formattedNumber = getNextFormattedNumber(receipts || [], 'RC-');
 
         // 1. Create Receipt Data
         const receiptData = {
-          number: nextReceiptNum,
+          number: formattedNumber,
           clientName: visit.clientName,
           clientType: client?.type || 'Avulso',
           serviceSpecification: visit.description || visit.type,
@@ -12182,7 +12514,7 @@ function FinancialManager({
                 <TableCell>
                   <div className="flex flex-col">
                     <span className="font-medium text-white text-[12px] truncate max-w-[180px]">
-                      {record.description?.replace(/^(Recebido de:|Pagamento de:|Recebido Recibo:|Venda PDV nº:|Entrada de:|Saída de:)/i, '').trim() || record.description}
+                      {record.description?.replace(/^(Recebido de:|Pagamento de:|Recebido Recibo:|Venda PDV nº:|Entrada de:|Saída de:|Pagamento referente a:|Recebido de\s*[:\-]|Relativo ao recebimento de:|Pagam\. ref\.:|Referente a\s*[:\-]|Recebemos de:|Pagamos a:)/i, '').trim() || record.description}
                     </span>
                     {record.origin && (
                       <span className="text-[10px] text-blue-400 font-medium">
@@ -12190,7 +12522,11 @@ function FinancialManager({
                           .replace(/Recibo Nº\s*/i, 'Rc-')
                           .replace(/Ordem de Serviço Nº\s*/i, 'Os-')
                           .replace(/Orçamento Nº\s*/i, 'Oç-')
-                          .replace(/Recib #/i, 'Rc-')}
+                          .replace(/Recib #/i, 'Rc-')
+                          .replace(/Recibo:\s*/i, 'Rc-')
+                          .replace(/OS:\s*/i, 'Os-')
+                          .replace(/Orc:\s*/i, 'Oç-')
+                          .replace(/Orç:\s*/i, 'Oç-')}
                       </span>
                     )}
                   </div>
@@ -12200,13 +12536,15 @@ function FinancialManager({
                     <span className="text-[11px] text-[#e0e0e0] font-medium">
                       {record.paymentMethod === 'Dinheiro' 
                         ? '( EM ESPÉCIE )' 
-                        : (pixSettings.accounts?.find(a => a.id === record.pixAccountId)?.label || 'CONTA CORRENTE')}
+                        : (record.paymentMethod === 'PIX'
+                          ? (pixSettings.accounts?.find(a => a.id === record.pixAccountId)?.label || pixSettings.accounts?.find(a => a.label === record.account)?.label || record.account || 'CONTA PIX')
+                          : (record.account || 'CONTA CORRENTE'))}
                     </span>
                     <Badge variant="outline" className={cn(
                       "font-normal text-[9px] uppercase w-fit border-none px-0",
                       record.paymentMethod === 'PIX' ? "bg-blue-500/10 text-blue-500" : "bg-[#2d3139]/30 text-[#a0a0a0]"
                     )}>
-                      {record.paymentMethod === 'Dinheiro' ? 'DINHEIRO' : (record.paymentMethod === 'PIX' ? 'PIX' : (record.type === 'Receita' ? 'VALOR RECEBIDO' : 'PAGAMENTO'))}
+                      {record.paymentMethod === 'Dinheiro' ? 'DINHEIRO' : (record.paymentMethod === 'PIX' ? 'PIX' : (record.paymentMethod === 'Cartão' ? 'CARTÃO' : (record.type === 'Receita' ? 'VALOR RECEBIDO' : 'PAGAMENTO')))}
                     </Badge>
                   </div>
                 </TableCell>
@@ -12454,14 +12792,13 @@ function ServiceOrdersManager({
   const handleOSSave = async () => {
     setIsSubmitting(true);
     try {
-      const osNumbers = (serviceOrders || []).map(o => o.number).filter(n => typeof n === 'number' && !isNaN(n));
-      const nextNumber = osNumbers.length > 0 ? Math.max(...osNumbers) + 1 : 1;
+      const formattedNumber = getNextFormattedNumber(serviceOrders || [], 'OS-');
       const finalPartsValue = (newOS.parts || []).reduce((acc, p) => acc + (p.quantity * p.price), 0);
       const finalTotal = (newOS.laborValue || 0) + finalPartsValue;
 
       const osData = {
         ...newOS,
-        number: nextNumber,
+        number: formattedNumber,
         date: Timestamp.now(),
         partsValue: finalPartsValue,
         totalValue: finalTotal,
@@ -12481,7 +12818,7 @@ function ServiceOrdersManager({
       }
 
       if (logAction) {
-        await logAction('create', 'service_order', `Criou O.S. #${nextNumber} para ${osData.clientName}`, docRef.id, osData.clientName);
+        await logAction('create', 'service_order', `Criou O.S. #${formattedNumber} para ${osData.clientName}`, docRef.id, osData.clientName);
       }
 
       setIsAddOpen(false);
@@ -13595,8 +13932,7 @@ function BudgetsManager({
 
     setIsSubmitting(true);
     try {
-      const budgetNumbers = (budgets || []).map(b => b.number).filter(n => typeof n === 'number' && !isNaN(n));
-      const nextNumber = budgetNumbers.length > 0 ? Math.max(...budgetNumbers) + 1 : 1;
+      const formattedNumber = getNextFormattedNumber(budgets || [], 'OÇ-');
       
       const itemsToSave = applyProfitMargin(newBudget.items || [], profitMargin);
       const { finalTotal, installmentValue } = getBudgetCalculations({ ...newBudget, items: itemsToSave });
@@ -13605,7 +13941,7 @@ function BudgetsManager({
         ...newBudget,
         pixAccountId: newBudget.pixAccountId || null,
         items: itemsToSave,
-        number: nextNumber,
+        number: formattedNumber,
         total: finalTotal,
         installmentValue: installmentValue || 0,
         companyId,
@@ -13613,7 +13949,7 @@ function BudgetsManager({
       });
       
       if (logAction) {
-        logAction('create', 'budget', `Orçamento #${nextNumber} criado para ${newBudget.clientName}`, savedDoc.id, newBudget.clientName);
+        logAction('create', 'budget', `Orçamento #${formattedNumber} criado para ${newBudget.clientName}`, savedDoc.id, newBudget.clientName);
       }
 
       setNewBudget({ items: [{ description: '', quantity: 1, price: 0, imageUrl: '' }], status: 'Pendente', observations: '', clientName: '', clientPhone: '', address: '' });
@@ -13870,8 +14206,8 @@ function BudgetsManager({
           doc.text(`Pagamento em ${installments}x de R$ ${valuePerInstallment.toFixed(2)} (Sem Juros)`, 20, finalY + 7);
           finalY += 12;
         }
-      } else if (budget.paymentMethod === 'PIX' && budget.pixAccountId) {
-        const selectedPix = pixSettings.accounts.find(a => a.id === budget.pixAccountId);
+      } else if (budget.paymentMethod === 'PIX') {
+        const selectedPix = pixSettings.accounts?.find(a => a.id === budget.pixAccountId || a.label === budget.pixAccountId) || pixSettings.accounts?.[0];
         if (selectedPix) {
           finalY += 10;
           doc.setFontSize(10);
@@ -15044,6 +15380,7 @@ function PDVManager({
   const [isPixDialogOpen, setIsPixDialogOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [saleSearchTerm, setSaleSearchTerm] = useState('');
+  const [saleDateFilter, setSaleDateFilter] = useState('');
   const [editingSale, setEditingSale] = useState<any>(null);
   const [isDeleteSaleConfirmOpen, setIsDeleteSaleConfirmOpen] = useState(false);
   const [saleToDelete, setSaleToDelete] = useState<any>(null);
@@ -15192,18 +15529,13 @@ function PDVManager({
 
     setIsFinishing(true);
     try {
-      // Generate Sale Number matching format 000001/24
+      // Generate Sale Number matching format PDV-00001/26
+      const formattedNumber = getNextFormattedNumber(sales, 'PDV-');
       const currentYear = format(new Date(), 'yy');
-      const salesThisYear = sales.filter(s => {
-        const saleDate = s.createdAt?.toDate();
-        return saleDate && format(saleDate, 'yy') === currentYear;
-      });
-      const nextNum = salesThisYear.length + 1;
-      const saleNumberFormatted = `${nextNum.toString().padStart(6, '0')}/${currentYear}`;
 
       const saleId = doc(collection(db, 'companies', companyId, 'sales')).id;
       const saleData = {
-        number: saleNumberFormatted,
+        number: formattedNumber,
         items: cart.map(c => ({ 
           itemId: c.item.id, 
           name: c.item.name, 
@@ -15219,6 +15551,8 @@ function PDVManager({
         companyId,
         linkedOS,
         vendorName: user?.displayName || user?.email || 'Vendedor',
+        vendorEmail: user?.email || '',
+        installments: paymentMethod === 'Cartão' ? (cardDetails?.installments || 1) : 1,
         createdAt: Timestamp.now()
       };
 
@@ -15230,25 +15564,26 @@ function PDVManager({
 
       await addDoc(collection(db, 'companies', companyId, 'financial'), {
         companyId,
-        type: 'receipt', // Receita
-        description: 'Venda PDV',
-        origin: saleNumberFormatted,
+        type: 'Receita', // Corrected type
+        description: `${formattedNumber} - ${selectedClient}`,
+        origin: formattedNumber,
         value: total,
         category: 'Vendas',
         paymentMethod,
         account: accInfo,
+        pixAccountId: paymentMethod === 'PIX' ? selectedPixAccountId : null,
         date: Timestamp.now(),
         status: 'paid',
         createdAt: Timestamp.now(),
         createdByEmail: user?.email,
-        details: `Venda PDV nº ${saleNumberFormatted} para ${selectedClient}`
+        details: `Venda PDV nº ${formattedNumber} para ${selectedClient}`
       });
 
       const stockParts = cart.map(c => ({ description: c.item.name, quantity: c.quantity }));
       await updateStock(stockParts, 'exit', saleId, 'os');
 
       if (logAction) {
-        logAction('create', 'sale', `Venda PDV nº ${saleNumberFormatted} - Total: R$ ${total.toFixed(2)}`, saleId);
+        logAction('create', 'sale', `Venda PDV nº ${formattedNumber} - Total: R$ ${total.toFixed(2)}`, saleId);
       }
 
       setLastSale(saleData);
@@ -15264,61 +15599,149 @@ function PDVManager({
     }
   };
 
-  const printReceipt = () => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
+  // PDV Receipt PDF Generation (Thermal 80mm format)
+  const generatePDVReceiptPDF = async (saleData: any) => {
+    const doc = new jsPDF({
+      unit: 'mm',
+      format: [80, 250] // Increased height to accommodate QR code
+    });
+    
+    const margin = 5;
+    const pageWidth = 80;
+    let currentY = 10;
 
-    const itemsHtml = lastSale.items.map((i: any) => `
-      <tr>
-        <td style="padding: 2px 0;">${i.name}</td>
-        <td style="text-align: center;">${i.quantity}</td>
-        <td style="text-align: right;">${i.price.toFixed(2)}</td>
-      </tr>
-    `).join('');
+    doc.setFont('Courier', 'bold');
+    doc.setFontSize(10);
+    doc.text(appSettings.companyName || 'LOJA PDV', pageWidth / 2, currentY, { align: 'center' });
+    currentY += 5;
 
-    printWindow.document.write(`
-      <html>
-        <head>
-          <style>
-            @page { size: 80mm auto; margin: 0; }
-            body { font-family: 'Courier New', monospace; width: 72mm; padding: 4mm; font-size: 12px; line-height: 1.2; }
-            .header { text-align: center; margin-bottom: 5mm; border-bottom: 1px dashed #000; padding-bottom: 2mm; }
-            table { width: 100%; border-collapse: collapse; }
-            .total { font-weight: bold; font-size: 14px; border-top: 1px dashed #000; margin-top: 2mm; padding-top: 1mm; }
-            .footer { text-align: center; margin-top: 5mm; font-size: 10px; border-top: 1px dashed #000; padding-top: 2mm; }
-          </style>
-        </head>
-        <body onload="window.print(); window.close();">
-          <div class="header">
-            <strong>${appSettings.companyName || 'LOJA PDV'}</strong><br/>
-            VENDEDOR: ${lastSale.vendorName}
-          </div>
-          <div class="content">
-            <p>DATA: ${format(new Date(), 'dd/MM/yyyy HH:mm')}</p>
-            <p>CLIENTE: ${lastSale.clientName}</p>
-            <table>
-              <thead><tr><th align="left">DESC</th><th align="center">QT</th><th align="right">VL</th></tr></thead>
-              <tbody>${itemsHtml}</tbody>
-            </table>
-            <div class="total">
-              <div style="display: flex; justify-content: space-between;"><span>SUBTOTAL:</span><span>R$ ${lastSale.subtotal.toFixed(2)}</span></div>
-              <div style="display: flex; justify-content: space-between;"><span>DESCONTO:</span><span>R$ ${lastSale.discount.toFixed(2)}</span></div>
-              <div style="display: flex; justify-content: space-between; font-size: 16px;"><span>TOTAL:</span><span>R$ ${lastSale.total.toFixed(2)}</span></div>
-              <p style="font-size: 10px;">FORMA: ${lastSale.paymentMethod}</p>
-            </div>
-          </div>
-          <div class="footer">Obrigado pela preferência!</div>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+    doc.setFont('Courier', 'normal');
+    doc.setFontSize(8);
+    doc.text(`VENDEDOR: ${saleData.vendorName || 'SISTEMA'}`, margin, currentY);
+    currentY += 4;
+    doc.text(`DATA: ${saleData.createdAt?.toDate ? format(saleData.createdAt.toDate(), 'dd/MM/yyyy HH:mm') : format(new Date(), 'dd/MM/yyyy HH:mm')}`, margin, currentY);
+    currentY += 4;
+    doc.text(`CLIENTE: ${saleData.clientName || 'CONSUMIDOR'}`, margin, currentY);
+    currentY += 6;
+
+    doc.setLineDashPattern([1, 1], 0);
+    doc.line(margin, currentY, pageWidth - margin, currentY);
+    currentY += 4;
+
+    doc.setFont('Courier', 'bold');
+    doc.text('DESC', margin, currentY);
+    doc.text('QT', 45, currentY, { align: 'center' });
+    doc.text('VL', pageWidth - margin, currentY, { align: 'right' });
+    currentY += 4;
+
+    doc.setFont('Courier', 'normal');
+    saleData.items.forEach((item: any) => {
+      const name = item.name.length > 20 ? item.name.substring(0, 18) + '..' : item.name;
+      doc.text(name, margin, currentY);
+      doc.text(String(item.quantity), 45, currentY, { align: 'center' });
+      doc.text(item.price.toFixed(2), pageWidth - margin, currentY, { align: 'right' });
+      currentY += 4;
+
+      if (currentY > 230) {
+        doc.addPage([80, 250]);
+        currentY = 10;
+      }
+    });
+
+    currentY += 2;
+    doc.line(margin, currentY, pageWidth - margin, currentY);
+    currentY += 5;
+
+    doc.text(`SUBTOTAL:`, margin, currentY);
+    doc.text(`R$ ${saleData.subtotal.toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
+    currentY += 4;
+
+    doc.text(`DESCONTO:`, margin, currentY);
+    doc.text(`R$ ${saleData.discount.toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
+    currentY += 5;
+
+    doc.setFont('Courier', 'bold');
+    doc.setFontSize(10);
+    doc.text(`TOTAL:`, margin, currentY);
+    doc.text(`R$ ${saleData.total.toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
+    currentY += 6;
+
+    doc.setFont('Courier', 'normal');
+    doc.setFontSize(8);
+    
+    let paymentText = `FORMA: ${saleData.paymentMethod}`;
+    if (saleData.paymentMethod === 'Cartão' || saleData.paymentMethod === 'Cartão com Juros') {
+      if (saleData.installments > 1) {
+        const valParc = saleData.total / saleData.installments;
+        paymentText += ` ${saleData.installments}x de R$ ${valParc.toFixed(2)}`;
+      }
+      doc.text(paymentText, margin, currentY);
+      currentY += 8;
+    } else if (saleData.paymentMethod === 'PIX') {
+      const pixAccId = saleData.paymentDetails?.pixAccountId;
+      const pixAcc = (pixSettings?.accounts || []).find(a => a.id === pixAccId) || (pixSettings?.accounts?.[0]);
+      if (pixAcc) {
+        // QR Code for PIX on the left, text on the right
+        try {
+          const qrSize = 25;
+          const qrDataUrl = await QRCode.toDataURL(pixAcc.key, { margin: 1, width: 100 });
+          doc.addImage(qrDataUrl, 'PNG', margin, currentY, qrSize, qrSize);
+          
+          doc.setFontSize(7);
+          const textX = margin + qrSize + 2;
+          doc.text(paymentText, textX, currentY + 5);
+          doc.setFontSize(5);
+          doc.text(`BANCO: ${pixAcc.bank}`, textX, currentY + 9);
+          doc.text(`CHAVE: ${pixAcc.key}`, textX, currentY + 12);
+          
+          currentY += Math.max(qrSize, 15) + 2;
+        } catch (e) {
+          console.error("Error generating matching QR Code", e);
+          doc.text(paymentText, margin, currentY);
+          currentY += 4;
+        }
+        
+        doc.setFontSize(8);
+      } else {
+        doc.text(paymentText, margin, currentY);
+        currentY += 4;
+      }
+    } else {
+      doc.text(paymentText, margin, currentY);
+      currentY += 4;
+    }
+    
+    if (saleData.paymentMethod !== 'PIX' && saleData.paymentMethod !== 'Cartão' && saleData.paymentMethod !== 'Cartão com Juros') {
+      doc.text(paymentText, margin, currentY);
+      currentY += 8;
+    } else {
+      currentY += 4;
+    }
+
+    doc.setFontSize(7);
+    doc.text('OBRIGADO PELA PREFERÊNCIA!', pageWidth / 2, currentY, { align: 'center' });
+
+    doc.save(`cupom_${saleData.number || Date.now()}.pdf`);
   };
 
-  const filteredSales = (sales || []).filter(s => 
-    s.number?.toLowerCase().includes(saleSearchTerm.toLowerCase()) ||
-    s.clientName?.toLowerCase().includes(saleSearchTerm.toLowerCase()) ||
-    s.vendorName?.toLowerCase().includes(saleSearchTerm.toLowerCase())
-  );
+  const printReceipt = async () => {
+    if (!lastSale) return;
+    await generatePDVReceiptPDF(lastSale);
+  };
+
+  const filteredSales = (sales || []).filter(s => {
+    const term = saleSearchTerm.toLowerCase();
+    const dateStr = s.createdAt?.toDate ? format(s.createdAt.toDate(), 'dd/MM/yyyy') : '';
+    
+    const textMatch = s.number?.toLowerCase().includes(term) ||
+      s.clientName?.toLowerCase().includes(term) ||
+      s.vendorName?.toLowerCase().includes(term) ||
+      dateStr.includes(term);
+
+    const dateMatch = saleDateFilter ? (s.createdAt?.toDate ? format(s.createdAt.toDate(), 'yyyy-MM-dd') === saleDateFilter : false) : true;
+
+    return textMatch && dateMatch;
+  });
 
   const handleDeleteSale = async () => {
     if (!saleToDelete) return;
@@ -15426,7 +15849,7 @@ function PDVManager({
         <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#0f1115]/10 min-h-0 p-2">
           <div className="space-y-3">
             {cart.map((c, idx) => (
-              <div key={idx} className="grid grid-cols-12 gap-2 pb-3 border-b border-[#2d3139]/20 items-end last:border-0 hover:bg-blue-500/[0.02] transition-colors rounded p-1 group">
+              <div key={idx} className="grid grid-cols-12 gap-2 mb-2 items-end group">
                 <div className="col-span-12 sm:col-span-6 flex items-center gap-2">
                   <InventorySelector 
                     inventory={inventory} 
@@ -15447,28 +15870,21 @@ function PDVManager({
                       <Package className="text-[#71717a] opacity-30" size={14} />
                     )}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <Input 
-                      placeholder="Descrição do item..." 
-                      value={c.item.name} 
-                      onChange={e => {
-                        const newCart = [...cart];
-                        newCart[idx].item = { ...newCart[idx].item, name: e.target.value };
-                        setCart(newCart);
-                      }} 
-                      className="bg-[#1a1d23] border-[#2d3139] text-white h-9 text-xs font-bold focus:ring-1 focus:ring-blue-500/50" 
-                    />
-                    <div className="mt-1 flex items-center gap-2">
-                       <span className="text-[9px] font-mono text-[#71717a] font-bold">COD: {c.item.code || '-'}</span>
-                       <span className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter bg-emerald-500/5 px-1 rounded">R$ {(c.quantity * c.price).toFixed(2)}</span>
-                    </div>
-                  </div>
+                  <Input 
+                    placeholder="Descrição do item..." 
+                    value={c.item.name} 
+                    onChange={e => {
+                      const newCart = [...cart];
+                      newCart[idx].item = { ...newCart[idx].item, name: e.target.value };
+                      setCart(newCart);
+                    }} 
+                    className="bg-[#1a1d23] border-[#2d3139] text-white h-9 text-xs font-bold focus:ring-1 focus:ring-blue-500/50 flex-1" 
+                  />
                 </div>
                 <div className="col-span-4 sm:col-span-2">
-                  <Label className="text-[8px] text-[#71717a] uppercase font-black mb-1 block tracking-widest pl-1">Qtd</Label>
                   <Input 
                     type="number" 
-                    placeholder="0" 
+                    placeholder="Qtd" 
                     value={c.quantity === 0 ? '' : c.quantity} 
                     onChange={e => updateQuantity(c.item.id, Number(e.target.value) || 0)} 
                     className="bg-[#1a1d23] border-[#2d3139] text-white h-9 text-center font-black italic text-blue-400" 
@@ -15476,12 +15892,11 @@ function PDVManager({
                   />
                 </div>
                 <div className="col-span-6 sm:col-span-3">
-                   <Label className="text-[8px] text-[#71717a] uppercase font-black mb-1 block tracking-widest pl-1">Preço Unit.</Label>
                    <div className="relative">
                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-[#71717a] font-black">R$</span>
                      <Input 
                        type="number" 
-                       placeholder="0.00" 
+                       placeholder="Preço" 
                        value={c.price === 0 ? '' : c.price} 
                        onChange={e => {
                         const newCart = [...cart];
@@ -15991,19 +16406,26 @@ function PDVManager({
             <DialogDescription className="text-[#71717a]">Pesquise por número da venda, cliente ou vendedor.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-             <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#71717a]" size={18} />
-                <Input 
-                  placeholder="Número (Ex: 000001/24), Cliente..." 
-                  className="pl-10 h-10 bg-[#0f1115] border-[#2d3139] text-white"
-                  value={saleSearchTerm}
-                  onChange={e => setSaleSearchTerm(e.target.value)}
-                />
+             <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#71717a]" size={18} />
+                  <Input 
+                    placeholder="Número (Ex: 000001/24), Cliente, Vendedor ou Data (dd/mm/yyyy)..." 
+                    className="pl-10 h-10 bg-[#0f1115] border-[#2d3139] text-white"
+                    value={saleSearchTerm}
+                    onChange={e => setSaleSearchTerm(e.target.value)}
+                  />
+                </div>
+                {saleDateFilter && (
+                  <Button variant="ghost" size="sm" onClick={() => setSaleDateFilter('')} className="h-10 text-red-400 hover:bg-red-500/10">
+                    <X size={14} />
+                  </Button>
+                )}
              </div>
              <ScrollArea className="h-[450px]">
                 <div className="space-y-2 pr-4">
                    {filteredSales.map(sale => (
-                     <div key={sale.id} className="p-3 rounded-lg bg-[#0f1115] border border-[#2d3139] flex justify-between items-center group">
+                     <div key={sale.id} className="p-3 rounded-lg bg-[#0f1115] border border-[#2d3139] flex justify-between items-center group hover:border-[#3b82f6]/30 transition-all">
                         <div className="space-y-1">
                            <div className="flex items-center gap-2">
                               <span className="text-blue-500 font-mono font-bold text-xs">#{sale.number}</span>
@@ -16015,32 +16437,64 @@ function PDVManager({
                               <span className="flex items-center gap-1 font-bold text-emerald-500">{sale.paymentMethod}</span>
                            </div>
                         </div>
-                        <div className="flex items-center gap-4">
-                           <div className="text-right">
-                              <p className="text-blue-400 font-black text-sm">R$ {sale.total.toFixed(2)}</p>
-                              <p className="text-[9px] text-[#71717a] uppercase font-black">{sale.items.length} itens</p>
+                        <div className="flex items-center gap-2">
+                           <div className="text-right mr-4">
+                              <p className="text-white font-black text-sm">R$ {sale.total.toFixed(2)}</p>
+                              <p className="text-[9px] text-[#71717a] uppercase italic">{sale.items?.length || 0} itens</p>
                            </div>
-                           {canManageSales && (
-                             <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                           <div className="flex gap-1">
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="h-8 w-8 p-0 border-[#2d3139] hover:bg-emerald-500/10 hover:text-emerald-500"
+                                onClick={async () => await generatePDVReceiptPDF(sale)}
+                                title="Reimprimir Cupom"
+                              >
+                                <Printer size={14} />
+                              </Button>
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="h-8 w-8 p-0 border-[#2d3139] hover:bg-blue-500/10 hover:text-blue-500"
+                                onClick={() => {
+                                  // Edit Logic: Load to cart
+                                  setCart(sale.items.map((i: any) => ({ 
+                                    item: inventory.find(inv => inv.id === i.itemId) || { id: i.itemId, name: i.name },
+                                    quantity: i.quantity,
+                                    price: i.price
+                                  })));
+                                  setSelectedClient(sale.clientName || 'Consumidor Final');
+                                  setPaymentMethod(sale.paymentMethod);
+                                  setDiscount(sale.discount || 0);
+                                  setIsHistoryOpen(false);
+                                  toast.info(`Venda #${sale.number} carregada no PDV para edição.`);
+                                }}
+                                title="Editar Venda"
+                              >
+                                <Pencil size={14} />
+                              </Button>
+                              {canManageSales && (
                                 <Button 
-                                  variant="ghost" 
-                                  size="icon" 
-                                  className="h-8 w-8 text-red-500 hover:bg-red-500/10"
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="h-8 w-8 p-0 border-[#2d3139] bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white"
                                   onClick={() => {
                                     setSaleToDelete(sale);
                                     setIsDeleteSaleConfirmOpen(true);
                                   }}
+                                  title="Excluir Venda"
                                 >
-                                   <Trash2 size={14} />
+                                  <Trash2 size={14} />
                                 </Button>
-                             </div>
-                           )}
+                              )}
+                           </div>
                         </div>
                      </div>
                    ))}
                    {filteredSales.length === 0 && (
-                     <div className="text-center py-10 text-[#71717a] text-sm italic">
-                        Nenhuma venda encontrada para "{saleSearchTerm}"
+                     <div className="flex flex-col items-center justify-center py-20 text-[#71717a]">
+                        <Search size={40} className="mb-4 opacity-20" />
+                        <p className="text-sm font-medium">Nenhuma venda encontrada.</p>
                      </div>
                    )}
                 </div>
@@ -16061,8 +16515,8 @@ function PDVManager({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setIsDeleteSaleConfirmOpen(false)} className="border-[#2d3139]">Cancelar</Button>
-            <Button variant="destructive" onClick={handleDeleteSale} className="bg-red-500 hover:bg-red-600 font-black uppercase italic">Excluir Permanentemente</Button>
+            <Button variant="outline" onClick={() => setIsDeleteSaleConfirmOpen(false)} className="border-[#2d3139] text-[#71717a]">Cancelar</Button>
+            <Button variant="destructive" onClick={handleDeleteSale} className="bg-[#ef4444] hover:bg-red-600 text-white font-black uppercase italic tracking-widest px-8 shadow-lg shadow-red-500/20">CONFIRMAR EXCLUSÃO</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
