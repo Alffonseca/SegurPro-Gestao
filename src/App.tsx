@@ -299,6 +299,31 @@ const formatRecordNumber = (number?: number | string, date?: any) => {
   return `${numStr.padStart(5, '0')}/${year}`;
 };
 
+const getBudgetCalculations = (budget: any, appSettings: AppSettings) => {
+  const itemsTotal = (budget.items || []).reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
+  const serviceValue = budget.serviceValue || 0;
+  const baseTotal = itemsTotal + serviceValue;
+  let finalTotal = baseTotal;
+  
+  // If an installment plan is selected, we MUST apply the interest/fee to the total
+  if (budget.selectedInstallmentPlanId) {
+    const plan = appSettings.installmentPlans?.find(p => p.id === budget.selectedInstallmentPlanId);
+    if (plan) {
+      const interest = (plan.interestRate || 0) / 100;
+      // Formula: Total = Base * (1 + rate/100)
+      finalTotal = baseTotal * (1 + interest);
+    }
+  } else if (budget.interestPercent && budget.interestPercent > 0) {
+    // Direct percentage override
+    finalTotal = baseTotal * (1 + (budget.interestPercent / 100));
+  }
+  
+  const installments = budget.installments || 1;
+  const installmentValue = finalTotal / installments;
+  
+  return { itemsTotal, serviceValue, baseTotal, finalTotal, installmentValue };
+};
+
 const getNextFormattedNumber = (items: any[], prefix: string) => {
   const currentYear = format(new Date(), 'yy');
   const itemsThisYear = items.filter(item => {
@@ -2016,6 +2041,11 @@ function ExternalSignaturePage({ token }: { token: string }) {
         updatedAt: serverTimestamp()
       };
       
+      // If it's a budget, acceptance usually means approval
+      if (selectedType === 'budget') {
+        updateData.status = 'Aprovado';
+      }
+      
       // For visits, also set the signature date
       if (selectedType === 'visit') {
         updateData.clientSignatureDate = serverTimestamp();
@@ -2361,7 +2391,8 @@ export default function MainApp() {
       displayInfo = { title: `OS #${data.number || data.id.slice(-6)}`, value: data.totalValue?.toString() };
     } else if (type === 'budget') {
       clientName = data.clientName;
-      displayInfo = { title: `Orçamento #${data.number || data.id.slice(-6)}`, value: data.total?.toString() };
+      const { finalTotal } = getBudgetCalculations(data, appSettings);
+      displayInfo = { title: `Orçamento #${data.number || data.id.slice(-6)}`, value: finalTotal.toFixed(2) };
     }
 
     try {
@@ -2624,6 +2655,10 @@ export default function MainApp() {
     // Hard restriction for super-admin tab
     if (tabName === 'super-admin') return isSuperAdmin;
 
+    // Owners and Super Admins bypass SaaS menu restrictions for visibility
+    // but we still respect company-level enabledMenus for regular staff
+    if (isSuperAdmin || role === 'owner') return true;
+
     // SaaS specific menu restriction
     if (currentCompany?.enabledMenus) {
       // Normalize tabName for backward compatibility with old IDs
@@ -2647,8 +2682,6 @@ export default function MainApp() {
       ];
       if (!defaultMenus.includes(tabName)) return false;
     }
-
-    if (isSuperAdmin || role === 'owner') return true;
     
     if (role === 'admin') {
       // Admin should see everything allowed for the company except logs maybe?
@@ -5228,7 +5261,7 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
                       <Input 
                         id="edit-contractValue" 
                         type="number" 
-                        value={editingClient.contractValue === 0 ? '' : editingClient.contractValue} 
+                        value={editingClient.contractValue || ''} 
                         onChange={e => setEditingClient({...editingClient, contractValue: e.target.value === '' ? 0 : Number(e.target.value)})} 
                         onFocus={(e) => e.target.select()}
                         className="bg-[#0f1115] border-[#2d3139] text-white" 
@@ -6292,7 +6325,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                   <Input 
                     id="value" 
                     type="number" 
-                    value={newReceipt.value === 0 ? '' : newReceipt.value} 
+                    value={newReceipt.value || ''} 
                     onChange={e => setNewReceipt({...newReceipt, value: e.target.value === '' ? 0 : Number(e.target.value)})} 
                     onFocus={(e) => e.target.select()}
                     placeholder="0,00" 
@@ -7040,6 +7073,8 @@ function SuperAdminPanel({
         billingCycle: editingCompany.billingCycle || 'mensal',
         receivesUpdates: editingCompany.receivesUpdates ?? true,
         enabledMenus: editingCompany.enabledMenus || ['resumo', 'visits', 'receipts', 'clients', 'financial', 'inventory', 'os', 'budgets', 'settings', 'pdv'],
+        ownerName: editingCompany.ownerName || '',
+        ownerEmail: editingCompany.ownerEmail || '',
         updatedAt: Timestamp.now()
       });
       toast.success("Licença e menus atualizados!");
@@ -7848,7 +7883,14 @@ function SuperAdminPanel({
                 <TableCell>
                   <div className="flex flex-col">
                     <span className="font-medium text-white">{company.name || company.companyName || company.tradeName || company.trade_name || 'Empresa sem Nome'}</span>
-                    <span className="text-[10px] text-[#71717a] font-mono">{company.document || 'Sem Documento'}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-[#71717a] font-mono">{company.document || 'Sem Documento'}</span>
+                      {allUsers.find(u => u.uid === company.ownerId || u.id === company.ownerId) && (
+                        <span className="text-[9px] text-blue-400/70 font-medium truncate max-w-[150px]">
+                          • {allUsers.find(u => u.uid === company.ownerId || u.id === company.ownerId)?.displayName || allUsers.find(u => u.uid === company.ownerId || u.id === company.ownerId)?.email}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </TableCell>
                 <TableCell>
@@ -7902,6 +7944,29 @@ function SuperAdminPanel({
           <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2 custom-scrollbar">
             <div className="space-y-4 py-4 text-white">
                 {/* Proprietor Info */}
+                <div className="space-y-4 pt-2">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-[#a0a0a0] text-[10px] uppercase font-bold">Nome do Proprietário</Label>
+                      <Input 
+                        value={editingCompany?.ownerName || (editingCompanyOwner?.displayName || editingCompanyOwner?.name || '')} 
+                        onChange={e => setEditingCompany({...editingCompany, ownerName: e.target.value})} 
+                        placeholder="Nome Completo"
+                        className="bg-[#0f1115] border-[#2d3139] text-white h-9 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[#a0a0a0] text-[10px] uppercase font-bold">E-mail do Proprietário</Label>
+                      <Input 
+                        value={editingCompany?.ownerEmail || (editingCompanyOwner?.email || '')} 
+                        onChange={e => setEditingCompany({...editingCompany, ownerEmail: e.target.value})} 
+                        placeholder="email@exemplo.com"
+                        className="bg-[#0f1115] border-[#2d3139] text-white h-9 text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 {editingCompanyOwner && (
                   <div className="p-4 bg-[#0f1115] border border-blue-500/20 rounded-xl space-y-2 shadow-inner group transition-all hover:border-blue-500/40">
                     <div className="flex items-center justify-between">
@@ -9706,7 +9771,7 @@ function SettingsManager({
                   <Input 
                     type="number"
                     step="0.01"
-                    value={currentPlan.interestRate === 0 ? '' : currentPlan.interestRate} 
+                    value={currentPlan.interestRate || ''} 
                     onChange={e => setCurrentPlan({...currentPlan, interestRate: e.target.value === '' ? 0 : Number(e.target.value)})} 
                     className="bg-[#0f1115] border-[#2d3139] text-white" 
                     placeholder="0"
@@ -11245,7 +11310,7 @@ function VisitsManager({
                             type="number"
                             className="col-span-2 bg-[#0f1115] border-[#2d3139] h-8 text-xs" 
                             placeholder="Qtd"
-                            value={p.quantity === 0 ? '' : p.quantity} 
+                            value={p.quantity || ''} 
                             onChange={e => {
                               const next = [...(newVisit.parts || [])];
                               next[i].quantity = e.target.value === '' ? 0 : Number(e.target.value);
@@ -11256,7 +11321,7 @@ function VisitsManager({
                             type="number"
                             className="col-span-3 bg-[#0f1115] border-[#2d3139] h-8 text-xs" 
                             placeholder="Preço"
-                            value={p.price === 0 ? '' : p.price} 
+                            value={p.price || ''} 
                             onChange={e => {
                               const next = [...(newVisit.parts || [])];
                               next[i].price = e.target.value === '' ? 0 : Number(e.target.value);
@@ -11282,7 +11347,7 @@ function VisitsManager({
                   <Input 
                     id="val" 
                     type="number" 
-                    value={newVisit.totalValue === 0 ? '' : newVisit.totalValue} 
+                    value={newVisit.totalValue || ''} 
                     onChange={e => setNewVisit({...newVisit, totalValue: e.target.value === '' ? 0 : Number(e.target.value)})} 
                     onFocus={(e) => e.target.select()}
                     className="bg-[#0f1115] border-[#2d3139] text-white" 
@@ -11680,7 +11745,7 @@ function VisitsManager({
                             type="number"
                             className="col-span-2 bg-[#0f1115] border-[#2d3139] h-8 text-xs" 
                             placeholder="Qtd"
-                            value={p.quantity === 0 ? '' : p.quantity} 
+                            value={p.quantity || ''} 
                             onChange={e => {
                               const next = [...(editingVisit.parts || [])];
                               next[i].quantity = e.target.value === '' ? 0 : Number(e.target.value);
@@ -11691,7 +11756,7 @@ function VisitsManager({
                             type="number"
                             className="col-span-3 bg-[#0f1115] border-[#2d3139] h-8 text-xs" 
                             placeholder="Preço"
-                            value={p.price === 0 ? '' : p.price} 
+                            value={p.price || ''} 
                             onChange={e => {
                               const next = [...(editingVisit.parts || [])];
                               next[i].price = e.target.value === '' ? 0 : Number(e.target.value);
@@ -12624,7 +12689,7 @@ function FinancialManager({
                     <Input 
                       id="edit-val" 
                       type="number" 
-                      value={editingRecord.value === 0 ? '' : editingRecord.value} 
+                      value={editingRecord.value || ''} 
                       onChange={e => setEditingRecord({...editingRecord, value: e.target.value === '' ? 0 : Number(e.target.value)})} 
                       onFocus={(e) => e.target.select()}
                       className="bg-[#0f1115] border-[#2d3139] text-white" 
@@ -13247,7 +13312,7 @@ function ServiceOrdersManager({
                       type="number"
                       className="col-span-2 bg-[#0f1115] border-[#2d3139] h-8 text-xs" 
                       placeholder="Qtd"
-                      value={p.quantity === 0 ? '' : p.quantity} 
+                      value={p.quantity || ''} 
                       onChange={e => {
                         const next = [...(newOS.parts || [])];
                         next[i].quantity = e.target.value === '' ? 0 : Number(e.target.value);
@@ -13258,7 +13323,7 @@ function ServiceOrdersManager({
                       type="number"
                       className="col-span-3 bg-[#0f1115] border-[#2d3139] h-8 text-xs" 
                       placeholder="Preço"
-                      value={p.price === 0 ? '' : p.price} 
+                      value={p.price || ''} 
                       onChange={e => {
                         const next = [...(newOS.parts || [])];
                         next[i].price = e.target.value === '' ? 0 : Number(e.target.value);
@@ -13334,7 +13399,7 @@ function ServiceOrdersManager({
                     <Input 
                       type="number" 
                       className="bg-[#0f1115] border-[#2d3139]" 
-                      value={newOS.laborValue === 0 ? '' : newOS.laborValue} 
+                      value={newOS.laborValue || ''} 
                       onChange={e => setNewOS({...newOS, laborValue: e.target.value === '' ? 0 : Number(e.target.value)})}
                     />
                   </div>
@@ -13624,12 +13689,12 @@ function ServiceOrdersManager({
                           setEditingOS({...editingOS, parts: next});
                         }} />
                       </div>
-                      <Input type="number" className="col-span-2 bg-[#0f1115] border-[#2d3139] h-8 text-xs" value={p.quantity === 0 ? '' : p.quantity} onChange={e => {
+                      <Input type="number" className="col-span-2 bg-[#0f1115] border-[#2d3139] h-8 text-xs" value={p.quantity || ''} onChange={e => {
                         const next = [...(editingOS.parts || [])];
                         next[i].quantity = e.target.value === '' ? 0 : Number(e.target.value);
                         setEditingOS({...editingOS, parts: next});
                       }} />
-                      <Input type="number" className="col-span-3 bg-[#0f1115] border-[#2d3139] h-8 text-xs" value={p.price === 0 ? '' : p.price} onChange={e => {
+                      <Input type="number" className="col-span-3 bg-[#0f1115] border-[#2d3139] h-8 text-xs" value={p.price || ''} onChange={e => {
                         const next = [...(editingOS.parts || [])];
                         next[i].price = e.target.value === '' ? 0 : Number(e.target.value);
                         setEditingOS({...editingOS, parts: next});
@@ -13669,7 +13734,7 @@ function ServiceOrdersManager({
                     </div>
                     <div className="space-y-2">
                       <Label>Mão de Obra (R$)</Label>
-                      <Input type="number" className="bg-[#0f1115] border-[#2d3139]" value={editingOS.laborValue === 0 ? '' : editingOS.laborValue} onChange={e => setEditingOS({...editingOS, laborValue: e.target.value === '' ? 0 : Number(e.target.value)})} />
+                      <Input type="number" className="bg-[#0f1115] border-[#2d3139]" value={editingOS.laborValue || ''} onChange={e => setEditingOS({...editingOS, laborValue: e.target.value === '' ? 0 : Number(e.target.value)})} />
                     </div>
                   </div>
                 </div>
@@ -13904,8 +13969,6 @@ function BudgetsManager({
     pixAccountId: ''
   });
   
-  const [profitMargin, setProfitMargin] = useState<number>(0);
-  const [editProfitMargin, setEditProfitMargin] = useState<number>(0);
   const [prevItems, setPrevItems] = useState<any[] | null>(null);
   const [prevEditItems, setPrevEditItems] = useState<any[] | null>(null);
 
@@ -13916,7 +13979,7 @@ function BudgetsManager({
 
     const updatedItems = items.map(item => {
       const stockItem = inventory.find(i => i.name === item.description);
-      if (stockItem && stockItem.price !== undefined && stockItem.price !== item.price) {
+      if (stockItem && stockItem.price !== undefined) {
         changedCount++;
         return { ...item, price: stockItem.price };
       }
@@ -13925,9 +13988,21 @@ function BudgetsManager({
 
     if (changedCount > 0) {
       if (isEdit) {
-        setEditingBudget({ ...editingBudget, items: updatedItems });
+        const calc = getBudgetCalculations({...editingBudget, items: updatedItems}, appSettings);
+        setEditingBudget({ 
+          ...editingBudget, 
+          items: updatedItems,
+          cashAcceptanceValue: (calc.baseTotal * (editingBudget.cashAcceptancePercent || 0)) / 100,
+          cashDeliveryValue: (calc.baseTotal * (editingBudget.cashDeliveryPercent || 0)) / 100
+        });
       } else {
-        setNewBudget({ ...newBudget, items: updatedItems });
+        const calc = getBudgetCalculations({...newBudget, items: updatedItems}, appSettings);
+        setNewBudget({ 
+          ...newBudget, 
+          items: updatedItems,
+          cashAcceptanceValue: (calc.baseTotal * (newBudget.cashAcceptancePercent || 0)) / 100,
+          cashDeliveryValue: (calc.baseTotal * (newBudget.cashDeliveryPercent || 0)) / 100
+        });
       }
       toast.success(`${changedCount} item(s) sincronizado(s) com o estoque!`);
     } else {
@@ -13935,12 +14010,17 @@ function BudgetsManager({
     }
   };
 
-  const applyProfitMargin = (items: { description: string, quantity: number, price: number, imageUrl?: string }[], margin: number) => {
+  const applyProfitMargin = (items: { description: string, quantity: number, price: number, imageUrl?: string }[], margin: number, isReset: boolean = false) => {
     if (margin <= 0) return items;
-    return items.map(item => ({
-      ...item,
-      price: Number((item.price * (1 + margin / 100)).toFixed(2))
-    }));
+    return items.map(item => {
+      // If we are resetting first, we find the original price from stock (if possible) 
+      // or we assume the current price is the base price ONLY if this is the first time applying.
+      // Better approach: the UI should pass the base items.
+      return {
+        ...item,
+        price: Number((item.price * (1 + margin / 100)).toFixed(2))
+      };
+    });
   };
 
   const filteredClientsForSelect = useMemo(() => {
@@ -13994,8 +14074,8 @@ function BudgetsManager({
     try {
       const formattedNumber = getNextFormattedNumber(budgets || [], 'OÇ-');
       
-      const itemsToSave = prevItems ? (newBudget.items || []) : applyProfitMargin(newBudget.items || [], profitMargin);
-      const { finalTotal, installmentValue } = getBudgetCalculations({ ...newBudget, items: itemsToSave });
+      const itemsToSave = newBudget.items || [];
+      const { finalTotal, installmentValue } = getBudgetCalculations({ ...newBudget, items: itemsToSave }, appSettings);
 
       const savedDoc = await addDoc(collection(db, 'budgets'), {
         ...newBudget,
@@ -14013,7 +14093,6 @@ function BudgetsManager({
       }
 
       setNewBudget({ items: [{ description: '', quantity: 1, price: 0, imageUrl: '' }], serviceValue: 0, status: 'Pendente', observations: '', clientName: '', clientPhone: '', address: '' });
-      setProfitMargin(0);
       setPrevItems(null);
       setIsAddOpen(false);
       toast.success('Orçamento criado!');
@@ -14029,9 +14108,8 @@ function BudgetsManager({
     if (!editingBudget.id) return;
     setIsSubmitting(true);
     
-    // Apply margin if any and not already applied to items
-    const itemsToSave = prevEditItems ? (editingBudget.items || []) : applyProfitMargin(editingBudget.items || [], editProfitMargin);
-    const { finalTotal, installmentValue } = getBudgetCalculations({ ...editingBudget, items: itemsToSave });
+    const itemsToSave = editingBudget.items || [];
+    const { finalTotal, installmentValue } = getBudgetCalculations({ ...editingBudget, items: itemsToSave }, appSettings);
 
     try {
       const { id, ...dataToUpdate } = editingBudget;
@@ -14059,7 +14137,6 @@ function BudgetsManager({
       }
 
       setIsEditOpen(false);
-      setEditProfitMargin(0);
       setPrevEditItems(null);
       toast.success('Orçamento atualizado!');
     } catch (error) {
@@ -14091,38 +14168,23 @@ function BudgetsManager({
 
   const handleUpdateStatus = async (id: string, status: any) => {
     try {
-      await updateDoc(doc(db, 'budgets', id), { status });
+      const budget = budgets.find(b => b.id === id);
+      if (!budget) return;
+
+      // Recalculate everything before updating to ensure sync
+      const { finalTotal, installmentValue } = getBudgetCalculations(budget, appSettings);
+
+      await updateDoc(doc(db, 'budgets', id), { 
+        status,
+        total: finalTotal,
+        installmentValue: installmentValue || 0
+      });
+      
       toast.success('Status atualizado!');
-      const b = budgets.find(x => x.id === id);
-      if (logAction) logAction('update', 'budget', `Status alterado para ${status}`, id, b?.clientName);
+      if (logAction) logAction('update', 'budget', `Status alterado para ${status}`, id, budget.clientName);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'budgets');
     }
-  };
-
-  const getBudgetCalculations = (budget: any) => {
-    const itemsTotal = (budget.items || []).reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
-    const serviceValue = budget.serviceValue || 0;
-    const baseTotal = itemsTotal + serviceValue;
-    let finalTotal = baseTotal;
-    
-    // If an installment plan is selected, we MUST apply the interest/fee to the total
-    if (budget.selectedInstallmentPlanId) {
-      const plan = appSettings.installmentPlans?.find(p => p.id === budget.selectedInstallmentPlanId);
-      if (plan) {
-        const interest = (plan.interestRate || 0) / 100;
-        // Formula: Total = Base * (1 + rate/100)
-        finalTotal = baseTotal * (1 + interest);
-      }
-    } else if (budget.interestPercent && budget.interestPercent > 0) {
-      // Direct percentage override
-      finalTotal = baseTotal * (1 + (budget.interestPercent / 100));
-    }
-    
-    const installments = budget.installments || 1;
-    const installmentValue = finalTotal / installments;
-    
-    return { itemsTotal, serviceValue, baseTotal, finalTotal, installmentValue };
   };
 
   const calculateInstallmentValue = (total: number, planId: string) => {
@@ -14236,7 +14298,7 @@ function BudgetsManager({
 
     let finalY = (doc as any).lastAutoTable.finalY + 10;
 
-    const { itemsTotal, serviceValue, baseTotal, finalTotal } = getBudgetCalculations(budget);
+    const { itemsTotal, serviceValue, baseTotal, finalTotal } = getBudgetCalculations(budget, appSettings);
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
@@ -14313,9 +14375,6 @@ function BudgetsManager({
 
     finalY += 20;
     
-    const isAndre = appSettings.responsible && 
-                   appSettings.responsible.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes('andre');
-
     if (budget.clientSignature) {
       try {
         doc.addImage(budget.clientSignature, 'PNG', 20, finalY - 15, 50, 15);
@@ -14326,7 +14385,7 @@ function BudgetsManager({
     doc.line(20, finalY, 70, finalY);
     doc.text('Assinatura do Cliente', 45, finalY + 5, { align: 'center' });
 
-    if (isAndre && appSettings.signatureUrl) {
+    if (appSettings.signatureUrl) {
       try {
         doc.addImage(appSettings.signatureUrl, 'PNG', 130, finalY - 15, 50, 15);
       } catch (e) {
@@ -14445,7 +14504,6 @@ function BudgetsManager({
           <Dialog open={isAddOpen} onOpenChange={(open) => {
             setIsAddOpen(open);
             if (!open) {
-              setProfitMargin(0);
               setPrevItems(null);
             }
           }}>
@@ -14621,7 +14679,7 @@ function BudgetsManager({
                             {newBudget.selectedInstallmentPlanId ? (
                               (() => {
                                 const plan = appSettings.installmentPlans?.find(p => p.id === newBudget.selectedInstallmentPlanId);
-                                const { installmentValue } = getBudgetCalculations(newBudget);
+                                const { installmentValue } = getBudgetCalculations(newBudget, appSettings);
                                 return plan ? `${plan.type} - ${plan.installments}x de R$ ${installmentValue.toFixed(2)}` : 'Selecione...';
                               })()
                             ) : 'Selecione...'}
@@ -14632,7 +14690,7 @@ function BudgetsManager({
                             p.brand === newBudget.selectedCardBrand && 
                             (newBudget.interestType === 'none' ? p.type === 'DÉBITO' : p.type === 'CRÉDITO')
                           ).map(plan => {
-                            const { baseTotal } = getBudgetCalculations(newBudget);
+                            const { baseTotal } = getBudgetCalculations(newBudget, appSettings);
                             const instVal = calculateInstallmentValue(baseTotal, plan.id);
                         <SelectItem key={plan.id} value={plan.id}>
                           <div className="flex justify-between items-center gap-4 w-full">
@@ -14653,13 +14711,13 @@ function BudgetsManager({
                   </div>
                 )}
 
-                  {getBudgetCalculations(newBudget).finalTotal > getBudgetCalculations(newBudget).baseTotal && (
+                  {getBudgetCalculations(newBudget, appSettings).finalTotal > getBudgetCalculations(newBudget, appSettings).baseTotal && (
                     <div className="bg-[#3b82f6]/10 p-3 rounded-lg border border-[#3b82f6]/30">
                       <div className="flex justify-between items-center">
                         <div>
                           <p className="text-[10px] text-[#3b82f6] uppercase font-bold tracking-wider mb-1">Resumo das Parcelas</p>
-                          <p className="text-sm text-white font-bold">{newBudget.installments}x de R$ {getBudgetCalculations(newBudget).installmentValue.toFixed(2)}</p>
-                          <p className="text-[10px] text-[#a0a0a0] mt-1">Total financiado: R$ {getBudgetCalculations(newBudget).finalTotal.toFixed(2)}</p>
+                          <p className="text-sm text-white font-bold">{newBudget.installments}x de R$ {getBudgetCalculations(newBudget, appSettings).installmentValue.toFixed(2)}</p>
+                          <p className="text-[10px] text-[#a0a0a0] mt-1">Total financiado: R$ {getBudgetCalculations(newBudget, appSettings).finalTotal.toFixed(2)}</p>
                         </div>
                         <div className="text-right">
                            <p className="text-[10px] text-[#a0a0a0] uppercase font-bold">Bandeira</p>
@@ -14681,7 +14739,8 @@ function BudgetsManager({
                           onChange={e => {
                             const val = e.target.value;
                             const pct = val === '' ? 0 : Number(val);
-                            const total = (newBudget.items || []).reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
+                            const calc = getBudgetCalculations(newBudget, appSettings);
+                            const total = calc.baseTotal;
                             setNewBudget({
                               ...newBudget, 
                               cashAcceptancePercent: pct,
@@ -14704,7 +14763,8 @@ function BudgetsManager({
                           onChange={e => {
                             const val = e.target.value;
                             const pct = val === '' ? 0 : Number(val);
-                            const total = (newBudget.items || []).reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
+                            const calc = getBudgetCalculations(newBudget, appSettings);
+                            const total = calc.baseTotal;
                             setNewBudget({
                               ...newBudget, 
                               cashDeliveryPercent: pct,
@@ -14742,60 +14802,6 @@ function BudgetsManager({
 
                 <Separator className="bg-[#2d3139]" />
                 
-                <div className="bg-[#3b82f6]/5 p-4 rounded-lg border border-[#3b82f6]/20 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-[#3b82f6] font-bold flex items-center gap-2">
-                      <Percent size={16} /> Margem de Lucro Global
-                    </Label>
-                    <span className="text-[10px] text-[#71717a] lowercase italic">Aplica sobre os preços unitários</span>
-                  </div>
-                  <div className="flex gap-2 items-center">
-                    <div className="relative flex-1">
-                      <Input 
-                        type="number" 
-                        value={profitMargin === 0 ? '' : profitMargin} 
-                        onChange={e => setProfitMargin(e.target.value === '' ? 0 : Number(e.target.value))} 
-                        className="bg-[#0f1115] border-[#2d3139] text-[#3b82f6] font-bold" 
-                        placeholder="0"
-                        disabled={!!prevItems}
-                        onFocus={(e) => e.target.select()}
-                      />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#3b82f6] font-bold">%</span>
-                    </div>
-                    {prevItems ? (
-                      <Button 
-                        variant="destructive" 
-                        size="sm" 
-                        className="bg-red-500 hover:bg-red-600 text-white"
-                        onClick={() => {
-                          setNewBudget({...newBudget, items: prevItems});
-                          setPrevItems(null);
-                          setProfitMargin(0);
-                          toast.info('Margem de lucro removida.');
-                        }}
-                      >
-                        Retirar Margem
-                      </Button>
-                    ) : (
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="border-[#3b82f6]/30 text-[#3b82f6] hover:bg-[#3b82f6] hover:text-white"
-                        onClick={() => {
-                          if (profitMargin > 0 && newBudget.items) {
-                            setPrevItems([...newBudget.items]);
-                            const updated = applyProfitMargin(newBudget.items, profitMargin);
-                            setNewBudget({...newBudget, items: updated});
-                            toast.success('Markup aplicado aos itens!');
-                          }
-                        }}
-                      >
-                        Aplicar Agora
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
                 <div className="bg-[#10b981]/5 p-4 rounded-lg border border-[#10b981]/20 space-y-3">
                   <div className="flex items-center justify-between">
                     <Label className="text-[#10b981] font-bold flex items-center gap-2 uppercase tracking-widest text-[10px]">
@@ -14808,7 +14814,17 @@ function BudgetsManager({
                     <Input 
                       type="number" 
                       value={newBudget.serviceValue || ''} 
-                      onChange={e => setNewBudget({...newBudget, serviceValue: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                      onChange={e => {
+                        const val = e.target.value === '' ? 0 : Number(e.target.value);
+                        const tempBudget = {...newBudget, serviceValue: val};
+                        const calc = getBudgetCalculations(tempBudget, appSettings);
+                        
+                        setNewBudget({
+                          ...tempBudget,
+                          cashAcceptanceValue: (calc.baseTotal * (newBudget.cashAcceptancePercent || 0)) / 100,
+                          cashDeliveryValue: (calc.baseTotal * (newBudget.cashDeliveryPercent || 0)) / 100
+                        });
+                      }} 
                       className="bg-[#0f1115] border-[#2d3139] text-[#10b981] font-bold pl-9 h-11 text-lg placeholder:text-[#10b981]/20" 
                       placeholder="0.00"
                       onFocus={(e) => e.target.select()}
@@ -14864,17 +14880,39 @@ function BudgetsManager({
                           }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9 flex-1" />
                         </div>
                         <div className="col-span-2">
-                          <Input type="number" placeholder="Qtd" value={item.quantity === 0 ? '' : item.quantity} onChange={e => {
+                          <Input type="number" placeholder="Qtd" value={item.quantity || ''} onChange={e => {
+                            const val = e.target.value === '' ? 0 : Number(e.target.value);
                             const items = [...(newBudget.items || [])];
-                            items[idx] = { ...items[idx], quantity: e.target.value === '' ? 0 : Number(e.target.value) };
-                            setNewBudget({...newBudget, items});
+                            items[idx] = { ...items[idx], quantity: val };
+                            
+                            // Recalculate cash distribution values
+                            const tempBudget = {...newBudget, items};
+                            const calc = getBudgetCalculations(tempBudget, appSettings);
+                            const total = calc.baseTotal;
+                            
+                            setNewBudget({
+                              ...tempBudget,
+                              cashAcceptanceValue: (total * (newBudget.cashAcceptancePercent || 0)) / 100,
+                              cashDeliveryValue: (total * (newBudget.cashDeliveryPercent || 0)) / 100
+                            });
                           }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9" onFocus={(e) => e.target.select()} />
                         </div>
                         <div className="col-span-3">
-                          <Input type="number" placeholder="Preço" value={item.price === 0 ? '' : item.price} onChange={e => {
+                          <Input type="number" placeholder="Preço" value={item.price || ''} onChange={e => {
+                            const val = e.target.value === '' ? 0 : Number(e.target.value);
                             const items = [...(newBudget.items || [])];
-                            items[idx] = { ...items[idx], price: e.target.value === '' ? 0 : Number(e.target.value) };
-                            setNewBudget({...newBudget, items});
+                            items[idx] = { ...items[idx], price: val };
+                            
+                            // Recalculate cash distribution values
+                            const tempBudget = {...newBudget, items};
+                            const calc = getBudgetCalculations(tempBudget, appSettings);
+                            const total = calc.baseTotal;
+                            
+                            setNewBudget({
+                              ...tempBudget,
+                              cashAcceptanceValue: (total * (newBudget.cashAcceptancePercent || 0)) / 100,
+                              cashDeliveryValue: (total * (newBudget.cashDeliveryPercent || 0)) / 100
+                            });
                           }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9" onFocus={(e) => e.target.select()} />
                         </div>
                         <div className="col-span-1">
@@ -14897,7 +14935,7 @@ function BudgetsManager({
             </div>
             <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23] flex items-center justify-between sm:justify-between">
               <div className="text-lg font-bold text-white">
-                Total: R$ {getBudgetCalculations(newBudget).finalTotal.toFixed(2)}
+                Total: R$ {getBudgetCalculations(newBudget, appSettings).finalTotal.toFixed(2)}
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setIsAddOpen(false)} disabled={isSubmitting} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Cancelar</Button>
@@ -14939,6 +14977,9 @@ function BudgetsManager({
                       </Button>
                       <Button variant="outline" size="icon" title="Gerar PDF" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={() => generateBudgetPDF(budget)}>
                         <Share2 size={12} />
+                      </Button>
+                      <Button variant="outline" size="icon" title="Link de Assinatura" className="h-7 w-7 border-[#2d3139] text-blue-400 hover:bg-blue-400/10" onClick={() => onSignatureClick('budget', budget)}>
+                        <ExternalLink size={12} />
                       </Button>
                       <Button variant="outline" size="icon" title="Excluir" className="h-7 w-7 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={() => {
                         setBudgetToDelete(budget);
@@ -15018,7 +15059,6 @@ function BudgetsManager({
       <Dialog open={isEditOpen} onOpenChange={(open) => {
         setIsEditOpen(open);
         if (!open) {
-          setEditProfitMargin(0);
           setPrevEditItems(null);
         }
       }}>
@@ -15151,7 +15191,7 @@ function BudgetsManager({
                           {editingBudget.selectedInstallmentPlanId ? (
                             (() => {
                               const plan = appSettings.installmentPlans?.find(p => p.id === editingBudget.selectedInstallmentPlanId);
-                              const { installmentValue } = getBudgetCalculations(editingBudget);
+                              const { installmentValue } = getBudgetCalculations(editingBudget, appSettings);
                               return plan ? `${plan.brand} - ${plan.type} - ${plan.installments}x de R$ ${installmentValue.toFixed(2)}` : 'Selecione...';
                             })()
                           ) : 'Selecione...'}
@@ -15162,7 +15202,7 @@ function BudgetsManager({
                           p.brand === editingBudget.selectedCardBrand && 
                           (editingBudget.interestType === 'none' ? p.type === 'DÉBITO' : p.type === 'CRÉDITO')
                         ).map(plan => {
-                           const { baseTotal } = getBudgetCalculations(editingBudget);
+                           const { baseTotal } = getBudgetCalculations(editingBudget, appSettings);
                            const instVal = calculateInstallmentValue(baseTotal, plan.id);
                            return (
                              <SelectItem key={plan.id} value={plan.id}>
@@ -15185,13 +15225,13 @@ function BudgetsManager({
                 </div>
               )}
 
-              {getBudgetCalculations(editingBudget).finalTotal > getBudgetCalculations(editingBudget).baseTotal && (
+              {getBudgetCalculations(editingBudget, appSettings).finalTotal > getBudgetCalculations(editingBudget, appSettings).baseTotal && (
                 <div className="bg-[#3b82f6]/10 p-3 rounded-lg border border-[#3b82f6]/30">
                   <div className="flex justify-between items-center">
                     <div>
                       <p className="text-[10px] text-[#3b82f6] uppercase font-bold tracking-wider mb-1">Resumo das Parcelas</p>
-                      <p className="text-sm text-white font-bold">{editingBudget.installments}x de R$ {getBudgetCalculations(editingBudget).installmentValue.toFixed(2)}</p>
-                      <p className="text-[10px] text-[#a0a0a0] mt-1">Total financiado: R$ {getBudgetCalculations(editingBudget).finalTotal.toFixed(2)}</p>
+                      <p className="text-sm text-white font-bold">{editingBudget.installments}x de R$ {getBudgetCalculations(editingBudget, appSettings).installmentValue.toFixed(2)}</p>
+                      <p className="text-[10px] text-[#a0a0a0] mt-1">Total financiado: R$ {getBudgetCalculations(editingBudget, appSettings).finalTotal.toFixed(2)}</p>
                     </div>
                     <div className="text-right">
                        <p className="text-[10px] text-[#a0a0a0] uppercase font-bold">Bandeira</p>
@@ -15213,7 +15253,8 @@ function BudgetsManager({
                         onChange={e => {
                           const val = e.target.value;
                           const pct = val === '' ? 0 : Number(val);
-                          const total = (editingBudget.items || []).reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
+                          const calc = getBudgetCalculations(editingBudget, appSettings);
+                          const total = calc.baseTotal;
                           setEditingBudget({
                             ...editingBudget, 
                             cashAcceptancePercent: pct,
@@ -15236,7 +15277,8 @@ function BudgetsManager({
                         onChange={e => {
                           const val = e.target.value;
                           const pct = val === '' ? 0 : Number(val);
-                          const total = (editingBudget.items || []).reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
+                          const calc = getBudgetCalculations(editingBudget, appSettings);
+                          const total = calc.baseTotal;
                           setEditingBudget({
                             ...editingBudget, 
                             cashDeliveryPercent: pct,
@@ -15278,56 +15320,6 @@ function BudgetsManager({
                 </div>
               )}
 
-              <div className="bg-[#3b82f6]/5 p-4 rounded-lg border border-[#3b82f6]/20 space-y-3">
-                <Label className="text-[#3b82f6] font-bold flex items-center gap-2">
-                  <Percent size={16} /> Atualizar Margem de Lucro (%)
-                </Label>
-                <div className="flex gap-2 items-center">
-                    <div className="relative flex-1">
-                    <Input 
-                      type="number" 
-                      value={editProfitMargin === 0 ? '' : editProfitMargin} 
-                      onChange={e => setEditProfitMargin(e.target.value === '' ? 0 : Number(e.target.value))} 
-                      className="bg-[#0f1115] border-[#2d3139] text-[#3b82f6]" 
-                      disabled={!!prevEditItems}
-                      onFocus={(e) => e.target.select()}
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#3b82f6] font-bold">%</span>
-                  </div>
-                  {prevEditItems ? (
-                    <Button 
-                      variant="destructive" 
-                      size="sm" 
-                      className="bg-red-500 hover:bg-red-600 text-white"
-                      onClick={() => {
-                        setEditingBudget({...editingBudget, items: prevEditItems});
-                        setPrevEditItems(null);
-                        setEditProfitMargin(0);
-                        toast.info('Margem removida.');
-                      }}
-                    >
-                      Retirar
-                    </Button>
-                  ) : (
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="border-[#3b82f6]/30 text-[#3b82f6]"
-                      onClick={() => {
-                        if (editProfitMargin > 0 && editingBudget.items) {
-                          setPrevEditItems([...editingBudget.items]);
-                          const updated = applyProfitMargin(editingBudget.items, editProfitMargin);
-                          setEditingBudget({...editingBudget, items: updated});
-                          toast.success('Markup aplicado!');
-                        }
-                      }}
-                    >
-                      Aplicar
-                    </Button>
-                  )}
-                </div>
-              </div>
-
               <div className="bg-[#10b981]/5 p-4 rounded-lg border border-[#10b981]/20 space-y-3">
                 <div className="flex items-center justify-between">
                   <Label className="text-[#10b981] font-bold flex items-center gap-2 uppercase tracking-widest text-[10px]">
@@ -15365,10 +15357,15 @@ function BudgetsManager({
                     <Button variant="outline" size="sm" onClick={() => {
                       const newItem = { description: '', quantity: 1, price: 0, imageUrl: '' };
                       const items = [...(editingBudget.items || []), newItem];
-                      setEditingBudget({...editingBudget, items});
-                      if (prevEditItems) {
-                        setPrevEditItems([...prevEditItems, { ...newItem }]);
-                      }
+                      const tempBudget = {...editingBudget, items};
+                      const calc = getBudgetCalculations(tempBudget, appSettings);
+                      const total = calc.baseTotal;
+                      
+                      setEditingBudget({
+                        ...tempBudget,
+                        cashAcceptanceValue: (total * (editingBudget.cashAcceptancePercent || 0)) / 100,
+                        cashDeliveryValue: (total * (editingBudget.cashDeliveryPercent || 0)) / 100
+                      });
                     }} className="border-[#2d3139] h-8 text-[10px] font-bold uppercase">Adicionar Item</Button>
                   </div>
                 </div>
@@ -15386,7 +15383,16 @@ function BudgetsManager({
                               price: selected.price || items[idx].price,
                               imageUrl: selected.imageUrl || items[idx].imageUrl
                             };
-                            setEditingBudget({...editingBudget, items});
+                            
+                            const tempBudget = {...editingBudget, items};
+                            const calc = getBudgetCalculations(tempBudget, appSettings);
+                            const total = calc.baseTotal;
+                            
+                            setEditingBudget({
+                              ...tempBudget,
+                              cashAcceptanceValue: (total * (editingBudget.cashAcceptancePercent || 0)) / 100,
+                              cashDeliveryValue: (total * (editingBudget.cashDeliveryPercent || 0)) / 100
+                            });
                           }} 
                         />
                         <div className="w-9 h-9 rounded bg-[#1a1d23] border border-[#2d3139] overflow-hidden flex items-center justify-center flex-shrink-0">
@@ -15403,17 +15409,39 @@ function BudgetsManager({
                         }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9 flex-1" />
                       </div>
                       <div className="col-span-2">
-                        <Input type="number" placeholder="Qtd" value={item.quantity === 0 ? '' : item.quantity} onChange={e => {
+                        <Input type="number" placeholder="Qtd" value={item.quantity || ''} onChange={e => {
+                          const val = e.target.value === '' ? 0 : Number(e.target.value);
                           const items = [...(editingBudget.items || [])];
-                          items[idx] = { ...items[idx], quantity: e.target.value === '' ? 0 : Number(e.target.value) };
-                          setEditingBudget({...editingBudget, items});
+                          items[idx] = { ...items[idx], quantity: val };
+                          
+                          // Recalculate cash distribution values
+                          const tempBudget = {...editingBudget, items};
+                          const calc = getBudgetCalculations(tempBudget, appSettings);
+                          const total = calc.baseTotal;
+                          
+                          setEditingBudget({
+                            ...tempBudget,
+                            cashAcceptanceValue: (total * (editingBudget.cashAcceptancePercent || 0)) / 100,
+                            cashDeliveryValue: (total * (editingBudget.cashDeliveryPercent || 0)) / 100
+                          });
                         }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9" onFocus={(e) => e.target.select()} />
                       </div>
                       <div className="col-span-3">
-                        <Input type="number" placeholder="Preço" value={item.price === 0 ? '' : item.price} onChange={e => {
+                        <Input type="number" placeholder="Preço" value={item.price || ''} onChange={e => {
+                          const val = e.target.value === '' ? 0 : Number(e.target.value);
                           const items = [...(editingBudget.items || [])];
-                          items[idx] = { ...items[idx], price: e.target.value === '' ? 0 : Number(e.target.value) };
-                          setEditingBudget({...editingBudget, items});
+                          items[idx] = { ...items[idx], price: val };
+                          
+                          // Recalculate cash distribution values
+                          const tempBudget = {...editingBudget, items};
+                          const calc = getBudgetCalculations(tempBudget, appSettings);
+                          const total = calc.baseTotal;
+
+                          setEditingBudget({
+                            ...tempBudget,
+                            cashAcceptanceValue: (total * (editingBudget.cashAcceptancePercent || 0)) / 100,
+                            cashDeliveryValue: (total * (editingBudget.cashDeliveryPercent || 0)) / 100
+                          });
                         }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9" onFocus={(e) => e.target.select()} />
                       </div>
                       <div className="col-span-1">
@@ -15440,7 +15468,7 @@ function BudgetsManager({
           </div>
           <DialogFooter className="p-6 border-t border-[#2d3139] flex justify-between items-center sm:justify-between">
             <div className="text-lg font-bold text-white">
-              Total: R$ {getBudgetCalculations(editingBudget).finalTotal.toFixed(2)}
+              Total: R$ {getBudgetCalculations(editingBudget, appSettings).finalTotal.toFixed(2)}
             </div>
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139]">Cancelar</Button>
@@ -16052,7 +16080,7 @@ function PDVManager({
                   <Input 
                     type="number" 
                     placeholder="Qtd" 
-                    value={c.quantity === 0 ? '' : c.quantity} 
+                    value={c.quantity || ''} 
                     onChange={e => updateQuantity(c.item.id, Number(e.target.value) || 0)} 
                     className="bg-[#0f1115] border-[#2d3139] text-white h-10 text-center font-black italic text-blue-400 text-lg rounded-lg" 
                     onFocus={(e) => e.target.select()} 
@@ -16065,7 +16093,7 @@ function PDVManager({
                      <Input 
                        type="number" 
                        placeholder="Preço" 
-                       value={c.price === 0 ? '' : c.price} 
+                       value={c.price || ''} 
                        onChange={e => {
                         const newCart = [...cart];
                         newCart[idx].price = Number(e.target.value) || 0;
@@ -16228,7 +16256,7 @@ function PDVManager({
                    type="number" 
                    className="pl-10 bg-[#0f1115] border-[#2d3139] h-12 text-lg font-black text-red-500 italic" 
                    placeholder="0,00"
-                   value={discount === 0 ? '' : discount}
+                   value={discount || ''}
                    onChange={e => setDiscount(Math.max(0, Number(e.target.value) || 0))}
                    onKeyDown={e => e.key === 'Enter' && setIsDiscountDialogOpen(false)}
                    autoFocus
@@ -16727,7 +16755,9 @@ function InventoryManager({
     quantity: 0,
     minQuantity: 5,
     unit: 'un',
-    price: 0,
+    price: 0, // This will be the selling price (calculated)
+    costPrice: 0,
+    profitMargin: 0,
     location: '',
     category: '',
     imageUrl: ''
@@ -16793,7 +16823,7 @@ function InventoryManager({
       }
 
       setIsAddOpen(false);
-      setNewItem({ code: '', name: '', description: '', quantity: 0, minQuantity: 5, unit: 'un', location: '', category: '', imageUrl: '' });
+      setNewItem({ code: '', name: '', description: '', quantity: 0, minQuantity: 5, unit: 'un', price: 0, costPrice: 0, profitMargin: 0, location: '', category: '', imageUrl: '' });
       toast.success('Item cadastrado com sucesso!');
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'inventory');
@@ -17210,7 +17240,7 @@ function InventoryManager({
                 <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Estoque Atual</Label>
                 <Input 
                   type="number"
-                  value={selectedItem.quantity === 0 ? '' : selectedItem.quantity} 
+                  value={selectedItem.quantity || ''} 
                   onChange={e => setSelectedItem({...selectedItem, quantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
                   className="bg-[#0f1115] border-[#2d3139]" 
                 />
@@ -17219,20 +17249,59 @@ function InventoryManager({
                 <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Mínimo para Alerta</Label>
                 <Input 
                   type="number"
-                  value={selectedItem.minQuantity === 0 ? '' : selectedItem.minQuantity} 
+                  value={selectedItem.minQuantity || ''} 
                   onChange={e => setSelectedItem({...selectedItem, minQuantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
                   className="bg-[#0f1115] border-[#2d3139]" 
                 />
               </div>
-              <div className="col-span-2 space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Venda Sugerido (R$)</Label>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Custo (R$)</Label>
                 <Input 
                   type="number"
-                  value={selectedItem.price === 0 ? '' : selectedItem.price} 
-                  onChange={e => setSelectedItem({...selectedItem, price: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                  value={selectedItem.costPrice || ''} 
+                  onChange={e => {
+                    const cost = e.target.value === '' ? 0 : Number(e.target.value);
+                    const margin = selectedItem.profitMargin || 0;
+                    const sellingPrice = Number((cost * (1 + margin / 100)).toFixed(2));
+                    setSelectedItem({...selectedItem, costPrice: cost, price: sellingPrice});
+                  }} 
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Margem de Lucro (%)</Label>
+                <Input 
+                  type="number"
+                  value={selectedItem.profitMargin || ''} 
+                  onChange={e => {
+                    const margin = e.target.value === '' ? 0 : Number(e.target.value);
+                    const cost = selectedItem.costPrice || 0;
+                    const sellingPrice = Number((cost * (1 + margin / 100)).toFixed(2));
+                    setSelectedItem({...selectedItem, profitMargin: margin, price: sellingPrice});
+                  }} 
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                />
+              </div>
+
+              <div className="col-span-2 space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Venda (Final) (R$)</Label>
+                <Input 
+                  type="number"
+                  value={selectedItem.price || ''} 
+                  onChange={e => {
+                    const sellingPrice = e.target.value === '' ? 0 : Number(e.target.value);
+                    const cost = selectedItem.costPrice || 0;
+                    // Calculate margin based on selling price if cost is available
+                    let margin = selectedItem.profitMargin || 0;
+                    if (cost > 0) {
+                      margin = Number(((sellingPrice / cost - 1) * 100).toFixed(2));
+                    }
+                    setSelectedItem({...selectedItem, price: sellingPrice, profitMargin: margin});
+                  }} 
                   onFocus={(e) => e.target.select()}
                   className="bg-[#0f1115] border-[#2d3139] h-11 text-lg font-bold text-blue-400" 
                 />
+                <p className="text-[10px] text-blue-400/70 italic">Preço final utilizado nos orçamentos e vendas.</p>
               </div>
               <div className="col-span-2 space-y-2">
                 <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Link da Imagem do Produto (URL)</Label>
@@ -17310,7 +17379,7 @@ function InventoryManager({
               <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Saldo Inicial</Label>
               <Input 
                 type="number"
-                value={newItem.quantity === 0 ? '' : newItem.quantity} 
+                value={newItem.quantity || ''} 
                 onChange={e => setNewItem({...newItem, quantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
                 onFocus={(e) => e.target.select()}
                 className="bg-[#0f1115] border-[#2d3139]" 
@@ -17320,20 +17389,58 @@ function InventoryManager({
               <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Qtd. Mínima (Aviso)</Label>
               <Input 
                 type="number"
-                value={newItem.minQuantity === 0 ? '' : newItem.minQuantity} 
+                value={newItem.minQuantity || ''} 
                 onChange={e => setNewItem({...newItem, minQuantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
                 onFocus={(e) => e.target.select()}
                 className="bg-[#0f1115] border-[#2d3139]" 
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Venda Sugerido (R$)</Label>
+              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Custo (R$)</Label>
               <Input 
                 type="number"
-                value={newItem.price === 0 ? '' : newItem.price} 
-                onChange={e => setNewItem({...newItem, price: e.target.value === '' ? 0 : Number(e.target.value)})} 
-                onFocus={(e) => e.target.select()}
+                value={newItem.costPrice || ''} 
+                onChange={e => {
+                  const cost = e.target.value === '' ? 0 : Number(e.target.value);
+                  const margin = newItem.profitMargin || 0;
+                  const final = Number((cost * (1 + margin / 100)).toFixed(2));
+                  setNewItem({...newItem, costPrice: cost, price: final});
+                }} 
                 className="bg-[#0f1115] border-[#2d3139]" 
+                placeholder="0.00"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Margem de Lucro (%)</Label>
+              <Input 
+                type="number"
+                value={newItem.profitMargin || ''} 
+                onChange={e => {
+                  const margin = e.target.value === '' ? 0 : Number(e.target.value);
+                  const cost = newItem.costPrice || 0;
+                  const final = Number((cost * (1 + margin / 100)).toFixed(2));
+                  setNewItem({...newItem, profitMargin: margin, price: final});
+                }} 
+                className="bg-[#0f1115] border-[#2d3139]" 
+                placeholder="Ex: 30"
+              />
+            </div>
+            <div className="col-span-2 space-y-2">
+              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Venda (R$)</Label>
+              <Input 
+                type="number"
+                value={newItem.price || ''} 
+                onChange={e => {
+                  const final = e.target.value === '' ? 0 : Number(e.target.value);
+                  const cost = newItem.costPrice || 0;
+                  let margin = newItem.profitMargin || 0;
+                  if (cost > 0) {
+                    margin = Number(((final / cost - 1) * 100).toFixed(2));
+                  }
+                  setNewItem({...newItem, price: final, profitMargin: margin});
+                }} 
+                onFocus={(e) => e.target.select()}
+                className="bg-[#0f1115] border-[#2d3139] h-11 text-lg font-bold text-emerald-500" 
               />
             </div>
             <div className="col-span-2 space-y-2">
@@ -17404,7 +17511,7 @@ function InventoryManager({
                 <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Quantidade ({transactionType === 'entry' ? 'Recebida' : 'Utilizada'})</Label>
                 <Input 
                   type="number" 
-                  value={newTransaction.quantity === 0 ? '' : newTransaction.quantity} 
+                  value={newTransaction.quantity || ''} 
                   onChange={e => setNewTransaction({...newTransaction, quantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
                   className="bg-[#0f1115] border-[#2d3139] h-11 text-lg font-mono font-bold text-center" 
                 />

@@ -97,7 +97,7 @@ service cloud.firestore {
       allow create: if isMemberOf(request.resource.data.companyId);
       allow update: if isMemberOf(resource.data.companyId) || (
                     canUpdateWithToken(id, request.resource.data.clientSignatureToken) &&
-                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clientSignature', 'clientSignatureToken', 'updatedAt'])
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clientSignature', 'clientSignatureToken', 'updatedAt', 'status'])
                    );
     }
 
