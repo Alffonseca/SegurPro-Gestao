@@ -2265,6 +2265,20 @@ const safeParseDate = (date: any): Date => {
   return new Date();
 };
 
+const initialAppSettings: AppSettings = {
+  logoUrl: '',
+  companyName: '',
+  address: '',
+  neighborhood: '',
+  responsible: '',
+  city: '',
+  cep: '',
+  document: '',
+  signatureUrl: '',
+  serviceTypes: ['CFTV', 'Alarme', 'Cerca Elétrica', 'Motor de Portão', 'Redes', 'Outros'],
+  installmentPlans: []
+};
+
 export default function MainApp() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
@@ -2340,18 +2354,7 @@ export default function MainApp() {
   });
   const [rolePermissions, setRolePermissions] = useState<any>(null);
   const [customRoles, setCustomRoles] = useState<UserRole[]>([]);
-  const [appSettings, setAppSettings] = useState<AppSettings>({
-    logoUrl: '',
-    companyName: '',
-    address: '',
-    neighborhood: '',
-    responsible: '',
-    city: '',
-    cep: '',
-    document: '',
-    signatureUrl: '',
-    serviceTypes: ['CFTV', 'Alarme', 'Cerca Elétrica', 'Motor de Portão', 'Redes', 'Outros']
-  });
+  const [appSettings, setAppSettings] = useState<AppSettings>(initialAppSettings);
 
   const [generatedSignatureInfo, setGeneratedSignatureInfo] = useState<{
     isOpen: boolean;
@@ -2886,7 +2889,22 @@ export default function MainApp() {
     let salesUnsubscribe = () => {};
 
     if (companyId) {
-      // Existing subscriptions...
+      // Reset settings when switching company to prevent bleeding data
+      setAppSettings(initialAppSettings);
+      setPixSettings({ accounts: [] });
+      setInventory([]);
+      setClients([]);
+      setSuppliers([]);
+      setReceipts([]);
+      setUsers([]);
+      setSales([]);
+      setServiceOrders([]);
+      setBudgets([]);
+      setFinancials([]);
+      setInventoryTransactions([]);
+      setLogs([]);
+
+      // ... existing subscriptions
       // I'll add logs here
       if (canAccess('logs')) {
         logsUnsubscribe = onSnapshot(
@@ -3025,10 +3043,14 @@ export default function MainApp() {
         (snapshot) => {
           if (snapshot.exists()) {
             const data = snapshot.data();
-            setAppSettings(prev => ({
-              ...prev,
+            // Do NOT merge with prev to avoid cross-company data leakage
+            // Use initialAppSettings to ensure defaults are present if snapshot is partial
+            setAppSettings({
+              ...initialAppSettings,
               ...data
-            }));
+            });
+          } else {
+            setAppSettings(initialAppSettings);
           }
         }
       );
@@ -4306,6 +4328,7 @@ export default function MainApp() {
           )}
           {activeTab === 'settings' && (
             <SettingsManager 
+              key={effectiveCompanyId}
               pixSettings={pixSettings} 
               appSettings={appSettings} 
               user={user!} 
@@ -6955,9 +6978,18 @@ function SuperAdminPanel({
       }
 
       // Copy to target
-      await setDoc(doc(db, 'companies', targetIdForRates, 'settings', 'general'), { installmentPlans }, { merge: true });
-      
-      toast.success(`Importados ${installmentPlans.length} planos de parcelamento com sucesso!`);
+      if (targetIdForRates === 'ALL') {
+        const otherCompanies = companies.filter(c => c.id !== sourceIdForRates);
+        const batch = [];
+        for (const target of otherCompanies) {
+          batch.push(setDoc(doc(db, 'companies', target.id, 'settings', 'general'), { installmentPlans }, { merge: true }));
+        }
+        await Promise.all(batch);
+        toast.success(`Importados juros para ${otherCompanies.length} empresas com sucesso!`);
+      } else {
+        await setDoc(doc(db, 'companies', targetIdForRates, 'settings', 'general'), { installmentPlans }, { merge: true });
+        toast.success(`Importados ${installmentPlans.length} planos de parcelamento com sucesso!`);
+      }
     } catch (error) {
       console.error("Error importing rates:", error);
       toast.error("Erro ao importar taxas de juros.");
@@ -7826,10 +7858,11 @@ function SuperAdminPanel({
               <Select value={targetIdForRates} onValueChange={setTargetIdForRates}>
                 <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white h-11">
                   <SelectValue placeholder="Selecione a empresa destino...">
-                    {targetIdForRates ? (companies.find(c => c.id === targetIdForRates)?.name || companies.find(c => c.id === targetIdForRates)?.companyName || 'Empresa Selecionada') : 'Selecione a empresa destino...'}
+                    {targetIdForRates === 'ALL' ? '--- TODAS AS EMPRESAS ---' : (targetIdForRates ? (companies.find(c => c.id === targetIdForRates)?.name || companies.find(c => c.id === targetIdForRates)?.companyName || 'Empresa Selecionada') : 'Selecione a empresa destino...')}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                  <SelectItem value="ALL" className="text-blue-400 font-bold italic">--- TODAS AS EMPRESAS ---</SelectItem>
                   {companies.map(c => (
                     <SelectItem key={c.id} value={c.id}>{c.name || c.companyName || c.tradeName || c.trade_name || 'Empresa'}</SelectItem>
                   ))}
@@ -8710,23 +8743,16 @@ function SettingsManager({
   isSuperAdmin?: boolean,
   currentCompany?: any,
   customRoles: UserRole[],
-  userRoles: UserRole[]
+  userRoles: UserRole[],
+  key?: any
 }) {
-  const [localApp, setLocalApp] = useState<AppSettings>(appSettings || {
-    logoUrl: '',
-    companyName: '',
-    address: '',
-    neighborhood: '',
-    responsible: '',
-    city: '',
-    cep: '',
-    document: '',
-    signatureUrl: ''
-  });
+  const [localApp, setLocalApp] = useState<AppSettings>(appSettings || initialAppSettings);
 
   useEffect(() => {
-    if (appSettings) {
-      setLocalApp(prev => ({ ...prev, ...appSettings }));
+    if (appSettings && Object.keys(appSettings).length > 0) {
+      // When appSettings arrives from Firestore, update the form state
+      // We check for length > 0 to avoid resetting to empty if snapshot is just initial
+      setLocalApp(appSettings);
     }
   }, [appSettings]);
   const [newDisplayName, setNewDisplayName] = useState(user?.displayName || '');
@@ -8796,7 +8822,7 @@ function SettingsManager({
   const handleSaveApp = async () => {
     setIsSubmitting(true);
     try {
-      await setDoc(doc(db, 'companies', companyId, 'settings', 'general'), localApp);
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'general'), localApp, { merge: true });
       // Also update the main company document for better reactivity in the header
       await updateDoc(doc(db, 'companies', companyId), {
         name: localApp.companyName,
