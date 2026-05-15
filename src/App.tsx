@@ -7053,6 +7053,12 @@ function SuperAdminPanel({
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [companyToToggle, setCompanyToToggle] = useState<{id: string, status: string} | null>(null);
   const [editingCompany, setEditingCompany] = useState<any>(null);
+
+  const editingCompanyOwner = useMemo(() => {
+    if (!editingCompany?.ownerId) return null;
+    return allUsers.find(u => u.uid === editingCompany.ownerId || u.id === editingCompany.ownerId);
+  }, [editingCompany, allUsers]);
+
   const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -7893,6 +7899,25 @@ function SuperAdminPanel({
           </DialogHeader>
           <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2 custom-scrollbar">
             <div className="space-y-4 py-4 text-white">
+                {/* Proprietor Info */}
+                {editingCompanyOwner && (
+                  <div className="p-4 bg-[#0f1115] border border-blue-500/20 rounded-xl space-y-2 shadow-inner group transition-all hover:border-blue-500/40">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-blue-400">
+                        <UserIcon size={14} className="group-hover:scale-110 transition-transform" />
+                        <span className="text-[10px] font-black uppercase tracking-[0.2em]">Proprietário da Instância</span>
+                      </div>
+                      <Badge variant="outline" className="text-[8px] bg-blue-500/10 text-blue-400 border-blue-400/20 uppercase font-black tracking-widest">Master Admin</Badge>
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-sm font-black text-white tracking-tight">{editingCompanyOwner.displayName || editingCompanyOwner.name || 'Nome não informado'}</span>
+                      <div className="flex items-center gap-2 text-[#71717a]">
+                        <span className="text-[11px] font-medium font-mono">{editingCompanyOwner.email}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-4">
                   <div className="flex items-center justify-between p-3 bg-blue-500/5 border border-blue-500/20 rounded-lg">
                     <div className="flex flex-col">
@@ -13909,10 +13934,15 @@ function BudgetsManager({
   }, [budgets, clientFilter, dateFilter, statusFilter]);
 
   const handleAddItem = () => {
+    const newItem = { description: '', quantity: 1, price: 0, imageUrl: '' };
     setNewBudget({
       ...newBudget,
-      items: [...(newBudget.items || []), { description: '', quantity: 1, price: 0, imageUrl: '' }]
+      items: [...(newBudget.items || []), newItem]
     });
+    // If we have prevItems, we need to add the new item to it as well so it's not lost on undo
+    if (prevItems) {
+      setPrevItems([...prevItems, { ...newItem }]);
+    }
   };
 
   const handleSaveBudget = async () => {
@@ -13935,7 +13965,7 @@ function BudgetsManager({
     try {
       const formattedNumber = getNextFormattedNumber(budgets || [], 'OÇ-');
       
-      const itemsToSave = applyProfitMargin(newBudget.items || [], profitMargin);
+      const itemsToSave = prevItems ? (newBudget.items || []) : applyProfitMargin(newBudget.items || [], profitMargin);
       const { finalTotal, installmentValue } = getBudgetCalculations({ ...newBudget, items: itemsToSave });
 
       const savedDoc = await addDoc(collection(db, 'budgets'), {
@@ -13970,8 +14000,8 @@ function BudgetsManager({
     if (!editingBudget.id) return;
     setIsSubmitting(true);
     
-    // Apply margin if any
-    const itemsToSave = applyProfitMargin(editingBudget.items || [], editProfitMargin);
+    // Apply margin if any and not already applied to items
+    const itemsToSave = prevEditItems ? (editingBudget.items || []) : applyProfitMargin(editingBudget.items || [], editProfitMargin);
     const { finalTotal, installmentValue } = getBudgetCalculations({ ...editingBudget, items: itemsToSave });
 
     try {
@@ -14373,7 +14403,13 @@ function BudgetsManager({
               </Button>
             )}
           </div>
-          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+          <Dialog open={isAddOpen} onOpenChange={(open) => {
+            setIsAddOpen(open);
+            if (!open) {
+              setProfitMargin(0);
+              setPrevItems(null);
+            }
+          }}>
             <DialogTrigger asChild>
               <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
                 <Plus size={18} />
@@ -14695,6 +14731,7 @@ function BudgetsManager({
                         onClick={() => {
                           setNewBudget({...newBudget, items: prevItems});
                           setPrevItems(null);
+                          setProfitMargin(0);
                           toast.info('Margem de lucro removida.');
                         }}
                       >
@@ -14732,12 +14769,15 @@ function BudgetsManager({
                           <InventorySelector 
                             inventory={inventory} 
                             onSelect={(selected) => {
-                              const items = [...(newBudget.items || [])];
-                              items[idx].description = selected.name;
-                              if (selected.price) items[idx].price = selected.price;
-                              if (selected.imageUrl) items[idx].imageUrl = selected.imageUrl;
-                              setNewBudget({...newBudget, items});
-                            }} 
+                            const items = [...(newBudget.items || [])];
+                            items[idx] = { 
+                              ...items[idx], 
+                              description: selected.name,
+                              price: selected.price || items[idx].price,
+                              imageUrl: selected.imageUrl || items[idx].imageUrl
+                            };
+                            setNewBudget({...newBudget, items});
+                          }} 
                           />
                           <div className="w-9 h-9 rounded bg-[#1a1d23] border border-[#2d3139] overflow-hidden flex items-center justify-center flex-shrink-0">
                             {item.imageUrl ? (
@@ -14748,21 +14788,21 @@ function BudgetsManager({
                           </div>
                           <Input placeholder="Descrição" value={item.description} onChange={e => {
                             const items = [...(newBudget.items || [])];
-                            items[idx].description = e.target.value;
+                            items[idx] = { ...items[idx], description: e.target.value };
                             setNewBudget({...newBudget, items});
                           }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9 flex-1" />
                         </div>
                         <div className="col-span-2">
                           <Input type="number" placeholder="Qtd" value={item.quantity === 0 ? '' : item.quantity} onChange={e => {
                             const items = [...(newBudget.items || [])];
-                            items[idx].quantity = e.target.value === '' ? 0 : Number(e.target.value);
+                            items[idx] = { ...items[idx], quantity: e.target.value === '' ? 0 : Number(e.target.value) };
                             setNewBudget({...newBudget, items});
                           }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9" onFocus={(e) => e.target.select()} />
                         </div>
                         <div className="col-span-3">
                           <Input type="number" placeholder="Preço" value={item.price === 0 ? '' : item.price} onChange={e => {
                             const items = [...(newBudget.items || [])];
-                            items[idx].price = e.target.value === '' ? 0 : Number(e.target.value);
+                            items[idx] = { ...items[idx], price: e.target.value === '' ? 0 : Number(e.target.value) };
                             setNewBudget({...newBudget, items});
                           }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9" onFocus={(e) => e.target.select()} />
                         </div>
@@ -14904,7 +14944,13 @@ function BudgetsManager({
     )}
 
       {/* Edit Budget Dialog */}
-      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+      <Dialog open={isEditOpen} onOpenChange={(open) => {
+        setIsEditOpen(open);
+        if (!open) {
+          setEditProfitMargin(0);
+          setPrevEditItems(null);
+        }
+      }}>
         <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[85vh] overflow-hidden flex flex-col p-0 sm:max-w-[700px] shadow-2xl">
           <DialogHeader className="p-6 pb-2 flex-shrink-0">
             <DialogTitle>Editar Orçamento #{editingBudget.number}</DialogTitle>
@@ -15214,7 +15260,14 @@ function BudgetsManager({
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <Label className="text-[#a0a0a0]">Itens do Orçamento</Label>
-                  <Button variant="outline" size="sm" onClick={() => setEditingBudget({...editingBudget, items: [...(editingBudget.items || []), { description: '', quantity: 1, price: 0, imageUrl: '' }]})} className="border-[#2d3139]">Adicionar Item</Button>
+                  <Button variant="outline" size="sm" onClick={() => {
+                    const newItem = { description: '', quantity: 1, price: 0, imageUrl: '' };
+                    const items = [...(editingBudget.items || []), newItem];
+                    setEditingBudget({...editingBudget, items});
+                    if (prevEditItems) {
+                      setPrevEditItems([...prevEditItems, { ...newItem }]);
+                    }
+                  }} className="border-[#2d3139]">Adicionar Item</Button>
                 </div>
                 <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
                   {(editingBudget.items || []).map((item, idx) => (
@@ -15224,9 +15277,12 @@ function BudgetsManager({
                           inventory={inventory} 
                           onSelect={(selected) => {
                             const items = [...(editingBudget.items || [])];
-                            items[idx].description = selected.name;
-                            if (selected.price) items[idx].price = selected.price;
-                            if (selected.imageUrl) items[idx].imageUrl = selected.imageUrl;
+                            items[idx] = { 
+                              ...items[idx], 
+                              description: selected.name,
+                              price: selected.price || items[idx].price,
+                              imageUrl: selected.imageUrl || items[idx].imageUrl
+                            };
                             setEditingBudget({...editingBudget, items});
                           }} 
                         />
@@ -15239,21 +15295,21 @@ function BudgetsManager({
                         </div>
                         <Input placeholder="Descrição" value={item.description} onChange={e => {
                           const items = [...(editingBudget.items || [])];
-                          items[idx].description = e.target.value;
+                          items[idx] = { ...items[idx], description: e.target.value };
                           setEditingBudget({...editingBudget, items});
                         }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9 flex-1" />
                       </div>
                       <div className="col-span-2">
                         <Input type="number" placeholder="Qtd" value={item.quantity === 0 ? '' : item.quantity} onChange={e => {
                           const items = [...(editingBudget.items || [])];
-                          items[idx].quantity = e.target.value === '' ? 0 : Number(e.target.value);
+                          items[idx] = { ...items[idx], quantity: e.target.value === '' ? 0 : Number(e.target.value) };
                           setEditingBudget({...editingBudget, items});
                         }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9" onFocus={(e) => e.target.select()} />
                       </div>
                       <div className="col-span-3">
                         <Input type="number" placeholder="Preço" value={item.price === 0 ? '' : item.price} onChange={e => {
                           const items = [...(editingBudget.items || [])];
-                          items[idx].price = e.target.value === '' ? 0 : Number(e.target.value);
+                          items[idx] = { ...items[idx], price: e.target.value === '' ? 0 : Number(e.target.value) };
                           setEditingBudget({...editingBudget, items});
                         }} className="bg-[#1a1d23] border-[#2d3139] text-white h-9" onFocus={(e) => e.target.select()} />
                       </div>
