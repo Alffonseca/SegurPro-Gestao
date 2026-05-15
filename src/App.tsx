@@ -7610,7 +7610,7 @@ function SuperAdminPanel({
                 </SelectTrigger>
                 <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                   {companies.map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.name || c.tradeName || c.companyName || c.trade_name || c.id}</SelectItem>
+                    <SelectItem key={c.id} value={c.id}>{c.name || c.tradeName || c.companyName || c.trade_name || c.trade_Name || c.company_name || c.id}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -7914,6 +7914,7 @@ function SuperAdminPanel({
                       {id: 'suppliers', label: 'Fornecedores'},
                       {id: 'reports', label: 'Relatórios'},
                       {id: 'users', label: 'Equipe'},
+                      {id: 'logs', label: 'Logs'},
                       {id: 'settings', label: 'Configurações'}
                     ].map(menu => (
                       <div key={menu.id} className="flex items-center space-x-2">
@@ -15840,60 +15841,68 @@ function PDVManager({
       </div>
 
       {/* Main Cart Area */}
-      <Card className="flex-[8] min-h-0 bg-[#1a1d23] border-[#2d3139] flex flex-col overflow-hidden shadow-2xl">
-        <div className="flex-shrink-0 p-2 md:p-3 bg-[#0f1115]/50 border-b border-[#2d3139] flex items-center justify-between">
-          <Label className="text-[10px] font-black text-[#71717a] uppercase tracking-widest">Itens do Carrinho</Label>
-          <div className="text-[9px] font-black text-[#71717a] uppercase tracking-[0.2em]">Total Parcial: R$ {subtotal.toFixed(2)}</div>
+      <Card className="flex-[10] min-h-[450px] bg-[#1a1d23] border-[#2d3139] flex flex-col overflow-hidden shadow-2xl">
+        <div className="flex-shrink-0 p-3 md:p-4 bg-[#0f1115]/80 border-b border-[#2d3139] flex items-center justify-between">
+          <Label className="text-[11px] font-black text-white uppercase tracking-widest">Itens do Carrinho</Label>
+          <div className="flex items-center gap-4">
+             <div className="text-[10px] font-black text-[#71717a] uppercase tracking-[0.2em]">Total Parcial: R$ {subtotal.toFixed(2)}</div>
+             <Button variant="outline" size="sm" onClick={() => setIsProductSearchOpen(true)} className="h-7 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white text-[9px] font-bold uppercase">Adicionar Item (F3)</Button>
+          </div>
         </div>
         
-        <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#0f1115]/10 min-h-0 p-2">
-          <div className="space-y-3">
+        <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#0f1115] p-3 md:p-6">
+          <div className="space-y-6">
             {cart.map((c, idx) => (
-              <div key={idx} className="grid grid-cols-12 gap-2 mb-2 items-end group">
-                <div className="col-span-12 sm:col-span-6 flex items-center gap-2">
-                  <InventorySelector 
-                    inventory={inventory} 
-                    onSelect={(selected) => {
-                      const newCart = [...cart];
-                      newCart[idx] = { 
-                        ...newCart[idx], 
-                        item: selected, 
-                        price: selected.price || newCart[idx].price 
-                      };
-                      setCart(newCart);
-                    }} 
-                  />
-                  <div className="w-9 h-9 rounded bg-[#1a1d23] border border-[#2d3139] overflow-hidden flex items-center justify-center flex-shrink-0 shadow-inner">
-                    {c.item.imageUrl ? (
-                      <img src={c.item.imageUrl} alt={c.item.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                    ) : (
-                      <Package className="text-[#71717a] opacity-30" size={14} />
-                    )}
+              <div key={idx} className="grid grid-cols-12 gap-4 mb-6 items-end group bg-[#1a1d23]/40 p-3 rounded-xl border border-[#2d3139]/50 shadow-inner">
+                <div className="col-span-12 sm:col-span-12 md:col-span-6 flex flex-col gap-1.5">
+                  <Label className="text-[9px] font-black text-[#71717a] uppercase tracking-widest pl-1">Produto / Serviço</Label>
+                  <div className="flex items-center gap-2">
+                    <InventorySelector 
+                      inventory={inventory} 
+                      onSelect={(selected) => {
+                        const newCart = [...cart];
+                        newCart[idx] = { 
+                          ...newCart[idx], 
+                          item: selected, 
+                          price: selected.price || newCart[idx].price 
+                        };
+                        setCart(newCart);
+                      }} 
+                    />
+                    <div className="w-10 h-10 rounded-lg bg-[#0f1115] border border-[#2d3139] overflow-hidden flex items-center justify-center flex-shrink-0 shadow-lg">
+                      {c.item.imageUrl ? (
+                        <img src={c.item.imageUrl} alt={c.item.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      ) : (
+                        <Package className="text-[#71717a] opacity-30" size={16} />
+                      )}
+                    </div>
+                    <Input 
+                      placeholder="Descrição do item..." 
+                      value={c.item.name} 
+                      onChange={e => {
+                        const newCart = [...cart];
+                        newCart[idx].item = { ...newCart[idx].item, name: e.target.value };
+                        setCart(newCart);
+                      }} 
+                      className="bg-[#1a1d23] border-[#2d3139] text-white h-10 text-sm font-bold focus:ring-1 focus:ring-blue-500/50 flex-1 rounded-lg" 
+                    />
                   </div>
-                  <Input 
-                    placeholder="Descrição do item..." 
-                    value={c.item.name} 
-                    onChange={e => {
-                      const newCart = [...cart];
-                      newCart[idx].item = { ...newCart[idx].item, name: e.target.value };
-                      setCart(newCart);
-                    }} 
-                    className="bg-[#1a1d23] border-[#2d3139] text-white h-9 text-xs font-bold focus:ring-1 focus:ring-blue-500/50 flex-1" 
-                  />
                 </div>
-                <div className="col-span-4 sm:col-span-2">
+                <div className="col-span-5 md:col-span-2 flex flex-col gap-1.5">
+                  <Label className="text-[9px] font-black text-[#71717a] uppercase tracking-widest text-center">Quantidade</Label>
                   <Input 
                     type="number" 
                     placeholder="Qtd" 
                     value={c.quantity === 0 ? '' : c.quantity} 
                     onChange={e => updateQuantity(c.item.id, Number(e.target.value) || 0)} 
-                    className="bg-[#1a1d23] border-[#2d3139] text-white h-9 text-center font-black italic text-blue-400" 
+                    className="bg-[#0f1115] border-[#2d3139] text-white h-10 text-center font-black italic text-blue-400 text-lg rounded-lg" 
                     onFocus={(e) => e.target.select()} 
                   />
                 </div>
-                <div className="col-span-6 sm:col-span-3">
+                <div className="col-span-5 md:col-span-3 flex flex-col gap-1.5">
+                   <Label className="text-[9px] font-black text-[#71717a] uppercase tracking-widest pl-1">Valor Unitário</Label>
                    <div className="relative">
-                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-[#71717a] font-black">R$</span>
+                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] text-[#71717a] font-black">R$</span>
                      <Input 
                        type="number" 
                        placeholder="Preço" 
@@ -15903,19 +15912,19 @@ function PDVManager({
                         newCart[idx].price = Number(e.target.value) || 0;
                         setCart(newCart);
                        }} 
-                       className="bg-[#1a1d23] border-[#2d3139] text-white h-9 pl-7 font-black text-xs" 
+                       className="bg-[#0f1115] border-[#2d3139] text-white h-10 pl-9 font-black text-sm rounded-lg" 
                        onFocus={(e) => e.target.select()} 
                      />
                    </div>
                 </div>
-                <div className="col-span-2 sm:col-span-1 flex justify-center">
+                <div className="col-span-2 md:col-span-1 flex justify-center pb-0.5">
                   <Button 
                     variant="ghost" 
                     size="icon" 
-                    className="text-[#ef4444] hover:bg-[#ef4444]/10 h-9 w-9 transition-colors" 
+                    className="text-[#ef4444] hover:bg-[#ef4444]/10 h-10 w-10 transition-colors rounded-lg border border-transparent hover:border-[#ef4444]/20" 
                     onClick={() => removeFromCart(c.item.id)}
                   >
-                    <Trash2 size={16} />
+                    <Trash2 size={18} />
                   </Button>
                 </div>
               </div>
