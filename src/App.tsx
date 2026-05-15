@@ -63,7 +63,8 @@ import {
   ArrowDownRight,
   TrendingUp,
   AlertTriangle,
-  QrCode
+  QrCode,
+  Handshake
 } from 'lucide-react';
 import { 
   collection, 
@@ -1172,6 +1173,7 @@ interface Budget {
   clientPhone: string;
   address: string;
   items: { description: string; quantity: number; price: number; imageUrl?: string }[];
+  serviceValue?: number;
   total: number;
   status: 'Pendente' | 'Aprovado' | 'Rejeitado' | 'Em Negociação';
   pixAccountId?: string;
@@ -13892,6 +13894,7 @@ function BudgetsManager({
   
   const [newBudget, setNewBudget] = useState<Partial<Budget>>({
     items: [{ description: '', quantity: 1, price: 0, imageUrl: '' }],
+    serviceValue: 0,
     status: 'Pendente',
     observations: '',
     paymentMethod: 'Dinheiro',
@@ -14009,7 +14012,7 @@ function BudgetsManager({
         logAction('create', 'budget', `Orçamento #${formattedNumber} criado para ${newBudget.clientName}`, savedDoc.id, newBudget.clientName);
       }
 
-      setNewBudget({ items: [{ description: '', quantity: 1, price: 0, imageUrl: '' }], status: 'Pendente', observations: '', clientName: '', clientPhone: '', address: '' });
+      setNewBudget({ items: [{ description: '', quantity: 1, price: 0, imageUrl: '' }], serviceValue: 0, status: 'Pendente', observations: '', clientName: '', clientPhone: '', address: '' });
       setProfitMargin(0);
       setPrevItems(null);
       setIsAddOpen(false);
@@ -14098,7 +14101,9 @@ function BudgetsManager({
   };
 
   const getBudgetCalculations = (budget: any) => {
-    const baseTotal = (budget.items || []).reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
+    const itemsTotal = (budget.items || []).reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
+    const serviceValue = budget.serviceValue || 0;
+    const baseTotal = itemsTotal + serviceValue;
     let finalTotal = baseTotal;
     
     // If an installment plan is selected, we MUST apply the interest/fee to the total
@@ -14117,7 +14122,7 @@ function BudgetsManager({
     const installments = budget.installments || 1;
     const installmentValue = finalTotal / installments;
     
-    return { baseTotal, finalTotal, installmentValue };
+    return { itemsTotal, serviceValue, baseTotal, finalTotal, installmentValue };
   };
 
   const calculateInstallmentValue = (total: number, planId: string) => {
@@ -14231,9 +14236,17 @@ function BudgetsManager({
 
     let finalY = (doc as any).lastAutoTable.finalY + 10;
 
+    const { itemsTotal, serviceValue, baseTotal, finalTotal } = getBudgetCalculations(budget);
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`VALOR MATERIAL: R$ ${itemsTotal.toFixed(2)}`, 190, finalY, { align: 'right' });
+    finalY += 7;
+    doc.text(`VALOR MÃO DE OBRA: R$ ${serviceValue.toFixed(2)}`, 190, finalY, { align: 'right' });
+    finalY += 8;
+    
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
-    const { baseTotal, finalTotal } = getBudgetCalculations(budget);
     doc.text(`VALOR TOTAL: R$ ${finalTotal.toFixed(2)}`, 190, finalY, { align: 'right' });
 
     if (budget.paymentMethod) {
@@ -14783,6 +14796,26 @@ function BudgetsManager({
                   </div>
                 </div>
 
+                <div className="bg-[#10b981]/5 p-4 rounded-lg border border-[#10b981]/20 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-[#10b981] font-bold flex items-center gap-2 uppercase tracking-widest text-[10px]">
+                      <Handshake size={16} /> Valor da Mão de Obra
+                    </Label>
+                    <span className="text-[10px] text-[#71717a] lowercase italic">Serviços e mão de obra</span>
+                  </div>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#10b981] font-bold">R$</span>
+                    <Input 
+                      type="number" 
+                      value={newBudget.serviceValue || ''} 
+                      onChange={e => setNewBudget({...newBudget, serviceValue: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                      className="bg-[#0f1115] border-[#2d3139] text-[#10b981] font-bold pl-9 h-11 text-lg placeholder:text-[#10b981]/20" 
+                      placeholder="0.00"
+                      onFocus={(e) => e.target.select()}
+                    />
+                  </div>
+                </div>
+
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <Label className="text-[#a0a0a0]">Itens do Orçamento</Label>
@@ -15292,6 +15325,26 @@ function BudgetsManager({
                       Aplicar
                     </Button>
                   )}
+                </div>
+              </div>
+
+              <div className="bg-[#10b981]/5 p-4 rounded-lg border border-[#10b981]/20 space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[#10b981] font-bold flex items-center gap-2 uppercase tracking-widest text-[10px]">
+                    <Handshake size={16} /> Valor da Mão de Obra
+                  </Label>
+                  <span className="text-[10px] text-[#71717a] lowercase italic">Serviços e mão de obra</span>
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#10b981] font-bold">R$</span>
+                  <Input 
+                    type="number" 
+                    value={editingBudget.serviceValue || ''} 
+                    onChange={e => setEditingBudget({...editingBudget, serviceValue: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                    className="bg-[#0f1115] border-[#2d3139] text-[#10b981] font-bold pl-9 h-11 text-lg placeholder:text-[#10b981]/20" 
+                    placeholder="0.00"
+                    onFocus={(e) => e.target.select()}
+                  />
                 </div>
               </div>
 

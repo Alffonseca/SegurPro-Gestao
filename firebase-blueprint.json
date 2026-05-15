@@ -30,6 +30,24 @@
         "usedBy": { "type": "string", "description": "User UID who used the code" }
       },
       "required": ["code", "status", "createdAt"]
+    },
+    "Budget": {
+      "title": "Budget",
+      "description": "A budget estimate for a client.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "companyId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "clientPhone": { "type": "string" },
+        "address": { "type": "string" },
+        "items": { "type": "array" },
+        "serviceValue": { "type": "number" },
+        "total": { "type": "number" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["companyId", "clientName", "items", "total", "status", "createdAt"]
     }
   },
   "firestore": {
@@ -40,6 +58,10 @@
     "registration_codes": {
       "schema": "RegistrationCode",
       "description": "Collection of codes for new company registration."
+    },
+    "budgets": {
+      "schema": "Budget",
+      "description": "Collection of budgets/quotes."
     }
   }
 }
