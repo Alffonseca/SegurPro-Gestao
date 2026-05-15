@@ -13906,6 +13906,32 @@ function BudgetsManager({
   const [prevItems, setPrevItems] = useState<any[] | null>(null);
   const [prevEditItems, setPrevEditItems] = useState<any[] | null>(null);
 
+  const resetPricesToStock = (isEdit: boolean) => {
+    const budget = isEdit ? editingBudget : newBudget;
+    const items = [...(budget.items || [])];
+    let changedCount = 0;
+
+    const updatedItems = items.map(item => {
+      const stockItem = inventory.find(i => i.name === item.description);
+      if (stockItem && stockItem.price !== undefined && stockItem.price !== item.price) {
+        changedCount++;
+        return { ...item, price: stockItem.price };
+      }
+      return item;
+    });
+
+    if (changedCount > 0) {
+      if (isEdit) {
+        setEditingBudget({ ...editingBudget, items: updatedItems });
+      } else {
+        setNewBudget({ ...newBudget, items: updatedItems });
+      }
+      toast.success(`${changedCount} item(s) sincronizado(s) com o estoque!`);
+    } else {
+      toast.info('Os preços já estão sincronizados ou itens não encontrados no estoque.');
+    }
+  };
+
   const applyProfitMargin = (items: { description: string, quantity: number, price: number, imageUrl?: string }[], margin: number) => {
     if (margin <= 0) return items;
     return items.map(item => ({
@@ -14760,7 +14786,19 @@ function BudgetsManager({
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <Label className="text-[#a0a0a0]">Itens do Orçamento</Label>
-                    <Button variant="outline" size="sm" onClick={handleAddItem} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Adicionar Item</Button>
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => resetPricesToStock(false)} 
+                        className="border-[#2d3139] text-blue-400 hover:bg-blue-500/10 gap-2 h-8 text-[10px] font-bold uppercase"
+                        title="Restaurar preços originais do estoque"
+                      >
+                        <RefreshCw size={12} />
+                        Sincronizar Estoque
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={handleAddItem} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white h-8 text-[10px] font-bold uppercase">Adicionar Item</Button>
+                    </div>
                   </div>
                   <ScrollArea className="h-[200px] pr-4 border border-[#2d3139] rounded-md p-2 bg-[#0f1115]">
                     {(newBudget.items || []).map((item, idx) => (
@@ -15260,14 +15298,26 @@ function BudgetsManager({
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <Label className="text-[#a0a0a0]">Itens do Orçamento</Label>
-                  <Button variant="outline" size="sm" onClick={() => {
-                    const newItem = { description: '', quantity: 1, price: 0, imageUrl: '' };
-                    const items = [...(editingBudget.items || []), newItem];
-                    setEditingBudget({...editingBudget, items});
-                    if (prevEditItems) {
-                      setPrevEditItems([...prevEditItems, { ...newItem }]);
-                    }
-                  }} className="border-[#2d3139]">Adicionar Item</Button>
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => resetPricesToStock(true)} 
+                      className="border-[#2d3139] text-blue-400 hover:bg-blue-500/10 gap-2 h-8 text-[10px] font-bold uppercase"
+                      title="Restaurar preços originais do estoque"
+                    >
+                      <RefreshCw size={12} />
+                      Sincronizar Estoque
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => {
+                      const newItem = { description: '', quantity: 1, price: 0, imageUrl: '' };
+                      const items = [...(editingBudget.items || []), newItem];
+                      setEditingBudget({...editingBudget, items});
+                      if (prevEditItems) {
+                        setPrevEditItems([...prevEditItems, { ...newItem }]);
+                      }
+                    }} className="border-[#2d3139] h-8 text-[10px] font-bold uppercase">Adicionar Item</Button>
+                  </div>
                 </div>
                 <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
                   {(editingBudget.items || []).map((item, idx) => (
