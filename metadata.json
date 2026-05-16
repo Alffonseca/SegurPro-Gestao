@@ -1,6 +1,6 @@
 {
   "name": "SegurPro Gestão",
-  "description": "Sistema de gestão financeira e controle de visitas técnicas para instaladores de segurança eletrônica (CFTV, Alarmes, Cercas Elétricas).",
+  "description": "Sistema avançado para empresas de segurança eletrônica, abrangendo gestão financeira, ordens de serviço, controle de estoque e visitas técnicas.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

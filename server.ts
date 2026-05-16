@@ -12,6 +12,11 @@ async function startServer() {
 
   app.use(express.json());
 
+  // API Health Check
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok" });
+  });
+
   // API to update user password
   app.post("/api/admin/update-user-password", async (req, res) => {
     const { uid, newPassword } = req.body;

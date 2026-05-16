@@ -356,6 +356,114 @@ const formatFullDateWithCity = (date: any, appSettings: AppSettings) => {
   return `${cityStr}${cityStr ? ', ' : ''}${format(d, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}`;
 };
 
+function TableDoubleScroll({ children }: { children: React.ReactNode }) {
+  const topScrollRef = React.useRef<HTMLDivElement>(null);
+  const bottomScrollRef = React.useRef<HTMLDivElement>(null);
+  const isScrollingTop = React.useRef(false);
+  const isScrollingBottom = React.useRef(false);
+  const actualScrollableElement = React.useRef<HTMLElement | null>(null);
+
+  const handleTopScroll = () => {
+    if (isScrollingBottom.current) return;
+    if (topScrollRef.current && actualScrollableElement.current) {
+      isScrollingTop.current = true;
+      actualScrollableElement.current.scrollLeft = topScrollRef.current.scrollLeft;
+      setTimeout(() => { isScrollingTop.current = false; }, 100);
+    }
+  };
+
+  const handleBottomScroll = (e: any) => {
+    if (isScrollingTop.current) return;
+    if (topScrollRef.current && e.target) {
+      isScrollingBottom.current = true;
+      topScrollRef.current.scrollLeft = e.target.scrollLeft;
+      setTimeout(() => { isScrollingBottom.current = false; }, 100);
+    }
+  };
+
+  React.useEffect(() => {
+    const bottomWrapper = bottomScrollRef.current;
+    if (!bottomWrapper) return;
+
+    const findScrollable = () => {
+      // Find the first element with overflow auto/scroll or just the one that has big scrollWidth
+      const elements = bottomWrapper.querySelectorAll('*');
+      for (const el of Array.from(elements) as HTMLElement[]) {
+        const style = window.getComputedStyle(el);
+        if ((style.overflowX === 'auto' || style.overflowX === 'scroll' || el.classList.contains('overflow-auto')) && el.scrollWidth > el.clientWidth) {
+          return el;
+        }
+      }
+      // Fallback to searching for the table's parent
+      const table = bottomWrapper.querySelector('table');
+      if (table && table.parentElement) return table.parentElement;
+      return bottomWrapper;
+    };
+
+    const syncWidth = () => {
+      const scrollable = findScrollable();
+      actualScrollableElement.current = scrollable;
+      
+      const table = bottomWrapper.querySelector('table');
+      if (table && topScrollRef.current) {
+        const topInner = topScrollRef.current.firstChild as HTMLElement;
+        if (topInner) {
+          const contentWidth = table.scrollWidth;
+          topInner.style.width = `${contentWidth}px`;
+          
+          if (contentWidth > scrollable.clientWidth) {
+            topScrollRef.current.style.display = 'block';
+          } else {
+            topScrollRef.current.style.display = 'none';
+          }
+        }
+      }
+
+      // Add listener to actual scrollable element
+      if (scrollable) {
+        scrollable.removeEventListener('scroll', handleBottomScroll);
+        scrollable.addEventListener('scroll', handleBottomScroll);
+      }
+    };
+
+    const resizeObserver = new ResizeObserver(() => {
+      syncWidth();
+    });
+
+    const table = bottomWrapper.querySelector('table');
+    if (table) resizeObserver.observe(table);
+    resizeObserver.observe(bottomWrapper);
+    
+    syncWidth();
+
+    return () => {
+      resizeObserver.disconnect();
+      if (actualScrollableElement.current) {
+        actualScrollableElement.current.removeEventListener('scroll', handleBottomScroll);
+      }
+    };
+  }, [children]);
+
+  return (
+    <div className="flex flex-col w-full relative">
+      <div 
+        ref={topScrollRef} 
+        onScroll={handleTopScroll}
+        className="overflow-x-auto overflow-y-hidden mb-1 hidden md:block border-b border-[#2d3139]/30 sticky top-0 bg-[#0f1115] z-10"
+        style={{ height: '12px', scrollbarWidth: 'thin' }}
+      >
+        <div style={{ height: '1px' }} />
+      </div>
+      <div 
+        ref={bottomScrollRef} 
+        className="w-full"
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 const ALL_MENU_ITEMS = [
   { id: 'dashboard', label: 'Painel Geral' },
   { id: 'clients', label: 'Clientes' },
@@ -2799,6 +2907,7 @@ export default function MainApp() {
     if (currentCompany) {
       setAppSettings(prev => {
         const updated = {
+          ...prev, // Keep all existing fields (installmentPlans, serviceTypes, etc.)
           logoUrl: prev.logoUrl || currentCompany.logoUrl || currentCompany.companyLogo || '',
           companyName: prev.companyName || currentCompany.companyName || currentCompany.name || '',
           document: prev.document || currentCompany.document || currentCompany.cnpj || currentCompany.companyDoc || currentCompany.cpf || '',
@@ -3919,7 +4028,7 @@ export default function MainApp() {
           </div>
         </header>
 
-        <div className={cn("flex-1 overflow-y-auto", activeTab === 'pdv' ? "p-0" : "p-6 md:p-10")}>
+        <div className={cn("flex-1 overflow-y-auto bento-scrollbar", activeTab === 'pdv' ? "p-0 overflow-hidden" : "p-6 md:p-10")}>
           {activeTab === 'dashboard' && (
             <Dashboard 
               visits={visits} 
@@ -4123,7 +4232,9 @@ export default function MainApp() {
                     <span className="text-[10px] text-[#71717a] font-medium uppercase min-w-fit">Filtros:</span>
                     <Select value={logSearchUser} onValueChange={setLogSearchUser}>
                       <SelectTrigger className="h-7 border-none bg-transparent text-[12px] p-0 focus:ring-0 gap-1 w-[120px]">
-                        <SelectValue placeholder="Usuário" />
+                        <SelectValue placeholder="Usuário">
+                          {users.find(u => (u.uid || u.displayName) === logSearchUser)?.displayName || (logSearchUser === 'all' ? 'Todos Usuários' : logSearchUser)}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         <SelectItem value="all">Todos Usuários</SelectItem>
@@ -4185,8 +4296,9 @@ export default function MainApp() {
                   }
                 }}
               >
-                <div className="overflow-x-auto overflow-y-auto max-h-[600px] custom-scrollbar">
-                  <table className="w-full text-left border-collapse min-w-[850px]">
+                <div className="overflow-y-auto max-h-[600px] custom-scrollbar">
+                  <TableDoubleScroll>
+                    <table className="w-full text-left border-collapse min-w-[850px]">
                     <thead>
                       <tr className="bg-[#0f1115] border-b border-[#2d3139] sticky top-0 z-20">
                         <th className="p-4 text-xs font-bold text-[#71717a] uppercase tracking-wider">Data/Hora</th>
@@ -4305,6 +4417,7 @@ export default function MainApp() {
                       )}
                     </tbody>
                   </table>
+                  </TableDoubleScroll>
                 </div>
               </Card>
             </div>
@@ -4638,7 +4751,8 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
       </div>
 
       {showList ? (
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative">
+          <TableDoubleScroll>
           <Table>
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
@@ -4708,6 +4822,7 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
               ))}
             </TableBody>
           </Table>
+          </TableDoubleScroll>
         </Card>
       ) : (
         <NoAccessList title="Equipe" />
@@ -5299,7 +5414,9 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
                     <Label className="text-[#a0a0a0]">Conta PIX Preferencial</Label>
                     <Select value={editingClient.pixAccountId || ''} onValueChange={(val) => setEditingClient({...editingClient, pixAccountId: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                        <SelectValue placeholder="Selecione a conta PIX" />
+                        <SelectValue placeholder="Selecione a conta PIX">
+                          {pixSettings.accounts?.find(acc => acc.id === editingClient.pixAccountId)?.label || editingClient.pixAccountId}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         {pixSettings.accounts?.map(acc => (
@@ -5408,7 +5525,8 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
       </Dialog>
 
       {showList ? (
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative">
+          <TableDoubleScroll>
           <Table>
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
@@ -5492,6 +5610,7 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
               )}
             </TableBody>
           </Table>
+          </TableDoubleScroll>
         </Card>
       ) : (
         <NoAccessList title="Clientes" />
@@ -5714,7 +5833,8 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
         </div>
 
       {showList ? (
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden shadow-2xl">
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] shadow-2xl">
+          <TableDoubleScroll>
           <Table>
             <TableHeader>
               <TableRow className="border-[#2d3139] hover:bg-transparent">
@@ -5774,6 +5894,7 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
               )}
             </TableBody>
           </Table>
+          </TableDoubleScroll>
         </Card>
       ) : (
         <NoAccessList title="Fornecedores" />
@@ -6558,7 +6679,9 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                       <Label className="text-[#a0a0a0]">Conta PIX para Recebimento</Label>
                       <Select value={editingReceipt.pixAccountId || ''} onValueChange={(val) => setEditingReceipt({...editingReceipt, pixAccountId: val})}>
                         <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                          <SelectValue placeholder="Selecione a conta PIX" />
+                          <SelectValue placeholder="Selecione a conta PIX">
+                             {pixSettings.accounts?.find(acc => acc.id === editingReceipt.pixAccountId)?.label || editingReceipt.pixAccountId}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                           {pixSettings.accounts?.map(acc => (
@@ -6639,6 +6762,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
               ))}
             </div>
           </div>
+          <TableDoubleScroll>
           <Table>
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
@@ -6741,6 +6865,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
               )}
             </TableBody>
           </Table>
+          </TableDoubleScroll>
         </Card>
       )}
 
@@ -7500,7 +7625,9 @@ function SuperAdminPanel({
             <div className="w-full md:w-64">
               <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
                 <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                  <SelectValue placeholder="Selecione a Empresa" />
+                  <SelectValue placeholder="Selecione a Empresa">
+                    {companies.find(c => c.id === selectedCompanyId)?.name || companies.find(c => c.id === selectedCompanyId)?.tradeName || companies.find(c => c.id === selectedCompanyId)?.companyName || selectedCompanyId}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                   {companies.map(c => {
@@ -7882,7 +8009,8 @@ function SuperAdminPanel({
         </CardContent>
       </Card>
 
-      <Card className="bg-[#1a1d23] border-[#2d3139] rounded-xl overflow-hidden">
+      <Card className="bg-[#1a1d23] border-[#2d3139] rounded-xl overflow-y-auto max-h-[800px]">
+        <TableDoubleScroll>
         <Table>
           <TableHeader>
             <TableRow className="border-[#2d3139] hover:bg-transparent">
@@ -7964,6 +8092,7 @@ function SuperAdminPanel({
             ))}
           </TableBody>
         </Table>
+        </TableDoubleScroll>
       </Card>
 
       {/* Edit Company License Modal */}
@@ -11405,7 +11534,8 @@ function VisitsManager({
     </div>
 
     {showList ? (
-      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative">
+      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative">
+        <TableDoubleScroll>
         <Table>
           <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
@@ -11508,6 +11638,7 @@ function VisitsManager({
             )}
           </TableBody>
         </Table>
+        </TableDoubleScroll>
       </Card>
     ) : (
       <NoAccessList title="Visitas Técnicas" />
@@ -12571,7 +12702,7 @@ function FinancialManager({
 
     {showList ? (
       <Card 
-        className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+        className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50"
         tabIndex={0}
         onKeyDown={(e) => {
           if (!filteredFinancials.length) return;
@@ -12589,6 +12720,7 @@ function FinancialManager({
           }
         }}
       >
+        <TableDoubleScroll>
         <Table>
           <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
@@ -12695,6 +12827,7 @@ function FinancialManager({
             )}
           </TableBody>
         </Table>
+        </TableDoubleScroll>
       </Card>
     ) : (
       <NoAccessList title="Financeiro" />
@@ -12754,7 +12887,9 @@ function FinancialManager({
                       <Label className="text-[#a0a0a0]">Conta PIX</Label>
                       <Select value={editingRecord.pixAccountId || ''} onValueChange={(val) => setEditingRecord({...editingRecord, pixAccountId: val})}>
                         <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                          <SelectValue placeholder="Conta" />
+                          <SelectValue placeholder="Conta">
+                             {pixSettings.accounts?.find(acc => acc.id === editingRecord.pixAccountId)?.label || editingRecord.pixAccountId}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                           {pixSettings.accounts?.map(acc => (
@@ -13467,7 +13602,8 @@ function ServiceOrdersManager({
       </div>
 
       {showList ? (
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50" tabIndex={0}>
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50" tabIndex={0}>
+          <TableDoubleScroll>
           <Table>
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
@@ -13590,6 +13726,7 @@ function ServiceOrdersManager({
               )}
             </TableBody>
           </Table>
+          </TableDoubleScroll>
         </Card>
       ) : (
         <NoAccessList title="Ordens de Serviço" />
@@ -14911,7 +15048,7 @@ function BudgetsManager({
                               <Package className="text-[#71717a]" size={14} />
                             )}
                           </div>
-                          <Input placeholder="Descrição" value={item.description} onChange={e => {
+                          <Input placeholder="Descrição" value={item.description || ''} onChange={e => {
                             const items = [...(newBudget.items || [])];
                             items[idx] = { ...items[idx], description: e.target.value };
                             setNewBudget({...newBudget, items});
@@ -14990,6 +15127,7 @@ function BudgetsManager({
 
     {showList ? (
         <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50" tabIndex={0}>
+          <TableDoubleScroll>
           <Table>
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
@@ -15088,6 +15226,7 @@ function BudgetsManager({
               )}
             </TableBody>
           </Table>
+          </TableDoubleScroll>
         </Card>
     ) : (
       <NoAccessList title="Orçamentos" />
@@ -15653,13 +15792,10 @@ function PDVManager({
   const subtotal = cart.reduce((acc, curr) => acc + (curr.quantity * curr.price), 0);
   const discountAmount = (subtotal * discount) / 100;
   const totalAfterDiscount = Math.max(0, subtotal - discountAmount);
+  // Total is always calculated based on current cardDetails state
   const interestAmount = (totalAfterDiscount * (cardDetails.interestPercent || 0)) / 100;
   const total = totalAfterDiscount + interestAmount;
-
-  // The main view's total should only show the interest after confirmation.
-  // We use this displayTotal for the summary card.
-  // When in Card Dialog, show subtotal in the main view (to fulfill user request).
-  const displayTotal = (paymentMethod === 'Cartão' && isCardDialogOpen) ? totalAfterDiscount : total;
+  const displayTotal = total;
 
   // Local card total for preview in dialog
   const localInterestAmount = localCardDetails ? (totalAfterDiscount * (localCardDetails.interestPercent || 0)) / 100 : 0;
@@ -15704,7 +15840,9 @@ function PDVManager({
       }
       if (e.key === 'F10') {
         e.preventDefault();
-        if (cart.length > 0) handleFinishSale();
+        if (cart.length > 0) {
+          handleFinishSale();
+        }
       }
       if (e.altKey && e.key.toLowerCase() === 'h') {
         e.preventDefault();
@@ -15714,7 +15852,7 @@ function PDVManager({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cart, paymentMethod, canManageSales]);
+  }, [cart, paymentMethod, canManageSales, discount, cardDetails, selectedClient, selectedPixAccountId]);
 
   const addToCart = (item: any) => {
     const existing = cart.find(c => c.item.id === item.id);
@@ -15997,7 +16135,7 @@ function PDVManager({
   };
 
   return (
-    <div className="p-2 md:p-4 min-h-[calc(100vh-64px)] md:min-h-[calc(100vh-96px)] flex flex-col gap-2 md:gap-3 bg-[#0f1115] overflow-y-auto custom-scrollbar">
+    <div className="p-2 md:p-4 h-full flex flex-col gap-2 md:gap-3 bg-[#0f1115] overflow-hidden">
       {/* Header Hotkeys Barra Superior */}
       <div className="flex-shrink-0 flex items-center justify-between gap-2 p-2 px-4 rounded-xl bg-[#1a1d23] border border-[#2d3139] shadow-lg">
         <div className="flex-1 flex flex-wrap items-center gap-2 md:gap-5 text-[10px] font-black uppercase tracking-tighter text-[#71717a]">
@@ -16067,8 +16205,10 @@ function PDVManager({
         </div>
       </div>
 
-      {/* Main Cart Area */}
-      <Card className="flex-1 min-h-[250px] md:min-h-[300px] bg-[#1a1d23] border-[#2d3139] flex flex-col overflow-hidden shadow-2xl">
+      {/* Main Content Area: Cart + Summary */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-3 overflow-hidden">
+        {/* Main Cart Area */}
+        <Card className="lg:col-span-8 flex flex-col min-h-0 bg-[#1a1d23] border-[#2d3139] overflow-hidden shadow-2xl">
         <div className="flex-shrink-0 p-3 md:p-4 bg-[#0f1115]/80 border-b border-[#2d3139] flex items-center justify-between">
           <Label className="text-[11px] font-black text-white uppercase tracking-widest">Itens do Carrinho</Label>
           <div className="flex items-center gap-4">
@@ -16080,7 +16220,7 @@ function PDVManager({
         <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#0f1115] p-3 md:p-6">
           <div className="space-y-6">
             {cart.map((c, idx) => (
-              <div key={idx} className="grid grid-cols-12 gap-4 mb-6 items-end group bg-[#1a1d23]/40 p-3 rounded-xl border border-[#2d3139]/50 shadow-inner">
+              <div key={c.item.id || idx} className="grid grid-cols-12 gap-4 mb-6 items-end group bg-[#1a1d23]/40 p-3 rounded-xl border border-[#2d3139]/50 shadow-inner">
                 <div className="col-span-12 sm:col-span-12 md:col-span-6 flex flex-col gap-1.5">
                   <Label className="text-[9px] font-black text-[#71717a] uppercase tracking-widest pl-1">Produto / Serviço</Label>
                   <div className="flex items-center gap-2">
@@ -16164,116 +16304,116 @@ function PDVManager({
             )}
           </div>
         </div>
-      </Card>
+        </Card>
 
-      {/* Payment Summary Area */}
-      <Card className="bg-[#1a1d23] border-[#2d3139] shadow-2xl relative overflow-hidden flex-shrink-0">
-        <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500" />
-        <div className="p-2 md:p-3 flex flex-col gap-2 md:gap-4">
-          
-          {/* Row 1: Payment Method Selection */}
-          <div className="flex flex-col md:flex-row items-center gap-4">
-            <div className="flex-1 space-y-1 w-full">
-              <Label className="text-[9px] font-black text-[#71717a] tracking-widest uppercase">Forma de Recebimento</Label>
-              <div className="flex justify-center gap-2 w-full">
-                {[
-                  {id: 'Dinheiro', icon: <DollarSign size={14} />, onClick: () => setPaymentMethod('Dinheiro')},
-                  {id: 'Cartão', icon: <CreditCard size={14} />, onClick: () => { setPaymentMethod('Cartão'); setIsCardDialogOpen(true); }},
-                  {id: 'PIX', icon: (
-                    <svg width="14" height="14" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-emerald-400">
-                      <path d="M256 32L480 256L256 480L32 256L256 32Z" stroke="currentColor" strokeWidth="40" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d="M256 128L384 256L256 384L128 256L256 128Z" fill="currentColor" />
-                    </svg>
-                  ), onClick: () => { setPaymentMethod('PIX'); setIsPixDialogOpen(true); }}
-                ].map((m: any) => (
-                  <button
-                    key={m.id}
-                    onClick={m.onClick}
-                    className={cn(
-                      "flex-1 h-10 rounded-lg border flex items-center justify-center gap-2 transition-all outline-none",
-                      paymentMethod === m.id 
-                        ? "bg-emerald-500 text-white border-emerald-400 font-bold shadow-lg shadow-emerald-500/20" 
-                        : "bg-[#0f1115] border-[#2d3139] text-[#71717a] hover:border-[#3b82f6]/50"
-                    )}
-                  >
-                    {m.icon}
-                    <span className="text-[10px] font-bold uppercase">{m.id}</span>
-                  </button>
-                ))}
+        {/* Payment Summary Area */}
+        <div className="lg:col-span-4 flex flex-col gap-3 overflow-hidden">
+          <Card className="flex-1 bg-[#1a1d23] border-[#2d3139] shadow-2xl relative overflow-hidden flex flex-col min-h-0">
+            <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500" />
+            <div className="p-2 md:p-3 space-y-3 flex-1 flex flex-col overflow-y-auto custom-scrollbar">
+              
+              {/* Row 1: Payment Method Selection */}
+              <div className="space-y-1">
+                <Label className="text-[9px] font-black text-[#71717a] tracking-widest uppercase">Forma de Recebimento (F10 - Finalizar)</Label>
+                <div className="flex justify-center gap-2">
+                  {[
+                    {id: 'Dinheiro', icon: <DollarSign size={14} />, onClick: () => { setPaymentMethod('Dinheiro'); setCardDetails(prev => ({...prev, interestPercent: 0, useInterest: false})); }},
+                    {id: 'Cartão', icon: <CreditCard size={14} />, onClick: () => { setPaymentMethod('Cartão'); setIsCardDialogOpen(true); }},
+                    {id: 'PIX', icon: (
+                      <svg width="14" height="14" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-emerald-400">
+                        <path d="M256 32L480 256L256 480L32 256L256 32Z" stroke="currentColor" strokeWidth="40" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M256 128L384 256L256 384L128 256L256 128Z" fill="currentColor" />
+                      </svg>
+                    ), onClick: () => { setPaymentMethod('PIX'); setIsPixDialogOpen(true); setCardDetails(prev => ({...prev, interestPercent: 0, useInterest: false})); }}
+                  ].map((m: any) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={m.onClick}
+                      className={cn(
+                        "flex-1 h-10 rounded-lg border flex items-center justify-center gap-2 transition-all outline-none",
+                        paymentMethod === m.id 
+                          ? "bg-emerald-500 text-white border-emerald-400 font-bold shadow-lg shadow-emerald-500/20" 
+                          : "bg-[#0f1115] border-[#2d3139] text-[#71717a] hover:border-[#3b82f6]/50"
+                      )}
+                    >
+                      {m.icon}
+                      <span className="text-[10px] font-bold uppercase">{m.id}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Payment Details */}
+              <div className="space-y-2">
+                 {paymentMethod === 'Cartão' && (
+                   <div className="bg-[#0f1115] border border-blue-500/20 rounded-lg p-2.5 flex items-center justify-between cursor-pointer hover:bg-blue-500/5 transition-colors" onClick={() => setIsCardDialogOpen(true)}>
+                      <div className="flex flex-col">
+                        <span className="text-[8px] uppercase font-black text-[#71717a]">Plano de Cartão</span>
+                        <span className="text-[10px] text-white font-bold">
+                          {cardDetails.brand || 'Selecione'} - {cardDetails.type} {cardDetails.installments}x 
+                          {cardDetails.interestPercent > 0 ? ` (${cardDetails.interestPercent}% juros)` : ' (Sem Juros)'}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                         <span className="text-[8px] uppercase font-black text-blue-400">Juros</span>
+                         <div className="text-[10px] font-black text-white">{cardDetails.interestPercent}%</div>
+                      </div>
+                   </div>
+                 )}
+                 {paymentMethod === 'PIX' && (
+                   <div className="bg-[#0f1115] border border-emerald-500/20 rounded-lg p-2.5 flex items-center justify-between cursor-pointer hover:bg-emerald-500/5 transition-colors" onClick={() => setIsPixDialogOpen(true)}>
+                      <div className="flex flex-col">
+                        <span className="text-[8px] uppercase font-black text-[#71717a]">Conta PIX Selecionada</span>
+                        <span className="text-[10px] text-white font-bold">
+                          {(pixSettings?.accounts || []).find(a => a.id === selectedPixAccountId)?.label || 'Clique p/ Selecionar'}
+                        </span>
+                      </div>
+                      <ChevronRight size={14} className="text-emerald-500" />
+                   </div>
+                 )}
+                 {paymentMethod === 'Dinheiro' && (
+                   <div className="bg-[#0f1115] border border-[#2d3139] rounded-lg p-3 flex items-center justify-center text-[10px] font-bold text-[#71717a] uppercase italic text-center">
+                      Recebimento em Dinheiro (Sem detalhes adicionais)
+                   </div>
+                 )}
+              </div>
+
+              {/* Totals Summary */}
+              <div className="space-y-2 pt-2 border-t border-[#2d3139]/50">
+                <div className="flex items-center justify-between p-2 rounded-lg bg-[#0f1115]/30">
+                  <span className="text-[9px] text-[#71717a] font-black uppercase tracking-widest">Subtotal</span>
+                  <span className="text-lg font-bold text-white">R$ {subtotal.toFixed(2)}</span>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded-lg bg-[#0f1115]/30 border border-red-500/10">
+                   <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] text-red-500/70 font-black uppercase italic tracking-widest">Desconto (%)</span>
+                    <button onClick={() => setIsDiscountDialogOpen(true)} className="text-blue-500 hover:text-blue-400 p-0.5 bg-[#0f1115] rounded border border-[#2d3139]">
+                        <Pencil size={8} />
+                    </button>
+                  </div>
+                  <span className="text-lg font-bold text-red-500 italic">{discount.toFixed(2)}%</span>
+                </div>
+                <div className="flex items-center justify-between p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                  <span className="text-[10px] text-emerald-500 font-black uppercase tracking-[0.2em]">Total Geral</span>
+                  <span className="text-2xl font-black text-emerald-500 italic tracking-tighter">R$ {displayTotal.toFixed(2)}</span>
+                </div>
+              </div>
+
+              {/* Action Button */}
+              <div className="pt-2">
+                <Button 
+                  onClick={handleFinishSale}
+                  disabled={cart.length === 0 || isFinishing}
+                  className="w-full h-12 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase italic tracking-tighter text-xl shadow-xl shadow-emerald-600/20"
+                >
+                  {isFinishing ? <Loader2 className="animate-spin" /> : "FINALIZAR (F10)"}
+                </Button>
               </div>
             </div>
-
-            {/* Payment Status Info */}
-            <div className="flex-1 flex gap-2 w-full">
-               {paymentMethod === 'Cartão' && (
-                 <div className="flex-1 bg-[#0f1115] border border-blue-500/20 rounded-lg p-2 flex items-center justify-between cursor-pointer hover:bg-blue-500/5 transition-colors" onClick={() => setIsCardDialogOpen(true)}>
-                    <div className="flex flex-col">
-                      <span className="text-[8px] uppercase font-black text-[#71717a]">Plano de Cartão</span>
-                      <span className="text-[10px] text-white font-bold">
-                        {cardDetails.brand || 'Selecione'} - {cardDetails.type} {cardDetails.installments}x 
-                        {cardDetails.interestPercent > 0 ? ` (${cardDetails.interestPercent}% juros)` : ' (Sem Juros)'}
-                      </span>
-                    </div>
-                    <div className="text-right">
-                       <span className="text-[8px] uppercase font-black text-blue-400">Juros</span>
-                       <div className="text-[10px] font-black text-white">{cardDetails.interestPercent}%</div>
-                    </div>
-                 </div>
-               )}
-               {paymentMethod === 'PIX' && (
-                 <div className="flex-1 bg-[#0f1115] border border-emerald-500/20 rounded-lg p-2 flex items-center justify-between cursor-pointer hover:bg-emerald-500/5 transition-colors" onClick={() => setIsPixDialogOpen(true)}>
-                    <div className="flex flex-col">
-                      <span className="text-[8px] uppercase font-black text-[#71717a]">Conta PIX Selecionada</span>
-                      <span className="text-[10px] text-white font-bold">
-                        {(pixSettings?.accounts || []).find(a => a.id === selectedPixAccountId)?.label || 'Clique p/ Selecionar'}
-                      </span>
-                    </div>
-                    <ChevronRight size={14} className="text-emerald-500" />
-                 </div>
-               )}
-               {paymentMethod === 'Dinheiro' && (
-                 <div className="flex-1 bg-[#0f1115] border border-[#2d3139] rounded-lg p-2 flex items-center justify-center text-[10px] font-bold text-[#71717a] uppercase italic">
-                    Recebimento em Dinheiro (Sem detalhes adicionais)
-                 </div>
-               )}
-            </div>
-          </div>
-
-          {/* Row 2: Totals Summary */}
-          <div className="grid grid-cols-3 gap-2 py-2 border-t border-b border-[#2d3139]/50">
-            <div className="flex flex-col items-center justify-center p-1.5 rounded-lg bg-[#0f1115]/30">
-              <span className="text-[8px] text-[#71717a] font-black uppercase block mb-0.5">Subtotal</span>
-              <span className="text-sm md:text-lg font-bold text-white leading-none">R$ {subtotal.toFixed(2)}</span>
-            </div>
-            <div className="flex flex-col items-center justify-center p-1.5 rounded-lg bg-[#0f1115]/30 border border-red-500/10">
-               <div className="flex items-center justify-center gap-1.5 mb-0.5">
-                <span className="text-[8px] text-red-500/70 font-black uppercase italic">Desconto (%)</span>
-                <button onClick={() => setIsDiscountDialogOpen(true)} className="text-blue-500 hover:text-blue-400 p-0.5 bg-[#0f1115] rounded border border-[#2d3139]">
-                    <Pencil size={8} />
-                </button>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-sm md:text-lg font-bold text-red-500 italic block leading-none">{discount.toFixed(2)}%</span>
-              </div>
-            </div>
-            <div className="flex flex-col items-center justify-center p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-              <span className="text-[9px] text-emerald-500 font-black uppercase block tracking-widest mb-0.5">Total Geral</span>
-              <span className="text-xl md:text-2xl font-black text-emerald-500 italic tracking-tighter block leading-none">R$ {displayTotal.toFixed(2)}</span>
-            </div>
-          </div>
-
-          {/* Row 3: Action Button */}
-          <div className="max-w-md mx-auto w-full">
-            <Button 
-              onClick={handleFinishSale}
-              disabled={cart.length === 0 || isFinishing}
-              className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase italic tracking-tighter text-lg shadow-xl shadow-emerald-600/20"
-            >
-              {isFinishing ? <Loader2 className="animate-spin" /> : "FINALIZAR VENDA (F10)"}
-            </Button>
-          </div>
+          </Card>
         </div>
-      </Card>
+      </div>
 
       {/* Modal Desconto (F6) */}
       <Dialog open={isDiscountDialogOpen} onOpenChange={setIsDiscountDialogOpen}>
@@ -17064,7 +17204,7 @@ function InventoryManager({
           </div>
 
           <Card className="bg-[#1a1d23] border-[#2d3139] overflow-hidden shadow-2xl">
-            <ScrollArea className="w-full">
+            <TableDoubleScroll>
               <Table>
                 <TableHeader className="bg-[#0f1115]">
                   <TableRow className="hover:bg-transparent border-[#2d3139]">
@@ -17152,7 +17292,7 @@ function InventoryManager({
                   )}
                 </TableBody>
               </Table>
-            </ScrollArea>
+            </TableDoubleScroll>
           </Card>
         </div>
 
@@ -17247,7 +17387,7 @@ function InventoryManager({
               <div className="space-y-2">
                 <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Código / SKU</Label>
                 <Input 
-                  value={selectedItem.code} 
+                  value={selectedItem.code || ''} 
                   onChange={e => setSelectedItem({...selectedItem, code: e.target.value})} 
                   className="bg-[#0f1115] border-[#2d3139]" 
                 />
@@ -17255,7 +17395,7 @@ function InventoryManager({
               <div className="space-y-2">
                 <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Nome da Peça</Label>
                 <Input 
-                  value={selectedItem.name} 
+                  value={selectedItem.name || ''} 
                   onChange={e => setSelectedItem({...selectedItem, name: e.target.value})} 
                   className="bg-[#0f1115] border-[#2d3139]" 
                 />
@@ -17263,7 +17403,7 @@ function InventoryManager({
               <div className="space-y-2">
                 <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Categoria</Label>
                 <Input 
-                  value={selectedItem.category} 
+                  value={selectedItem.category || ''} 
                   onChange={e => setSelectedItem({...selectedItem, category: e.target.value})} 
                   className="bg-[#0f1115] border-[#2d3139]" 
                 />
@@ -17271,7 +17411,7 @@ function InventoryManager({
               <div className="space-y-2">
                 <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Localização</Label>
                 <Input 
-                  value={selectedItem.location} 
+                  value={selectedItem.location || ''} 
                   onChange={e => setSelectedItem({...selectedItem, location: e.target.value})} 
                   className="bg-[#0f1115] border-[#2d3139]" 
                 />
@@ -17355,7 +17495,7 @@ function InventoryManager({
               <div className="col-span-2 space-y-2">
                 <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Observações</Label>
                 <Input 
-                  value={selectedItem.description} 
+                  value={selectedItem.description || ''} 
                   onChange={e => setSelectedItem({...selectedItem, description: e.target.value})} 
                   className="bg-[#0f1115] border-[#2d3139]" 
                 />
@@ -17382,7 +17522,7 @@ function InventoryManager({
             <div className="space-y-2">
               <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Código / SKU</Label>
               <Input 
-                value={newItem.code} 
+                value={newItem.code || ''} 
                 onChange={e => setNewItem({...newItem, code: e.target.value})} 
                 className="bg-[#0f1115] border-[#2d3139] focus:ring-blue-500" 
                 placeholder="Ex: SSD-240-KING"
@@ -17391,7 +17531,7 @@ function InventoryManager({
             <div className="space-y-2">
               <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Nome da Peça</Label>
               <Input 
-                value={newItem.name} 
+                value={newItem.name || ''} 
                 onChange={e => setNewItem({...newItem, name: e.target.value})} 
                 className="bg-[#0f1115] border-[#2d3139] focus:ring-blue-500" 
                 placeholder="Ex: SSD 240GB Kingston"
@@ -17400,7 +17540,7 @@ function InventoryManager({
             <div className="space-y-2">
               <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Categoria</Label>
               <Input 
-                value={newItem.category} 
+                value={newItem.category || ''} 
                 onChange={e => setNewItem({...newItem, category: e.target.value})} 
                 className="bg-[#0f1115] border-[#2d3139]" 
                 placeholder="Ex: Armazenamento"
@@ -17409,7 +17549,7 @@ function InventoryManager({
             <div className="space-y-2">
               <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Localização (Armário/Box)</Label>
               <Input 
-                value={newItem.location} 
+                value={newItem.location || ''} 
                 onChange={e => setNewItem({...newItem, location: e.target.value})} 
                 className="bg-[#0f1115] border-[#2d3139]" 
                 placeholder="Prateleira A2"
@@ -17495,7 +17635,7 @@ function InventoryManager({
             <div className="col-span-2 space-y-2">
               <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Observações Técnicas</Label>
               <Input 
-                value={newItem.description} 
+                value={newItem.description || ''} 
                 onChange={e => setNewItem({...newItem, description: e.target.value})} 
                 className="bg-[#0f1115] border-[#2d3139]" 
               />
@@ -17656,8 +17796,9 @@ function InventoryManager({
           </DialogHeader>
           <div className="py-2">
              <ScrollArea className="h-[450px] pr-4">
-                <Table>
-                  <TableHeader className="bg-[#0f1115] sticky top-0 z-10">
+                <TableDoubleScroll>
+                  <Table>
+                    <TableHeader className="bg-[#0f1115] sticky top-0 z-10">
                     <TableRow className="border-[#2d3139] hover:bg-transparent">
                       <TableHead className="text-[9px] uppercase font-black px-2 py-3">Data/Hora</TableHead>
                       {!selectedItem && <TableHead className="text-[9px] uppercase font-black px-2 py-3">Item</TableHead>}
@@ -17730,6 +17871,7 @@ function InventoryManager({
                     )}
                   </TableBody>
                 </Table>
+              </TableDoubleScroll>
              </ScrollArea>
           </div>
           <DialogFooter className="border-t border-[#2d3139] pt-4 mt-2">
