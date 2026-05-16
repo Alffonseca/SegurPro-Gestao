@@ -1474,6 +1474,7 @@ interface PixAccount {
   id: string;
   bank: string;
   key: string;
+  qrKey?: string;
   favored: string;
   document: string;
   label: string;
@@ -3918,7 +3919,7 @@ export default function MainApp() {
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-6 md:p-10">
+        <div className={cn("flex-1 overflow-y-auto", activeTab === 'pdv' ? "p-0" : "p-6 md:p-10")}>
           {activeTab === 'dashboard' && (
             <Dashboard 
               visits={visits} 
@@ -9701,15 +9702,26 @@ function SettingsManager({
                   className="bg-[#0f1115] border-[#2d3139] text-white" 
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <div className="space-y-2">
-                  <Label>Chave PIX</Label>
+                  <Label>Chave PIX (Exibir no Sistema)</Label>
                   <Input 
                     value={currentPix.key || ''} 
                     onChange={e => setCurrentPix({...currentPix, key: e.target.value})} 
                     className="bg-[#0f1115] border-[#2d3139] text-white" 
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label>Chave para QRCode (Apenas Gerar Código)</Label>
+                  <Input 
+                    value={currentPix.qrKey || ''} 
+                    onChange={e => setCurrentPix({...currentPix, qrKey: e.target.value})} 
+                    placeholder="Cole aqui o BR Code ou a chave específica para o QR Code"
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Banco</Label>
                   <Input 
@@ -9718,21 +9730,21 @@ function SettingsManager({
                     className="bg-[#0f1115] border-[#2d3139] text-white" 
                   />
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Favorecido</Label>
-                  <Input 
-                    value={currentPix.favored || ''} 
-                    onChange={e => setCurrentPix({...currentPix, favored: e.target.value})} 
-                    className="bg-[#0f1115] border-[#2d3139] text-white" 
-                  />
-                </div>
                 <div className="space-y-2">
                   <Label>CPF/CNPJ</Label>
                   <Input 
                     value={currentPix.document || ''} 
                     onChange={e => setCurrentPix({...currentPix, document: e.target.value})} 
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4">
+                <div className="space-y-2">
+                  <Label>Favorecido</Label>
+                  <Input 
+                    value={currentPix.favored || ''} 
+                    onChange={e => setCurrentPix({...currentPix, favored: e.target.value})} 
                     className="bg-[#0f1115] border-[#2d3139] text-white" 
                   />
                 </div>
@@ -15639,7 +15651,8 @@ function PDVManager({
   };
 
   const subtotal = cart.reduce((acc, curr) => acc + (curr.quantity * curr.price), 0);
-  const totalAfterDiscount = Math.max(0, subtotal - discount);
+  const discountAmount = (subtotal * discount) / 100;
+  const totalAfterDiscount = Math.max(0, subtotal - discountAmount);
   const interestAmount = (totalAfterDiscount * (cardDetails.interestPercent || 0)) / 100;
   const total = totalAfterDiscount + interestAmount;
 
@@ -15870,8 +15883,9 @@ function PDVManager({
     doc.text(`R$ ${saleData.subtotal.toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
     currentY += 4;
 
-    doc.text(`DESCONTO:`, margin, currentY);
-    doc.text(`R$ ${saleData.discount.toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
+    const discAmt = (saleData.subtotal * (saleData.discount || 0)) / 100;
+    doc.text(`DESCONTO (${saleData.discount}%):`, margin, currentY);
+    doc.text(`R$ ${discAmt.toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
     currentY += 5;
 
     doc.setFont('Courier', 'bold');
@@ -15898,7 +15912,7 @@ function PDVManager({
         // QR Code for PIX on the left, text on the right
         try {
           const qrSize = 25;
-          const qrDataUrl = await QRCode.toDataURL(pixAcc.key, { margin: 1, width: 100 });
+          const qrDataUrl = await QRCode.toDataURL(pixAcc.qrKey || pixAcc.key, { margin: 1, width: 100 });
           doc.addImage(qrDataUrl, 'PNG', margin, currentY, qrSize, qrSize);
           
           doc.setFontSize(7);
@@ -15983,7 +15997,7 @@ function PDVManager({
   };
 
   return (
-    <div className="p-2 md:p-4 h-[calc(100vh-80px)] flex flex-col gap-2 md:gap-3 bg-[#0f1115] overflow-hidden">
+    <div className="p-2 md:p-4 min-h-[calc(100vh-64px)] md:min-h-[calc(100vh-96px)] flex flex-col gap-2 md:gap-3 bg-[#0f1115] overflow-y-auto custom-scrollbar">
       {/* Header Hotkeys Barra Superior */}
       <div className="flex-shrink-0 flex items-center justify-between gap-2 p-2 px-4 rounded-xl bg-[#1a1d23] border border-[#2d3139] shadow-lg">
         <div className="flex-1 flex flex-wrap items-center gap-2 md:gap-5 text-[10px] font-black uppercase tracking-tighter text-[#71717a]">
@@ -16054,7 +16068,7 @@ function PDVManager({
       </div>
 
       {/* Main Cart Area */}
-      <Card className="flex-[10] min-h-[450px] bg-[#1a1d23] border-[#2d3139] flex flex-col overflow-hidden shadow-2xl">
+      <Card className="flex-1 min-h-[250px] md:min-h-[300px] bg-[#1a1d23] border-[#2d3139] flex flex-col overflow-hidden shadow-2xl">
         <div className="flex-shrink-0 p-3 md:p-4 bg-[#0f1115]/80 border-b border-[#2d3139] flex items-center justify-between">
           <Label className="text-[11px] font-black text-white uppercase tracking-widest">Itens do Carrinho</Label>
           <div className="flex items-center gap-4">
@@ -16143,7 +16157,7 @@ function PDVManager({
               </div>
             ))}
             {cart.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-20 text-[#71717a]">
+              <div className="flex flex-col items-center justify-center py-10 md:py-16 text-[#71717a]">
                  <ShoppingCart size={40} className="mb-2 opacity-20" />
                  <p className="text-[10px] italic font-bold uppercase tracking-widest">Aguardando Produtos... [F3]</p>
               </div>
@@ -16233,13 +16247,13 @@ function PDVManager({
             </div>
             <div className="flex flex-col items-center justify-center p-1.5 rounded-lg bg-[#0f1115]/30 border border-red-500/10">
                <div className="flex items-center justify-center gap-1.5 mb-0.5">
-                <span className="text-[8px] text-red-500/70 font-black uppercase italic">Desconto</span>
+                <span className="text-[8px] text-red-500/70 font-black uppercase italic">Desconto (%)</span>
                 <button onClick={() => setIsDiscountDialogOpen(true)} className="text-blue-500 hover:text-blue-400 p-0.5 bg-[#0f1115] rounded border border-[#2d3139]">
                     <Pencil size={8} />
                 </button>
               </div>
               <div className="flex items-center gap-1">
-                <span className="text-sm md:text-lg font-bold text-red-500 italic block leading-none">- R$ {discount.toFixed(2)}</span>
+                <span className="text-sm md:text-lg font-bold text-red-500 italic block leading-none">{discount.toFixed(2)}%</span>
               </div>
             </div>
             <div className="flex flex-col items-center justify-center p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
@@ -16267,23 +16281,23 @@ function PDVManager({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Percent size={18} className="text-red-500" />
-              Aplicar Desconto
+              Aplicar Desconto (%)
             </DialogTitle>
             <DialogDescription className="text-[#a0a0a0]">
-              Informe o valor em reais (R$) a ser descontado do total.
+              Informe a porcentagem (%) a ser descontada do total.
             </DialogDescription>
           </DialogHeader>
           <div className="py-4 space-y-4">
              <div className="space-y-1.5">
-               <Label className="text-[#71717a] font-bold uppercase text-[10px]">Valor do Desconto</Label>
+               <Label className="text-[#71717a] font-bold uppercase text-[10px]">Porcentagem de Desconto</Label>
                <div className="relative">
-                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#71717a] font-bold">R$</span>
+                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#71717a] font-bold">%</span>
                  <Input 
                    type="number" 
                    className="pl-10 bg-[#0f1115] border-[#2d3139] h-12 text-lg font-black text-red-500 italic" 
-                   placeholder="0,00"
+                   placeholder="0"
                    value={discount || ''}
-                   onChange={e => setDiscount(Math.max(0, Number(e.target.value) || 0))}
+                   onChange={e => setDiscount(Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
                    onKeyDown={e => e.key === 'Enter' && setIsDiscountDialogOpen(false)}
                    autoFocus
                  />
@@ -16291,11 +16305,11 @@ function PDVManager({
              </div>
              <div className="grid grid-cols-2 gap-2 pt-2 text-[10px] uppercase font-black">
                 <div className="p-2 rounded bg-[#0f1115] border border-[#2d3139] flex flex-col items-center">
-                   <span className="text-[#71717a]">Subtotal</span>
-                   <span className="text-white">R$ {subtotal.toFixed(2)}</span>
+                   <span className="text-[#71717a]">Desconto (R$)</span>
+                   <span className="text-red-500">R$ {discountAmount.toFixed(2)}</span>
                 </div>
                 <div className="p-2 rounded bg-[#0f1115] border border-[#2d3139] flex flex-col items-center">
-                   <span className="text-red-500">Novo Total</span>
+                   <span className="text-emerald-500">Novo Total</span>
                    <span className="text-white">R$ {total.toFixed(2)}</span>
                 </div>
              </div>
