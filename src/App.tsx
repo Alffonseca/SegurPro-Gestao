@@ -361,13 +361,12 @@ function TableDoubleScroll({ children }: { children: React.ReactNode }) {
   const bottomScrollRef = React.useRef<HTMLDivElement>(null);
   const isScrollingTop = React.useRef(false);
   const isScrollingBottom = React.useRef(false);
-  const actualScrollableElement = React.useRef<HTMLElement | null>(null);
 
   const handleTopScroll = () => {
     if (isScrollingBottom.current) return;
-    if (topScrollRef.current && actualScrollableElement.current) {
+    if (topScrollRef.current && bottomScrollRef.current) {
       isScrollingTop.current = true;
-      actualScrollableElement.current.scrollLeft = topScrollRef.current.scrollLeft;
+      bottomScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
       setTimeout(() => { isScrollingTop.current = false; }, 100);
     }
   };
@@ -385,44 +384,19 @@ function TableDoubleScroll({ children }: { children: React.ReactNode }) {
     const bottomWrapper = bottomScrollRef.current;
     if (!bottomWrapper) return;
 
-    const findScrollable = () => {
-      // Find the first element with overflow auto/scroll or just the one that has big scrollWidth
-      const elements = bottomWrapper.querySelectorAll('*');
-      for (const el of Array.from(elements) as HTMLElement[]) {
-        const style = window.getComputedStyle(el);
-        if ((style.overflowX === 'auto' || style.overflowX === 'scroll' || el.classList.contains('overflow-auto')) && el.scrollWidth > el.clientWidth) {
-          return el;
-        }
-      }
-      // Fallback to searching for the table's parent
-      const table = bottomWrapper.querySelector('table');
-      if (table && table.parentElement) return table.parentElement;
-      return bottomWrapper;
-    };
-
     const syncWidth = () => {
-      const scrollable = findScrollable();
-      actualScrollableElement.current = scrollable;
-      
-      const table = bottomWrapper.querySelector('table');
-      if (table && topScrollRef.current) {
+      if (bottomWrapper && topScrollRef.current) {
         const topInner = topScrollRef.current.firstChild as HTMLElement;
         if (topInner) {
-          const contentWidth = table.scrollWidth;
+          const contentWidth = bottomWrapper.scrollWidth;
           topInner.style.width = `${contentWidth}px`;
           
-          if (contentWidth > scrollable.clientWidth) {
+          if (contentWidth > bottomWrapper.clientWidth) {
             topScrollRef.current.style.display = 'block';
           } else {
             topScrollRef.current.style.display = 'none';
           }
         }
-      }
-
-      // Add listener to actual scrollable element
-      if (scrollable) {
-        scrollable.removeEventListener('scroll', handleBottomScroll);
-        scrollable.addEventListener('scroll', handleBottomScroll);
       }
     };
 
@@ -438,9 +412,6 @@ function TableDoubleScroll({ children }: { children: React.ReactNode }) {
 
     return () => {
       resizeObserver.disconnect();
-      if (actualScrollableElement.current) {
-        actualScrollableElement.current.removeEventListener('scroll', handleBottomScroll);
-      }
     };
   }, [children]);
 
@@ -456,7 +427,8 @@ function TableDoubleScroll({ children }: { children: React.ReactNode }) {
       </div>
       <div 
         ref={bottomScrollRef} 
-        className="w-full"
+        onScroll={handleBottomScroll}
+        className="w-full overflow-x-auto custom-scrollbar"
       >
         {children}
       </div>
@@ -774,7 +746,7 @@ const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettin
   doc.save(`contrato_${(client.name || 'cliente').replace(/\s/g, '_')}.pdf`);
 };
 
-const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, pixSettings: PixSettings, includeValues = false) => {
+const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSettings, pixSettings: PixSettings, includeValues = false) => {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -1012,6 +984,17 @@ const generateServiceOrderPDF = (os: ServiceOrder, appSettings: AppSettings, pix
         doc.text(`Chave: ${selectedPix.key} - Banco: ${selectedPix.bank}`, margin, currentY);
         currentY += 4;
         doc.text(`Favorecido: ${selectedPix.favored} - CPF/CNPJ: ${selectedPix.document || ''}`, margin, currentY);
+        
+        // QR Code PIX
+        try {
+          const qrSize = 35;
+          const qrContent = selectedPix.qrKey || selectedPix.key;
+          const qrDataUrl = await QRCode.toDataURL(qrContent, { margin: 1, width: 150 });
+          doc.addImage(qrDataUrl, 'PNG', pageWidth - margin - qrSize - 5, currentY - 15, qrSize, qrSize);
+        } catch (e) {
+          console.error("Error generating PIX QR Code for Service Order", e);
+        }
+
         currentY += 8;
       }
     }
@@ -1381,7 +1364,7 @@ interface Supplier {
   createdAt: any;
 }
 
-const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSettings: PixSettings, shouldShare = false) => {
+const generateReceiptPDF = async (receipt: Receipt, appSettings: AppSettings, pixSettings: PixSettings, shouldShare = false) => {
   const doc = new jsPDF();
   const dateStr = format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), 'dd/MM/yyyy');
   const fullDateStr = format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
@@ -1461,7 +1444,13 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
   doc.setTextColor(0, 0, 0);
   doc.setFont('helvetica', 'normal');
   let serviceText = receipt.serviceSpecification || 'Serviços prestados';
-  if (receipt.referenceMonth && receipt.clientType !== 'Avulso') {
+  if (receipt.clientType === 'Contrato') {
+    if (receipt.referenceMonth) {
+      serviceText = `Serviço Contratual - ${receipt.referenceMonth}`;
+    } else if (!serviceText || serviceText === 'Serviços prestados') {
+      serviceText = 'Serviço Contratual';
+    }
+  } else if (receipt.referenceMonth && receipt.clientType !== 'Avulso') {
     serviceText += `\nReferente a: ${receipt.referenceMonth}`;
   }
   const splitService = doc.splitTextToSize(serviceText, isContract ? 130 : 65);
@@ -1499,15 +1488,31 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
       doc.setFont('helvetica', 'bold');
       doc.text('Dados para Pagamento (PIX):', 20, currentY);
       currentY += 6;
+      
+      const qrSize = 35;
+      // QR Code PIX - MOVED TO LEFT
+      try {
+        const qrContent = selectedPix.qrKey || selectedPix.key;
+        const qrDataUrl = await QRCode.toDataURL(qrContent, { margin: 1, width: 150 });
+        doc.addImage(qrDataUrl, 'PNG', 20, currentY, qrSize, qrSize);
+      } catch (e) {
+        console.error("Error generating PIX QR Code for Receipt", e);
+      }
+
+      // Text Data - MOVED TO THE RIGHT OF THE QR CODE
       doc.setFont('helvetica', 'normal');
-      doc.text(`Chave: ${selectedPix.key}`, 20, currentY);
-      currentY += 5;
-      doc.text(`Banco: ${selectedPix.bank}`, 20, currentY);
-      currentY += 5;
-      doc.text(`Favorecido: ${selectedPix.favored}`, 20, currentY);
-      currentY += 5;
-      doc.text(`CPF/CNPJ: ${selectedPix.document}`, 20, currentY);
-      currentY += 15;
+      const textX = 20 + qrSize + 5;
+      let textY = currentY + 5;
+      
+      doc.text(`Chave: ${selectedPix.key}`, textX, textY);
+      textY += 5;
+      doc.text(`Banco: ${selectedPix.bank}`, textX, textY);
+      textY += 5;
+      doc.text(`Favorecido: ${selectedPix.favored}`, textX, textY);
+      textY += 5;
+      doc.text(`CPF/CNPJ: ${selectedPix.document}`, textX, textY);
+      
+      currentY += Math.max(qrSize, 20) + 10;
     }
   } else if (receipt.paymentMethod) {
     doc.setTextColor(0, 0, 0);
@@ -1518,12 +1523,24 @@ const generateReceiptPDF = (receipt: Receipt, appSettings: AppSettings, pixSetti
   }
 
   // Observations
-  if (receipt.observations) {
+  let obsText = receipt.observations || '';
+  if (receipt.status === 'Aguardando Pagamento') {
+    const statusNote = 'Recibo Valido Mediante Comprovante do PIX';
+    if (obsText) {
+      if (!obsText.includes(statusNote)) {
+        obsText += `\n${statusNote}`;
+      }
+    } else {
+      obsText = statusNote;
+    }
+  }
+
+  if (obsText) {
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
     doc.text('Observações:', 20, currentY);
     doc.setFont('helvetica', 'normal');
-    const splitObs = doc.splitTextToSize(receipt.observations, 170);
+    const splitObs = doc.splitTextToSize(obsText, 170);
     doc.text(splitObs, 20, currentY + 6);
     currentY += (splitObs.length * 6) + 20;
   }
@@ -4028,7 +4045,7 @@ export default function MainApp() {
           </div>
         </header>
 
-        <div className={cn("flex-1 overflow-y-auto bento-scrollbar", activeTab === 'pdv' ? "p-0 overflow-hidden" : "p-6 md:p-10")}>
+        <div className={cn("flex-1 overflow-y-auto bento-scrollbar", activeTab === 'pdv' ? "p-0 h-full overflow-hidden" : "p-6 md:p-10")}>
           {activeTab === 'dashboard' && (
             <Dashboard 
               visits={visits} 
@@ -6038,7 +6055,10 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
     paymentMethod: 'PIX',
     clientType: 'Avulso',
     status: 'Aguardando Pagamento',
-    referenceMonth: '',
+    referenceMonth: (() => {
+      const m = format(new Date(), 'MMMM/yyyy', { locale: ptBR });
+      return m.charAt(0).toUpperCase() + m.slice(1);
+    })(),
     observations: '',
     clientId: '',
     pixAccountId: ''
@@ -6076,7 +6096,11 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
         await addDoc(collection(db, 'financial'), {
           type: 'Receita',
           category: receiptData.clientType === 'Contrato' ? 'Mensalidade Contrato' : 'Serviço Avulso',
-          description: `${formatRecordNumber(receiptData.number, receiptData.date)} - ${receiptData.clientName} - ${receiptData.referenceMonth || format(new Date(), 'MMMM/yyyy', { locale: ptBR })}`,
+          description: (() => {
+            const m = receiptData.referenceMonth || format(new Date(), 'MMMM/yyyy', { locale: ptBR });
+            const capM = m.charAt(0).toUpperCase() + m.slice(1);
+            return `${formatRecordNumber(receiptData.number, receiptData.date)} - ${receiptData.clientName} - ${capM}`;
+          })(),
           origin: receiptData.number ? formatRecordNumber(receiptData.number, receiptData.date) : 'Recibo',
           value: Number(receiptData.value),
           date: Timestamp.now(), // Usar data atual do recebimento
@@ -6154,6 +6178,9 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
       
       const receiptData = {
         ...newReceipt,
+        serviceSpecification: newReceipt.clientType === 'Contrato' 
+          ? `Serviço Contratual - ${newReceipt.referenceMonth || ''}` 
+          : newReceipt.serviceSpecification,
         pixAccountId: newReceipt.pixAccountId || null,
         number: formattedNumber,
         status: newReceipt.status || 'Aguardando Pagamento',
@@ -6179,7 +6206,10 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
         value: 0, 
         paymentMethod: 'PIX',
         status: 'Aguardando Pagamento',
-        referenceMonth: format(new Date(), 'MMMM/yyyy', { locale: ptBR }),
+        referenceMonth: (() => {
+          const m = format(new Date(), 'MMMM/yyyy', { locale: ptBR });
+          return m.charAt(0).toUpperCase() + m.slice(1);
+        })(),
         observations: ''
       });
       setIsAddOpen(false);
@@ -6203,6 +6233,9 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
       const { id, ...data } = editingReceipt;
       const receiptData = {
         ...data,
+        serviceSpecification: data.clientType === 'Contrato' 
+          ? `Serviço Contratual - ${data.referenceMonth || ''}` 
+          : data.serviceSpecification,
         pixAccountId: editingReceipt.pixAccountId || null,
         date: editingReceipt.date instanceof Timestamp ? editingReceipt.date : Timestamp.fromDate(new Date(editingReceipt.date))
       };
@@ -6390,14 +6423,16 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                         clientId: client.id,
                         clientName: client.name,
                         clientType: client.type || 'Avulso',
-                        serviceSpecification: client.type === 'Contrato' ? (client.serviceSpecification || '') : '',
+                        serviceSpecification: client.type === 'Contrato' ? `Serviço Contratual - ${newReceipt.referenceMonth || ''}` : '',
                         value: client.type === 'Contrato' ? (client.contractValue || 0) : 0,
                         pixAccountId: client.pixAccountId
                       });
                     }
                   }}>
-                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue placeholder="Escolha um cliente..." />
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white tracking-widest uppercase text-[10px] font-black h-10">
+                      <SelectValue placeholder="Escolha um cliente...">
+                        {newReceipt.clientId ? clients.find(c => c.id === newReceipt.clientId)?.name : "Escolha um cliente..."}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       <div className="p-2 sticky top-0 bg-[#1a1d23] z-10 border-b border-[#2d3139]">
@@ -6437,7 +6472,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                           ...newReceipt, 
                           clientType: val,
                           // If switching to contract and we have a client name, try to find their contract info
-                          serviceSpecification: isContract ? (client?.serviceSpecification || newReceipt.serviceSpecification) : newReceipt.serviceSpecification,
+                          serviceSpecification: isContract ? `Serviço Contratual - ${newReceipt.referenceMonth || ''}` : newReceipt.serviceSpecification,
                           value: isContract ? (client?.contractValue || newReceipt.value) : newReceipt.value
                         });
                       }}
@@ -6490,7 +6525,14 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="refMonth" className="text-[#a0a0a0]">Mês de Referência</Label>
-                    <Input id="refMonth" value={newReceipt.referenceMonth || ''} onChange={e => setNewReceipt({...newReceipt, referenceMonth: e.target.value})} placeholder="Ex: Janeiro/2024" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    <Input id="refMonth" value={newReceipt.referenceMonth || ''} onChange={e => {
+                      const month = e.target.value;
+                      setNewReceipt({
+                        ...newReceipt, 
+                        referenceMonth: month,
+                        serviceSpecification: newReceipt.clientType === 'Contrato' ? `Serviço Contratual - ${month}` : newReceipt.serviceSpecification
+                      });
+                    }} placeholder="Ex: Janeiro/2024" className="bg-[#0f1115] border-[#2d3139] text-white" />
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -6508,7 +6550,14 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                 </div>
                 <div className="space-y-2">
                   <Label className="text-[#a0a0a0]">Status do Pagamento</Label>
-                  <Select value={newReceipt.status} onValueChange={(val: any) => setNewReceipt({...newReceipt, status: val})}>
+                  <Select value={newReceipt.status} onValueChange={(val: any) => {
+                    let obs = newReceipt.observations || '';
+                    const statusNote = 'Recibo Valido Mediante Comprovante do PIX';
+                    if (val === 'Aguardando Pagamento' && !obs.includes(statusNote)) {
+                      obs = obs ? `${obs}\n${statusNote}` : statusNote;
+                    }
+                    setNewReceipt({...newReceipt, status: val, observations: obs});
+                  }}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
                       <SelectValue />
                     </SelectTrigger>
@@ -6523,8 +6572,10 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Conta PIX para Recebimento</Label>
                     <Select value={newReceipt.pixAccountId} onValueChange={(val) => setNewReceipt({...newReceipt, pixAccountId: val})}>
-                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                        <SelectValue placeholder="Selecione a conta PIX" />
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white tracking-widest uppercase text-[10px] font-black h-10">
+                        <SelectValue placeholder="Selecione a conta PIX">
+                          {newReceipt.pixAccountId ? pixSettings.accounts?.find(a => a.id === newReceipt.pixAccountId)?.label : "Selecione a conta PIX"}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         {pixSettings.accounts?.map(acc => (
@@ -6570,9 +6621,9 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
             </DialogHeader>
             <DialogFooter className="gap-2 sm:gap-0 mt-4">
               <Button variant="outline" onClick={() => setIsReceiptConfirmOpen(false)} className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white">Não, apenas salvar</Button>
-              <Button onClick={() => {
+              <Button onClick={async () => {
                 if (pendingReceiptForPdf) {
-                  generateReceiptPDF(pendingReceiptForPdf, appSettings, pixSettings);
+                  await generateReceiptPDF(pendingReceiptForPdf, appSettings, pixSettings);
                 }
                 setIsReceiptConfirmOpen(false);
               }} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white">Sim, Gerar PDF</Button>
@@ -6602,7 +6653,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                         setEditingReceipt({
                           ...editingReceipt, 
                           clientType: val,
-                          serviceSpecification: isContract ? (client?.serviceSpecification || editingReceipt.serviceSpecification) : editingReceipt.serviceSpecification,
+                          serviceSpecification: isContract ? `Serviço Contratual - ${editingReceipt.referenceMonth || ''}` : editingReceipt.serviceSpecification,
                           value: isContract ? (client?.contractValue || editingReceipt.value) : editingReceipt.value
                         });
                       }}
@@ -6645,7 +6696,14 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="editRefMonth" className="text-[#a0a0a0]">Mês de Referência</Label>
-                      <Input id="editRefMonth" value={editingReceipt.referenceMonth || ''} onChange={e => setEditingReceipt({...editingReceipt, referenceMonth: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                      <Input id="editRefMonth" value={editingReceipt.referenceMonth || ''} onChange={e => {
+                        const month = e.target.value;
+                        setEditingReceipt({
+                          ...editingReceipt, 
+                          referenceMonth: month,
+                          serviceSpecification: editingReceipt.clientType === 'Contrato' ? `Serviço Contratual - ${month}` : editingReceipt.serviceSpecification
+                        });
+                      }} className="bg-[#0f1115] border-[#2d3139] text-white" />
                     </div>
                   </div>
                   <div className="space-y-2">
@@ -6663,7 +6721,14 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                   </div>
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Status do Pagamento</Label>
-                    <Select value={editingReceipt.status || ''} onValueChange={(val: any) => setEditingReceipt({...editingReceipt, status: val})}>
+                    <Select value={editingReceipt.status || ''} onValueChange={(val: any) => {
+                      let obs = editingReceipt.observations || '';
+                      const statusNote = 'Recibo Valido Mediante Comprovante do PIX';
+                      if (val === 'Aguardando Pagamento' && !obs.includes(statusNote)) {
+                        obs = obs ? `${obs}\n${statusNote}` : statusNote;
+                      }
+                      setEditingReceipt({...editingReceipt, status: val, observations: obs});
+                    }}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
                         <SelectValue />
                       </SelectTrigger>
@@ -6793,9 +6858,9 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                       }}>
                         <Eye size={12} />
                       </Button>
-                      <Button variant="outline" size="icon" title="Gerar PDF" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={(e) => {
+                      <Button variant="outline" size="icon" title="Gerar PDF" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={async (e) => {
                         e.stopPropagation();
-                        generateReceiptPDF(receipt, appSettings, pixSettings);
+                        await generateReceiptPDF(receipt, appSettings, pixSettings);
                       }}>
                         <Share2 size={12} />
                       </Button>
@@ -6927,8 +6992,8 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
 
           <DialogFooter className="mt-8 border-t border-[#2d3139] pt-6 flex gap-2">
             <Button variant="outline" onClick={() => setIsViewOpen(false)} className="border-[#2d3139]">Fechar</Button>
-            <Button className="bg-[#3b82f6] hover:bg-[#2563eb]" onClick={() => {
-              if (viewingReceipt) generateReceiptPDF(viewingReceipt, appSettings, pixSettings);
+            <Button className="bg-[#3b82f6] hover:bg-[#2563eb]" onClick={async () => {
+              if (viewingReceipt) await generateReceiptPDF(viewingReceipt, appSettings, pixSettings);
             }}>
               Gerar PDF
             </Button>
@@ -10856,11 +10921,19 @@ function VisitsManager({
         const formattedNumber = getNextFormattedNumber(receipts || [], 'RC-');
 
         // 1. Create Receipt Data
+        const currentMonth = (() => {
+          const m = format(new Date(), 'MMMM/yyyy', { locale: ptBR });
+          return m.charAt(0).toUpperCase() + m.slice(1);
+        })();
+
         const receiptData = {
           number: formattedNumber,
           clientName: visit.clientName,
           clientType: client?.type || 'Avulso',
-          serviceSpecification: visit.description || visit.type,
+          referenceMonth: currentMonth,
+          serviceSpecification: (client?.type === 'Contrato') 
+            ? `Serviço Contratual - ${currentMonth}` 
+            : (visit.description || visit.type),
           value: visit.totalValue || 0,
           paymentMethod: 'PIX' as const, 
           date: Timestamp.now(),
@@ -10876,7 +10949,7 @@ function VisitsManager({
 
         // 3. Automatically generate PDF for the automated receipt
         const fullReceipt = { id: receiptRef.id, ...receiptData } as Receipt;
-        generateReceiptPDF(fullReceipt, appSettings, pixSettings);
+        await generateReceiptPDF(fullReceipt, appSettings, pixSettings);
         
         toast.success('Recibo emitido (Aguardando Pagamento).');
       }
@@ -13345,8 +13418,10 @@ function ServiceOrdersManager({
                       contactName: c.responsible || ''
                     });
                   }}>
-                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
-                      <SelectValue placeholder="Selecione um cliente" />
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white tracking-widest uppercase text-[10px] font-black h-10">
+                      <SelectValue placeholder="Selecione um cliente">
+                        {newOS.clientId ? clients.find(c => c.id === newOS.clientId)?.name : "Selecione um cliente"}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       <div className="p-2 border-b border-[#2d3139]">
@@ -13369,8 +13444,10 @@ function ServiceOrdersManager({
                     const u = users.find(usr => usr.uid === val);
                     if (u) setNewOS({ ...newOS, technicianId: u.uid, technicianName: u.displayName || u.email });
                   }}>
-                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
-                      <SelectValue placeholder="Selecione o técnico" />
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white tracking-widest uppercase text-[10px] font-black h-10">
+                      <SelectValue placeholder="Selecione o técnico">
+                        {newOS.technicianId ? users.find(u => u.uid === newOS.technicianId)?.displayName || users.find(u => u.uid === newOS.technicianId)?.email : "Selecione o técnico"}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       {users.map(u => <SelectItem key={u.uid} value={u.uid}>{u.displayName || u.email}</SelectItem>)}
@@ -13971,8 +14048,8 @@ function ServiceOrdersManager({
           <DialogFooter className="flex flex-col sm:flex-row gap-2">
             <Button 
               variant="outline" 
-              onClick={() => {
-                if (selectedOSForPDF) generateServiceOrderPDF(selectedOSForPDF, appSettings, pixSettings, false);
+              onClick={async () => {
+                if (selectedOSForPDF) await generateServiceOrderPDF(selectedOSForPDF, appSettings, pixSettings, false);
                 setIsValuesModalOpen(false);
               }} 
               className="flex-1 border-[#2d3139] text-white hover:bg-[#2d3139]"
@@ -13980,8 +14057,8 @@ function ServiceOrdersManager({
               Não (Sem Valores)
             </Button>
             <Button 
-              onClick={() => {
-                if (selectedOSForPDF) generateServiceOrderPDF(selectedOSForPDF, appSettings, pixSettings, true);
+              onClick={async () => {
+                if (selectedOSForPDF) await generateServiceOrderPDF(selectedOSForPDF, appSettings, pixSettings, true);
                 setIsValuesModalOpen(false);
               }} 
               className="flex-1 bg-[#3b82f6] hover:bg-[#2563eb] text-white"
@@ -14523,6 +14600,17 @@ function BudgetsManager({
           doc.setFont('helvetica', 'normal');
           doc.text(`Chave: ${selectedPix.key} - Banco: ${selectedPix.bank}`, 20, finalY + 7);
           doc.text(`Favorecido: ${selectedPix.favored} - CPF/CNPJ: ${selectedPix.document || ''}`, 20, finalY + 12);
+          
+          // QR Code PIX
+          try {
+            const qrSize = 35;
+            const qrContent = selectedPix.qrKey || selectedPix.key;
+            const qrDataUrl = await QRCode.toDataURL(qrContent, { margin: 1, width: 150 });
+            doc.addImage(qrDataUrl, 'PNG', 150, finalY, qrSize, qrSize);
+          } catch (e) {
+            console.error("Error generating PIX QR Code for Budget", e);
+          }
+
           finalY += 15;
         }
       }
@@ -14709,8 +14797,10 @@ function BudgetsManager({
                       });
                     }
                   }}>
-                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue placeholder="Escolha um cliente..." />
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white tracking-widest uppercase text-[10px] font-black h-10">
+                      <SelectValue placeholder="Escolha um cliente...">
+                        {newBudget.clientId ? clients.find(c => c.id === newBudget.clientId)?.name : "Escolha um cliente..."}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       <div className="p-2 sticky top-0 bg-[#1a1d23] z-10 border-b border-[#2d3139]">
@@ -14960,8 +15050,10 @@ function BudgetsManager({
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Conta PIX (Para exibir no orçamento)</Label>
                     <Select value={newBudget.pixAccountId} onValueChange={(val) => setNewBudget({...newBudget, pixAccountId: val})}>
-                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                        <SelectValue placeholder="Selecione a conta PIX" />
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white tracking-widest uppercase text-[10px] font-black h-10">
+                        <SelectValue placeholder="Selecione a conta PIX">
+                          {newBudget.pixAccountId ? pixSettings.accounts?.find(a => a.id === newBudget.pixAccountId)?.label : "Selecione a conta PIX"}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         {pixSettings.accounts?.map(acc => (
@@ -16135,7 +16227,8 @@ function PDVManager({
   };
 
   return (
-    <div className="p-2 md:p-4 h-full flex flex-col gap-2 md:gap-3 bg-[#0f1115] overflow-hidden">
+    <div className="flex flex-col h-full bg-[#0f1115] overflow-y-auto bento-scrollbar">
+      <div className="p-2 md:p-4 flex flex-col gap-2 md:gap-3 min-h-fit">
       {/* Header Hotkeys Barra Superior */}
       <div className="flex-shrink-0 flex items-center justify-between gap-2 p-2 px-4 rounded-xl bg-[#1a1d23] border border-[#2d3139] shadow-lg">
         <div className="flex-1 flex flex-wrap items-center gap-2 md:gap-5 text-[10px] font-black uppercase tracking-tighter text-[#71717a]">
@@ -16208,7 +16301,7 @@ function PDVManager({
       {/* Main Content Area: Cart + Summary */}
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-3 overflow-hidden">
         {/* Main Cart Area */}
-        <Card className="lg:col-span-8 flex flex-col min-h-0 bg-[#1a1d23] border-[#2d3139] overflow-hidden shadow-2xl">
+        <Card className="lg:col-span-8 flex flex-col min-h-[400px] bg-[#1a1d23] border-[#2d3139] overflow-hidden shadow-2xl">
         <div className="flex-shrink-0 p-3 md:p-4 bg-[#0f1115]/80 border-b border-[#2d3139] flex items-center justify-between">
           <Label className="text-[11px] font-black text-white uppercase tracking-widest">Itens do Carrinho</Label>
           <div className="flex items-center gap-4">
@@ -16632,7 +16725,7 @@ function PDVManager({
                           </div>
                           <div className="bg-white p-2 rounded-lg">
                             <QRCodeCanvas 
-                              value={acc.key || ''} 
+                              value={acc.qrKey || acc.key || ''} 
                               size={100}
                               level="H"
                               includeMargin={true}
@@ -16897,6 +16990,7 @@ function PDVManager({
         </DialogContent>
       </Dialog>
     </div>
+  </div>
   );
 }
 
