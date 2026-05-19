@@ -369,7 +369,7 @@ function TableDoubleScroll({ children }: { children: React.ReactNode }) {
     if (topScrollRef.current && bottomScrollRef.current) {
       isScrollingTop.current = true;
       bottomScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
-      setTimeout(() => { isScrollingTop.current = false; }, 100);
+      setTimeout(() => { isScrollingTop.current = false; }, 50);
     }
   };
 
@@ -378,7 +378,7 @@ function TableDoubleScroll({ children }: { children: React.ReactNode }) {
     if (topScrollRef.current && e.target) {
       isScrollingBottom.current = true;
       topScrollRef.current.scrollLeft = e.target.scrollLeft;
-      setTimeout(() => { isScrollingBottom.current = false; }, 100);
+      setTimeout(() => { isScrollingBottom.current = false; }, 50);
     }
   };
 
@@ -393,7 +393,7 @@ function TableDoubleScroll({ children }: { children: React.ReactNode }) {
           const contentWidth = bottomWrapper.scrollWidth;
           topInner.style.width = `${contentWidth}px`;
           
-          if (contentWidth > bottomWrapper.clientWidth) {
+          if (contentWidth > bottomWrapper.clientWidth + 5) {
             topScrollRef.current.style.display = 'block';
           } else {
             topScrollRef.current.style.display = 'none';
@@ -402,18 +402,54 @@ function TableDoubleScroll({ children }: { children: React.ReactNode }) {
       }
     };
 
+    // Run synchronization initially
+    syncWidth();
+    const t = setTimeout(syncWidth, 100);
+
+    // Watch resize of bottom container
     const resizeObserver = new ResizeObserver(() => {
       syncWidth();
     });
-
-    const table = bottomWrapper.querySelector('table');
-    if (table) resizeObserver.observe(table);
     resizeObserver.observe(bottomWrapper);
-    
-    syncWidth();
+
+    // Watch resize of any nested first child inside bottomWrapper (the table)
+    let observedElement: Element | null = null;
+    const updateObservation = () => {
+      if (observedElement) {
+        resizeObserver.unobserve(observedElement);
+      }
+      const newTarget = bottomWrapper.firstElementChild;
+      if (newTarget) {
+        resizeObserver.observe(newTarget);
+        observedElement = newTarget;
+      }
+      syncWidth();
+    };
+
+    updateObservation();
+
+    // Setup mutation observer to watch inside the bottom scroll wrapper for row or list loads
+    const mutationObserver = new MutationObserver(() => {
+      updateObservation();
+    });
+    mutationObserver.observe(bottomWrapper, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+
+    // Handle window resize dynamically
+    window.addEventListener('resize', syncWidth);
+
+    // Bulletproof periodic synchronization container width fallback
+    const syncInterval = setInterval(syncWidth, 1000);
 
     return () => {
+      clearTimeout(t);
       resizeObserver.disconnect();
+      mutationObserver.disconnect();
+      window.removeEventListener('resize', syncWidth);
+      clearInterval(syncInterval);
     };
   }, [children]);
 
@@ -422,9 +458,10 @@ function TableDoubleScroll({ children }: { children: React.ReactNode }) {
       <div 
         ref={topScrollRef} 
         onScroll={handleTopScroll}
-        className="w-full overflow-x-auto overflow-y-hidden h-[12px] bg-[#0f1115] border-b border-[#2d3139]/30 rounded-t-lg transition-all"
+        className="w-full overflow-x-auto overflow-y-hidden h-[12px] bg-[#0f1115] border-b border-[#2d3139]/30 rounded-t-lg transition-all custom-scrollbar"
+        style={{ display: 'none' }}
       >
-        <div style={{ height: '1px' }} />
+        <div style={{ height: '1px', marginBottom: '-1px' }} />
       </div>
 
       <div 
@@ -11713,7 +11750,9 @@ function VisitsManager({
                 <X size={12} />
               </Button>
             )}
+          </div>
         </div>
+
         <div className="flex items-center gap-2">
           <div className="flex items-center bg-[#1a1d23] border border-[#2d3139] p-1 rounded-lg">
               <Button 
@@ -12554,7 +12593,6 @@ function VisitsManager({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
     </div>
   );
 }
