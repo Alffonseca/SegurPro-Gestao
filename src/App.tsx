@@ -45,6 +45,8 @@ import {
   ShieldAlert,
   Lock,
   History,
+  LayoutGrid,
+  List,
   UserCog,
   Activity,
   Percent,
@@ -416,15 +418,15 @@ function TableDoubleScroll({ children }: { children: React.ReactNode }) {
   }, [children]);
 
   return (
-    <div className="flex flex-col w-full relative">
+    <div className="flex flex-col w-full relative group/scroll">
       <div 
         ref={topScrollRef} 
         onScroll={handleTopScroll}
-        className="overflow-x-auto overflow-y-hidden mb-1 hidden md:block border-b border-[#2d3139]/30 sticky top-0 bg-[#0f1115] z-10"
-        style={{ height: '12px', scrollbarWidth: 'thin' }}
+        className="w-full overflow-x-auto overflow-y-hidden h-[12px] bg-[#0f1115] border-b border-[#2d3139]/30 rounded-t-lg transition-all"
       >
         <div style={{ height: '1px' }} />
       </div>
+
       <div 
         ref={bottomScrollRef} 
         onScroll={handleBottomScroll}
@@ -1445,9 +1447,13 @@ const generateReceiptPDF = async (receipt: Receipt, appSettings: AppSettings, pi
   doc.setFont('helvetica', 'normal');
   let serviceText = receipt.serviceSpecification || 'Serviços prestados';
   if (receipt.clientType === 'Contrato') {
+    // If it's a contract, we force the Service Contractual - Month format
     if (receipt.referenceMonth) {
       serviceText = `Serviço Contratual - ${receipt.referenceMonth}`;
-    } else if (!serviceText || serviceText === 'Serviços prestados') {
+    } else if (receipt.serviceSpecification) {
+      // If no reference month specifically, use the specification which might already contain it
+      serviceText = receipt.serviceSpecification;
+    } else {
       serviceText = 'Serviço Contratual';
     }
   } else if (receipt.referenceMonth && receipt.clientType !== 'Avulso') {
@@ -4494,6 +4500,7 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
   const [newPassword, setNewPassword] = useState('');
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<any>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
 
   const handleAddUser = async () => {
     if (!newUser.name || !newUser.email || !newUser.password) {
@@ -4768,12 +4775,70 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
       </div>
 
       {showList ? (
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative">
-          <TableDoubleScroll>
-          <Table>
+        viewMode === 'grid' ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 overflow-y-auto max-h-[700px] p-1 custom-scrollbar">
+            {users.length === 0 ? (
+              <div className="col-span-full p-12 text-center bg-[#1a1d23] border border-dashed border-[#2d3139] rounded-xl">
+                 Nenhum usuário encontrado.
+              </div>
+            ) : (
+              users.map((u) => (
+                <Card key={u.id} className="bg-[#1a1d23] border border-[#2d3139] overflow-hidden hover:border-[#3b82f6]/50 transition-all p-4 flex flex-col gap-3 relative group">
+                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-[#a0a0a0] hover:text-[#3b82f6] bg-[#0f1115]/80 backdrop-blur-sm" onClick={() => {
+                          setEditingUser(u);
+                          setIsEditOpen(true);
+                      }}>
+                        <Pencil size={12} />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-[#ef4444] hover:bg-[#ef4444]/20 bg-[#0f1115]/80 backdrop-blur-sm" onClick={() => {
+                          setUserToDelete(u);
+                          setIsDeleteConfirmOpen(true);
+                      }}>
+                        <Trash2 size={12} />
+                      </Button>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                       <div className={`w-2.5 h-2.5 rounded-full ${
+                          (u.lastSeen && Date.now() - u.lastSeen.toDate().getTime() < 300000) 
+                            ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' 
+                            : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'
+                        }`} />
+                       <h3 className="font-bold text-white text-sm truncate pr-14">{u.displayName}</h3>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge className={cn(
+                        "font-semibold text-[9px] uppercase tracking-wider h-4",
+                        u.role === 'owner' ? "bg-amber-500/20 text-amber-500 border border-amber-500/30" :
+                        u.role === 'admin' ? "bg-purple-500/10 text-purple-500" : 
+                        u.role === 'secretaria' ? "bg-pink-500/10 text-pink-500" : 
+                        u.role === 'tecnico' ? "bg-blue-500/10 text-blue-500" :
+                        "bg-yellow-500/10 text-yellow-500"
+                      )}>
+                        {userRoles.find(r => r.id === u.role)?.label || u.role}
+                      </Badge>
+                      <span className="text-[10px] text-[#71717a]">{u.email}</span>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-[#2d3139]/50 mt-1">
+                    <div className="flex items-center justify-between text-[11px] text-[#a0a0a0]">
+                      <span>Cadastrado em:</span>
+                      <span className="font-medium text-white">{u.createdAt ? format(u.createdAt instanceof Timestamp ? u.createdAt.toDate() : new Date(u.createdAt), 'dd/MM/yyyy') : '-'}</span>
+                    </div>
+                  </div>
+                </Card>
+              ))
+            )}
+          </div>
+        ) : (
+          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative">
+            <TableDoubleScroll>
+            <Table>
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[60px]">Ações</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">Status</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Usuário</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">E-mail</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Nível</TableHead>
@@ -4809,15 +4874,20 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
                       </Button>
                     </div>
                   </TableCell>
-                  <TableCell className="font-medium text-white text-[13px]">
-                    <div className="flex items-center gap-2">
+                  <TableCell>
+                    <div className="flex items-center gap-1.5">
                        <div className={`w-2.5 h-2.5 rounded-full ${
                           (u.lastSeen && Date.now() - u.lastSeen.toDate().getTime() < 300000) 
                             ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' 
                             : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'
-                        }`} title={u.lastSeen ? `Visto em: ${format(u.lastSeen.toDate(), 'dd/MM/yy HH:mm')}` : 'Nunca entrou'} />
-                       {u.displayName}
+                       }`} title={u.lastSeen ? `Visto em: ${format(u.lastSeen.toDate(), 'dd/MM/yy HH:mm')}` : 'Nunca entrou'} />
+                       <span className="text-[10px] font-bold uppercase tracking-tighter text-[#71717a]">
+                        {(u.lastSeen && Date.now() - u.lastSeen.toDate().getTime() < 300000) ? 'Ativo' : 'Inativo'}
+                       </span>
                     </div>
+                  </TableCell>
+                  <TableCell className="font-medium text-white text-[13px]">
+                     {u.displayName}
                   </TableCell>
                   <TableCell className="text-[12px] text-[#e0e0e0]">{u.email}</TableCell>
                   <TableCell>
@@ -4841,7 +4911,7 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
           </Table>
           </TableDoubleScroll>
         </Card>
-      ) : (
+      )) : (
         <NoAccessList title="Equipe" />
       )}
 
@@ -4977,6 +5047,7 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [newClient, setNewClient] = useState<Partial<Client>>({
     type: 'Avulso',
@@ -4988,6 +5059,7 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [clientToDelete, setClientToDelete] = useState<Client | null>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
 
   useEffect(() => {
     if (externalEditAction && onExternalEditHandled) {
@@ -5150,13 +5222,40 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white h-11 px-8 font-bold shadow-lg shadow-blue-500/10">
-              <Plus size={18} />
-              NOVO CLIENTE
+        <div className="flex items-center gap-2 flex-1 md:flex-none">
+          <div className="flex bg-[#1a1d23] p-1 rounded-lg border border-[#2d3139]">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setViewMode('table')}
+              className={cn(
+                "h-9 px-3 rounded-md transition-all",
+                viewMode === 'table' ? "bg-[#3b82f6] text-white" : "text-[#71717a] hover:text-white"
+              )}
+            >
+              <List size={16} className="mr-2" />
+              <span className="text-xs font-bold uppercase">Lista</span>
             </Button>
-          </DialogTrigger>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setViewMode('grid')}
+              className={cn(
+                "h-9 px-3 rounded-md transition-all",
+                viewMode === 'grid' ? "bg-[#3b82f6] text-white" : "text-[#71717a] hover:text-white"
+              )}
+            >
+              <LayoutGrid size={16} className="mr-2" />
+              <span className="text-xs font-bold uppercase">Colunas</span>
+            </Button>
+          </div>
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+            <DialogTrigger asChild>
+              <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white h-11 px-8 font-bold shadow-lg shadow-blue-500/10 whitespace-nowrap">
+                <Plus size={18} />
+                NOVO CLIENTE
+              </Button>
+            </DialogTrigger>
           <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[85vh] overflow-hidden flex flex-col p-0 sm:max-w-[700px] shadow-2xl">
             <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Cadastrar Novo Cliente</DialogTitle>
@@ -5540,8 +5639,74 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </div>
 
       {showList ? (
+        viewMode === 'grid' ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 overflow-y-auto max-h-[700px] p-1 custom-scrollbar">
+            {filteredClients.length === 0 ? (
+              <div className="col-span-full p-12 text-center bg-[#1a1d23] border border-dashed border-[#2d3139] rounded-xl font-bold">
+                 Nenhum cliente encontrado.
+              </div>
+            ) : (
+              filteredClients.map((client) => (
+                <Card key={client.id} className="bg-[#1a1d23] border border-[#2d3139] overflow-hidden hover:border-[#3b82f6]/50 transition-all p-4 flex flex-col gap-3 relative group shadow-lg">
+                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-[#a0a0a0] hover:text-white bg-[#0f1115]/80 backdrop-blur-sm" onClick={() => onEditClick('contract', client)}>
+                        <Pencil size={12} />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-[#ef4444] hover:bg-[#ef4444]/10 bg-[#0f1115]/80 backdrop-blur-sm" onClick={() => {
+                        setClientToDelete(client);
+                        setIsDeleteConfirmOpen(true);
+                      }}>
+                        <Trash2 size={12} />
+                      </Button>
+                  </div>
+                  <div className="flex flex-col gap-1 pt-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-white text-sm truncate pr-16" title={client.name}>{client.name || 'Sem Nome'}</h3>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className={cn(
+                        "text-[9px] uppercase border-[#2d3139] px-1 h-4",
+                        client.type === 'Contrato' ? "text-[#3b82f6] border-[#3b82f6]/30 bg-[#3b82f6]/5" : "text-[#a0a0a0]"
+                      )}>
+                        {client.type || 'Avulso'}
+                      </Badge>
+                      <span className="text-[10px] text-[#71717a]">{client.document || 'Sem Documento'}</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 pt-2 border-t border-[#2d3139]/50 mt-1">
+                    <div className="flex items-center gap-2 text-[11px] text-[#a0a0a0]">
+                      <Phone size={10} className="text-[#3b82f6]" />
+                      <span className="truncate">{client.phone || 'Sem Telefone'}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] text-[#a0a0a0]">
+                      <User size={10} className="text-[#3b82f6]" />
+                      <span className="truncate">{client.email || 'Sem Email'}</span>
+                    </div>
+                    <div className="flex items-start gap-2 text-[11px] text-[#a0a0a0]">
+                      <PenTool size={10} className="text-[#3b82f6] mt-0.5 flex-shrink-0" />
+                      <span className="line-clamp-1 italic">{client.address || 'Sem endereço'}</span>
+                    </div>
+                  </div>
+                  <div className="mt-auto pt-2">
+                    {client.type === 'Contrato' && (
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="w-full h-8 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10 text-xs font-bold"
+                        onClick={() => generateContractPDF(client, appSettings, pixSettings)}
+                      >
+                        <FileText size={12} className="mr-2" /> Gerar Contrato
+                      </Button>
+                    )}
+                  </div>
+                </Card>
+              ))
+            )}
+          </div>
+        ) : (
         <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative">
           <TableDoubleScroll>
           <Table>
@@ -5629,7 +5794,7 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
           </Table>
           </TableDoubleScroll>
         </Card>
-      ) : (
+      )) : (
         <NoAccessList title="Clientes" />
       )}
 
@@ -5696,6 +5861,7 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [supplierToDelete, setSupplierToDelete] = useState<Supplier | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
 
   const filteredSuppliers = useMemo(() => {
     return (suppliers || []).filter(s => 
@@ -5779,6 +5945,32 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
+        <div className="flex bg-[#1a1d23] p-1 rounded-lg border border-[#2d3139]">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setViewMode('table')}
+            className={cn(
+              "h-9 px-3 rounded-md transition-all",
+              viewMode === 'table' ? "bg-[#3b82f6] text-white" : "text-[#71717a] hover:text-white"
+            )}
+          >
+            <List size={16} className="mr-2" />
+            <span className="text-xs font-bold uppercase">Lista</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setViewMode('grid')}
+            className={cn(
+              "h-9 px-3 rounded-md transition-all",
+              viewMode === 'grid' ? "bg-[#3b82f6] text-white" : "text-[#71717a] hover:text-white"
+            )}
+          >
+            <LayoutGrid size={16} className="mr-2" />
+            <span className="text-xs font-bold uppercase">Colunas</span>
+          </Button>
+        </div>
         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
           <DialogTrigger asChild>
             <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white h-11 px-8 font-bold shadow-lg shadow-blue-500/10">
@@ -5850,9 +6042,60 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
         </div>
 
       {showList ? (
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] shadow-2xl">
-          <TableDoubleScroll>
-          <Table>
+        viewMode === 'grid' ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 overflow-y-auto max-h-[700px] p-1 custom-scrollbar">
+            {filteredSuppliers.length === 0 ? (
+              <div className="col-span-full p-12 text-center bg-[#1a1d23] border border-dashed border-[#2d3139] rounded-xl">
+                 Nenhum fornecedor encontrado.
+              </div>
+            ) : (
+              filteredSuppliers.map((supplier) => (
+                <Card key={supplier.id} className="bg-[#1a1d23] border border-[#2d3139] overflow-hidden hover:border-[#3b82f6]/50 transition-all p-4 flex flex-col gap-3 relative group">
+                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-[#a0a0a0] hover:text-[#f59e0b] hover:bg-[#f59e0b]/10 bg-[#0f1115]/80 backdrop-blur-sm" onClick={() => {
+                        setEditingSupplier(supplier);
+                        setIsEditOpen(true);
+                      }}>
+                        <Pencil size={12} />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-[#ef4444] hover:bg-[#ef4444]/20 bg-[#0f1115]/80 backdrop-blur-sm" onClick={() => {
+                        setSupplierToDelete(supplier);
+                        setIsDeleteConfirmOpen(true);
+                      }}>
+                        <Trash2 size={12} />
+                      </Button>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <h3 className="font-bold text-white text-sm truncate pr-14" title={supplier.name}>{supplier.name || 'Sem Nome'}</h3>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-[9px] uppercase border-[#2d3139] text-[#a0a0a0] h-4">
+                        {supplier.activity || 'Geral'}
+                      </Badge>
+                      <span className="text-[10px] text-[#71717a]">REF: {supplier.registrationNumber || '-'}</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 pt-2 border-t border-[#2d3139]/50 mt-1">
+                    <div className="flex items-center gap-2 text-[11px] text-[#a0a0a0]">
+                      <Phone size={10} className="text-[#3b82f6]" />
+                      <span>{supplier.phone || 'Sem Telefone'}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] text-[#a0a0a0]">
+                      <User size={10} className="text-[#3b82f6]" />
+                      <span className="truncate">{supplier.contact || 'Sem Contato'}</span>
+                    </div>
+                    <div className="flex items-start gap-2 text-[11px] text-[#a0a0a0]">
+                      <PenTool size={10} className="text-[#3b82f6] mt-0.5 flex-shrink-0" />
+                      <span className="line-clamp-1 italic">{supplier.address || 'Sem endereço'}</span>
+                    </div>
+                  </div>
+                </Card>
+              ))
+            )}
+          </div>
+        ) : (
+          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] shadow-2xl">
+            <TableDoubleScroll>
+            <Table>
             <TableHeader>
               <TableRow className="border-[#2d3139] hover:bg-transparent">
                 <TableHead className="w-[40px] text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ações</TableHead>
@@ -5913,7 +6156,7 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
           </Table>
           </TableDoubleScroll>
         </Card>
-      ) : (
+      )) : (
         <NoAccessList title="Fornecedores" />
       )}
 
@@ -6034,6 +6277,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
   const [receiptToDelete, setReceiptToDelete] = useState<Receipt | null>(null);
   const [isReceiptConfirmOpen, setIsReceiptConfirmOpen] = useState(false);
   const [pendingReceiptForPdf, setPendingReceiptForPdf] = useState<Receipt | null>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
 
   // External edit action handler
   useEffect(() => {
@@ -6097,7 +6341,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
           type: 'Receita',
           category: receiptData.clientType === 'Contrato' ? 'Mensalidade Contrato' : 'Serviço Avulso',
           description: (() => {
-            const m = receiptData.referenceMonth || format(new Date(), 'MMMM/yyyy', { locale: ptBR });
+            const m = receiptData.referenceMonth || format(new Date(), 'MMMM/yyyy', { locale: ptBR }).replace(/^\w/, (c) => c.toUpperCase());
             const capM = m.charAt(0).toUpperCase() + m.slice(1);
             return `${formatRecordNumber(receiptData.number, receiptData.date)} - ${receiptData.clientName} - ${capM}`;
           })(),
@@ -6399,6 +6643,35 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                 <X size={12} />
               </Button>
             )}
+            
+            <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
+
+            <div className="flex bg-[#0f1115] p-1 rounded-lg border border-[#2d3139]/50">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setViewMode('table')}
+                className={cn(
+                  "h-6 px-2 rounded-md transition-all",
+                  viewMode === 'table' ? "bg-[#3b82f6] text-white" : "text-[#71717a] hover:text-white"
+                )}
+                title="Lista"
+              >
+                <List size={14} />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setViewMode('grid')}
+                className={cn(
+                  "h-6 px-2 rounded-md transition-all",
+                  viewMode === 'grid' ? "bg-[#3b82f6] text-white" : "text-[#71717a] hover:text-white"
+                )}
+                title="Colunas"
+              >
+                <LayoutGrid size={14} />
+              </Button>
+            </div>
           </div>
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger asChild>
@@ -6431,7 +6704,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                   }}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white tracking-widest uppercase text-[10px] font-black h-10">
                       <SelectValue placeholder="Escolha um cliente...">
-                        {newReceipt.clientId ? clients.find(c => c.id === newReceipt.clientId)?.name : "Escolha um cliente..."}
+                        {newReceipt.clientId ? (clients.find(c => c.id === newReceipt.clientId)?.name || "Cliente não encontrado") : "Escolha um cliente..."}
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
@@ -6574,7 +6847,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                     <Select value={newReceipt.pixAccountId} onValueChange={(val) => setNewReceipt({...newReceipt, pixAccountId: val})}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white tracking-widest uppercase text-[10px] font-black h-10">
                         <SelectValue placeholder="Selecione a conta PIX">
-                          {newReceipt.pixAccountId ? pixSettings.accounts?.find(a => a.id === newReceipt.pixAccountId)?.label : "Selecione a conta PIX"}
+                          {newReceipt.pixAccountId ? (pixSettings.accounts?.find(a => a.id === newReceipt.pixAccountId)?.label || "Conta não encontrada") : "Selecione a conta PIX"}
                         </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
@@ -6608,8 +6881,6 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
-    </div>
 
         <Dialog open={isReceiptConfirmOpen} onOpenChange={setIsReceiptConfirmOpen}>
           <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[400px]">
@@ -6780,6 +7051,8 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      </div>
+      </div>
 
       {!showList ? (
         <NoAccessList title="Recibos" />
@@ -6792,25 +7065,103 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
           </p>
         </div>
       ) : (
-        <Card 
-          className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (!filteredReceipts.length) return;
-            const currentIndex = filteredReceipts.findIndex(r => r.id === selectedRowId);
-            if (e.key === 'ArrowDown') {
-              const nextIndex = Math.min(currentIndex + 1, filteredReceipts.length - 1);
-              setSelectedRowId(filteredReceipts[nextIndex].id);
-              e.preventDefault();
-              document.getElementById(`receipt-${filteredReceipts[nextIndex].id}`)?.scrollIntoView({ block: 'nearest' });
-            } else if (e.key === 'ArrowUp') {
-              const nextIndex = Math.max(currentIndex - 1, 0);
-              setSelectedRowId(filteredReceipts[nextIndex].id);
-              e.preventDefault();
-              document.getElementById(`receipt-${filteredReceipts[nextIndex].id}`)?.scrollIntoView({ block: 'nearest' });
-            }
-          }}
-        >
+        viewMode === 'grid' ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 overflow-y-auto max-h-[700px] p-1 custom-scrollbar">
+            {filteredReceipts.length === 0 ? (
+              <div className="col-span-full p-12 text-center bg-[#1a1d23] border border-dashed border-[#2d3139] rounded-xl">
+                 Nenhum recibo encontrado.
+              </div>
+            ) : (
+              filteredReceipts.map((receipt) => (
+                <Card 
+                  key={receipt.id} 
+                  className={cn(
+                    "bg-[#1a1d23] border border-[#2d3139] overflow-hidden hover:border-[#3b82f6]/50 transition-all p-4 flex flex-col gap-3 relative group cursor-pointer",
+                    selectedRowId === receipt.id && "border-[#3b82f6] shadow-[0_0_15px_rgba(59,130,246,0.1)]"
+                  )}
+                  onClick={() => setSelectedRowId(receipt.id)}
+                >
+                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                      <Button variant="ghost" size="icon" title="Editar" className="h-7 w-7 text-[#a0a0a0] hover:text-white bg-[#0f1115]/80 backdrop-blur-sm" onClick={(e) => {
+                        e.stopPropagation();
+                        onEditClick('receipt', receipt);
+                      }}>
+                        <Pencil size={12} />
+                      </Button>
+                      <Button variant="ghost" size="icon" title="PDF" className="h-7 w-7 text-[#a0a0a0] hover:text-[#3b82f6] bg-[#0f1115]/80 backdrop-blur-sm" onClick={async (e) => {
+                        e.stopPropagation();
+                        await generateReceiptPDF(receipt, appSettings, pixSettings);
+                      }}>
+                        <Share2 size={12} />
+                      </Button>
+                      <Button variant="ghost" size="icon" title="Excluir" className="h-7 w-7 text-[#ef4444] hover:bg-[#ef4444]/20 bg-[#0f1115]/80 backdrop-blur-sm" onClick={(e) => {
+                        e.stopPropagation();
+                        setReceiptToDelete(receipt);
+                        setIsDeleteConfirmOpen(true);
+                      }}>
+                        <Trash2 size={12} />
+                      </Button>
+                  </div>
+                  
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono text-[#3b82f6] font-bold">#{receipt.number ? formatRecordNumber(receipt.number, receipt.date) : '-'}</span>
+                      <span className="text-[9px] text-[#71717a]">{format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), 'dd/MM/yyyy')}</span>
+                    </div>
+                    <h3 className="font-bold text-white text-sm truncate pr-14" title={receipt.clientName}>{receipt.clientName}</h3>
+                    <div className="flex items-center gap-2">
+                      <Badge className={cn(
+                        "text-[9px] uppercase tracking-tighter h-4 px-1.5",
+                        receipt.clientType === 'Contrato' ? "bg-purple-500/10 text-purple-400 border border-purple-500/20" : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                      )}>
+                        {receipt.clientType || 'Avulso'}
+                      </Badge>
+                      <span className="text-[10px] text-[#71717a] font-medium">{receipt.paymentMethod}</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 pt-2 border-t border-[#2d3139]/50 mt-1">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[10px] text-[#71717a] uppercase font-bold tracking-widest text-[8px]">Serviço</span>
+                      <span className="text-[11px] text-[#e0e0e0] line-clamp-1 italic">{receipt.serviceSpecification}</span>
+                    </div>
+                    
+                    <div className="flex items-center justify-between mt-2">
+                       <span className="text-sm font-black text-white">R$ {Number(receipt.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                       <Badge className={cn(
+                         "text-[9px] uppercase font-black px-2 h-5 shadow-sm",
+                         receipt.status === 'Recebido' 
+                           ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shadow-emerald-500/5" 
+                           : "bg-amber-500/10 text-amber-500 border border-amber-500/20 shadow-amber-500/5"
+                       )}>
+                         {receipt.status || 'Pendente'}
+                       </Badge>
+                    </div>
+                  </div>
+                </Card>
+              ))
+            )}
+          </div>
+        ) : (
+          <Card 
+            className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (!filteredReceipts.length) return;
+              const currentIndex = filteredReceipts.findIndex(r => r.id === selectedRowId);
+              if (e.key === 'ArrowDown') {
+                const nextIndex = Math.min(currentIndex + 1, filteredReceipts.length - 1);
+                setSelectedRowId(filteredReceipts[nextIndex].id);
+                e.preventDefault();
+                document.getElementById(`receipt-${filteredReceipts[nextIndex].id}`)?.scrollIntoView({ block: 'nearest' });
+              } else if (e.key === 'ArrowUp') {
+                const nextIndex = Math.max(currentIndex - 1, 0);
+                setSelectedRowId(filteredReceipts[nextIndex].id);
+                e.preventDefault();
+                document.getElementById(`receipt-${filteredReceipts[nextIndex].id}`)?.scrollIntoView({ block: 'nearest' });
+              }
+            }}
+          >
           <div className="p-4 border-b border-[#2d3139] flex justify-between items-center bg-[#1a1d23] sticky top-0 z-20">
             <span className="text-sm text-[#71717a] font-medium uppercase tracking-wider">Filtro de Status</span>
             <div className="flex gap-2">
@@ -6831,11 +7182,11 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
           <Table>
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">Ações</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[80px]">Nº / Data</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Informações do Cliente</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Conta / Pagamento</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">VALOR/STATUS</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[140px]">AÇÕES</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[150px]">STATUS / VALOR</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">INFORMAÇÃO DO CLIENTE</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">CONTA / PAGAMENTO</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">Nº / DATA</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -6849,7 +7200,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                     selectedRowId === receipt.id ? "bg-blue-500/10" : "hover:bg-[#25282e]/30"
                   )}
                 >
-                  <TableCell className="w-[150px] p-2">
+                  <TableCell className="w-[140px] p-2">
                     <div className="flex items-center gap-1.5 flex-nowrap">
                       <Button variant="outline" size="icon" title="Ver Detalhes" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={(e) => {
                         e.stopPropagation();
@@ -6879,34 +7230,14 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                       </Button>
                     </div>
                   </TableCell>
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="text-[11px] font-mono text-[#3b82f6] font-bold">#{receipt.number ? formatRecordNumber(receipt.number, receipt.date) : '-'}</span>
-                      <span className="text-[10px] text-[#71717a]">{format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), 'dd/MM/yy')}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="font-bold text-white text-[12px] truncate max-w-[150px]">{receipt.clientName}</span>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[10px] text-[#71717a] italic">Serviço: {receipt.serviceSpecification || 'N/A'}</span>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-col text-[10px] text-[#a0a0a0]">
-                      <span className="text-[#e0e0e0] font-medium truncate max-w-[120px]">{pixSettings.accounts?.find(a => a.id === receipt.pixAccountId)?.label || pixSettings.accounts?.[0]?.label || 'C. Corrente'}</span>
-                      <span className="uppercase text-[9px]">{receipt.paymentMethod}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex flex-col items-end">
+                  <TableCell className="w-[150px] p-2">
+                    <div className="flex flex-col gap-1 items-start">
                       <Select 
                         value={receipt.status} 
                         onValueChange={(newStatus: any) => updateReceiptStatus(receipt.id, newStatus, receipt)}
                       >
                         <SelectTrigger className={cn(
-                          "h-6 text-[9px] uppercase mb-1 border-[#2d3139] px-2 w-fit",
+                          "h-6 text-[9px] uppercase border-[#2d3139] px-2 w-fit font-bold",
                           receipt.status === 'Recebido' ? "text-emerald-500 bg-emerald-500/10 border-emerald-500/20" : "text-[#a0a0a0] bg-[#0f1115]"
                         )}>
                           <SelectValue />
@@ -6916,14 +7247,36 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                           <SelectItem value="Recebido">Recebido</SelectItem>
                         </SelectContent>
                       </Select>
-                      <span className="font-bold text-emerald-500 text-[13px]">R$ {Number(receipt.value).toFixed(2)}</span>
+                      <span className="font-bold text-emerald-500 text-[12px] font-mono mt-0.5 whitespace-nowrap">
+                        R$ {Number(receipt.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-white text-[12px] truncate max-w-[200px]">{receipt.clientName}</span>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[10px] text-[#71717a] italic">Serviço: {receipt.serviceSpecification || 'N/A'}</span>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col text-[10px] text-[#a0a0a0]">
+                      <span className="text-[#e0e0e0] font-medium truncate max-w-[150px]">{pixSettings.accounts?.find(a => a.id === receipt.pixAccountId)?.label || pixSettings.accounts?.[0]?.label || 'C. Corrente'}</span>
+                      <span className="uppercase text-[9px] mt-0.5">{receipt.paymentMethod}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="w-[100px]">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] font-mono text-[#3b82f6] font-bold">#{receipt.number ? formatRecordNumber(receipt.number, receipt.date) : '-'}</span>
+                      <span className="text-[10px] text-[#71717a] mt-0.5">{format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), 'dd/MM/yy')}</span>
                     </div>
                   </TableCell>
                 </TableRow>
               ))}
-              {receipts.length === 0 && (
+              {filteredReceipts.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-12 text-[#71717a] text-sm">
+                  <TableCell colSpan={5} className="text-center py-12 text-[#71717a] text-sm">
                     Nenhum recibo gerado.
                   </TableCell>
                 </TableRow>
@@ -6932,7 +7285,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
           </Table>
           </TableDoubleScroll>
         </Card>
-      )}
+      ))}
 
       {/* View Receipt Dialog */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
@@ -10768,6 +11121,7 @@ function VisitsManager({
   const [statusFilter, setStatusFilter] = useState('Todas');
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [visitToDelete, setVisitToDelete] = useState<TechnicalVisit | null>(null);
   const [editingVisit, setEditingVisit] = useState<TechnicalVisit | null>(null);
@@ -11359,15 +11713,34 @@ function VisitsManager({
                 <X size={12} />
               </Button>
             )}
-          </div>
-          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-            <DialogTrigger asChild>
-              <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
-                <Plus size={18} />
-                Nova Visita
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center bg-[#1a1d23] border border-[#2d3139] p-1 rounded-lg">
+              <Button 
+                variant={viewMode === 'table' ? 'secondary' : 'ghost'} 
+                size="sm" 
+                className="h-7 px-2 text-[10px] font-bold uppercase"
+                onClick={() => setViewMode('table')}
+              >
+                <List size={14} className="mr-1" /> Lista
               </Button>
-            </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px] bg-[#1a1d23] border-[#2d3139] text-white max-h-[85vh] overflow-hidden flex flex-col p-0 shadow-2xl">
+              <Button 
+                variant={viewMode === 'grid' ? 'secondary' : 'ghost'} 
+                size="sm" 
+                className="h-7 px-2 text-[10px] font-bold uppercase"
+                onClick={() => setViewMode('grid')}
+              >
+                <LayoutGrid size={14} className="mr-1" /> Colunas
+              </Button>
+            </div>
+            <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+              <DialogTrigger asChild>
+                <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white">
+                  <Plus size={18} />
+                  Nova Visita
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[600px] bg-[#1a1d23] border-[#2d3139] text-white max-h-[85vh] overflow-hidden flex flex-col p-0 shadow-2xl">
             <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Agendar Nova Visita</DialogTitle>
               <DialogDescription className="text-[#a0a0a0] text-xs">Preencha os detalhes do cliente e do serviço.</DialogDescription>
@@ -11603,19 +11976,93 @@ function VisitsManager({
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
-    </div>
 
     {showList ? (
-      <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative">
-        <TableDoubleScroll>
-        <Table>
+      viewMode === 'grid' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 overflow-y-auto max-h-[700px] p-1 custom-scrollbar">
+          {filteredVisits.length === 0 ? (
+            <div className="col-span-full p-12 text-center bg-[#1a1d23] border border-dashed border-[#2d3139] rounded-xl">
+               Nenhuma visita encontrada.
+            </div>
+          ) : (
+            filteredVisits.map((visit) => (
+              <Card 
+                key={visit.id} 
+                className="bg-[#1a1d23] border border-[#2d3139] overflow-hidden hover:border-[#3b82f6]/50 transition-all p-4 flex flex-col gap-3 relative group"
+              >
+                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                   <Button variant="ghost" size="icon" className="h-7 w-7 text-[#a0a0a0] hover:text-white bg-[#0f1115]/80 backdrop-blur-sm" onClick={() => {
+                        setViewingVisit({
+                          ...visit,
+                          date: visit.date instanceof Timestamp ? visit.date.toDate() : (visit.date ? new Date(visit.date) : new Date()),
+                          expectedDate: visit.expectedDate ? (visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate)) : (visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date)),
+                          createdAt: visit.createdAt instanceof Timestamp ? visit.createdAt.toDate() : (visit.createdAt ? new Date(visit.createdAt) : null)
+                        });
+                        setIsViewOpen(true);
+                   }}>
+                     <Eye size={12} />
+                   </Button>
+                   <Button variant="ghost" size="icon" className="h-7 w-7 text-[#a0a0a0] hover:text-white bg-[#0f1115]/80 backdrop-blur-sm" onClick={() => {
+                        setEditingVisit({
+                          ...visit,
+                          date: visit.date instanceof Timestamp ? visit.date.toDate() : (visit.date ? new Date(visit.date) : new Date()),
+                          expectedDate: visit.expectedDate ? (visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate)) : (visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date)),
+                          createdAt: visit.createdAt instanceof Timestamp ? visit.createdAt.toDate() : (visit.createdAt ? new Date(visit.createdAt) : null)
+                        });
+                        setIsEditOpen(true);
+                   }}>
+                     <Pencil size={12} />
+                   </Button>
+                </div>
+                
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <Badge className={cn(
+                      "text-[9px] uppercase px-1.5 h-4 font-black tracking-widest",
+                      visit.status === 'Concluída' ? "bg-emerald-500/10 text-emerald-500" : "bg-blue-500/10 text-blue-500"
+                    )}>
+                      {visit.status}
+                    </Badge>
+                    <span className="text-[10px] text-[#71717a] font-mono whitespace-nowrap">#{formatRecordNumber(visit.number, visit.date)}</span>
+                  </div>
+                  
+                  <div className="flex flex-col">
+                    <span className="text-sm font-bold text-white truncate">{visit.clientName}</span>
+                    <span className="text-[10px] text-[#a0a0a0] line-clamp-1 italic">{visit.description || visit.type}</span>
+                  </div>
+                  
+                  <div className="mt-2 flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] text-[#71717a] uppercase font-bold tracking-widest">Agendamento</span>
+                      <span className="text-[11px] text-[#3b82f6] font-bold">
+                        {format(visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date), 'dd/MM/yyyy')} {visit.scheduledTime}
+                      </span>
+                    </div>
+                    {visit.totalValue > 0 && (
+                      <div className="flex flex-col items-end">
+                        <span className="text-[9px] text-[#71717a] uppercase font-bold tracking-widest">Valor</span>
+                        <span className="text-xs font-black text-white">R$ {visit.totalValue.toFixed(2)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            ))
+          )}
+        </div>
+      ) : (
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative">
+          <TableDoubleScroll>
+          <Table>
           <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">AÇÕES</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">STATUS</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">CLIENTE / Nº</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">ENDEREÇO DO SERVIÇO / SERVIÇO</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">STATUS / VISITA PARA</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">VISITA PARA</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider text-right">VALOR</TableHead>
             </TableRow>
           </TableHeader>
@@ -11663,6 +12110,22 @@ function VisitsManager({
                       </Button>
                     </div>
                   </TableCell>
+                  <TableCell className="w-[130px] p-2">
+                    <Select 
+                      value={visit.status || ''} 
+                      onValueChange={(val: any) => updateStatus(visit.id, val)}
+                    >
+                      <SelectTrigger className="h-6 w-[120px] text-[9px] bg-[#0f1115] border-[#2d3139] text-white p-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="Agendada">Agendada</SelectItem>
+                        <SelectItem value="Em Andamento">Em Andamento</SelectItem>
+                        <SelectItem value="Concluída">Concluída</SelectItem>
+                        <SelectItem value="Cancelada">Cancelada</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
                   <TableCell>
                     <div className="flex flex-col">
                       <span className="font-bold text-white text-[12px] truncate max-w-[150px]">{visit.clientName}</span>
@@ -11676,25 +12139,9 @@ function VisitsManager({
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="flex flex-col gap-1.5">
-                    <Select 
-                      value={visit.status || ''} 
-                      onValueChange={(val: any) => updateStatus(visit.id, val)}
-                    >
-                        <SelectTrigger className="h-6 w-[120px] text-[9px] bg-[#0f1115] border-[#2d3139] text-white p-1">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                          <SelectItem value="Agendada">Agendada</SelectItem>
-                          <SelectItem value="Em Andamento">Em Andamento</SelectItem>
-                          <SelectItem value="Concluída">Concluída</SelectItem>
-                          <SelectItem value="Cancelada">Cancelada</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <div className="flex flex-col text-[9px] text-[#71717a]">
-                        <span className="font-bold text-[#3b82f6]">{format(visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date), 'dd/MM/yyyy')} {visit.scheduledTime}</span>
-                        {visit.technicianName && <span className="text-[8px] italic">Téc: {visit.technicianName.split(' ')[0]}</span>}
-                      </div>
+                    <div className="flex flex-col text-[9px] text-[#71717a]">
+                      <span className="font-bold text-[#3b82f6]">{format(visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date), 'dd/MM/yyyy')} {visit.scheduledTime}</span>
+                      {visit.technicianName && <span className="text-[8px] italic">Téc: {visit.technicianName.split(' ')[0]}</span>}
                     </div>
                   </TableCell>
                   <TableCell className="text-right text-[13px] font-bold text-white">
@@ -11713,7 +12160,7 @@ function VisitsManager({
         </Table>
         </TableDoubleScroll>
       </Card>
-    ) : (
+    ) ) : (
       <NoAccessList title="Visitas Técnicas" />
     )}
 
@@ -11792,11 +12239,11 @@ function VisitsManager({
                   </Button>
                 </div>
               </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <p className="text-[11px] text-[#71717a] uppercase">Tipo de Serviço</p>
-                    <Badge className="bg-[#2d3139] text-[#e0e0e0] font-normal">{viewingVisit.type}</Badge>
-                  </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-[11px] text-[#71717a] uppercase">Tipo de Serviço</p>
+                  <Badge className="bg-[#2d3139] text-[#e0e0e0] font-normal">{viewingVisit.type}</Badge>
+                </div>
                 <div className="space-y-1">
                   <p className="text-[11px] text-[#71717a] uppercase">Status</p>
                   <Badge className={cn(
@@ -12108,6 +12555,7 @@ function VisitsManager({
         </DialogContent>
       </Dialog>
     </div>
+    </div>
   );
 }
 
@@ -12156,6 +12604,7 @@ function FinancialManager({
   const [dateFilter, setDateFilter] = useState('all');
   const [pixFilter, setPixFilter] = useState('all');
   const [paymentMethodFilter, setPaymentMethodFilter] = useState('all');
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
 
   const months = [
     { value: '01', label: 'Janeiro' },
@@ -12428,27 +12877,27 @@ function FinancialManager({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <Card className="bg-[#3b82f6] text-white border-none shadow-lg shadow-blue-900/20">
-          <CardContent className="p-3 md:p-6 text-center md:text-left">
-            <p className="text-[9px] md:text-xs text-blue-100 uppercase tracking-wider mb-1 font-semibold">Caixa</p>
-            <h3 className="text-[11px] md:text-3xl font-bold truncate">
+          <CardContent className="p-4 md:p-6 text-left">
+            <p className="text-[10px] md:text-xs text-blue-100 uppercase tracking-widest mb-1.5 font-bold">Caixa</p>
+            <h3 className="text-lg sm:text-xl md:text-2xl lg:text-3xl font-black font-mono">
               R$ {financialStats.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </h3>
           </CardContent>
         </Card>
         <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl">
-          <CardContent className="p-3 md:p-6 text-center md:text-left">
-            <p className="text-[9px] md:text-xs text-[#71717a] uppercase tracking-wider mb-1 font-semibold">Receitas</p>
-            <h3 className="text-[11px] md:text-2xl font-bold text-[#10b981] truncate">
+          <CardContent className="p-4 md:p-6 text-left">
+            <p className="text-[10px] md:text-xs text-[#71717a] uppercase tracking-widest mb-1.5 font-bold">Receitas</p>
+            <h3 className="text-lg sm:text-xl md:text-2xl lg:text-3xl font-black text-[#10b981] font-mono">
               R$ {financialStats.income.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </h3>
           </CardContent>
         </Card>
         <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl">
-          <CardContent className="p-3 md:p-6 text-center md:text-left">
-            <p className="text-[9px] md:text-xs text-[#71717a] uppercase tracking-wider mb-1 font-semibold">Despesas</p>
-            <h3 className="text-[11px] md:text-2xl font-bold text-[#ef4444] truncate">
+          <CardContent className="p-4 md:p-6 text-left">
+            <p className="text-[10px] md:text-xs text-[#71717a] uppercase tracking-widest mb-1.5 font-bold">Despesas</p>
+            <h3 className="text-lg sm:text-xl md:text-2xl lg:text-3xl font-black text-[#ef4444] font-mono">
               R$ {financialStats.expense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </h3>
           </CardContent>
@@ -12615,14 +13064,33 @@ function FinancialManager({
                 <X size={12} />
               </Button>
             )}
-            <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-              <DialogTrigger asChild>
-                <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white h-10 px-6 font-bold shadow-lg shadow-blue-500/10">
-                  <Plus size={18} />
-                  LANÇAMENTO
+            <div className="flex items-center gap-2 ml-auto">
+              <div className="flex items-center bg-[#1a1d23] border border-[#2d3139] p-1 rounded-lg">
+                <Button 
+                  variant={viewMode === 'table' ? 'secondary' : 'ghost'} 
+                  size="sm" 
+                  className="h-7 px-2 text-[10px] font-bold uppercase"
+                  onClick={() => setViewMode('table')}
+                >
+                  <List size={14} className="mr-1" /> Lista
                 </Button>
-              </DialogTrigger>
-          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[500px]">
+                <Button 
+                  variant={viewMode === 'grid' ? 'secondary' : 'ghost'} 
+                  size="sm" 
+                  className="h-7 px-2 text-[10px] font-bold uppercase"
+                  onClick={() => setViewMode('grid')}
+                >
+                  <LayoutGrid size={14} className="mr-1" /> Colunas
+                </Button>
+              </div>
+              <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+                <DialogTrigger asChild>
+                  <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white h-10 px-6 font-bold shadow-lg shadow-blue-500/10">
+                    <Plus size={18} />
+                    LANÇAMENTO
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 sm:max-w-[500px]">
             <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Novo Lançamento Financeiro</DialogTitle>
             </DialogHeader>
@@ -12772,33 +13240,123 @@ function FinancialManager({
         </Dialog>
       </div>
     </div>
+  </div>
 
     {showList ? (
-      <Card 
-        className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (!filteredFinancials.length) return;
-          const currentIndex = filteredFinancials.findIndex(r => r.id === selectedRowId);
-          if (e.key === 'ArrowDown') {
-            const nextIndex = Math.min(currentIndex + 1, filteredFinancials.length - 1);
-            setSelectedRowId(filteredFinancials[nextIndex].id);
-            e.preventDefault();
-            document.getElementById(`fin-${filteredFinancials[nextIndex].id}`)?.scrollIntoView({ block: 'nearest' });
-          } else if (e.key === 'ArrowUp') {
-            const nextIndex = Math.max(currentIndex - 1, 0);
-            setSelectedRowId(filteredFinancials[nextIndex].id);
-            e.preventDefault();
-            document.getElementById(`fin-${filteredFinancials[nextIndex].id}`)?.scrollIntoView({ block: 'nearest' });
-          }
-        }}
-      >
+      viewMode === 'grid' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 overflow-y-auto max-h-[700px] p-1 custom-scrollbar">
+          {filteredFinancials.length === 0 ? (
+            <div className="col-span-full p-12 text-center bg-[#1a1d23] border border-dashed border-[#2d3139] rounded-xl">
+               Nenhuma transação registrada.
+            </div>
+          ) : (
+            filteredFinancials.map((record) => (
+              <Card 
+                key={record.id} 
+                className={cn(
+                  "bg-[#1a1d23] border border-[#2d3139] overflow-hidden hover:border-[#3b82f6]/50 transition-all p-4 flex flex-col gap-3 relative group cursor-pointer",
+                  selectedRowId === record.id && "border-[#3b82f6] shadow-[0_0_15px_rgba(59,130,246,0.1)]"
+                )}
+                onClick={() => setSelectedRowId(record.id)}
+              >
+                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-[#a0a0a0] hover:text-white bg-[#0f1115]/80 backdrop-blur-sm" onClick={(e) => {
+                       e.stopPropagation();
+                       setEditingRecord({
+                         ...record,
+                         date: record.date instanceof Timestamp ? record.date.toDate() : (record.date ? new Date(record.date) : new Date())
+                       });
+                       setIsEditOpen(true);
+                    }}>
+                      <Pencil size={12} />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-[#ef4444] hover:bg-[#ef4444]/20 bg-[#0f1115]/80 backdrop-blur-sm" onClick={(e) => {
+                       e.stopPropagation();
+                       setRecordToDelete(record);
+                       setIsDeleteConfirmOpen(true);
+                    }}>
+                      <Trash2 size={12} />
+                    </Button>
+                </div>
+                
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <Badge className={cn(
+                      "text-[9px] uppercase px-1.5 h-4 font-black tracking-widest",
+                      record.type === 'Receita' ? "bg-emerald-500/10 text-emerald-500 border-none px-2" : "bg-red-500/10 text-red-500 border-none px-2"
+                    )}>
+                      {record.type}
+                    </Badge>
+                    <span className="text-[10px] text-[#71717a]">{format(record.date instanceof Timestamp ? record.date.toDate() : new Date(record.date), 'dd/MM/yyyy')}</span>
+                  </div>
+                  
+                  <div className="flex flex-col gap-0.5">
+                    <div className={cn("text-lg font-black italic", record.type === 'Receita' ? "text-[#10b981]" : "text-[#ef4444]")}>
+                       {record.type === 'Receita' ? '+' : '-'} R$ {(record.value || 0).toFixed(2)}
+                    </div>
+                    <span className="text-[11px] text-white font-bold line-clamp-1 truncate" title={record.description}>
+                      {record.description?.replace(/^(Recebido de:|Pagamento de:|Recebido Recibo:|Venda PDV nº:|Entrada de:|Saída de:|Pagamento referente a:|Recebido de\s*[:\-]|Relativo ao recebimento de:|Pagam\. ref\.:|Referente a\s*[:\-]|Recebemos de:|Pagamos a:)/i, '').trim() || record.description}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-[#2d3139]/50 mt-auto flex items-center justify-between">
+                   <div className="flex flex-col gap-0.5 min-w-0">
+                      <span className="text-[9px] text-[#71717a] uppercase font-bold tracking-widest truncate">
+                         {record.paymentMethod === 'Dinheiro' ? 'DINHEIRO' : (record.paymentMethod === 'PIX' ? 'PIX' : (record.paymentMethod === 'Cartão' ? 'CARTÃO' : 'TRANSAC'))}
+                      </span>
+                      <span className="text-[10px] text-[#a0a0a0] truncate font-medium">
+                         {record.paymentMethod === 'Dinheiro' 
+                            ? 'Espécie' 
+                            : (record.paymentMethod === 'PIX'
+                              ? (pixSettings.accounts?.find(a => a.id === record.pixAccountId)?.label || pixSettings.accounts?.find(a => a.label === record.account)?.label || record.account || 'Conta PIX')
+                              : (record.account || 'Conta'))}
+                      </span>
+                   </div>
+                   {record.origin && (
+                      <Badge variant="outline" className="text-[8px] uppercase tracking-tighter border-[#2d3139] text-[#71717a] h-4 bg-[#0f1115]/50">
+                        {record.origin
+                          .replace(/Recibo Nº\s*/i, 'Rc-')
+                          .replace(/Ordem de Serviço Nº\s*/i, 'Os-')
+                          .replace(/Orçamento Nº\s*/i, 'Oç-')
+                          .replace(/Recib #/i, 'Rc-')
+                          .replace(/Recibo:\s*/i, 'Rc-')
+                          .replace(/OS:\s*/i, 'Os-')
+                          .replace(/Orc:\s*/i, 'Oç-')}
+                      </Badge>
+                   )}
+                </div>
+              </Card>
+            ))
+          )}
+        </div>
+      ) : (
+        <Card 
+          className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (!filteredFinancials.length) return;
+            const currentIndex = filteredFinancials.findIndex(r => r.id === selectedRowId);
+            if (e.key === 'ArrowDown') {
+              const nextIndex = Math.min(currentIndex + 1, filteredFinancials.length - 1);
+              setSelectedRowId(filteredFinancials[nextIndex].id);
+              e.preventDefault();
+              document.getElementById(`fin-${filteredFinancials[nextIndex].id}`)?.scrollIntoView({ block: 'nearest' });
+            } else if (e.key === 'ArrowUp') {
+              const nextIndex = Math.max(currentIndex - 1, 0);
+              setSelectedRowId(filteredFinancials[nextIndex].id);
+              e.preventDefault();
+              document.getElementById(`fin-${filteredFinancials[nextIndex].id}`)?.scrollIntoView({ block: 'nearest' });
+            }
+          }}
+        >
         <TableDoubleScroll>
         <Table>
           <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[80px]">AÇÕES</TableHead>
-              <TableHead className="text-left text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">TRANSAÇÃO / VALOR</TableHead>
+              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">TIPO</TableHead>
+              <TableHead className="text-left text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">VALOR / TRANSAÇÃO</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">DESCRIÇÃO / ORIGEM</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">FORMA DE PAG. / CONTA</TableHead>
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider text-right">DATA</TableHead>
@@ -12835,16 +13393,18 @@ function FinancialManager({
                   </div>
                 </TableCell>
                 <TableCell>
+                  <Badge className={cn(
+                    "text-[10px] uppercase font-bold",
+                    record.type === 'Receita' ? "bg-emerald-500/10 text-emerald-500 border-none" : "bg-red-500/10 text-red-500 border-none"
+                  )}>
+                    {record.type}
+                  </Badge>
+                </TableCell>
+                <TableCell>
                   <div className="flex flex-col font-bold">
                     <span className={cn("text-[13px]", record.type === 'Receita' ? "text-[#10b981]" : "text-[#ef4444]")}>
                       {record.type === 'Receita' ? '+' : '-'} R$ {(record.value || 0).toFixed(2)}
                     </span>
-                    <Badge className={cn(
-                      "text-[8px] uppercase px-1 py-0 h-3.5 w-fit",
-                      record.type === 'Receita' ? "bg-emerald-500/10 text-emerald-500 border-none" : "bg-red-500/10 text-red-500 border-none"
-                    )}>
-                      {record.type}
-                    </Badge>
                   </div>
                 </TableCell>
                 <TableCell>
@@ -12902,7 +13462,7 @@ function FinancialManager({
         </Table>
         </TableDoubleScroll>
       </Card>
-    ) : (
+    ) ) : (
       <NoAccessList title="Financeiro" />
     )}
 
@@ -13069,6 +13629,7 @@ function ServiceOrdersManager({
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isPrintConfirmOpen, setIsPrintConfirmOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [isValuesModalOpen, setIsValuesModalOpen] = useState(false);
   const [selectedOSForPDF, setSelectedOSForPDF] = useState<ServiceOrder | null>(null);
   const [editingOS, setEditingOS] = useState<Partial<ServiceOrder> | null>(null);
@@ -13279,8 +13840,8 @@ function ServiceOrdersManager({
         <p className="text-[#a0a0a0] text-sm">Gerencie ordens de serviço técnicas e visitas técnicas em campo.</p>
       </div>
 
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-        <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-lg w-full md:w-auto">
+      <div className="flex flex-col gap-3 mb-4">
+        <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-lg w-full">
           <Filter className="text-blue-500" size={14} />
           <span className="text-[10px] text-[#71717a] font-bold uppercase tracking-widest min-w-fit">Filtros:</span>
             
@@ -13366,12 +13927,43 @@ function ServiceOrdersManager({
                 <X size={12} />
               </Button>
             )}
-          </div>
+            
+            <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
 
+            <div className="flex bg-[#0f1115] p-1 rounded-lg border border-[#2d3139]/50">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setViewMode('table')}
+                className={cn(
+                  "h-6 px-2 rounded-md transition-all",
+                  viewMode === 'table' ? "bg-[#3b82f6] text-white" : "text-[#71717a] hover:text-white"
+                )}
+                title="Lista"
+              >
+                <List size={14} />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setViewMode('grid')}
+                className={cn(
+                  "h-6 px-2 rounded-md transition-all",
+                  viewMode === 'grid' ? "bg-[#3b82f6] text-white" : "text-[#71717a] hover:text-white"
+                )}
+                title="Colunas"
+              >
+                <LayoutGrid size={14} />
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 mt-1">
           {serviceOrders.length > 0 && selectedIds.length === 0 && (
             <Button 
               variant="outline" 
-              className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-xs h-9"
+              className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-xs h-9 uppercase font-black"
               onClick={() => setSelectedIds(serviceOrders.map(os => os.id))}
             >
               Selecionar Todas
@@ -13379,22 +13971,22 @@ function ServiceOrdersManager({
           )}
           {selectedIds.length > 0 && (
             <Button 
-              className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+              className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white h-9 text-xs font-black uppercase"
               onClick={() => {
                 const selectedOS = serviceOrders.filter(os => selectedIds.includes(os.id));
                 generateOSLabelsPDF(selectedOS, appSettings);
                 setSelectedIds([]);
               }}
             >
-              <Printer size={18} />
+              <Printer size={14} />
               Etiquetas ({selectedIds.length})
             </Button>
           )}
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger asChild>
-              <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white h-9 px-4 font-bold shadow-lg">
-                <Plus size={18} />
-                Nova O.S.
+              <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white h-9 px-4 font-black uppercase shadow-lg text-xs">
+                <Plus size={14} />
+                + Nova Ordem
               </Button>
             </DialogTrigger>
             <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-[90vw] md:max-w-[800px] max-h-[85vh] flex flex-col p-0 overflow-hidden shadow-2xl">
@@ -13679,14 +14271,101 @@ function ServiceOrdersManager({
       </div>
 
       {showList ? (
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50" tabIndex={0}>
+        viewMode === 'grid' ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 overflow-y-auto max-h-[700px] p-1 custom-scrollbar">
+            {filteredServiceOrders.length === 0 ? (
+              <div className="col-span-full p-12 text-center bg-[#1a1d23] border border-dashed border-[#2d3139] rounded-xl">
+                 Nenhuma ordem de serviço encontrada.
+              </div>
+            ) : (
+              filteredServiceOrders.map((os) => (
+                <Card 
+                  key={os.id} 
+                  className={cn(
+                    "bg-[#1a1d23] border border-[#2d3139] overflow-hidden hover:border-[#3b82f6]/50 transition-all p-4 flex flex-col gap-3 relative group cursor-pointer",
+                    selectedRowId === os.id && "border-[#3b82f6] shadow-[0_0_15px_rgba(59,130,246,0.1)]"
+                  )}
+                  onClick={() => setSelectedRowId(os.id)}
+                >
+                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                      <Button variant="ghost" size="icon" title="Editar" className="h-7 w-7 text-[#a0a0a0] hover:text-white bg-[#0f1115]/80 backdrop-blur-sm" onClick={(e) => {
+                        e.stopPropagation();
+                        onEditClick('service-order', os);
+                      }}>
+                        <Pencil size={12} />
+                      </Button>
+                      <Button variant="ghost" size="icon" title="PDF" className="h-7 w-7 text-[#a0a0a0] hover:text-[#3b82f6] bg-[#0f1115]/80 backdrop-blur-sm" onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedOSForPDF(os);
+                        setIsValuesModalOpen(true);
+                      }}>
+                        <Share2 size={12} />
+                      </Button>
+                      <Button variant="ghost" size="icon" title="Excluir" className="h-7 w-7 text-[#ef4444] hover:bg-[#ef4444]/20 bg-[#0f1115]/80 backdrop-blur-sm" onClick={(e) => {
+                        e.stopPropagation();
+                        setOSToDelete(os);
+                        setIsDeleteConfirmOpen(true);
+                      }}>
+                        <Trash2 size={12} />
+                      </Button>
+                  </div>
+                  
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono text-[#3b82f6] font-bold">#{formatRecordNumber(os.number, os.date)}</span>
+                      <span className="text-[9px] text-[#71717a]">{format(os.date instanceof Timestamp ? os.date.toDate() : new Date(os.date), 'dd/MM/yyyy')}</span>
+                    </div>
+                    <h3 className="font-bold text-white text-sm truncate pr-14" title={os.clientName}>{os.clientName}</h3>
+                    <div className="flex items-center justify-between mt-1">
+                       <Badge className={cn(
+                         "text-[9px] uppercase font-black px-1.5 h-4 shadow-sm",
+                         os.status === 'Finalizado' ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" : 
+                         os.status === 'Em Andamento' ? "bg-blue-500/10 text-blue-500 border border-blue-500/20" : "bg-amber-500/10 text-amber-500 border border-amber-500/20"
+                       )}>
+                         {os.status || 'Aberto'}
+                       </Badge>
+                       <span className="text-[10px] text-white font-black italic">R$ {Number(os.totalValue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2 pt-2 border-t border-[#2d3139]/50 mt-1">
+                    <div className="flex flex-nowrap items-center gap-2 text-[11px] text-[#a0a0a0]">
+                      <Package size={10} className="text-[#3b82f6] shrink-0" />
+                      <span className="truncate">{os.equipment || 'Geral'}</span>
+                    </div>
+                    <div className="flex flex-nowrap items-center gap-2 text-[11px] text-[#a0a0a0]">
+                      <PenTool size={10} className="text-[#3b82f6] shrink-0" />
+                      <span className="truncate">{os.brandModelSN || '-'}</span>
+                    </div>
+                    <div className="flex items-center justify-between mt-1">
+                      <div className="flex items-center gap-1.5 overflow-hidden">
+                        <div className="h-4 w-4 rounded-full border border-[#2d3139] bg-[#0f1115] flex items-center justify-center text-[7px] text-[#3b82f6] font-black uppercase">
+                          {os.technicianName?.substring(0, 2) || 'T'}
+                        </div>
+                        <span className="text-[9px] text-[#71717a] truncate">{os.technicianName}</span>
+                      </div>
+                      <Button variant="ghost" size="sm" className="h-5 px-1 text-[8px] bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white uppercase font-black tracking-tighter" onClick={(e) => {
+                        e.stopPropagation();
+                        generateOSLabelsPDF([os], appSettings);
+                      }}>
+                        Etiqueta
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              ))
+            )}
+          </div>
+        ) : (
+          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50" tabIndex={0}>
           <TableDoubleScroll>
           <Table>
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">AÇÕES</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">STATUS</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">OS / DATA</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">CLIENTE / STATUS</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">CLIENTE</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">EQUIPAMENTO / MARCA / MODELO / SN</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">TÉCNICO / VALOR</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider text-right w-[100px]">ETIQUETA</TableHead>
@@ -13727,15 +14406,7 @@ function ServiceOrdersManager({
                       </Button>
                     </div>
                   </TableCell>
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="text-[12px] font-mono text-[#3b82f6] font-bold">#{formatRecordNumber(os.number, os.date)}</span>
-                      <span className="text-[10px] text-[#71717a] font-medium">{format(os.date instanceof Timestamp ? os.date.toDate() : new Date(os.date), 'dd/MM/yy')}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-col gap-1">
-                      <span className="font-bold text-white text-[12px] truncate max-w-[150px]">{os.clientName}</span>
+                  <TableCell className="w-[120px] p-2">
                       <Select 
                         value={os.status} 
                         onValueChange={async (newStatus: any) => {
@@ -13762,6 +14433,16 @@ function ServiceOrdersManager({
                           <SelectItem value="Cancelado">Cancelado</SelectItem>
                         </SelectContent>
                       </Select>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <span className="text-[12px] font-mono text-[#3b82f6] font-bold">#{formatRecordNumber(os.number, os.date)}</span>
+                      <span className="text-[10px] text-[#71717a] font-medium">{format(os.date instanceof Timestamp ? os.date.toDate() : new Date(os.date), 'dd/MM/yy')}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-1">
+                      <span className="font-bold text-white text-[12px] truncate max-w-[150px]">{os.clientName}</span>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -13805,7 +14486,7 @@ function ServiceOrdersManager({
           </Table>
           </TableDoubleScroll>
         </Card>
-      ) : (
+      )) : (
         <NoAccessList title="Ordens de Serviço" />
       )}
 
@@ -14181,6 +14862,8 @@ function BudgetsManager({
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [budgetToDelete, setBudgetToDelete] = useState<Budget | null>(null);
   const [editingBudget, setEditingBudget] = useState<Partial<Budget>>({});
@@ -14189,6 +14872,7 @@ function BudgetsManager({
   const [dateFilter, setDateFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('Todas');
   const [isClientFilterOpen, setIsClientFilterOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
 
   useEffect(() => {
     if (externalEditAction) {
@@ -14763,6 +15447,35 @@ function BudgetsManager({
                 <X size={12} />
               </Button>
             )}
+
+            <div className="w-[1px] h-4 bg-[#2d3139] mx-1" />
+
+            <div className="flex bg-[#0f1115] p-1 rounded-lg border border-[#2d3139]/50">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setViewMode('table')}
+                className={cn(
+                  "h-6 px-2 rounded-md transition-all",
+                  viewMode === 'table' ? "bg-[#3b82f6] text-white" : "text-[#71717a] hover:text-white"
+                )}
+                title="Lista"
+              >
+                <List size={14} />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setViewMode('grid')}
+                className={cn(
+                  "h-6 px-2 rounded-md transition-all",
+                  viewMode === 'grid' ? "bg-[#3b82f6] text-white" : "text-[#71717a] hover:text-white"
+                )}
+                title="Colunas"
+              >
+                <LayoutGrid size={14} />
+              </Button>
+            </div>
           </div>
           <Dialog open={isAddOpen} onOpenChange={(open) => {
             setIsAddOpen(open);
@@ -15218,15 +15931,114 @@ function BudgetsManager({
     </div>
 
     {showList ? (
+      viewMode === 'grid' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 overflow-y-auto max-h-[700px] p-1 custom-scrollbar">
+          {filteredBudgets.length === 0 ? (
+            <div className="col-span-full p-12 text-center bg-[#1a1d23] border border-dashed border-[#2d3139] rounded-xl">
+               Nenhum orçamento encontrado.
+            </div>
+          ) : (
+            filteredBudgets.map((budget) => (
+              <Card 
+                key={budget.id} 
+                className={cn(
+                  "bg-[#1a1d23] border border-[#2d3139] overflow-hidden hover:border-[#3b82f6]/50 transition-all p-4 flex flex-col gap-3 relative group cursor-pointer",
+                  selectedRowId === budget.id && "border-[#3b82f6] shadow-[0_0_15px_rgba(59,130,246,0.1)]"
+                )}
+                onClick={() => setSelectedRowId(budget.id)}
+              >
+                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                    <Button variant="ghost" size="icon" title="Editar" className="h-7 w-7 text-[#a0a0a0] hover:text-white bg-[#0f1115]/80 backdrop-blur-sm" onClick={(e) => {
+                      e.stopPropagation();
+                      onEditClick('budget', budget);
+                    }}>
+                      <Pencil size={12} />
+                    </Button>
+                    <Button variant="ghost" size="icon" title="Gerar PDF" className="h-7 w-7 text-[#a0a0a0] hover:text-[#3b82f6] bg-[#0f1115]/80 backdrop-blur-sm shadow-md" onClick={(e) => {
+                      e.stopPropagation();
+                      generateBudgetPDF(budget);
+                    }}>
+                      <Share2 size={12} />
+                    </Button>
+                    <Button variant="ghost" size="icon" title="Link de Assinatura" className="h-7 w-7 text-blue-400 hover:bg-blue-400/20 bg-[#0f1115]/80 backdrop-blur-sm shadow-md" onClick={(e) => {
+                      e.stopPropagation();
+                      onSignatureClick('budget', budget);
+                    }}>
+                      <ExternalLink size={12} />
+                    </Button>
+                    <Button variant="ghost" size="icon" title="Excluir" className="h-7 w-7 text-[#ef4444] hover:bg-[#ef4444]/20 bg-[#0f1115]/80 backdrop-blur-sm shadow-md" onClick={(e) => {
+                      e.stopPropagation();
+                      setBudgetToDelete(budget);
+                      setIsDeleteConfirmOpen(true);
+                    }}>
+                      <Trash2 size={12} />
+                    </Button>
+                </div>
+                
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono text-[#3b82f6] font-bold">{formatRecordNumber(budget.number, budget.createdAt)}</span>
+                    <span className="text-[9px] text-[#71717a]">{format(budget.createdAt instanceof Timestamp ? budget.createdAt.toDate() : new Date(budget.createdAt), 'dd/MM/yyyy')}</span>
+                  </div>
+                  <h3 className="font-bold text-white text-sm truncate pr-20" title={budget.clientName || 'Cliente Sem Nome'}>{budget.clientName || 'Cliente Sem Nome'}</h3>
+                  
+                  <div className="flex items-center justify-between mt-1">
+                     <Select value={budget.status || ''} onValueChange={(val) => handleUpdateStatus(budget.id, val)}>
+                        <SelectTrigger className={cn(
+                          "h-5 text-[9px] uppercase border-[#2d3139] px-2 w-fit",
+                          budget.status === 'Aprovado' ? "text-emerald-500 bg-emerald-500/10" : 
+                          budget.status === 'Em Negociação' ? "text-yellow-500 bg-yellow-500/10" : 
+                          budget.status === 'Rejeitado' ? "text-red-500 bg-red-500/10" : "text-blue-500 bg-blue-500/10"
+                        )}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                          <SelectItem value="Pendente">Pendente</SelectItem>
+                          <SelectItem value="Em Negociação">Em Negociação</SelectItem>
+                          <SelectItem value="Aprovado">Aprovado</SelectItem>
+                          <SelectItem value="Rejeitado">Rejeitado</SelectItem>
+                        </SelectContent>
+                      </Select>
+                     <span className="text-xs text-white font-black italic">R$ {(budget.total || 0).toFixed(2)}</span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-[#2d3139]/50 mt-1 space-y-2">
+                   <div className="flex flex-col gap-0.5">
+                      <span className="text-[9px] text-[#71717a] uppercase font-bold tracking-widest">Resumo dos itens</span>
+                      <p className="text-[10px] text-[#a0a0a0] line-clamp-1 italic">
+                        {budget.items?.[0]?.description || 'Sem descrição'} {(budget.items?.length || 0) > 1 ? `(+${budget.items!.length - 1} itens)` : ''}
+                      </p>
+                   </div>
+                   <div className="flex items-center justify-between">
+                      <div className="flex flex-col">
+                        <span className="text-[9px] text-[#71717a] uppercase font-bold tracking-widest">Pagamento</span>
+                        <span className="text-[10px] text-white font-bold">{budget.paymentMethod}</span>
+                      </div>
+                      {budget.paymentMethod === 'PIX' && budget.pixAccountId && (
+                        <div className="flex flex-col items-end">
+                           <span className="text-[9px] text-[#71717a] uppercase font-bold tracking-widest">Favorecido</span>
+                           <span className="text-[10px] text-blue-400 font-bold truncate max-w-[80px]">
+                              {pixSettings.accounts?.find(a => a.id === budget.pixAccountId)?.favored || 'PIX'}
+                           </span>
+                        </div>
+                      )}
+                   </div>
+                </div>
+              </Card>
+            ))
+          )}
+        </div>
+      ) : (
         <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50" tabIndex={0}>
           <TableDoubleScroll>
           <Table>
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">Ações</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[150px]">Status</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">Orç / Data</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Cliente / Descrição</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[150px]">Status</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider text-right w-[120px]">Total</TableHead>
               </TableRow>
             </TableHeader>
@@ -15255,20 +16067,6 @@ function BudgetsManager({
                       }}>
                         <Trash2 size={12} />
                       </Button>
-                    </div>
-                  </TableCell>
-                  <TableCell className="w-[100px]">
-                    <div className="flex flex-col">
-                      <span className="text-[11px] font-mono text-[#3b82f6] font-bold">{formatRecordNumber(budget.number, budget.createdAt)}</span>
-                      <span className="text-[10px] text-[#71717a]">{format(budget.createdAt instanceof Timestamp ? budget.createdAt.toDate() : new Date(budget.createdAt), 'dd/MM/yy')}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="font-bold text-white text-[12px] truncate max-w-[150px]">{budget.clientName || 'Cliente Sem Nome'}</span>
-                      <span className="text-[10px] text-[#71717a] truncate max-w-[200px] italic mt-0.5">
-                        {budget.items?.[0]?.description || 'Sem descrição'} {(budget.items?.length || 0) > 1 ? `(+${budget.items!.length - 1} itens)` : ''}
-                      </span>
                     </div>
                   </TableCell>
                   <TableCell className="w-[150px]">
@@ -15304,6 +16102,20 @@ function BudgetsManager({
                       </div>
                     </div>
                   </TableCell>
+                  <TableCell className="w-[100px]">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] font-mono text-[#3b82f6] font-bold">{formatRecordNumber(budget.number, budget.createdAt)}</span>
+                      <span className="text-[10px] text-[#71717a]">{format(budget.createdAt instanceof Timestamp ? budget.createdAt.toDate() : new Date(budget.createdAt), 'dd/MM/yy')}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-white text-[12px] truncate max-w-[150px]">{budget.clientName || 'Cliente Sem Nome'}</span>
+                      <span className="text-[10px] text-[#71717a] truncate max-w-[200px] italic mt-0.5">
+                        {budget.items?.[0]?.description || 'Sem descrição'} {(budget.items?.length || 0) > 1 ? `(+${budget.items!.length - 1} itens)` : ''}
+                      </span>
+                    </div>
+                  </TableCell>
                   <TableCell className="text-right w-[120px]">
                     <span className="font-bold text-white text-[13px]">R$ {(budget.total || 0).toFixed(2)}</span>
                   </TableCell>
@@ -15320,7 +16132,7 @@ function BudgetsManager({
           </Table>
           </TableDoubleScroll>
         </Card>
-    ) : (
+    )) : (
       <NoAccessList title="Orçamentos" />
     )}
 
@@ -16141,18 +16953,18 @@ function PDVManager({
       if (pixAcc) {
         // QR Code for PIX on the left, text on the right
         try {
-          const qrSize = 25;
-          const qrDataUrl = await QRCode.toDataURL(pixAcc.qrKey || pixAcc.key, { margin: 1, width: 100 });
+          const qrSize = 30;
+          const qrDataUrl = await QRCode.toDataURL(pixAcc.qrKey || pixAcc.key || '', { margin: 1, width: 200 });
           doc.addImage(qrDataUrl, 'PNG', margin, currentY, qrSize, qrSize);
           
           doc.setFontSize(7);
           const textX = margin + qrSize + 2;
           doc.text(paymentText, textX, currentY + 5);
-          doc.setFontSize(5);
+          doc.setFontSize(6);
           doc.text(`BANCO: ${pixAcc.bank}`, textX, currentY + 9);
-          doc.text(`CHAVE: ${pixAcc.key}`, textX, currentY + 12);
+          doc.text(`CHAVE: ${pixAcc.key}`, textX, currentY + 13);
           
-          currentY += Math.max(qrSize, 15) + 2;
+          currentY += Math.max(qrSize, 18) + 2;
         } catch (e) {
           console.error("Error generating matching QR Code", e);
           doc.text(paymentText, margin, currentY);
@@ -17017,6 +17829,7 @@ function InventoryManager({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<any>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [isTransactionOpen, setIsTransactionOpen] = useState(false);
   const [transactionType, setTransactionType] = useState<'entry' | 'exit'>('entry');
   const [selectedItem, setSelectedItem] = useState<any>(null);
@@ -17285,21 +18098,119 @@ function InventoryManager({
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center gap-3 bg-[#1a1d23] border border-[#2d3139] p-2 rounded-xl focus-within:ring-1 focus-within:ring-blue-500/50 transition-all group">
-            <Search className="text-[#71717a] ml-2 group-focus-within:text-blue-500 transition-colors" size={18} />
-            <Input 
-              placeholder="Pesquisar por peça ou código (SN/SKU)..." 
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              className="bg-transparent border-none focus-visible:ring-0 text-white placeholder:text-[#71717a] h-9"
-            />
+      <div className="space-y-6">
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="flex-1 flex items-center gap-3 bg-[#1a1d23] border border-[#2d3139] p-2 rounded-xl focus-within:ring-1 focus-within:ring-blue-500/50 transition-all group">
+              <Search className="text-[#71717a] ml-2 group-focus-within:text-blue-500 transition-colors" size={18} />
+              <Input 
+                placeholder="Pesquisar por peça ou código (SN/SKU)..." 
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="bg-transparent border-none focus-visible:ring-0 text-white placeholder:text-[#71717a] h-9"
+              />
+            </div>
+            
+            <div className="flex bg-[#1a1d23] p-1 rounded-lg border border-[#2d3139]">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setViewMode('table')}
+                className={cn(
+                  "h-9 px-3 rounded-md transition-all",
+                  viewMode === 'table' ? "bg-[#3b82f6] text-white" : "text-[#71717a] hover:text-white"
+                )}
+              >
+                <List size={16} className="mr-2" />
+                <span className="text-xs font-bold uppercase tracking-widest">Lista</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setViewMode('grid')}
+                className={cn(
+                  "h-9 px-3 rounded-md transition-all",
+                  viewMode === 'grid' ? "bg-[#3b82f6] text-white" : "text-[#71717a] hover:text-white"
+                )}
+              >
+                <LayoutGrid size={16} className="mr-2" />
+                <span className="text-xs font-bold uppercase tracking-widest">Colunas</span>
+              </Button>
+            </div>
           </div>
 
-          <Card className="bg-[#1a1d23] border-[#2d3139] overflow-hidden shadow-2xl">
-            <TableDoubleScroll>
-              <Table>
+          {viewMode === 'grid' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 overflow-y-auto max-h-[700px] p-1 custom-scrollbar">
+              {filteredInventory.length === 0 ? (
+                <div className="col-span-full p-12 text-center bg-[#1a1d23] border border-dashed border-[#2d3139] rounded-xl">
+                   Nenhum item encontrado no estoque.
+                </div>
+              ) : (
+                filteredInventory.map((item) => (
+                  <Card key={item.id} className="bg-[#1a1d23] border border-[#2d3139] overflow-hidden hover:border-[#3b82f6]/50 transition-all p-4 flex flex-col gap-3 relative group">
+                    <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-[#a0a0a0] hover:text-[#3b82f6] bg-[#0f1115]/80 backdrop-blur-sm shadow-lg shadow-black/40" onClick={() => {
+                           setSelectedItem(item);
+                           setIsEditOpen(true);
+                        }}>
+                          <Pencil size={12} />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-[#ef4444] hover:bg-[#ef4444]/20 bg-[#0f1115]/80 backdrop-blur-sm shadow-lg shadow-black/40" onClick={() => {
+                           setItemToDelete(item);
+                           setIsDeleteConfirmOpen(true);
+                        }}>
+                          <Trash2 size={12} />
+                        </Button>
+                    </div>
+                    
+                    <div className="flex gap-4">
+                      <div className="w-16 h-16 rounded-lg bg-[#0f1115] border border-[#2d3139] flex items-center justify-center shrink-0 overflow-hidden group-hover:scale-105 transition-transform">
+                        {item.imageUrl ? (
+                          <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          <Package size={24} className="text-[#3b82f6] opacity-30" />
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-1 min-w-0 flex-1">
+                         <span className="text-[10px] font-mono font-bold text-[#3b82f6] truncate">{item.code || '-'}</span>
+                         <h3 className="font-bold text-white text-sm truncate pr-14" title={item.name}>{item.name}</h3>
+                         <div className="flex items-center gap-2">
+                           <Badge variant="outline" className="text-[8px] uppercase tracking-tighter border-[#2d3139] text-[#71717a] h-4">
+                             {item.category || 'Geral'}
+                           </Badge>
+                           <Badge className={cn("text-[8px] px-1.5 h-4 font-black tracking-widest", getStockStatus(item).color)}>
+                             {getStockStatus(item).label}
+                           </Badge>
+                         </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 pt-3 border-t border-[#2d3139]/50 mt-1">
+                      <div className="space-y-0.5">
+                        <span className="text-[9px] text-[#71717a] uppercase font-bold tracking-widest">Disponível</span>
+                        <div className="flex items-center gap-1">
+                           <span className={cn(
+                             "text-lg font-black",
+                             item.quantity <= (item.minQuantity || 0) ? "text-amber-500" : "text-white"
+                           )}>{item.quantity}</span>
+                           <span className="text-[10px] text-[#71717a] mb-1">{item.unit || 'un'}</span>
+                        </div>
+                      </div>
+                      <div className="space-y-0.5 text-right">
+                        <span className="text-[9px] text-[#71717a] uppercase font-bold tracking-widest">Preço Venda</span>
+                        <div className="text-white font-black text-lg">
+                           R$ {Number(item.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                ))
+              )}
+            </div>
+          ) : (
+            <Card className="bg-[#1a1d23] border-[#2d3139] overflow-hidden shadow-2xl">
+              <TableDoubleScroll>
+                <Table>
                 <TableHeader className="bg-[#0f1115]">
                   <TableRow className="hover:bg-transparent border-[#2d3139]">
                     <TableHead className="text-[#71717a] text-[10px] uppercase font-black px-4 py-3">Cod.</TableHead>
@@ -17388,9 +18299,10 @@ function InventoryManager({
               </Table>
             </TableDoubleScroll>
           </Card>
-        </div>
+        )}
+      </div>
 
-        <div className="space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
           <Card className="bg-[#1a1d23] border-[#2d3139] p-6 shadow-xl relative overflow-hidden group border-t-2 border-t-blue-500">
             <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 group-hover:opacity-10 transition-all">
               <TrendingUp size={100} className="text-blue-500" />
