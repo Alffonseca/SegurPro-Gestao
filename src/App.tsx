@@ -629,7 +629,7 @@ const getNextFormattedNumber = (items: any[], prefix: string) => {
 };
 
 const formatFullDateWithCity = (date: any, appSettings: AppSettings) => {
-  const d = date instanceof Timestamp ? date.toDate() : (date instanceof Date ? date : new Date(date));
+  const d = safeParseDate(date);
   const cityStr = appSettings.city || '';
   return `${cityStr}${cityStr ? ', ' : ''}${format(d, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}`;
 };
@@ -1131,7 +1131,7 @@ const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSetting
   doc.setTextColor(0, 0, 0);
   doc.text(`ORDEM DE SERVIÇO Nº ${formatRecordNumber(os.number, os.date)}`, pageWidth - margin, currentY + 7, { align: 'right' });
   doc.setFontSize(10);
-  doc.text(`Data: ${format(os.date instanceof Timestamp ? os.date.toDate() : new Date(os.date), 'dd/MM/yyyy')}`, pageWidth - margin, currentY + 13, { align: 'right' });
+  doc.text(`Data: ${format(safeParseDate(os.date), 'dd/MM/yyyy')}`, pageWidth - margin, currentY + 13, { align: 'right' });
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   doc.text(`Técnico: ${os.technicianName}`, pageWidth - margin, currentY + 18, { align: 'right' });
@@ -1273,8 +1273,8 @@ const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSetting
     drawSectionTitle('4. Tempos e Valores');
     
     doc.setFont('helvetica', 'normal');
-    doc.text(`Início: ${format(os.startDateTime instanceof Timestamp ? os.startDateTime.toDate() : new Date(os.startDateTime as any), 'dd/MM/yyyy HH:mm')}`, margin, currentY);
-    doc.text(`Fim: ${format(os.endDateTime instanceof Timestamp ? os.endDateTime.toDate() : new Date(os.endDateTime as any), 'dd/MM/yyyy HH:mm')}`, margin + contentWidth / 2, currentY);
+    doc.text(`Início: ${format(safeParseDate(os.startDateTime), 'dd/MM/yyyy HH:mm')}`, margin, currentY);
+    doc.text(`Fim: ${format(safeParseDate(os.endDateTime), 'dd/MM/yyyy HH:mm')}`, margin + contentWidth / 2, currentY);
     currentY += 7;
     
     doc.setFont('helvetica', 'bold');
@@ -3356,8 +3356,8 @@ export default function MainApp() {
         (snapshot) => {
           const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FinancialRecord));
           setFinancials(data.sort((a, b) => {
-            const dateA = a.date instanceof Timestamp ? a.date.toDate().getTime() : (a.date instanceof Date ? a.date.getTime() : (a.date ? new Date(a.date).getTime() : 0));
-            const dateB = b.date instanceof Timestamp ? b.date.toDate().getTime() : (b.date instanceof Date ? b.date.getTime() : (b.date ? new Date(b.date).getTime() : 0));
+            const dateA = safeParseDate(a.date).getTime();
+            const dateB = safeParseDate(b.date).getTime();
             return dateB - dateA;
           }));
         }
@@ -4905,7 +4905,7 @@ export default function MainApp() {
                 onKeyDown={(e) => {
                   const filteredLogs = logs.filter(log => {
                     const userMatch = logSearchUser === 'all' || log.userId === logSearchUser || log.userName === logSearchUser;
-                    const logDate = log.timestamp instanceof Timestamp ? log.timestamp.toDate() : new Date(log.timestamp.seconds * 1000);
+                    const logDate = safeParseDate(log.timestamp);
                     const dateMatch = logSearchDate === '' || format(logDate, 'yyyy-MM-dd') === logSearchDate;
                     return userMatch && dateMatch;
                   });
@@ -4942,7 +4942,7 @@ export default function MainApp() {
                     <tbody className="divide-y divide-[#2d3139]">
                       {logs.filter(log => {
                         const userMatch = logSearchUser === 'all' || log.userId === logSearchUser || log.userName === logSearchUser;
-                        const logDate = log.timestamp instanceof Timestamp ? log.timestamp.toDate() : new Date(log.timestamp.seconds * 1000);
+                        const logDate = safeParseDate(log.timestamp);
                         const dateMatch = logSearchDate === '' || format(logDate, 'yyyy-MM-dd') === logSearchDate;
                         return userMatch && dateMatch;
                       }).length === 0 ? (
@@ -4957,7 +4957,7 @@ export default function MainApp() {
                       ) : (
                         logs.filter(log => {
                           const userMatch = logSearchUser === 'all' || log.userId === logSearchUser || log.userName === logSearchUser;
-                          const logDate = log.timestamp instanceof Timestamp ? log.timestamp.toDate() : new Date(log.timestamp.seconds * 1000);
+                          const logDate = safeParseDate(log.timestamp);
                           const dateMatch = logSearchDate === '' || format(logDate, 'yyyy-MM-dd') === logSearchDate;
                           return userMatch && dateMatch;
                         }).map((log) => {
@@ -4995,7 +4995,7 @@ export default function MainApp() {
                             >
                               <td className="p-4 whitespace-nowrap">
                                 <div className="text-white text-sm font-medium">
-                                  {format(log.timestamp instanceof Timestamp ? log.timestamp.toDate() : new Date(log.timestamp.seconds * 1000), 'dd/MM/yy HH:mm')}
+                                  {format(safeParseDate(log.timestamp), 'dd/MM/yy HH:mm')}
                                 </div>
                               </td>
                               <td className="p-4">
@@ -5491,7 +5491,7 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
                   <div className="pt-2 border-t border-[#2d3139]/50 mt-1">
                     <div className="flex items-center justify-between text-[11px] text-[#a0a0a0]">
                       <span>Cadastrado em:</span>
-                      <span className="font-medium text-white">{u.createdAt ? format(u.createdAt instanceof Timestamp ? u.createdAt.toDate() : new Date(u.createdAt), 'dd/MM/yyyy') : '-'}</span>
+                      <span className="font-medium text-white">{u.createdAt ? format(safeParseDate(u.createdAt), 'dd/MM/yyyy') : '-'}</span>
                     </div>
                   </div>
                 </Card>
@@ -5570,7 +5570,7 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
                     </Badge>
                   </TableCell>
                   <TableCell className="text-[12px] text-[#71717a]">
-                    {u.createdAt ? format(u.createdAt instanceof Timestamp ? u.createdAt.toDate() : new Date(u.createdAt), 'dd/MM/yyyy') : '-'}
+                    {u.createdAt ? format(safeParseDate(u.createdAt), 'dd/MM/yyyy') : '-'}
                   </TableCell>
                 </TableRow>
               ))}
@@ -5740,9 +5740,9 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
   useEffect(() => {
     if (externalEditAction && onExternalEditHandled) {
       const data = { ...externalEditAction };
-      if (data.createdAt instanceof Timestamp) data.createdAt = data.createdAt.toDate();
-      if (data.updatedAt instanceof Timestamp) data.updatedAt = data.updatedAt.toDate();
-      if (data.contractStartDate instanceof Timestamp) data.contractStartDate = data.contractStartDate.toDate();
+      if (data.createdAt) data.createdAt = safeParseDate(data.createdAt);
+      if (data.updatedAt) data.updatedAt = safeParseDate(data.updatedAt);
+      if (data.contractStartDate) data.contractStartDate = safeParseDate(data.contractStartDate);
       
       setEditingClient(data);
       setIsEditOpen(true);
@@ -11338,7 +11338,7 @@ function ReportsManager({
       filteredData = financials.filter(f => isMatch(f.date));
       tableHeaders = ['Data', 'Cliente', 'Descrição', 'Valor', 'Tipo', 'Categoria'];
       tableRows = filteredData.map(f => {
-        const d = f.date instanceof Timestamp ? f.date.toDate() : (f.date instanceof Date ? f.date : new Date(f.date));
+        const d = safeParseDate(f.date);
         const client = clients.find(c => c.id === f.clientId);
         return [
           format(d, 'dd/MM/yyyy'),
@@ -11355,7 +11355,7 @@ function ReportsManager({
       tableRows = filteredData.map(r => [
         formatRecordNumber(r.number, r.createdAt),
         r.clientName,
-        format(r.createdAt instanceof Timestamp ? r.createdAt.toDate() : (r.createdAt instanceof Date ? r.createdAt : new Date(r.createdAt)), 'dd/MM/yyyy'),
+        format(safeParseDate(r.createdAt), 'dd/MM/yyyy'),
         `R$ ${(r.value || 0).toFixed(2)}`
       ]);
     } else if (category === 'Orçamentos') {
@@ -14670,8 +14670,8 @@ function ServiceOrdersManager({
     if (externalEditAction) {
       setEditingOS({
         ...externalEditAction,
-        startDateTime: format(externalEditAction.startDateTime instanceof Timestamp ? externalEditAction.startDateTime.toDate() : new Date(externalEditAction.startDateTime as any), "yyyy-MM-dd'T'HH:mm"),
-        endDateTime: format(externalEditAction.endDateTime instanceof Timestamp ? externalEditAction.endDateTime.toDate() : new Date(externalEditAction.endDateTime as any), "yyyy-MM-dd'T'HH:mm"),
+        startDateTime: format(safeParseDate(externalEditAction.startDateTime), "yyyy-MM-dd'T'HH:mm"),
+        endDateTime: format(safeParseDate(externalEditAction.endDateTime), "yyyy-MM-dd'T'HH:mm"),
       });
       setIsEditOpen(true);
       onExternalEditHandled();
@@ -14838,19 +14838,19 @@ function ServiceOrdersManager({
     if (dateFilterType === 'diario' && dayFilter) {
       filtered = filtered.filter(os => {
         if (!os.startDateTime) return false;
-        const d = os.startDateTime instanceof Timestamp ? os.startDateTime.toDate() : new Date(os.startDateTime);
+        const d = safeParseDate(os.startDateTime);
         return format(d, 'yyyy-MM-dd') === dayFilter;
       });
     } else if (dateFilterType === 'mensal' && monthFilter) {
       filtered = filtered.filter(os => {
         if (!os.startDateTime) return false;
-        const d = os.startDateTime instanceof Timestamp ? os.startDateTime.toDate() : new Date(os.startDateTime);
+        const d = safeParseDate(os.startDateTime);
         return format(d, 'yyyy-MM') === monthFilter;
       });
     } else if (dateFilterType === 'anual' && yearFilter) {
       filtered = filtered.filter(os => {
         if (!os.startDateTime) return false;
-        const d = os.startDateTime instanceof Timestamp ? os.startDateTime.toDate() : new Date(os.startDateTime);
+        const d = safeParseDate(os.startDateTime);
         return format(d, 'yyyy') === yearFilter;
       });
     }
@@ -15393,7 +15393,7 @@ function ServiceOrdersManager({
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-mono text-[#3b82f6] font-bold">#{formatRecordNumber(os.number, os.date)}</span>
-                      <span className="text-[9px] text-[#71717a]">{format(os.date instanceof Timestamp ? os.date.toDate() : new Date(os.date), 'dd/MM/yyyy')}</span>
+                      <span className="text-[9px] text-[#71717a]">{format(safeParseDate(os.date), 'dd/MM/yyyy')}</span>
                     </div>
                     <h3 className="font-bold text-white text-sm truncate pr-14" title={os.clientName}>{os.clientName}</h3>
                     <div className="flex items-center justify-between mt-1">
@@ -15520,7 +15520,7 @@ function ServiceOrdersManager({
                   <TableCell>
                     <div className="flex flex-col">
                       <span className="text-[12px] font-mono text-[#3b82f6] font-bold">#{formatRecordNumber(os.number, os.date)}</span>
-                      <span className="text-[10px] text-[#71717a] font-medium">{format(os.date instanceof Timestamp ? os.date.toDate() : new Date(os.date), 'dd/MM/yy')}</span>
+                      <span className="text-[10px] text-[#71717a] font-medium">{format(safeParseDate(os.date), 'dd/MM/yy')}</span>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -15964,9 +15964,9 @@ function BudgetsManager({
   useEffect(() => {
     if (externalEditAction) {
       const data = { ...externalEditAction };
-      if (data.date instanceof Timestamp) data.date = data.date.toDate();
-      if (data.createdAt instanceof Timestamp) data.createdAt = data.createdAt.toDate();
-      if (data.validUntil instanceof Timestamp) data.validUntil = data.validUntil.toDate();
+      data.date = safeParseDate(data.date);
+      if (data.createdAt) data.createdAt = safeParseDate(data.createdAt);
+      if (data.validUntil) data.validUntil = safeParseDate(data.validUntil);
       
       // Derive interestType if missing
       if (!data.interestType) {
@@ -16063,7 +16063,7 @@ function BudgetsManager({
   const filteredBudgets = useMemo(() => {
     return budgets.filter(budget => {
       const clientMatch = clientFilter === 'all' ? true : budget.clientName === clientFilter;
-      const d = budget.createdAt instanceof Timestamp ? budget.createdAt.toDate() : new Date(budget.createdAt);
+      const d = safeParseDate(budget.createdAt);
       const dayMatch = (dateFilterType === 'diario' && dayFilter) ? format(d, 'yyyy-MM-dd') === dayFilter : true;
       const monthMatch = (dateFilterType === 'mensal' && monthFilter) ? format(d, 'yyyy-MM') === monthFilter : true;
       const yearMatch = (dateFilterType === 'anual' && yearFilter) ? format(d, 'yyyy') === yearFilter : true;
@@ -16226,7 +16226,7 @@ function BudgetsManager({
 
   const generateBudgetPDF = async (budget: Budget) => {
     const doc = new jsPDF();
-    const dateStr = format(budget.createdAt instanceof Timestamp ? budget.createdAt.toDate() : new Date(budget.createdAt), 'dd/MM/yyyy');
+    const dateStr = format(safeParseDate(budget.createdAt), 'dd/MM/yyyy');
     
     // Helper to load image
     const loadImage = (url: string): Promise<string | null> => {
@@ -17134,7 +17134,7 @@ function BudgetsManager({
                 <div className="flex flex-col gap-1">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-mono text-[#3b82f6] font-bold">{formatRecordNumber(budget.number, budget.createdAt)}</span>
-                    <span className="text-[9px] text-[#71717a]">{format(budget.createdAt instanceof Timestamp ? budget.createdAt.toDate() : new Date(budget.createdAt), 'dd/MM/yyyy')}</span>
+                    <span className="text-[9px] text-[#71717a]">{format(safeParseDate(budget.createdAt), 'dd/MM/yyyy')}</span>
                   </div>
                   <h3 className="font-bold text-white text-sm truncate pr-20" title={budget.clientName || 'Cliente Sem Nome'}>{budget.clientName || 'Cliente Sem Nome'}</h3>
                   
@@ -17261,7 +17261,7 @@ function BudgetsManager({
                   <TableCell className="w-[100px]">
                     <div className="flex flex-col">
                       <span className="text-[11px] font-mono text-[#3b82f6] font-bold">{formatRecordNumber(budget.number, budget.createdAt)}</span>
-                      <span className="text-[10px] text-[#71717a]">{format(budget.createdAt instanceof Timestamp ? budget.createdAt.toDate() : new Date(budget.createdAt), 'dd/MM/yy')}</span>
+                      <span className="text-[10px] text-[#71717a]">{format(safeParseDate(budget.createdAt), 'dd/MM/yy')}</span>
                     </div>
                   </TableCell>
                   <TableCell>
