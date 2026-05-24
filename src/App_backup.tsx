@@ -230,25 +230,6 @@ const idbFolderStore = {
   }
 };
 
-// Global synchronous cache to keep handles ready BEFORE user click events (vital to bypass browser gesture timeout)
-if (typeof window !== 'undefined') {
-  (window as any).segurproCachedHandles = {};
-  
-  const categoriesToPreload = ['os', 'visita', 'orcamento', 'cupom', 'contrato', 'recibo', 'relatorio', 'geral'];
-  setTimeout(() => {
-    categoriesToPreload.forEach(async (key) => {
-      try {
-        const handle = await idbFolderStore.get(`dir_handle_${key}`);
-        if (handle) {
-          (window as any).segurproCachedHandles[key] = handle;
-        }
-      } catch (err) {
-        console.warn(`Erro no pre-carregamento do diretório (${key}):`, err);
-      }
-    });
-  }, 1000);
-}
-
 const getPDFCategory = (fileName: string): { key: string, label: string } => {
   const name = fileName.toLowerCase();
   
@@ -281,17 +262,56 @@ const getPDFCategory = (fileName: string): { key: string, label: string } => {
 const originalSave = jsPDF.prototype.save;
 (jsPDF.prototype as any).save = async function(this: any, filename: string, options?: any) {
   const docInstance = this;
-  const isIframe = typeof window !== 'undefined' && window.self !== window.top;
   
   if (typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
     try {
       const category = getPDFCategory(filename || 'documento.pdf');
       const storeKey = `dir_handle_${category.key}`;
       
-      // Get directory handle completely synchronously to keep mouse-click activation alive!
-      const cachedHandles = (window as any).segurproCachedHandles || {};
-      const dirHandle = cachedHandles[category.key] || null;
+      let dirHandle: any = null;
+      try {
+        dirHandle = await idbFolderStore.get(storeKey);
+      } catch (e) {
+        console.error('Erro ao recuperar pasta memorizada:', e);
+      }
       
+      if (dirHandle) {
+        try {
+          const permState = await dirHandle.queryPermission({ mode: 'readwrite' });
+          if (permState !== 'granted') {
+            const requested = await dirHandle.requestPermission({ mode: 'readwrite' });
+            if (requested !== 'granted') {
+              dirHandle = null;
+            }
+          }
+        } catch (e) {
+          console.error('Erro de permissão no diretório cacheado:', e);
+          dirHandle = null;
+        }
+      }
+
+      if (!dirHandle) {
+        const wantsToMemorize = window.confirm(
+          `Deseja selecionar uma pasta padrão no seu computador para salvar todos os PDFs da categoria "${category.label}"?\n\n` +
+          `Isso memorizará a pasta para os próximos downloads!`
+        );
+        
+        if (wantsToMemorize && 'showDirectoryPicker' in window) {
+          try {
+            const selectedDir = await (window as any).showDirectoryPicker({
+              mode: 'readwrite'
+            });
+            if (selectedDir) {
+              dirHandle = selectedDir;
+              await idbFolderStore.set(storeKey, selectedDir);
+              toast.success(`Pasta para "${category.label}" memorizada com sucesso!`);
+            }
+          } catch (e) {
+            console.warn('Seleção de pasta cancelada ou não permitida.', e);
+          }
+        }
+      }
+
       const pdfBlob = docInstance.output('blob');
       const pickerOptions: any = {
         suggestedName: filename || 'documento.pdf',
@@ -307,77 +327,19 @@ const originalSave = jsPDF.prototype.save;
         pickerOptions.startIn = dirHandle;
       }
       
-      if (isIframe) {
-        toast.info("Dica: No visualizador do AI Studio, use o botão 'Abrir em nova aba' se precisar salvar em diretórios específicos do seu computador!", { duration: 6000 });
-      }
-
-      // Triggers browser native File Picker directly under the original click context!
-      let fileHandle;
-      try {
-        fileHandle = await (window as any).showSaveFilePicker(pickerOptions);
-      } catch (pickerErr: any) {
-        // If it failed because of startIn / dirHandle permission issues, immediately retry without startIn
-        if (dirHandle && pickerErr.name !== 'AbortError') {
-          console.warn('Falha ao abrir com diretório sugerido, tentando sem diretório:', pickerErr);
-          delete pickerOptions.startIn;
-          fileHandle = await (window as any).showSaveFilePicker(pickerOptions);
-        } else {
-          throw pickerErr;
-        }
-      }
-
+      const fileHandle = await (window as any).showSaveFilePicker(pickerOptions);
       const writable = await fileHandle.createWritable();
       await writable.write(pdfBlob);
       await writable.close();
       
-      toast.success('PDF salvo com sucesso!');
-
-      // Prompt to configure standard directory post-save if not memorized yet (uses a dedicated subsequent gesture loop)
-      if (!dirHandle && 'showDirectoryPicker' in window) {
-        setTimeout(() => {
-          const wantsToMemorize = window.confirm(
-            `PDF de "${category.label}" salvo com sucesso!\n\n` +
-            `Deseja selecionar e MEMORIZAR uma pasta padrão específica no seu computador para novos PDFs dessa mesma categoria do SegurPro?\n` +
-            `Exemplo: Uma pasta chamada "PDFs de OS" ou "Visitas Tecnicas", assim o sistema iniciará sempre na pasta certa!`
-          );
-          
-          if (wantsToMemorize) {
-            (async () => {
-              try {
-                const selectedDir = await (window as any).showDirectoryPicker({
-                  mode: 'readwrite'
-                });
-                if (selectedDir) {
-                  await idbFolderStore.set(storeKey, selectedDir);
-                  cachedHandles[category.key] = selectedDir;
-                  toast.success(`Pasta padrão para "${category.label}" salva com sucesso!`);
-                }
-              } catch (e) {
-                console.warn('Seleção de diretório cancelada ou indisponível:', e);
-              }
-            })();
-          }
-        }, 1200);
-      }
-      
+      toast.success('PDF exportado com sucesso!');
       return docInstance;
     } catch (err: any) {
       if (err.name === 'AbortError') {
-        toast.info('Exportação do PDF cancelada.');
+        toast.info('Exportação do PDF cancelada pelo usuário.');
         return docInstance;
       }
-      console.warn('File System Picker falhou/rejeitado:', err);
-      toast.error(`Aviso: ${err.message || 'Falha ao salvar via seletor de arquivos'}. Usando download padrão.`);
-    }
-  } else {
-    // If showSaveFilePicker is not available (such as insecure origin or older browser)
-    if (typeof window !== 'undefined') {
-      const isHTTP = window.location.protocol === 'http:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
-      if (isIframe) {
-        toast.info("Para organizar os PDFs em pastas específicas do seu PC (O.S., Visitas, etc.), use o botão 'Abrir em nova aba' no canto superior direito!", { duration: 8000 });
-      } else if (isHTTP) {
-        toast.warning("Para organizar os PDFs em pastas específicas do seu computador, utilize uma URL segura (HTTPS) ou acesse via 'localhost'.", { duration: 8000 });
-      }
+      console.error('Erro ao salvar usando File System Picker:', err);
     }
   }
   
@@ -1512,8 +1474,6 @@ interface TechnicalVisit {
   technicianSignature?: string;
   createdAt: any;
   number?: number | string;
-  statusDates?: { [key: string]: any };
-  statusChangedAt?: any;
 }
 
 interface FinancialRecord {
@@ -4095,42 +4055,40 @@ export default function MainApp() {
                 </a>
               </div>
 
-              {((import.meta as any).env.VITE_LOCAL_DB === 'true') && (
-                <div className="pt-2 border-t border-[#2d3139]/50 mt-1">
-                  <Button 
-                    onClick={async () => {
-                      const confirmClose = window.confirm("Deseja realmente encerrar o servidor local do SegurPro e fechar o programa?");
-                      if (!confirmClose) return;
-                      try {
-                        toast.info("Encerrando o servidor local...");
-                        await fetch('/api/system/shutdown', { method: 'POST' });
-                      } catch (e) {
-                        console.error("Não foi possível enviar comando de finalização ao servidor.", e);
-                      }
-                      window.close();
-                      setTimeout(() => {
-                        document.body.innerHTML = `
-                          <div style="min-height: 100vh; background-color: #0f1115; color: #e0e0e0; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; padding: 20px; text-align: center;">
-                            <div style="background-color: #1a1d23; border: 1px solid #2d3139; padding: 32px; border-radius: 12px; max-w: 400px; width: 100%; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);">
-                              <div style="width: 48px; height: 48px; background-color: rgba(239, 68, 68, 0.1); border-radius: 9999px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto; border: 1px solid rgba(239, 68, 68, 0.2);">
-                                <span style="color: #ef4444; font-size: 24px; font-weight: bold; line-height: 1;">✕</span>
-                              </div>
-                              <h2 style="color: #ffffff; margin-top: 0; font-size: 18px; font-weight: bold; text-transform: uppercase; tracking-wider; margin-bottom: 8px;">Servidor Encerrado</h2>
-                              <p style="color: #a0a0a0; font-size: 13px; margin-bottom: 24px; line-height: 1.5;">O servidor local do SegurPro foi finalizado com sucesso.</p>
-                              <p style="color: #71717a; font-size: 11px; font-style: italic;">Você já pode fechar esta janela do seu navegador.</p>
+              <div className="pt-2 border-t border-[#2d3139]/50 mt-1">
+                <Button 
+                  onClick={async () => {
+                    const confirmClose = window.confirm("Deseja realmente encerrar o servidor local do SegurPro e fechar o programa?");
+                    if (!confirmClose) return;
+                    try {
+                      toast.info("Encerrando o servidor local...");
+                      await fetch('/api/system/shutdown', { method: 'POST' });
+                    } catch (e) {
+                      console.error("Não foi possível enviar comando de finalização ao servidor.", e);
+                    }
+                    window.close();
+                    setTimeout(() => {
+                      document.body.innerHTML = `
+                        <div style="min-height: 100vh; background-color: #0f1115; color: #e0e0e0; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; padding: 20px; text-align: center;">
+                          <div style="background-color: #1a1d23; border: 1px solid #2d3139; padding: 32px; border-radius: 12px; max-w: 400px; width: 100%; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);">
+                            <div style="width: 48px; height: 48px; background-color: rgba(239, 68, 68, 0.1); border-radius: 9999px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto; border: 1px solid rgba(239, 68, 68, 0.2);">
+                              <span style="color: #ef4444; font-size: 24px; font-weight: bold; line-height: 1;">✕</span>
                             </div>
+                            <h2 style="color: #ffffff; margin-top: 0; font-size: 18px; font-weight: bold; text-transform: uppercase; tracking-wider; margin-bottom: 8px;">Servidor Encerrado</h2>
+                            <p style="color: #a0a0a0; font-size: 13px; margin-bottom: 24px; line-height: 1.5;">O servidor local do SegurPro foi finalizado com sucesso.</p>
+                            <p style="color: #71717a; font-size: 11px; font-style: italic;">Você já pode fechar esta janela do seu navegador.</p>
                           </div>
-                        `;
-                      }, 300);
-                    }}
-                    variant="outline"
-                    className="w-full gap-2 border-red-500/20 text-red-400 hover:bg-neutral-950 hover:text-red-500 transition-all h-9 text-[10px] font-black uppercase tracking-wider mt-1 border-dashed"
-                  >
-                    <Power size={11} />
-                    Encerrar Servidor & Fechar Programa
-                  </Button>
-                </div>
-              )}
+                        </div>
+                      `;
+                    }, 300);
+                  }}
+                  variant="outline"
+                  className="w-full gap-2 border-red-500/20 text-red-400 hover:bg-neutral-950 hover:text-red-500 transition-all h-9 text-[10px] font-black uppercase tracking-wider mt-1 border-dashed"
+                >
+                  <Power size={11} />
+                  Encerrar Servidor & Fechar Programa
+                </Button>
+              </div>
             </CardContent>
           </Card>
           <p className="text-xs text-[#555]">© 2026 {appSettings.companyName || 'SegurPro Gestão'}. Todos os direitos reservados.</p>
@@ -4513,12 +4471,12 @@ export default function MainApp() {
       <main className="flex-1 flex flex-col pt-16 md:pt-0 overflow-hidden">
         <header className="hidden md:flex h-20 items-center justify-between px-8 border-b border-[#2d3139] bg-[#1a1d23]">
           {/* Left: Logo & Company Name */}
-          <div className="flex items-center gap-5">
+          <div className="flex items-center gap-3">
             {appSettings.logoUrl ? (
-              <img src={appSettings.logoUrl} alt="Logo" className="h-15 w-auto object-contain max-w-[100px]" referrerPolicy="no-referrer" />
+              <img src={appSettings.logoUrl} alt="Logo" className="h-10 w-auto object-contain max-w-[40px]" referrerPolicy="no-referrer" />
             ) : (
-              <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-lg shadow-blue-500/20">
-                <Shield size={28} className="fill-white/20" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-lg shadow-blue-500/20">
+                <Shield size={20} className="fill-white/20" />
               </div>
             )}
             <div className="flex flex-col text-left">
@@ -10329,51 +10287,11 @@ function SettingsManager({
     }
   };
 
-  const [selectedBackupCollections, setSelectedBackupCollections] = useState<string[]>([
-    'companies', 'clients', 'visits', 'receipts', 'financial', 'budgets', 'users',
-    'suppliers', 'serviceOrders', 'inventory', 'inventoryTransactions', 'logs'
-  ]);
-
-  const BACKUP_COLLECTIONS_LABELS: { [key: string]: string } = {
-    companies: "Dados/Conf. da Empresa",
-    users: "Equipe e Usuários",
-    clients: "Clientes",
-    visits: "Visitas Técnicas",
-    serviceOrders: "Ordens de Serviço (O.S.)",
-    budgets: "Orçamentos",
-    receipts: "Recibos e Comprovantes",
-    financial: "Financeiro e Lançamentos",
-    inventory: "Produtos no Estoque",
-    inventoryTransactions: "Movimentações de Estoque",
-    suppliers: "Fornecedores",
-    logs: "Registros de Logs/Auditoria"
-  };
-
-  const toggleBackupCollection = (colKey: string) => {
-    setSelectedBackupCollections(prev => 
-      prev.includes(colKey) 
-        ? prev.filter(k => k !== colKey) 
-        : [...prev, colKey]
-    );
-  };
-
-  const handleSelectAllBackupCollections = () => {
-    setSelectedBackupCollections(Object.keys(BACKUP_COLLECTIONS_LABELS));
-  };
-
-  const handleSelectNoneBackupCollections = () => {
-    setSelectedBackupCollections([]);
-  };
-
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDownloadBackup = async () => {
-    if (selectedBackupCollections.length === 0) {
-      toast.warning("Selecione pelo menos um módulo/dados para exportar!");
-      return;
-    }
     setIsBackingUp(true);
     try {
       const backupData: any = { 
@@ -10386,7 +10304,7 @@ function SettingsManager({
       const collections = [
         'companies', 'clients', 'visits', 'receipts', 'financial', 'budgets', 'users',
         'suppliers', 'serviceOrders', 'inventory', 'inventoryTransactions', 'logs'
-      ].filter(col => selectedBackupCollections.includes(col));
+      ];
       
       for (const col of collections) {
         let q;
@@ -10445,13 +10363,7 @@ function SettingsManager({
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (selectedBackupCollections.length === 0) {
-      toast.warning("Selecione pelo menos um módulo/dados na lista abaixo para restaurar!");
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      return;
-    }
-
-    const confirmRestore = window.confirm("ATENÇÃO: Restaurar um backup substituirá os dados atuais que possuírem o mesmo ID APENAS para os módulos marcados. Deseja continuar?");
+    const confirmRestore = window.confirm("ATENÇÃO: Restaurar um backup substituirá os dados atuais que possuírem o mesmo ID. Deseja continuar?");
     if (!confirmRestore) {
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
@@ -10466,12 +10378,8 @@ function SettingsManager({
         throw new Error("Formato de backup inválido.");
       }
 
-      const collections = Object.keys(backup.data).filter(col => selectedBackupCollections.includes(col));
+      const collections = Object.keys(backup.data);
       let totalRestored = 0;
-
-      if (collections.length === 0) {
-        throw new Error("O arquivo de backup selecionado não contém nenhum dado para os módulos marcados na tela.");
-      }
 
       for (const col of collections) {
         const docs = backup.data[col];
@@ -10762,60 +10670,10 @@ function SettingsManager({
                   Backup e Segurança
                 </CardTitle>
                 <CardDescription className="text-[#71717a]">
-                  Exporte ou importe seus dados com filtros personalizados.
+                  Exporte ou importe seus dados.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6">
-                
-                {/* Custom Checklist for modules/data categories */}
-                <div className="border border-[#2d3139]/80 rounded-xl p-4 bg-[#0f1115]/60 space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 pb-2 border-b border-[#2d3139]/40">
-                    <span className="text-[10px] font-black text-[#3b82f6] uppercase tracking-wider">
-                      Módulos Selecionados (Exportar / Importar)
-                    </span>
-                    <div className="flex gap-2">
-                      <button 
-                        type="button"
-                        onClick={handleSelectAllBackupCollections} 
-                        className="text-[9px] font-black text-blue-400 hover:text-blue-300 transition-colors uppercase tracking-wider"
-                      >
-                        Marcar Todos
-                      </button>
-                      <span className="text-neutral-700 text-[9px]">|</span>
-                      <button 
-                        type="button"
-                        onClick={handleSelectNoneBackupCollections} 
-                        className="text-[9px] font-black text-rose-400 hover:text-rose-300 transition-colors uppercase tracking-wider"
-                      >
-                        Desmarcar Todos
-                      </button>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                    {Object.entries(BACKUP_COLLECTIONS_LABELS).map(([key, label]) => {
-                      const isSelected = selectedBackupCollections.includes(key);
-                      return (
-                        <label 
-                          key={key} 
-                          className={`flex items-center gap-3 p-1.5 rounded-lg border transition-all cursor-pointer select-none ${
-                            isSelected 
-                              ? 'bg-[#1a1d23]/80 border-[#3b82f6]/30 text-white font-semibold' 
-                              : 'bg-transparent border-transparent text-[#71717a] hover:text-[#e2e8f0]'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleBackupCollection(key)}
-                            className="rounded border-[#2d3139] bg-[#0f1115] text-[#3b82f6] focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5 transition-all checked:bg-[#3b82f6]"
-                          />
-                          <span className="text-[10px] uppercase tracking-tight font-mono">{label}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-
+              <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <Button 
                     onClick={handleDownloadBackup} 
@@ -10824,9 +10682,9 @@ function SettingsManager({
                     className="border-blue-500/30 text-blue-400 hover:bg-blue-500 hover:text-white h-11 text-[9px] font-black tracking-tighter"
                   >
                     {isBackingUp ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} className="mr-2" />}
-                    EXPORTAR FILTRADO
+                    EXPORTAR
                   </Button>
- 
+
                   <div className="relative">
                     <input 
                       type="file" 
@@ -10842,7 +10700,7 @@ function SettingsManager({
                       className="w-full border-yellow-500/30 text-yellow-400 hover:bg-yellow-500 hover:text-white h-11 text-[9px] font-black tracking-tighter"
                     >
                       {isRestoring ? <RefreshCw size={14} className="animate-spin" /> : <Upload size={14} className="mr-2" />}
-                      IMPORTAR FILTRADO
+                      IMPORTAR
                     </Button>
                   </div>
                 </div>
@@ -12093,7 +11951,6 @@ function VisitsManager({
       const partsValue = (newVisit.parts || []).reduce((acc, p) => acc + (p.quantity * p.price), 0);
       const finalTotal = (newVisit.totalValue || 0) + partsValue;
 
-      const now = Timestamp.now();
       const docRef = await addDoc(collection(db, 'visits'), {
         ...newVisit,
         number: formattedNumber,
@@ -12104,11 +11961,7 @@ function VisitsManager({
         technicianId: user.uid,
         technicianName: newVisit.technicianName || user.displayName || 'Técnico',
         companyId,
-        createdAt: now,
-        statusDates: {
-          [newVisit.status || 'Agendada']: now
-        },
-        statusChangedAt: now
+        createdAt: Timestamp.now()
       });
 
       // Deduct from inventory
@@ -12145,18 +11998,7 @@ function VisitsManager({
       if (!visit) return;
       
       const oldStatus = visit.status;
-      const now = Timestamp.now();
-      const currentStatusDates = visit.statusDates || {};
-      const updatedStatusDates = {
-        ...currentStatusDates,
-        [status]: now
-      };
-
-      await updateDoc(doc(db, 'visits', id), { 
-        status,
-        statusDates: updatedStatusDates,
-        statusChangedAt: now
-      });
+      await updateDoc(doc(db, 'visits', id), { status });
       if (logAction) {
         await logAction('update', 'visit', `${visit.clientName}: de ${oldStatus} para ${status}`, id, visit.clientName);
       }
@@ -12238,14 +12080,6 @@ function VisitsManager({
 
       const isFinishing = data.status === 'Concluída' && oldVisit?.status !== 'Concluída' && finalTotal > 0;
 
-      const currentStatusDates = oldVisit?.statusDates || {};
-      const updatedStatusDates = { ...currentStatusDates };
-      if (oldVisit && oldVisit.status !== data.status) {
-        updatedStatusDates[data.status] = Timestamp.now();
-      } else if (!updatedStatusDates[data.status || 'Agendada']) {
-        updatedStatusDates[data.status || 'Agendada'] = Timestamp.now();
-      }
-
       if (isFinishing) {
         setVisitForReceipt({ id, status: 'Concluída' });
         await updateDoc(doc(db, 'visits', id), {
@@ -12254,8 +12088,7 @@ function VisitsManager({
           partsValue,
           date: editingVisit.date instanceof Date ? Timestamp.fromDate(editingVisit.date) : editingVisit.date,
           expectedDate: editingVisit.expectedDate instanceof Date ? Timestamp.fromDate(editingVisit.expectedDate) : editingVisit.expectedDate,
-          updatedAt: Timestamp.now(),
-          statusDates: updatedStatusDates
+          updatedAt: Timestamp.now()
         });
         if (logAction) {
           await logAction('update', 'visit', `Atualizou visita técnica #${editingVisit.number} (${editingVisit.clientName})`, id);
@@ -12268,8 +12101,7 @@ function VisitsManager({
           ...data,
           date: editingVisit.date instanceof Date ? Timestamp.fromDate(editingVisit.date) : editingVisit.date,
           expectedDate: editingVisit.expectedDate instanceof Date ? Timestamp.fromDate(editingVisit.expectedDate) : editingVisit.expectedDate,
-          updatedAt: Timestamp.now(),
-          statusDates: updatedStatusDates
+          updatedAt: Timestamp.now()
         });
         if (logAction) {
           await logAction('update', 'visit', `Atualizou visita técnica #${editingVisit.number} (${editingVisit.clientName})`, id);
@@ -12288,39 +12120,7 @@ function VisitsManager({
 
   const generateVisitPDF = (visit: TechnicalVisit) => {
     const doc = new jsPDF();
-    
-    // Resolve which date to print based on current status and status-change history
-    const currentStatus = visit.status || 'Agendada';
-    let resolvedDate = visit.date;
-    if (visit.statusDates && visit.statusDates[currentStatus]) {
-      resolvedDate = visit.statusDates[currentStatus];
-    } else {
-      if (currentStatus === 'Concluída' || currentStatus === 'Em Andamento' || currentStatus === 'Cancelada') {
-        resolvedDate = visit.updatedAt || new Date();
-      }
-    }
-    
-    const displayDateObj = resolvedDate instanceof Timestamp ? resolvedDate.toDate() : new Date(resolvedDate);
-    const dateStr = format(displayDateObj, 'dd/MM/yyyy');
-    
-    // Determine the status label and scheduled/transition details
-    let schedLabel = 'AGENDADO:';
-    let schedVal = `${format(visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date), 'dd/MM/yyyy')}${visit.scheduledTime ? ` às ${visit.scheduledTime}` : ''}`;
-    
-    if (currentStatus === 'Em Andamento') {
-      schedLabel = 'ANDAMENTO:';
-      const timeStr = format(displayDateObj, 'HH:mm');
-      schedVal = `${dateStr} às ${timeStr}`;
-    } else if (currentStatus === 'Concluída') {
-      schedLabel = 'CONCLUSÃO:';
-      const timeStr = format(displayDateObj, 'HH:mm');
-      schedVal = `${dateStr} às ${timeStr}`;
-    } else if (currentStatus === 'Cancelada') {
-      schedLabel = 'CANCELADO:';
-      const timeStr = format(displayDateObj, 'HH:mm');
-      schedVal = `${dateStr} às ${timeStr}`;
-    }
-
+    const dateStr = format(visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date), 'dd/MM/yyyy');
     const createdStr = visit.createdAt ? format(visit.createdAt instanceof Timestamp ? visit.createdAt.toDate() : new Date(visit.createdAt), 'dd/MM/yyyy HH:mm') : '';
     
     // Header
@@ -12403,9 +12203,9 @@ function VisitsManager({
     let schedY = currentY + 5;
     
     doc.setFont('helvetica', 'bold');
-    doc.text(schedLabel, rightColX + 3, schedY);
+    doc.text('AGENDADO:', rightColX + 3, schedY);
     doc.setFont('helvetica', 'normal');
-    doc.text(schedVal, rightColX + 35, schedY);
+    doc.text(`${dateStr}${visit.scheduledTime ? ` às ${visit.scheduledTime}` : ''}`, rightColX + 35, schedY);
     
     schedY += 7;
     doc.setFont('helvetica', 'bold');
@@ -12503,7 +12303,7 @@ function VisitsManager({
     
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    const cityDate = formatFullDateWithCity(resolvedDate, appSettings);
+    const cityDate = formatFullDateWithCity(visit.date, appSettings);
     doc.text(cityDate, 105, signatureY - 10, { align: 'center' });
     
     // Signatures

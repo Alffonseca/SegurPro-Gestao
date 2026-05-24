@@ -1,0 +1,20 @@
+[
+  {
+    "uid": "diretor-local-id",
+    "email": "diretor@exemplo.com",
+    "password": "123456",
+    "displayName": "Diretor Geral (Local)"
+  },
+  {
+    "uid": "emailparasiteslixo-id",
+    "email": "emailparasiteslixo@gmail.com",
+    "password": "123456",
+    "displayName": "Andre Fonseca"
+  },
+  {
+    "uid": "alffonseca42-id",
+    "email": "alffonseca42@gmail.com",
+    "password": "123456",
+    "displayName": "Alff Fonseca"
+  }
+]

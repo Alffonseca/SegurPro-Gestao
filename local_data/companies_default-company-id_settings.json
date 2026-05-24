@@ -1,0 +1,11 @@
+[
+  {
+    "id": "general",
+    "companyName": "AF Suporte Técnico em Seg. e Inf.",
+    "createdAt": {
+      "seconds": 1779900000,
+      "nanoseconds": 0,
+      "__type": "Timestamp"
+    }
+  }
+]

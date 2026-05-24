@@ -1,0 +1,38 @@
+[
+  {
+    "id": "diretor-local-id",
+    "displayName": "Diretor Geral (Local)",
+    "email": "diretor@exemplo.com",
+    "role": "diretor",
+    "companyId": "default-company-id",
+    "createdAt": {
+      "seconds": 1779900000,
+      "nanoseconds": 0,
+      "__type": "Timestamp"
+    }
+  },
+  {
+    "id": "emailparasiteslixo-id",
+    "displayName": "Andre Fonseca",
+    "email": "emailparasiteslixo@gmail.com",
+    "role": "super_admin",
+    "companyId": "default-company-id",
+    "createdAt": {
+      "seconds": 1779900000,
+      "nanoseconds": 0,
+      "__type": "Timestamp"
+    }
+  },
+  {
+    "id": "alffonseca42-id",
+    "displayName": "Alff Fonseca",
+    "email": "alffonseca42@gmail.com",
+    "role": "super_admin",
+    "companyId": "default-company-id",
+    "createdAt": {
+      "seconds": 1779900000,
+      "nanoseconds": 0,
+      "__type": "Timestamp"
+    }
+  }
+]

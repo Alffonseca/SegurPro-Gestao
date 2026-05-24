@@ -1,0 +1,14 @@
+[
+  {
+    "id": "default-company-id",
+    "name": "AF Suporte Técnico em Seg. e Inf.",
+    "ownerId": "emailparasiteslixo-id",
+    "status": "active",
+    "inviteCode": "MASTER",
+    "createdAt": {
+      "seconds": 1779900000,
+      "nanoseconds": 0,
+      "__type": "Timestamp"
+    }
+  }
+]
