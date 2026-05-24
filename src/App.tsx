@@ -174,6 +174,72 @@ import {
 } from '@/components/ui/command';
 
 // --- Helpers ---
+const reconstructTimestamps = (obj: any): any => {
+  if (obj === null || obj === undefined) return obj;
+  
+  if (Array.isArray(obj)) {
+    return obj.map(reconstructTimestamps);
+  }
+  
+  if (typeof obj === 'object') {
+    // Check if it's a raw timestamp object from JSON
+    if (typeof obj.seconds === 'number' && typeof obj.nanoseconds === 'number' && Object.keys(obj).length <= 3) {
+      return new Timestamp(obj.seconds, obj.nanoseconds);
+    }
+    
+    // Otherwise, recursively check children
+    const newObj: any = {};
+    for (const key of Object.keys(obj)) {
+      newObj[key] = reconstructTimestamps(obj[key]);
+    }
+    return newObj;
+  }
+  
+  return obj;
+};
+
+const safeParseDate = (date: any): Date => {
+  if (!date) return new Date();
+  if (date instanceof Date) {
+    const d = new Date(date);
+    if (d.getHours() === 0 && d.getMinutes() === 0) d.setHours(12);
+    return d;
+  }
+  if (date && typeof date.toDate === 'function') {
+    const d = date.toDate();
+    if (d.getHours() === 0 && d.getMinutes() === 0) d.setHours(12);
+    return d;
+  }
+  if (date && date.seconds !== undefined) {
+    const d = new Date(date.seconds * 1000);
+    if (d.getHours() === 0 && d.getMinutes() === 0) d.setHours(12);
+    return d;
+  }
+  if (typeof date === 'string') {
+    // YYYY-MM-DD
+    if (date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const parts = date.split('-').map(Number);
+      return new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
+    }
+    // DD/MM/YYYY
+    if (date.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+      const parts = date.split('/').map(Number);
+      return new Date(parts[2], parts[1] - 1, parts[0], 12, 0, 0);
+    }
+    // DD-MM-YYYY
+    if (date.match(/^\d{2}-\d{2}-\d{4}$/)) {
+      const parts = date.split('-').map(Number);
+      return new Date(parts[2], parts[1] - 1, parts[0], 12, 0, 0);
+    }
+    const d = new Date(date);
+    if (!isNaN(d.getTime())) {
+      if (d.getHours() === 0 && d.getMinutes() === 0) d.setHours(12);
+      return d;
+    }
+  }
+  return new Date();
+};
+
 
 // --- Native Folder Persistence Wrapper for PDFs using IndexedDB ---
 const idbFolderStore = {
@@ -506,7 +572,7 @@ const formatRecordNumber = (number?: number | string, date?: any) => {
   if (!number) return '---';
   const numStr = number.toString();
   if (numStr.includes('/')) return numStr; // Already formatted
-  const d = date instanceof Timestamp ? date.toDate() : (date ? new Date(date) : new Date());
+  const d = safeParseDate(date);
   const year = format(d, 'yy');
   return `${numStr.padStart(5, '0')}/${year}`;
 };
@@ -1511,6 +1577,7 @@ interface TechnicalVisit {
   clientSignature?: string;
   technicianSignature?: string;
   createdAt: any;
+  updatedAt?: any;
   number?: number | string;
   statusDates?: { [key: string]: any };
   statusChangedAt?: any;
@@ -1617,8 +1684,8 @@ interface Supplier {
 
 const generateReceiptPDF = async (receipt: Receipt, appSettings: AppSettings, pixSettings: PixSettings, shouldShare = false) => {
   const doc = new jsPDF();
-  const dateStr = format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), 'dd/MM/yyyy');
-  const fullDateStr = format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
+  const dateStr = format(safeParseDate(receipt.date), 'dd/MM/yyyy');
+  const fullDateStr = format(safeParseDate(receipt.date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
   const isContract = receipt.clientType === 'Contrato';
   
   // 1. Header
@@ -2602,48 +2669,6 @@ const getFinalEmail = (input: string) => {
   if (!clean) return '';
   
   return `${clean}@segurpro.com`;
-};
-
-const safeParseDate = (date: any): Date => {
-  if (!date) return new Date();
-  if (date instanceof Date) {
-    const d = new Date(date);
-    if (d.getHours() === 0 && d.getMinutes() === 0) d.setHours(12);
-    return d;
-  }
-  if (date && typeof date.toDate === 'function') {
-    const d = date.toDate();
-    if (d.getHours() === 0 && d.getMinutes() === 0) d.setHours(12);
-    return d;
-  }
-  if (date && date.seconds !== undefined) {
-    const d = new Date(date.seconds * 1000);
-    if (d.getHours() === 0 && d.getMinutes() === 0) d.setHours(12);
-    return d;
-  }
-  if (typeof date === 'string') {
-    // YYYY-MM-DD
-    if (date.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      const parts = date.split('-').map(Number);
-      return new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
-    }
-    // DD/MM/YYYY
-    if (date.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
-      const parts = date.split('/').map(Number);
-      return new Date(parts[2], parts[1] - 1, parts[0], 12, 0, 0);
-    }
-    // DD-MM-YYYY
-    if (date.match(/^\d{2}-\d{2}-\d{4}$/)) {
-      const parts = date.split('-').map(Number);
-      return new Date(parts[2], parts[1] - 1, parts[0], 12, 0, 0);
-    }
-    const d = new Date(date);
-    if (!isNaN(d.getTime())) {
-      if (d.getHours() === 0 && d.getMinutes() === 0) d.setHours(12);
-      return d;
-    }
-  }
-  return new Date();
 };
 
 const initialAppSettings: AppSettings = {
@@ -6973,7 +6998,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
       filtered = filtered.filter(r => r.clientId === selectedClientFilter);
     }
     const dates = filtered.map(r => {
-      const d = r.date instanceof Timestamp ? r.date.toDate() : new Date(r.date);
+      const d = safeParseDate(r.date);
       return format(d, 'yyyy-MM-dd');
     });
     return Array.from(new Set(dates)).sort().reverse();
@@ -7049,17 +7074,17 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
     }
     if (dateFilterType === 'diario' && dayFilter) {
       filtered = filtered.filter(r => {
-        const d = r.date instanceof Timestamp ? r.date.toDate() : new Date(r.date);
+        const d = safeParseDate(r.date);
         return format(d, 'yyyy-MM-dd') === dayFilter;
       });
     } else if (dateFilterType === 'mensal' && monthFilter) {
       filtered = filtered.filter(r => {
-        const d = r.date instanceof Timestamp ? r.date.toDate() : new Date(r.date);
+        const d = safeParseDate(r.date);
         return format(d, 'yyyy-MM') === monthFilter;
       });
     } else if (dateFilterType === 'anual' && yearFilter) {
       filtered = filtered.filter(r => {
-        const d = r.date instanceof Timestamp ? r.date.toDate() : new Date(r.date);
+        const d = safeParseDate(r.date);
         return format(d, 'yyyy') === yearFilter;
       });
     }
@@ -7144,7 +7169,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
           ? `Serviço Contratual - ${data.referenceMonth || ''}` 
           : data.serviceSpecification,
         pixAccountId: editingReceipt.pixAccountId || null,
-        date: editingReceipt.date instanceof Timestamp ? editingReceipt.date : Timestamp.fromDate(new Date(editingReceipt.date))
+        date: Timestamp.fromDate(safeParseDate(editingReceipt.date))
       };
       
       await updateDoc(doc(db, 'receipts', id), receiptData);
@@ -7676,7 +7701,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                       <Input 
                         id="editReceiptDate" 
                         type="date" 
-                        value={editingReceipt.date ? (editingReceipt.date instanceof Timestamp ? editingReceipt.date.toDate().toISOString().split('T')[0] : new Date(editingReceipt.date).toISOString().split('T')[0]) : ''} 
+                        value={editingReceipt.date ? safeParseDate(editingReceipt.date).toISOString().split('T')[0] : ''} 
                         onChange={e => setEditingReceipt({...editingReceipt, date: new Date(e.target.value)})} 
                         className="bg-[#0f1115] border-[#2d3139] text-white" 
                       />
@@ -7822,7 +7847,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-mono text-[#3b82f6] font-bold">#{receipt.number ? formatRecordNumber(receipt.number, receipt.date) : '-'}</span>
-                      <span className="text-[9px] text-[#71717a]">{format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), 'dd/MM/yyyy')}</span>
+                      <span className="text-[9px] text-[#71717a]">{format(safeParseDate(receipt.date), 'dd/MM/yyyy')}</span>
                     </div>
                     <h3 className="font-bold text-white text-sm truncate pr-14" title={receipt.clientName}>{receipt.clientName}</h3>
                     <div className="flex items-center gap-2">
@@ -7985,7 +8010,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                   <TableCell className="w-[100px]">
                     <div className="flex flex-col">
                       <span className="text-[11px] font-mono text-[#3b82f6] font-bold">#{receipt.number ? formatRecordNumber(receipt.number, receipt.date) : '-'}</span>
-                      <span className="text-[10px] text-[#71717a] mt-0.5">{format(receipt.date instanceof Timestamp ? receipt.date.toDate() : new Date(receipt.date), 'dd/MM/yy')}</span>
+                      <span className="text-[10px] text-[#71717a] mt-0.5">{format(safeParseDate(receipt.date), 'dd/MM/yy')}</span>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -8014,7 +8039,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
               </Badge>
             </DialogTitle>
             <DialogDescription className="text-[#71717a]">
-              Detalhes do recibo gerado em {viewingReceipt?.date ? format(viewingReceipt.date instanceof Timestamp ? viewingReceipt.date.toDate() : new Date(viewingReceipt.date), 'dd/MM/yyyy') : ''}
+              Detalhes do recibo gerado em {viewingReceipt?.date ? format(safeParseDate(viewingReceipt.date), 'dd/MM/yyyy') : ''}
             </DialogDescription>
           </DialogHeader>
 
@@ -8465,7 +8490,7 @@ function SuperAdminPanel({
     reader.onload = async (e) => {
       try {
         const text = e.target?.result as string;
-        const backup = JSON.parse(text);
+        const backup = reconstructTimestamps(JSON.parse(text));
         
         if (!backup.data) {
           toast.error("Arquivo de backup inválido.");
@@ -8736,7 +8761,7 @@ function SuperAdminPanel({
   const realizedRevenue = myCompanyFinancials
     .filter(f => {
       if (f.type !== 'Receita') return false;
-      const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
+      const d = safeParseDate(f.date);
       if (viewPeriod === 'year') {
         return format(d, 'yyyy') === selectedYear;
       }
@@ -8765,7 +8790,7 @@ function SuperAdminPanel({
   const years = useMemo(() => {
     const currentYear = new Date().getFullYear();
     const availableYears = allFinancials.map(f => {
-      const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
+      const d = safeParseDate(f.date);
       return d.getFullYear();
     });
     const uniqueYears = Array.from(new Set([...availableYears, currentYear])).sort((a, b) => b - a);
@@ -10460,7 +10485,7 @@ function SettingsManager({
     setIsRestoring(true);
     try {
       const text = await file.text();
-      const backup = JSON.parse(text);
+      const backup = reconstructTimestamps(JSON.parse(text));
 
       if (!backup.data) {
         throw new Error("Formato de backup inválido.");
@@ -12300,12 +12325,12 @@ function VisitsManager({
       }
     }
     
-    const displayDateObj = resolvedDate instanceof Timestamp ? resolvedDate.toDate() : new Date(resolvedDate);
+    const displayDateObj = safeParseDate(resolvedDate);
     const dateStr = format(displayDateObj, 'dd/MM/yyyy');
     
     // Determine the status label and scheduled/transition details
     let schedLabel = 'AGENDADO:';
-    let schedVal = `${format(visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date), 'dd/MM/yyyy')}${visit.scheduledTime ? ` às ${visit.scheduledTime}` : ''}`;
+    let schedVal = `${format(safeParseDate(visit.date), 'dd/MM/yyyy')}${visit.scheduledTime ? ` às ${visit.scheduledTime}` : ''}`;
     
     if (currentStatus === 'Em Andamento') {
       schedLabel = 'ANDAMENTO:';
@@ -12321,7 +12346,7 @@ function VisitsManager({
       schedVal = `${dateStr} às ${timeStr}`;
     }
 
-    const createdStr = visit.createdAt ? format(visit.createdAt instanceof Timestamp ? visit.createdAt.toDate() : new Date(visit.createdAt), 'dd/MM/yyyy HH:mm') : '';
+    const createdStr = visit.createdAt ? format(safeParseDate(visit.createdAt), 'dd/MM/yyyy HH:mm') : '';
     
     // Header
     if (appSettings.logoUrl) {
@@ -12411,7 +12436,7 @@ function VisitsManager({
     doc.setFont('helvetica', 'bold');
     doc.text('PREVISÃO:', rightColX + 3, schedY);
     doc.setFont('helvetica', 'normal');
-    const expDateStr = visit.expectedDate ? format(visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate), 'dd/MM/yyyy') : '--/--/----';
+    const expDateStr = visit.expectedDate ? format(safeParseDate(visit.expectedDate), 'dd/MM/yyyy') : '--/--/----';
     doc.text(`${expDateStr}${visit.expectedTime ? ` às ${visit.expectedTime}` : ''}`, rightColX + 35, schedY);
 
     schedY += 7;
@@ -12995,9 +13020,9 @@ function VisitsManager({
                    <Button variant="ghost" size="icon" className="h-7 w-7 text-[#a0a0a0] hover:text-white bg-[#0f1115]/80 backdrop-blur-sm" onClick={() => {
                         setViewingVisit({
                           ...visit,
-                          date: visit.date instanceof Timestamp ? visit.date.toDate() : (visit.date ? new Date(visit.date) : new Date()),
-                          expectedDate: visit.expectedDate ? (visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate)) : (visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date)),
-                          createdAt: visit.createdAt instanceof Timestamp ? visit.createdAt.toDate() : (visit.createdAt ? new Date(visit.createdAt) : null)
+                          date: safeParseDate(visit.date),
+                          expectedDate: safeParseDate(visit.expectedDate || visit.date),
+                          createdAt: visit.createdAt ? safeParseDate(visit.createdAt) : null
                         });
                         setIsViewOpen(true);
                    }}>
@@ -13006,9 +13031,9 @@ function VisitsManager({
                    <Button variant="ghost" size="icon" className="h-7 w-7 text-[#a0a0a0] hover:text-white bg-[#0f1115]/80 backdrop-blur-sm" onClick={() => {
                         setEditingVisit({
                           ...visit,
-                          date: visit.date instanceof Timestamp ? visit.date.toDate() : (visit.date ? new Date(visit.date) : new Date()),
-                          expectedDate: visit.expectedDate ? (visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate)) : (visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date)),
-                          createdAt: visit.createdAt instanceof Timestamp ? visit.createdAt.toDate() : (visit.createdAt ? new Date(visit.createdAt) : null)
+                          date: safeParseDate(visit.date),
+                          expectedDate: safeParseDate(visit.expectedDate || visit.date),
+                          createdAt: visit.createdAt ? safeParseDate(visit.createdAt) : null
                         });
                         setIsEditOpen(true);
                    }}>
@@ -13036,7 +13061,7 @@ function VisitsManager({
                     <div className="flex flex-col">
                       <span className="text-[10px] text-[#71717a] uppercase font-bold tracking-widest">Agendamento</span>
                       <span className="text-[11px] text-[#3b82f6] font-bold">
-                        {format(visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date), 'dd/MM/yyyy')} {visit.scheduledTime}
+                        {format(safeParseDate(visit.date), 'dd/MM/yyyy')} {visit.scheduledTime}
                       </span>
                     </div>
                     {visit.totalValue > 0 && (
@@ -13073,9 +13098,9 @@ function VisitsManager({
                       <Button variant="outline" size="icon" title="Ver Detalhes" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={() => {
                         setViewingVisit({
                           ...visit,
-                          date: visit.date instanceof Timestamp ? visit.date.toDate() : (visit.date ? new Date(visit.date) : new Date()),
-                          expectedDate: visit.expectedDate ? (visit.expectedDate instanceof Timestamp ? visit.expectedDate.toDate() : new Date(visit.expectedDate)) : (visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date)),
-                          createdAt: visit.createdAt instanceof Timestamp ? visit.createdAt.toDate() : (visit.createdAt ? new Date(visit.createdAt) : null)
+                          date: safeParseDate(visit.date),
+                          expectedDate: safeParseDate(visit.expectedDate || visit.date),
+                          createdAt: visit.createdAt ? safeParseDate(visit.createdAt) : null
                         });
                         setIsViewOpen(true);
                       }}>
@@ -13139,7 +13164,7 @@ function VisitsManager({
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-col text-[9px] text-[#71717a]">
-                      <span className="font-bold text-[#3b82f6]">{format(visit.date instanceof Timestamp ? visit.date.toDate() : new Date(visit.date), 'dd/MM/yyyy')} {visit.scheduledTime}</span>
+                      <span className="font-bold text-[#3b82f6]">{format(safeParseDate(visit.date), 'dd/MM/yyyy')} {visit.scheduledTime}</span>
                       {visit.technicianName && <span className="text-[8px] italic">Téc: {visit.technicianName.split(' ')[0]}</span>}
                     </div>
                   </TableCell>
@@ -13622,7 +13647,7 @@ function FinancialManager({
   const years = useMemo(() => {
     const currentYear = new Date().getFullYear();
     const availableYears = financials.map(f => {
-      const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
+      const d = safeParseDate(f.date);
       return d.getFullYear();
     });
     const uniqueYears = Array.from(new Set([...availableYears, currentYear])).sort((a, b) => b - a);
@@ -13640,7 +13665,7 @@ function FinancialManager({
       filtered = filtered.filter(f => f.clientId === selectedClientFilter);
     }
     const dates = filtered.map(f => {
-      const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
+      const d = safeParseDate(f.date);
       return format(d, 'yyyy-MM-dd');
     });
     return Array.from(new Set(dates)).sort().reverse();
@@ -13663,7 +13688,7 @@ function FinancialManager({
     
     // Filtro por Mês/Ano (sempre ativo para os totais e lista básica)
     filtered = filtered.filter(f => {
-      const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
+      const d = safeParseDate(f.date);
       if (viewPeriod === 'year') {
         return format(d, 'yyyy') === selectedYear;
       }
@@ -13672,7 +13697,7 @@ function FinancialManager({
 
     if (dateFilter && dateFilter !== 'all') {
       filtered = filtered.filter(f => {
-        const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
+        const d = safeParseDate(f.date);
         return format(d, 'yyyy-MM-dd') === dateFilter;
       });
     }
@@ -13687,7 +13712,7 @@ function FinancialManager({
 
   const financialStats = useMemo(() => {
     const filteredByPeriod = financials.filter(f => {
-      const d = f.date instanceof Timestamp ? f.date.toDate() : new Date(f.date);
+      const d = safeParseDate(f.date);
       if (viewPeriod === 'year') {
         return format(d, 'yyyy') === selectedYear;
       }
@@ -14262,7 +14287,7 @@ function FinancialManager({
                        e.stopPropagation();
                        setEditingRecord({
                          ...record,
-                         date: record.date instanceof Timestamp ? record.date.toDate() : (record.date ? new Date(record.date) : new Date())
+                         date: safeParseDate(record.date)
                        });
                        setIsEditOpen(true);
                     }}>
@@ -14285,7 +14310,7 @@ function FinancialManager({
                     )}>
                       {record.type}
                     </Badge>
-                    <span className="text-[10px] text-[#71717a]">{format(record.date instanceof Timestamp ? record.date.toDate() : new Date(record.date), 'dd/MM/yyyy')}</span>
+                    <span className="text-[10px] text-[#71717a]">{format(safeParseDate(record.date), 'dd/MM/yyyy')}</span>
                   </div>
                   
                   <div className="flex flex-col gap-0.5">
@@ -14376,7 +14401,7 @@ function FinancialManager({
                     <Button variant="outline" size="icon" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
                       setEditingRecord({
                         ...record,
-                        date: record.date instanceof Timestamp ? record.date.toDate() : (record.date ? new Date(record.date) : new Date())
+                        date: safeParseDate(record.date)
                       });
                       setIsEditOpen(true);
                     }}>
@@ -14443,7 +14468,7 @@ function FinancialManager({
                   </div>
                 </TableCell>
                 <TableCell className="text-right text-[11px] text-[#71717a]">
-                  {format(record.date instanceof Timestamp ? record.date.toDate() : new Date(record.date), 'dd/MM/yy')}
+                  {format(safeParseDate(record.date), 'dd/MM/yy')}
                 </TableCell>
 
 
