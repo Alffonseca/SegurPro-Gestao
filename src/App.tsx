@@ -12026,9 +12026,9 @@ function VisitsManager({
     if (externalEditAction) {
       // Ensure timestamps are converted to Dates to prevent crashes in the form
       const data = { ...externalEditAction };
-      if (data.date instanceof Timestamp) data.date = data.date.toDate();
-      if (data.expectedDate instanceof Timestamp) data.expectedDate = data.expectedDate.toDate();
-      if (data.createdAt instanceof Timestamp) data.createdAt = data.createdAt.toDate();
+      data.date = safeParseDate(data.date);
+      data.expectedDate = safeParseDate(data.expectedDate || data.date);
+      if (data.createdAt) data.createdAt = safeParseDate(data.createdAt);
       
       setEditingVisit(data);
       setIsEditOpen(true);
@@ -13383,7 +13383,7 @@ function VisitsManager({
                     <Label className="text-[#a0a0a0]">Data Agendamento</Label>
                     <Input 
                       type="date" 
-                      value={editingVisit.date ? format(editingVisit.date as Date, 'yyyy-MM-dd') : ''} 
+                      value={editingVisit.date ? format(safeParseDate(editingVisit.date), 'yyyy-MM-dd') : ''} 
                       onChange={e => {
                         const val = e.target.value;
                         setEditingVisit({...editingVisit, date: val ? new Date(val + 'T12:00:00') : new Date()});
@@ -13401,7 +13401,7 @@ function VisitsManager({
                     <Label className="text-[#a0a0a0]">Data Prevista Visita</Label>
                     <Input 
                       type="date" 
-                      value={editingVisit.expectedDate ? format(editingVisit.expectedDate as Date, 'yyyy-MM-dd') : ''} 
+                      value={editingVisit.expectedDate ? format(safeParseDate(editingVisit.expectedDate), 'yyyy-MM-dd') : ''} 
                       onChange={e => {
                         const val = e.target.value;
                         setEditingVisit({...editingVisit, expectedDate: val ? new Date(val + 'T12:00:00') : new Date()});
