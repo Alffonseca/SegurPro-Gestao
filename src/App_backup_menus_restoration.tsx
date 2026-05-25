@@ -22,6 +22,8 @@ import {
   Trash2,
   User,
   Minus,
+  Maximize,
+  Minimize,
   Zap,
   Pencil,
   Eye,
@@ -160,6 +162,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
 
 const SUPER_ADMIN_EMAILS = ['emailparasiteslixo@gmail.com', 'alffonseca42@gmail.com'];
+import { LaudosManager, LaudoTecnico } from './components/LaudosManager';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Calendar } from '@/components/ui/calendar';
@@ -760,6 +763,7 @@ const ALL_MENU_ITEMS = [
   { id: 'receipts', label: 'Recibos' },
   { id: 'reports', label: 'Relatórios' },
   { id: 'budgets', label: 'Orçamentos' },
+  { id: 'laudos', label: 'Laudos Técnicos' },
   { id: 'visits', label: 'Visitas Técnicas' },
   { id: 'service-orders', label: 'Ordens de Serviço' },
   { id: 'inventory', label: 'Estoque de Peças' },
@@ -2717,6 +2721,68 @@ export default function MainApp() {
   const [clients, setClients] = useState<Client[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [laudos, setLaudos] = useState<LaudoTecnico[]>([]);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement || !!(document as any).webkitIsFullScreen || !!(document as any).mozFullScreen || !!(document as any).msFullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+    };
+  }, []);
+
+  const enterFullscreen = () => {
+    try {
+      const docElm = document.documentElement;
+      if (docElm.requestFullscreen) {
+        docElm.requestFullscreen().catch((err: any) => console.warn("Fullscreen error:", err));
+      } else if ((docElm as any).webkitRequestFullscreen) {
+        (docElm as any).webkitRequestFullscreen()?.catch?.((err: any) => console.warn(err));
+      } else if ((docElm as any).mozRequestFullScreen) {
+        (docElm as any).mozRequestFullScreen()?.catch?.((err: any) => console.warn(err));
+      } else if ((docElm as any).msRequestFullscreen) {
+        (docElm as any).msRequestFullscreen()?.catch?.((err: any) => console.warn(err));
+      }
+    } catch (err) {
+      console.warn("Fullscreen request blocked or not supported:", err);
+    }
+  };
+
+  const exitFullscreen = () => {
+    try {
+      if (document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement) {
+        if (document.exitFullscreen) {
+          document.exitFullscreen().catch((err: any) => console.warn("Fullscreen exit error:", err));
+        } else if ((document as any).webkitExitFullscreen) {
+          (document as any).webkitExitFullscreen()?.catch?.((err: any) => console.warn(err));
+        } else if ((document as any).mozCancelFullScreen) {
+          (document as any).mozCancelFullScreen()?.catch?.((err: any) => console.warn(err));
+        } else if ((document as any).msExitFullscreen) {
+          (document as any).msExitFullscreen()?.catch?.((err: any) => console.warn(err));
+        }
+      }
+    } catch (err) {
+      console.warn("Fullscreen exit failed:", err);
+    }
+  };
+
+  const toggleFullscreen = () => {
+    if (isFullscreen) {
+      exitFullscreen();
+    } else {
+      enterFullscreen();
+    }
+  };
+
   const [users, setUsers] = useState<any[]>([]);
   const [allGlobalUsers, setAllGlobalUsers] = useState<any[]>([]);
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
@@ -3092,7 +3158,7 @@ export default function MainApp() {
       const defaultMenus = [
         'dashboard', 'visits', 'receipts', 'clients', 'financial', 
         'inventory', 'service-orders', 'budgets', 'settings', 'pdv',
-        'suppliers', 'reports', 'users', 'logs'
+        'suppliers', 'reports', 'users', 'logs', 'laudos'
       ];
       if (!defaultMenus.includes(tabName)) return false;
     }
@@ -3108,15 +3174,15 @@ export default function MainApp() {
     }
 
     if (role === 'secretaria') {
-      return ['dashboard', 'financial', 'budgets', 'clients', 'suppliers', 'receipts', 'users', 'reports', 'settings', 'logs', 'inventory'].includes(tabName);
+      return ['dashboard', 'financial', 'budgets', 'clients', 'suppliers', 'receipts', 'users', 'reports', 'settings', 'logs', 'inventory', 'laudos'].includes(tabName);
     }
     
     if (role === 'tecnico') {
-      return ['dashboard', 'visits', 'service-orders', 'receipts', 'inventory'].includes(tabName);
+      return ['dashboard', 'visits', 'service-orders', 'receipts', 'inventory', 'laudos'].includes(tabName);
     }
 
     if (role === 'auxiliar') {
-      return ['dashboard', 'visits'].includes(tabName);
+      return ['dashboard', 'visits', 'laudos'].includes(tabName);
     }
     
     // Default fallback
@@ -3154,7 +3220,7 @@ export default function MainApp() {
     if (currentUserData && !canAccess(activeTab)) {
       const allowedTabs = [
         'dashboard', 'visits', 'financial', 'budgets', 'service-orders',
-        'clients', 'suppliers', 'receipts', 'users', 'settings', 'reports', 'super-admin', 'inventory'
+        'clients', 'suppliers', 'receipts', 'users', 'settings', 'reports', 'super-admin', 'inventory', 'laudos'
       ].filter(canAccess);
       
       if (allowedTabs.length > 0) {
@@ -3299,6 +3365,7 @@ export default function MainApp() {
     let pixUnsubscribe = () => {};
     let appSettingsUnsubscribe = () => {};
     let salesUnsubscribe = () => {};
+    let laudosUnsubscribe = () => {};
 
     if (companyId) {
       // Reset settings when switching company to prevent bleeding data
@@ -3308,6 +3375,7 @@ export default function MainApp() {
       setClients([]);
       setSuppliers([]);
       setReceipts([]);
+      setLaudos([]);
       setUsers([]);
       setSales([]);
       setServiceOrders([]);
@@ -3478,6 +3546,18 @@ export default function MainApp() {
           }));
         }
       );
+
+      laudosUnsubscribe = onSnapshot(
+        query(collection(db, 'laudos'), where('companyId', '==', companyId)),
+        (snapshot) => {
+          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LaudoTecnico));
+          setLaudos(data.sort((a, b) => {
+            const timeA = a.createdAt?.seconds || 0;
+            const timeB = b.createdAt?.seconds || 0;
+            return timeB - timeA;
+          }));
+        }
+      );
     }
 
     return () => {
@@ -3495,6 +3575,7 @@ export default function MainApp() {
       pixUnsubscribe();
       appSettingsUnsubscribe();
       salesUnsubscribe();
+      laudosUnsubscribe();
       if (allCompaniesUnsubscribe) allCompaniesUnsubscribe();
       if (allFinancialsUnsubscribe) allFinancialsUnsubscribe();
       if (saasSettingsUnsubscribe) saasSettingsUnsubscribe();
@@ -3506,6 +3587,7 @@ export default function MainApp() {
     try {
       await signInWithPopup(auth, provider);
       toast.success('Login realizado com sucesso!');
+      enterFullscreen();
     } catch (error: any) {
       console.error('Erro no login Google:', error);
       if (error.code === 'auth/unauthorized-domain') {
@@ -3747,6 +3829,7 @@ export default function MainApp() {
 
         const userCredential = await Promise.race([signInPromise, timeoutPromise]);
         toast.success(`Bem-vindo, ${userCredential.user.displayName || 'usuário'}!`);
+        enterFullscreen();
       } else {
         if (!displayName) {
           toast.error('Por favor, informe seu nome para o cadastro.');
@@ -3810,9 +3893,12 @@ export default function MainApp() {
 
   const handleLogout = async () => {
     try {
+      exitFullscreen();
       await signOut(auth);
-      // Clear URL parameters upon logout to ensure a clean login screen
-      window.location.href = window.location.origin + window.location.pathname;
+      // Clean URL parameters upon logout to ensure a clean login screen without breaking sandboxed environment
+      if (window.history.pushState) {
+        window.history.pushState({}, '', window.location.pathname);
+      }
       toast.success('Sessão encerrada.');
     } catch (error) {
       console.error(error);
@@ -4277,6 +4363,14 @@ export default function MainApp() {
                 onClick={() => setActiveTab('budgets')} 
               />
             )}
+            {canAccess('laudos') && (
+              <SidebarItem 
+                icon={<PenTool size={18} />} 
+                label="Laudos Técnicos" 
+                active={activeTab === 'laudos'} 
+                onClick={() => setActiveTab('laudos')} 
+              />
+            )}
             {canAccess('financial') && (
               <SidebarItem 
                 icon={<DollarSign size={18} />} 
@@ -4449,6 +4543,14 @@ export default function MainApp() {
                 onClick={() => { setActiveTab('budgets'); setIsMobileMenuOpen(false); }} 
               />
             )}
+            {canAccess('laudos') && (
+              <SidebarItem 
+                icon={<PenTool size={20} />} 
+                label="Laudos Técnicos" 
+                active={activeTab === 'laudos'} 
+                onClick={() => { setActiveTab('laudos'); setIsMobileMenuOpen(false); }} 
+              />
+            )}
             {canAccess('financial') && (
               <SidebarItem 
                 icon={<DollarSign size={20} />} 
@@ -4608,6 +4710,16 @@ export default function MainApp() {
             <Button 
               variant="ghost" 
               size="icon"
+              className="h-9 w-9 text-[#a0a0a0] hover:text-[#3b82f6] hover:bg-[#3b82f6]/10 rounded-lg border border-[#2d3139]/50" 
+              onClick={toggleFullscreen}
+              title={isFullscreen ? "Sair da Tela Cheia" : "Entrar em Tela Cheia"}
+            >
+              {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+            </Button>
+
+            <Button 
+              variant="ghost" 
+              size="icon"
               className="h-9 w-9 text-[#a0a0a0] hover:text-red-400 hover:bg-red-500/10 rounded-lg border border-[#2d3139]/50" 
               onClick={handleLogout}
               title="Fazer Logout"
@@ -4628,6 +4740,7 @@ export default function MainApp() {
                 { id: 'inventory', label: 'Estoque', icon: <Package size={14} />, show: canAccess('inventory') },
                 { id: 'pdv', label: 'PDV (Vendas)', icon: <ShoppingCart size={14} />, show: canAccess('pdv') },
                 { id: 'budgets', label: 'Orçamentos', icon: <FileText size={14} />, show: canAccess('budgets') },
+                { id: 'laudos', label: 'Laudo Técnico', icon: <PenTool size={14} />, show: canAccess('laudos') },
                 { id: 'financial', label: 'Financeiro', icon: <DollarSign size={14} />, show: canAccess('financial') },
                 { id: 'receipts', label: 'Recibos', icon: <ReceiptIcon size={14} />, show: canAccess('receipts') },
                 { id: 'clients', label: 'Clientes', icon: <UserIcon size={14} />, show: canAccess('clients') },
@@ -4764,6 +4877,22 @@ export default function MainApp() {
               onSignatureClick={onSignatureClick}
               externalEditAction={interpretedEditAction?.type === 'contract' ? interpretedEditAction.data : null}
               onExternalEditHandled={() => setInterpretedEditAction(null)}
+              visits={visits}
+              serviceOrders={serviceOrders}
+              receipts={receipts}
+              budgets={budgets}
+              laudos={laudos}
+            />
+          )}
+          {activeTab === 'laudos' && (
+            <LaudosManager 
+              laudos={laudos} 
+              clients={clients} 
+              visits={visits}
+              companyId={effectiveCompanyId || ''} 
+              showList={canViewList('laudos')} 
+              logAction={logAction}
+              appSettings={appSettings}
             />
           )}
           {activeTab === 'suppliers' && <SuppliersManager suppliers={suppliers} companyId={effectiveCompanyId || ''} showList={canViewList('suppliers')} />}
@@ -5719,12 +5848,46 @@ const PAYMENT_METHODS = [
   "Boleto"
 ];
 
-function ClientsManager({ clients = [], appSettings, pixSettings, companyId, showList, logAction, onEditClick, onSignatureClick, externalEditAction, onExternalEditHandled }: { clients: Client[], appSettings: AppSettings, pixSettings: PixSettings, companyId: string, showList: boolean, logAction?: any, onEditClick: (type: 'contract', data: any) => void, onSignatureClick: (type: 'contract', data: any) => void, externalEditAction: any, onExternalEditHandled: () => void }) {
+function ClientsManager({ 
+  clients = [], 
+  appSettings, 
+  pixSettings, 
+  companyId, 
+  showList, 
+  logAction, 
+  onEditClick, 
+  onSignatureClick, 
+  externalEditAction, 
+  onExternalEditHandled,
+  visits = [],
+  serviceOrders = [],
+  receipts = [],
+  budgets = [],
+  laudos = []
+}: { 
+  clients: Client[], 
+  appSettings: AppSettings, 
+  pixSettings: PixSettings, 
+  companyId: string, 
+  showList: boolean, 
+  logAction?: any, 
+  onEditClick: (type: 'contract', data: any) => void, 
+  onSignatureClick: (type: 'contract', data: any) => void, 
+  externalEditAction: any, 
+  onExternalEditHandled: () => void,
+  visits?: any[],
+  serviceOrders?: any[],
+  receipts?: any[],
+  budgets?: any[],
+  laudos?: any[]
+}) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [historyClient, setHistoryClient] = useState<Client | null>(null);
+  const [activeHistoryTab, setActiveHistoryTab] = useState('visitas');
   const [newClient, setNewClient] = useState<Partial<Client>>({
     type: 'Avulso',
     serviceObjects: [],
@@ -5797,6 +5960,20 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
       (c.document && c.document.includes(searchTerm))
     );
   }, [clients, searchTerm]);
+
+  const clientHistoryData = useMemo(() => {
+    if (!historyClient) return { visits: [], serviceOrders: [], receipts: [], budgets: [], laudos: [] };
+    const nameLower = (historyClient.name || '').toLowerCase();
+    const id = historyClient.id;
+
+    return {
+      visits: (visits || []).filter(v => v.clientId === id || (v.clientName && v.clientName.toLowerCase() === nameLower)),
+      serviceOrders: (serviceOrders || []).filter(os => os.clientId === id || (os.clientName && os.clientName.toLowerCase() === nameLower)),
+      receipts: (receipts || []).filter(r => r.clientId === id || (r.clientName && r.clientName.toLowerCase() === nameLower)),
+      budgets: (budgets || []).filter(b => b.clientId === id || (b.clientName && b.clientName.toLowerCase() === nameLower)),
+      laudos: (laudos || []).filter(l => l.clientId === id || (l.clientName && l.clientName.toLowerCase() === nameLower))
+    };
+  }, [historyClient, visits, serviceOrders, receipts, budgets, laudos]);
 
   const handleAddClient = async () => {
     if (!newClient.name) {
@@ -6328,6 +6505,12 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
               filteredClients.map((client) => (
                 <Card key={client.id} className="bg-[#1a1d23] border border-[#2d3139] overflow-hidden hover:border-[#3b82f6]/50 transition-all p-4 flex flex-col gap-3 relative group shadow-lg">
                   <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-[#3b82f6] hover:bg-[#3b82f6]/10 bg-[#0f1115]/80 backdrop-blur-sm" title="Histórico" onClick={() => {
+                        setHistoryClient(client);
+                        setActiveHistoryTab('visitas');
+                      }}>
+                        <History size={12} />
+                      </Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-[#a0a0a0] hover:text-white bg-[#0f1115]/80 backdrop-blur-sm" onClick={() => onEditClick('contract', client)}>
                         <Pencil size={12} />
                       </Button>
@@ -6399,6 +6582,12 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
                 <TableRow key={client.id} className="border-[#2d3139] hover:bg-[#25282e]/30 transition-all h-[70px]">
                   <TableCell className="w-[140px] p-2">
                     <div className="flex items-center gap-1.5 flex-nowrap transition-all">
+                      <Button variant="outline" size="icon" title="Histórico" className="h-7 w-7 border-[#2d3139] text-[#3b82f6] hover:bg-[#3b82f6]/10" onClick={() => {
+                        setHistoryClient(client);
+                        setActiveHistoryTab('visitas');
+                      }}>
+                        <History size={12} />
+                      </Button>
                       <Button variant="outline" size="icon" title="Editar" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={() => {
                         onEditClick('contract', client);
                       }}>
@@ -6519,6 +6708,234 @@ function ClientsManager({ clients = [], appSettings, pixSettings, companyId, sho
                 }
               }
             }} className="bg-[#ef4444] hover:bg-[#dc2626] text-white">Excluir</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* History Dialog */}
+      <Dialog open={!!historyClient} onOpenChange={() => setHistoryClient(null)}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[85vh] overflow-hidden flex flex-col p-0 sm:max-w-[750px] shadow-2xl">
+          <DialogHeader className="p-6 pb-2 flex-shrink-0 border-b border-[#2d3139]/50">
+            <DialogTitle className="text-white flex items-center gap-2">
+              <History className="text-[#3b82f6]" size={20} />
+              Dossiê Geral do Cliente
+            </DialogTitle>
+            <DialogDescription className="text-[#71717a]">
+              Visualize todas as interações, registros de visitas, ordens de serviços, orçamentos, recibos e laudos vinculados a este cliente.
+            </DialogDescription>
+          </DialogHeader>
+
+          {historyClient && (
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 custom-scrollbar space-y-4">
+              {/* Client Info Card */}
+              <div className="bg-[#0f1115] border border-[#2d3139] rounded-xl p-4 grid grid-cols-2 gap-4">
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#3b82f6] mb-1">Nome do Cliente</h4>
+                  <p className="text-sm font-semibold text-white">{historyClient.name}</p>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#3b82f6] mb-1">Documento (CPF/CNPJ)</h4>
+                  <p className="text-sm text-gray-300 font-mono">{historyClient.document || 'Não cadastrado'}</p>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#3b82f6] mb-1">Contato</h4>
+                  <p className="text-sm text-gray-300">{historyClient.phone || 'Sem celular'} {historyClient.email ? `| ${historyClient.email}` : ''}</p>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#3b82f6] mb-1">Tipo de Cliente</h4>
+                  <Badge variant="outline" className={cn(
+                    "text-[10px] uppercase font-bold px-1.5 h-5 mt-0.5",
+                    historyClient.type === 'Contrato' ? "text-[#3b82f6] border-[#3b82f6]/30 bg-[#3b82f6]/5" : "text-gray-400"
+                  )}>
+                    {historyClient.type || 'Avulso'}
+                  </Badge>
+                </div>
+                {historyClient.type === 'Contrato' && (
+                  <div className="col-span-2 pt-2 border-t border-[#2d3139]/40 grid grid-cols-2 gap-4">
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-[#3b82f6] mb-1">Mensalidade</h4>
+                      <p className="text-sm text-white font-bold font-mono">R$ {Number(historyClient.contractValue || historyClient.monthlyValue || 0).toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-[#3b82f6] mb-1">Vencimento</h4>
+                      <p className="text-sm text-gray-300">Todo dia {historyClient.paymentDay || 'N/A'}</p>
+                    </div>
+                  </div>
+                )}
+                <div className="col-span-2 pt-2 border-t border-[#2d3139]/40">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#3b82f6] mb-1">Endereço de Cadastro</h4>
+                  <p className="text-xs text-gray-400 italic font-medium leading-relaxed">{historyClient.address || 'Não cadastrado'}</p>
+                </div>
+              </div>
+
+              {/* Tabs list inside history dossier */}
+              <div className="space-y-4">
+                <div className="flex bg-[#0f1115] p-1 rounded-lg border border-[#2d3139]/70 overflow-x-auto gap-1">
+                  {[
+                    { id: 'visitas', label: 'Visitas', count: clientHistoryData.visits.length },
+                    { id: 'os', label: 'OS', count: clientHistoryData.serviceOrders.length },
+                    { id: 'orcamentos', label: 'Orçamentos', count: clientHistoryData.budgets.length },
+                    { id: 'recibos', label: 'Recibos', count: clientHistoryData.receipts.length },
+                    { id: 'laudos', label: 'Laudos', count: clientHistoryData.laudos.length }
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveHistoryTab(tab.id)}
+                      className={cn(
+                        "flex-1 py-1.5 px-3 rounded-md text-xs font-semibold whitespace-nowrap transition-all uppercase tracking-wider flex items-center justify-center gap-1.5",
+                        activeHistoryTab === tab.id 
+                          ? "bg-[#3b82f6] text-white" 
+                          : "text-[#71717a] hover:text-[#a0a0a0] hover:bg-[#1a1d23]/50"
+                      )}
+                    >
+                      {tab.label}
+                      <Badge className={cn(
+                        "text-[9px] px-1 h-4 min-w-4 flex items-center justify-center m-0",
+                        activeHistoryTab === tab.id ? "bg-white text-blue-600 hover:bg-white" : "bg-[#2d3139]/80 text-[#a0a0a0]"
+                      )}>
+                        {tab.count}
+                      </Badge>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Tab content areas */}
+                <div className="bg-[#0f1115] border border-[#2d3139] rounded-xl p-3 min-h-[220px] max-h-[300px] overflow-y-auto custom-scrollbar">
+                  {activeHistoryTab === 'visitas' && (
+                    <div className="space-y-2">
+                      {clientHistoryData.visits.length === 0 ? (
+                        <p className="text-xs text-[#71717a] text-center italic py-10 font-medium">Nenhuma visita técnica vinculada a este cliente.</p>
+                      ) : (
+                        clientHistoryData.visits.map((v: any) => (
+                          <div key={v.id} className="flex justify-between items-center bg-[#1a1d23] border border-[#2d3139]/50 rounded-lg p-2.5 hover:border-[#2d3139] transition-all">
+                            <div className="flex flex-col">
+                              <span className="text-xs font-bold text-white uppercase">{v.type}</span>
+                              <span className="text-[10px] text-[#71717a] mt-0.5">{format(safeParseDate(v.date), 'dd/MM/yyyy')} {v.scheduledTime ? `| ${v.scheduledTime}` : ''}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs font-bold text-white font-mono">R$ {Number(v.totalValue || 0).toFixed(2)}</span>
+                              <Badge variant="outline" className={cn(
+                                "text-[9px] font-bold uppercase",
+                                v.status === 'Concluída' ? "text-emerald-500 border-emerald-500/10 bg-emerald-500/5" : "text-yellow-500 border-yellow-500/10 bg-yellow-500/5"
+                              )}>
+                                {v.status}
+                              </Badge>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {activeHistoryTab === 'os' && (
+                    <div className="space-y-2">
+                      {clientHistoryData.serviceOrders.length === 0 ? (
+                        <p className="text-xs text-[#71717a] text-center italic py-10 font-medium">Nenhuma ordem de serviço vinculada a este cliente.</p>
+                      ) : (
+                        clientHistoryData.serviceOrders.map((os: any) => (
+                          <div key={os.id} className="flex justify-between items-center bg-[#1a1d23] border border-[#2d3139]/50 rounded-lg p-2.5 hover:border-[#2d3139] transition-all">
+                            <div className="flex flex-col">
+                              <span className="text-xs font-bold text-white font-mono">#{String(os.number || '').padStart(5, '0')}</span>
+                              <span className="text-[10px] text-[#71717a] mt-0.5">{format(safeParseDate(os.createdAt || os.date), 'dd/MM/yyyy')} | Técnico: {os.technicianName || 'N/A'}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs font-bold text-white font-mono">R$ {Number(os.totalValue || 0).toFixed(2)}</span>
+                              <Badge variant="outline" className={cn(
+                                "text-[9px] font-bold uppercase",
+                                os.status === 'Conclído' || os.status === 'Finalizado' || os.status === 'Faturado' || os.status === 'Concluída' ? "text-emerald-500 border-emerald-500/10 bg-emerald-500/5" : "text-yellow-500 border-yellow-500/10 bg-yellow-500/5"
+                              )}>
+                                {os.status}
+                              </Badge>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {activeHistoryTab === 'orcamentos' && (
+                    <div className="space-y-2">
+                      {clientHistoryData.budgets.length === 0 ? (
+                        <p className="text-xs text-[#71717a] text-center italic py-10 font-medium">Nenhum orçamento vinculado a este cliente.</p>
+                      ) : (
+                        clientHistoryData.budgets.map((b: any) => (
+                          <div key={b.id} className="flex justify-between items-center bg-[#1a1d23] border border-[#2d3139]/50 rounded-lg p-2.5 hover:border-[#2d3139] transition-all">
+                            <div className="flex flex-col">
+                              <span className="text-xs font-bold text-white font-mono">#{String(b.number || b.orcamentoId || '').padStart(5, '0')}</span>
+                              <span className="text-[10px] text-[#71717a] mt-0.5">{format(safeParseDate(b.createdAt || b.date), 'dd/MM/yyyy')}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs font-bold text-white font-mono">R$ {Number(b.totalValue || 0).toFixed(2)}</span>
+                              <Badge variant="outline" className={cn(
+                                "text-[9px] font-bold uppercase",
+                                b.status === 'Aprovado' || b.status === 'Faturado' ? "text-emerald-500 border-emerald-500/10 bg-emerald-500/5" : "text-yellow-500 border-yellow-500/10 bg-yellow-500/5"
+                              )}>
+                                {b.status}
+                              </Badge>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {activeHistoryTab === 'recibos' && (
+                    <div className="space-y-2">
+                      {clientHistoryData.receipts.length === 0 ? (
+                        <p className="text-xs text-[#71717a] text-center italic py-10 font-medium">Nenhum recibo vinculado a este cliente.</p>
+                      ) : (
+                        clientHistoryData.receipts.map((r: any) => (
+                          <div key={r.id} className="flex justify-between items-center bg-[#1a1d23] border border-[#2d3139]/50 rounded-lg p-2.5 hover:border-[#2d3139] transition-all">
+                            <div className="flex flex-col">
+                              <span className="text-xs font-bold text-white font-mono">#{String(r.number || '').padStart(5, '0')}</span>
+                              <span className="text-[10px] text-[#71717a] mt-0.5">{format(safeParseDate(r.date || r.createdAt), 'dd/MM/yyyy')} | {r.paymentMethod}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs font-bold text-white font-mono">R$ {Number(r.value || 0).toFixed(2)}</span>
+                              <Badge variant="outline" className={cn(
+                                "text-[9px] font-bold uppercase",
+                                r.status === 'Recebido' ? "text-emerald-500 border-emerald-500/10 bg-emerald-500/5" : "text-yellow-500 border-yellow-500/10 bg-yellow-500/5"
+                              )}>
+                                {r.status}
+                              </Badge>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {activeHistoryTab === 'laudos' && (
+                    <div className="space-y-2">
+                      {clientHistoryData.laudos.length === 0 ? (
+                        <p className="text-xs text-[#71717a] text-center italic py-10 font-medium">Nenhum laudo técnico elaborado para este cliente.</p>
+                      ) : (
+                        clientHistoryData.laudos.map((l: any) => (
+                          <div key={l.id} className="flex justify-between items-center bg-[#1a1d23] border border-[#2d3139]/50 rounded-lg p-2.5 hover:border-[#2d3139] transition-all">
+                            <div className="flex flex-col">
+                              <span className="text-xs font-bold text-white font-mono"># {String(l.number || '').padStart(5, '0')}</span>
+                              <span className="text-[10px] text-[#71717a] mt-0.5">{format(safeParseDate(l.date), 'dd/MM/yyyy')} | Inspetor: {l.inspectorName}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <Badge variant="outline" className={cn(
+                                "text-[9px] font-bold uppercase",
+                                l.status === 'Finalizado' ? "text-emerald-500 border-emerald-500/10 bg-emerald-500/5" : "text-yellow-500 border-yellow-500/10 bg-yellow-500/5"
+                              )}>
+                                {l.status}
+                              </Badge>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="p-4 border-t border-[#2d3139]/40 bg-[#0f1115] m-0">
+            <Button onClick={() => setHistoryClient(null)} className="bg-[#3b82f6] hover:bg-[#2563eb] text-white font-bold px-6">Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -8427,7 +8844,7 @@ function SuperAdminPanel({
       const backupData: any = { companyName, companyId, documentNumber, exportedAt: new Date().toISOString(), data: {} };
       const collections = [
         'companies', 'clients', 'visits', 'receipts', 'financial', 'budgets', 'users',
-        'suppliers', 'serviceOrders', 'inventory', 'inventoryTransactions', 'logs'
+        'suppliers', 'serviceOrders', 'inventory', 'inventoryTransactions', 'logs', 'laudos'
       ];
       
       for (const col of collections) {
@@ -10356,7 +10773,7 @@ function SettingsManager({
 
   const [selectedBackupCollections, setSelectedBackupCollections] = useState<string[]>([
     'companies', 'clients', 'visits', 'receipts', 'financial', 'budgets', 'users',
-    'suppliers', 'serviceOrders', 'inventory', 'inventoryTransactions', 'logs'
+    'suppliers', 'serviceOrders', 'inventory', 'inventoryTransactions', 'logs', 'laudos'
   ]);
 
   const BACKUP_COLLECTIONS_LABELS: { [key: string]: string } = {
@@ -10366,6 +10783,7 @@ function SettingsManager({
     visits: "Visitas Técnicas",
     serviceOrders: "Ordens de Serviço (O.S.)",
     budgets: "Orçamentos",
+    laudos: "Laudos Técnicos",
     receipts: "Recibos e Comprovantes",
     financial: "Financeiro e Lançamentos",
     inventory: "Produtos no Estoque",
@@ -10410,7 +10828,7 @@ function SettingsManager({
       };
       const collections = [
         'companies', 'clients', 'visits', 'receipts', 'financial', 'budgets', 'users',
-        'suppliers', 'serviceOrders', 'inventory', 'inventoryTransactions', 'logs'
+        'suppliers', 'serviceOrders', 'inventory', 'inventoryTransactions', 'logs', 'laudos'
       ].filter(col => selectedBackupCollections.includes(col));
       
       for (const col of collections) {
@@ -10784,7 +11202,7 @@ function SettingsManager({
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Database className="text-[#3b82f6]" size={20} />
-                  Backup e Segurança
+                  Backup e Restauração
                 </CardTitle>
                 <CardDescription className="text-[#71717a]">
                   Exporte ou importe seus dados com filtros personalizados.
