@@ -3101,7 +3101,20 @@ export default function MainApp() {
     const compRef = doc(db, 'companies', effectiveCompanyId);
     const unsubscribeCompany = onSnapshot(compRef, (compSnap) => {
       if (compSnap.exists()) {
-        setCurrentCompany({ id: compSnap.id, ...compSnap.data() });
+        const compData = compSnap.data() || {};
+        setCurrentCompany({ id: compSnap.id, ...compData });
+        
+        // Auto synchronization with dbMode setting from license management
+        const savedCompanyDbMode = compData.dbMode || 'default';
+        const currentSavedMode = localStorage.getItem('DB_MODE_OVERRIDE') || 'default';
+        if (savedCompanyDbMode !== currentSavedMode) {
+          localStorage.setItem('DB_MODE_OVERRIDE', savedCompanyDbMode);
+          console.log(`[Database Sync] Switched from ${currentSavedMode} to ${savedCompanyDbMode} based on company's license settings.`);
+          toast.info("Ajustando banco de dados com base na licença da empresa...", { duration: 1500 });
+          setTimeout(() => {
+            window.location.reload();
+          }, 800);
+        }
       } else {
         setCurrentCompany(null);
       }
@@ -4500,7 +4513,7 @@ export default function MainApp() {
       </aside>
 
       {/* Mobile Header */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-[#1a1d23] border-b border-[#2d3139] flex items-center justify-between px-4 z-50">
+      <div className="xl:hidden fixed top-0 left-0 right-0 h-16 bg-[#1a1d23] border-b border-[#2d3139] flex items-center justify-between px-4 z-50">
         <div className="flex items-center gap-3">
           {appSettings.logoUrl ? (
             <img src={appSettings.logoUrl} alt="Logo" className="h-8 w-auto object-contain max-w-[32px]" referrerPolicy="no-referrer" />
@@ -4530,7 +4543,7 @@ export default function MainApp() {
 
       {/* Mobile Menu Overlay */}
       {isMobileMenuOpen && (
-        <div className="lg:hidden fixed inset-0 bg-[#0f1115] z-40 pt-16 flex flex-col">
+        <div className="xl:hidden fixed inset-0 bg-[#0f1115] z-40 pt-16 flex flex-col">
           <nav className="flex-1 p-6 space-y-3 overflow-y-auto">
             {[
               {
@@ -4690,8 +4703,8 @@ export default function MainApp() {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col pt-16 lg:pt-0 overflow-hidden">
-        <header className="hidden lg:flex h-20 items-center justify-between px-8 border-b border-[#2d3139] bg-[#1a1d23]">
+      <main className="flex-1 flex flex-col pt-16 xl:pt-0 overflow-hidden">
+        <header className="hidden xl:flex h-20 items-center justify-between px-8 border-b border-[#2d3139] bg-[#1a1d23]">
           {/* Left: Logo & Company Name */}
           <div className="flex items-center gap-5">
             {appSettings.logoUrl ? (
@@ -4788,7 +4801,7 @@ export default function MainApp() {
         </header>
 
         {/* Horizontal Scrollable Menu bar with premium sub-menus */}
-        <div className="hidden lg:block w-full bg-[#16191f] border-b border-[#2d3139] shadow-md select-none sticky top-0 z-35">
+        <div className="hidden xl:block w-full bg-[#16191f] border-b border-[#2d3139] shadow-md select-none sticky top-0 z-35">
           {/* Click-away overlay when dropdown is open */}
           {openDropdown && (
             <div className="fixed inset-0 z-10" onClick={() => setOpenDropdown(null)} />
@@ -9064,6 +9077,7 @@ function SuperAdminPanel({
         enabledMenus: editingCompany.enabledMenus || ['resumo', 'visits', 'receipts', 'clients', 'financial', 'inventory', 'os', 'budgets', 'settings', 'pdv'],
         ownerName: editingCompany.ownerName || '',
         ownerEmail: editingCompany.ownerEmail || '',
+        dbMode: editingCompany.dbMode || 'default',
         updatedAt: Timestamp.now()
       });
       toast.success("Licença e menus atualizados!");
@@ -9322,6 +9336,7 @@ function SuperAdminPanel({
         customPrice: Number(editingCompany.customPrice) || 0,
         receivesUpdates: editingCompany.receivesUpdates ?? true,
         isExempt: editingCompany.isExempt || false,
+        dbMode: editingCompany.dbMode || 'default',
         enabledMenus: editingCompany.enabledMenus || [
           'dashboard', 'visits', 'receipts', 'clients', 'financial', 
           'inventory', 'service-orders', 'budgets', 'settings', 'pdv',
@@ -10133,6 +10148,23 @@ function SuperAdminPanel({
                 </div>
               </motion.div>
             )}
+
+            {/* Database operational mode for this client company */}
+            <div className="space-y-2 p-4 bg-[#0f1115]/50 border border-[#2d3139] rounded-lg">
+              <Label className="text-[#a0a0a0] text-[10px] font-bold uppercase tracking-widest">Modo de Banco de Dados de Licença</Label>
+              <select 
+                className="w-full h-10 bg-[#0f1115] border-[#2d3139] rounded-md px-3 text-xs font-bold text-white uppercase tracking-wider"
+                value={editingCompany?.dbMode || 'default'}
+                onChange={(e) => setEditingCompany({...editingCompany, dbMode: e.target.value})}
+              >
+                <option value="default">Padrão do Sistema (Firebase / Offline se local)</option>
+                <option value="online">Firebase Cloud (Sempre Online em Nuvem)</option>
+                <option value="local">Local Server (Sempre Offline via Arquivo JSON)</option>
+              </select>
+              <p className="text-[9px] text-[#71717a] uppercase font-semibold leading-normal mt-1 tracking-tight">
+                Instrui o terminal desse cliente a forçar o banco escolhido. Se alterado, a sessão sincronizará e reiniciará.
+              </p>
+            </div>
 
             <div className="flex items-center justify-between p-3 bg-[#0f1115]/50 border border-[#2d3139] rounded-lg">
               <div className="flex flex-col">
@@ -11477,105 +11509,7 @@ function SettingsManager({
             </Card>
             )}
             
-            {mode === 'general' && (
-              <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-[#3b82f6]">
-                    <Database size={20} />
-                    Configuração do Banco de Dados
-                  </CardTitle>
-                  <CardDescription className="text-[#a0a0a0]">
-                    Defina se deseja usar o servidor local e configure a comunicação com sua base de dados local.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {/* Explanatory Info Box */}
-                  <div className="p-4 rounded-lg bg-[#2d3139]/30 border border-[#2d3139]/80 text-[11px] space-y-3">
-                    <p className="font-bold text-[#3b82f6] uppercase tracking-wider text-xs">Instruções para Conexão Local:</p>
-                    <ul className="list-disc pl-4 space-y-2 text-[#a0a0a0] leading-relaxed">
-                      <li>
-                        <strong className="text-white">Manter o PC Ligado:</strong> O computador que hospeda a base (arquivo JSON/SQLite) deve estar ligado e com o servidor ativo.
-                      </li>
-                      <li>
-                        <strong className="text-white">Conexão na Mesma Rede (Wi-Fi):</strong> Outros dispositivos (celulares/tablets) na mesma Wi-Fi podem acessar seus dados. Mude para <span className="text-blue-400 font-semibold">Servidor Local</span> e informe o endereço IP completo do PC no campo abaixo (Ex: <code className="text-blue-400 bg-[#0f1115] px-1 rounded font-mono">http://192.168.1.100:3000</code>).
-                      </li>
-                      <li>
-                        <strong className="text-white">Acesso Externo de Qualquer Lugar (Web):</strong> Para que outros computadores e smartphones acessem de fora da rede Wi-Fi, instale uma ferramenta de túnel no seu PC principal (como <code className="text-blue-400 font-mono">Ngrok</code> ou <code className="text-blue-400 font-mono">Cloudflare Tunnels</code>) e configure o campo abaixo com o link público gerado (Ex: <code className="text-blue-400 bg-[#0f1115] px-1.5 py-0.5 rounded font-mono">https://seupc.ngrok-free.app</code>).
-                      </li>
-                    </ul>
-                  </div>
-
-                  {/* Mode Buttons */}
-                  <div className="space-y-2">
-                    <Label className="text-[#a0a0a0] text-xs font-semibold">Modo de Operação</Label>
-                    <div className="grid grid-cols-3 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setDbMode('default')}
-                        className={`py-2 px-3 rounded-lg border text-[11px] font-bold uppercase transition-all ${
-                          dbMode === 'default'
-                            ? 'border-[#3b82f6] bg-[#3b82f6]/10 text-white'
-                            : 'border-[#2d3139] bg-[#0f1115] text-[#a0a0a0] hover:text-white hover:bg-[#16191f]'
-                        }`}
-                      >
-                        Padrão Env
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDbMode('online')}
-                        className={`py-2 px-3 rounded-lg border text-[11px] font-bold uppercase transition-all ${
-                          dbMode === 'online'
-                            ? 'border-[#3b82f6] bg-[#3b82f6]/10 text-white'
-                            : 'border-[#2d3139] bg-[#0f1115] text-[#a0a0a0] hover:text-white hover:bg-[#16191f]'
-                        }`}
-                      >
-                        Firebase (Cloud)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDbMode('local')}
-                        className={`py-2 px-3 rounded-lg border text-[11px] font-bold uppercase transition-all ${
-                          dbMode === 'local'
-                            ? 'border-[#3b82f6] bg-[#3b82f6]/10 text-white'
-                            : 'border-[#2d3139] bg-[#0f1115] text-[#a0a0a0] hover:text-white hover:bg-[#16191f]'
-                        }`}
-                      >
-                        Servidor Local
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Custom URL Input */}
-                  <div className="space-y-2">
-                    <Label htmlFor="localDbUrl" className="text-[#a0a0a0]">Endereço / URL do Servidor Local</Label>
-                    <Input
-                      id="localDbUrl"
-                      value={localDbUrl}
-                      onChange={e => setLocalDbUrl(e.target.value)}
-                      className="bg-[#0f1115] border-[#2d3139] text-white"
-                      placeholder="Ex: http://192.168.1.100:3000 ou https://xyz.ngrok-free.app"
-                    />
-                    <p className="text-[10px] text-[#71717a] leading-normal uppercase select-none tracking-wider">
-                      Deixe vazio se estiver rodando no próprio computador host, ou preencha para acessar o PC principal externamente.
-                    </p>
-                  </div>
-
-                  <Button 
-                    onClick={() => {
-                      localStorage.setItem('DB_MODE_OVERRIDE', dbMode);
-                      localStorage.setItem('LOCAL_DB_SERVER_URL', localDbUrl);
-                      toast.success('Configurações salvas! Reiniciando aplicação para aplicar as mudanças de banco comercial...');
-                      setTimeout(() => {
-                        window.location.reload();
-                      }, 1500);
-                    }}
-                    className="w-full bg-[#10b981] hover:bg-[#059669] text-white font-bold uppercase tracking-widest text-xs h-10 border border-[#10b981]/20 shadow-lg"
-                  >
-                    Salvar e Recarregar Sistema
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
+            {/* Database card removed as requested. Configured inside Admin SaaS client licenses */}
           </div>
 
           <div className="space-y-8">
@@ -12203,20 +12137,26 @@ function ReportsManager({
         v.status
       ]);
     } else if (category === 'Financeiro') {
-      filteredData = financials.filter(f => isMatch(f.date));
-      tableHeaders = ['Data', 'Cliente', 'Descrição', 'Valor', 'Tipo', 'Categoria'];
-      tableRows = filteredData.map(f => {
-        const d = safeParseDate(f.date);
-        const client = clients.find(c => c.id === f.clientId);
-        return [
-          format(d, 'dd/MM/yyyy'),
-          client ? client.name : 'N/A',
-          f.description,
-          `R$ ${(f.value || 0).toFixed(2)}`,
-          f.type,
-          f.category || 'N/A'
-        ];
-      });
+      try {
+        filteredData = financials.filter(f => isMatch(f.date));
+        tableHeaders = ['Data', 'Cliente', 'Descrição', 'Valor', 'Tipo', 'Categoria'];
+        tableRows = filteredData.map(f => {
+          const d = safeParseDate(f.date);
+          const client = clients && clients.find ? clients.find(c => c.id === f.clientId) : null;
+          return [
+            d ? format(d, 'dd/MM/yyyy') : '--/--/----',
+            client ? (client.name || 'N/A') : 'N/A',
+            f.description || '',
+            `R$ ${(f.value || 0).toFixed(2)}`,
+            f.type || 'N/A',
+            f.category || 'N/A'
+          ];
+        });
+      } catch (err) {
+        console.error("Erro ao mapear relatório Financeiro:", err);
+        toast.error("Erro ao compilar dados do Livro Financeiro.");
+        return;
+      }
     } else if (category === 'Recibos') {
       filteredData = receipts.filter(r => isMatch(r.createdAt));
       tableHeaders = ['Número', 'Cliente', 'Data', 'Valor'];

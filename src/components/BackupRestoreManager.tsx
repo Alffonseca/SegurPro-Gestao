@@ -65,11 +65,18 @@ interface BackupRestoreManagerProps {
 }
 
 export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, currentUserData }: BackupRestoreManagerProps) {
-  const [selectedBackupCollections, setSelectedBackupCollections] = useState<string[]>([
-    'companies', 'clients', 'visits', 'receipts', 'financial', 'budgets', 'users',
-    'suppliers', 'serviceOrders', 'inventory', 'inventoryTransactions', 'logs', 'laudos',
-    'payables', 'receivables'
-  ]);
+  const [saasGlobal, setSaasGlobal] = useState(false);
+  const [selectedBackupCollections, setSelectedBackupCollections] = useState<string[]>(() => {
+    const defaultList = [
+      'companies', 'clients', 'visits', 'receipts', 'financial', 'budgets', 'users',
+      'suppliers', 'serviceOrders', 'inventory', 'inventoryTransactions', 'logs', 'laudos',
+      'payables', 'receivables'
+    ];
+    if (isSuperAdmin) {
+      defaultList.push('registration_codes');
+    }
+    return defaultList;
+  });
 
   const [restorePoints, setRestorePoints] = useState<any[]>([]);
   const [isBackingUp, setIsBackingUp] = useState(false);
@@ -94,7 +101,8 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
     suppliers: "Fornecedores",
     payables: "Contas a Pagar",
     receivables: "Contas a Receber",
-    logs: "Registros de Logs/Auditoria"
+    logs: "Registros de Logs/Auditoria",
+    ...(isSuperAdmin ? { registration_codes: "Códigos de Registro SaaS (Licenças)" } : {})
   };
 
   // Safe date formatting helper to avoid date format crash on undefined/invalid dates
@@ -148,28 +156,35 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
   };
 
   // Helper code to capture current collection snapshot
-  const fetchCurrentDataset = async (selectedCols: string[]) => {
+  const fetchCurrentDataset = async (selectedCols: string[], forceGlobal: boolean = false) => {
+    const isGlobal = isSuperAdmin && (saasGlobal || forceGlobal);
     const backupData: any = { 
-      companyName: appSettings?.companyName || 'Empresa', 
-      companyId, 
+      companyName: isGlobal ? 'SaaS Global Backup' : (appSettings?.companyName || 'Empresa'), 
+      companyId: isGlobal ? 'saas-global' : companyId, 
       documentNumber: appSettings?.document || '', 
       exportedAt: new Date().toISOString(), 
+      saasGlobal: isGlobal,
       data: {} 
     };
 
     const collections = [
       'companies', 'clients', 'visits', 'receipts', 'financial', 'budgets', 'users',
       'suppliers', 'serviceOrders', 'inventory', 'inventoryTransactions', 'logs', 'laudos',
-      'payables', 'receivables'
+      'payables', 'receivables', 'registration_codes'
     ].filter(col => selectedCols.includes(col));
     
     for (const col of collections) {
       let q;
-      if (col === 'companies') {
-        q = query(collection(db, col), where('__name__', '==', companyId));
+      if (isGlobal) {
+        q = query(collection(db, col));
       } else {
-        q = query(collection(db, col), where('companyId', '==', companyId));
+        if (col === 'companies') {
+          q = query(collection(db, col), where('__name__', '==', companyId));
+        } else {
+          q = query(collection(db, col), where('companyId', '==', companyId));
+        }
       }
+      
       const snapshot = await getDocs(q);
       const docs = [];
       for (const docSnap of snapshot.docs) {
@@ -213,12 +228,15 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `backup_${(appSettings?.companyName || 'dados').replace(/\s+/g, '_')}_${dateStr}.json`;
+      const downloadName = saasGlobal && isSuperAdmin 
+        ? `backup_SaaS_completo_${dateStr}.json`
+        : `backup_${(appSettings?.companyName || 'dados').replace(/\s+/g, '_')}_${dateStr}.json`;
+      link.download = downloadName;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      toast.success("Backup local JSON gerado com sucesso!");
+      toast.success(saasGlobal && isSuperAdmin ? "Backup Global SaaS exportado!" : "Backup local JSON gerado com sucesso!");
     } catch (error) {
       console.error(error);
       toast.error("Erro ao gerar backup local.");
@@ -333,15 +351,66 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
       throw new Error("Nenhum dado correspondente encontrado.");
     }
 
+    const isGlobalRestore = isSuperAdmin && (backup.saasGlobal === true);
+
+    // 1. Clear existing data in selected modules/collections to avoid duplicates.
+    for (const col of collections) {
+      try {
+        if (isGlobalRestore) {
+          // SaaS Global Restore: deletes records from selected collections for all companies
+          // Protects current active company itself (except sales) and protects super_admin users
+          const q = query(collection(db, col));
+          const snapshot = await getDocs(q);
+          for (const docSnap of snapshot.docs) {
+            if (col === 'companies' && docSnap.id === companyId) {
+              const salesSnap = await getDocs(collection(db, 'companies', companyId, 'sales'));
+              for (const d of salesSnap.docs) {
+                await deleteDoc(doc(db, 'companies', companyId, 'sales', d.id));
+              }
+              continue;
+            }
+            if (col === 'users') {
+              const uData = docSnap.data();
+              if (uData.role === 'super_admin' || docSnap.id === currentUserData?.uid) {
+                continue; // Prevent locking out the admin doing the restore
+              }
+            }
+            await deleteDoc(doc(db, col, docSnap.id));
+          }
+        } else {
+          // Standard Tenant Scope Deletion: clears records belonging only to the current companyId
+          if (col === 'companies') {
+            const salesSnap = await getDocs(collection(db, 'companies', companyId, 'sales'));
+            for (const d of salesSnap.docs) {
+              await deleteDoc(doc(db, 'companies', companyId, 'sales', d.id));
+            }
+          } else {
+            const q = query(collection(db, col), where('companyId', '==', companyId));
+            const snapshot = await getDocs(q);
+            for (const docSnap of snapshot.docs) {
+              await deleteDoc(doc(db, col, docSnap.id));
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`Erro ao limpar dados antigos da coleção ${col}:`, err);
+      }
+    }
+
+    // 2. Insert items from the backup
     for (const col of collections) {
       const docs = backup.data[col];
       if (!Array.isArray(docs)) continue;
 
       for (const item of docs) {
         const { id: itemId, generalSettings, pixSettings, permissionsSettings, sales, ...data } = item;
-        const targetId = (col === 'companies') ? companyId : itemId;
+        
+        // Preserve original ID in SaaS Global Restore, otherwise map to current company
+        const targetId = (col === 'companies') 
+          ? (isGlobalRestore ? itemId : companyId) 
+          : itemId;
 
-        if (col !== 'companies') {
+        if (col !== 'companies' && !isGlobalRestore) {
           data.companyId = companyId;
         }
 
@@ -394,6 +463,41 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              
+              {/* SaaS Global toggle if Super Admin */}
+              {isSuperAdmin && (
+                <div className="flex items-start space-x-3 p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl">
+                  <input 
+                    type="checkbox" 
+                    id="saasGlobal" 
+                    checked={saasGlobal} 
+                    onChange={(e) => {
+                      setSaasGlobal(e.target.checked);
+                      if (e.target.checked) {
+                        const allKeys = Object.keys(BACKUP_COLLECTIONS_LABELS);
+                        setSelectedBackupCollections(allKeys);
+                      }
+                    }}
+                    className="rounded bg-[#0f1115] border-[#2d3139] text-[#3b82f6] focus:ring-0 w-4 h-4 mt-0.5 cursor-pointer"
+                  />
+                  <div className="cursor-pointer" onClick={() => {
+                    const nextVal = !saasGlobal;
+                    setSaasGlobal(nextVal);
+                    if (nextVal) {
+                      const allKeys = Object.keys(BACKUP_COLLECTIONS_LABELS);
+                      setSelectedBackupCollections(allKeys);
+                    }
+                  }}>
+                    <Label htmlFor="saasGlobal" className="text-blue-400 font-bold uppercase text-[10px] tracking-wider cursor-pointer flex items-center gap-1.5">
+                      <Sparkles size={12} className="text-blue-400 animate-pulse" />
+                      Backup Global Multi-Empresa (Admin SaaS)
+                    </Label>
+                    <p className="text-[10px] text-[#8892b0] leading-normal mt-0.5 uppercase tracking-tight">
+                      Ative para exportar ou restaurar a base de dados completa (todas as empresas, clientes, usuários e licenças SaaS).
+                    </p>
+                  </div>
+                </div>
+              )}
               
               {/* Modules selection */}
               <div className="border border-[#2d3139]/80 rounded-xl p-4 bg-[#0f1115]/60 space-y-3">
@@ -450,7 +554,7 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
                   disabled={isBackingUp || isRestoring}
                   className="bg-[#3b82f6] hover:bg-[#2563eb] text-white border border-transparent h-11 text-[11px] font-black tracking-wide uppercase"
                 >
-                  {isBackingUp ? <RefreshCw size={14} className="animate-spin mr-2" /> : <Download size={14} className="mr-2" />}
+                  {isBackingUp ? <RefreshCw size={14} className="animate-spin mr-2" /> : <Upload size={14} className="mr-2" />}
                   Exportar Backup JSON
                 </Button>
                 
@@ -468,7 +572,7 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
                     variant="outline"
                     className="w-full border-yellow-500/30 text-yellow-400 hover:bg-yellow-500 hover:text-white h-11 text-[11px] font-black tracking-wide uppercase"
                   >
-                    {isRestoring ? <RefreshCw size={14} className="animate-spin mr-2" /> : <Upload size={14} className="mr-2" />}
+                    {isRestoring ? <RefreshCw size={14} className="animate-spin mr-2" /> : <Download size={14} className="mr-2" />}
                     Importar Backup JSON
                   </Button>
                 </div>

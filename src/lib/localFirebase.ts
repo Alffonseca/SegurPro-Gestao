@@ -12,6 +12,10 @@ export function getLocalApiUrl(path: string): string {
   return `${base}${path}`;
 }
 
+export function getCleanCollectionPath(colPath: string): string {
+  return colPath.replace(/\//g, '_');
+}
+
 // Custom Timestamp implementation to replicate Firebase Timestamp behavior
 export class Timestamp {
   seconds: number;
@@ -226,7 +230,7 @@ class LocalDatabaseCache {
 
     const fetchPromise = (async () => {
       try {
-        const res = await fetch(getLocalApiUrl(`/api/localdb/${encodeURIComponent(collectionName)}`));
+        const res = await fetch(getLocalApiUrl(`/api/localdb/${getCleanCollectionPath(collectionName)}`));
         if (res.ok) {
           const data = await res.json();
           const deserializedData = deserialize(data);
@@ -408,7 +412,7 @@ export async function addDoc(collectionRef: any, data: any): Promise<any> {
   const id = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
   const docData = { ...data, id };
 
-  const response = await fetch(getLocalApiUrl(`/api/localdb/${encodeURIComponent(path)}`), {
+  const response = await fetch(getLocalApiUrl(`/api/localdb/${getCleanCollectionPath(path)}`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(serialize(docData))
@@ -429,7 +433,7 @@ export async function setDoc(docRef: any, data: any, options?: any): Promise<voi
   const { path, id } = docRef;
   const docData = { ...data, id };
 
-  const response = await fetch(getLocalApiUrl(`/api/localdb/${encodeURIComponent(path)}/${encodeURIComponent(id)}`), {
+  const response = await fetch(getLocalApiUrl(`/api/localdb/${getCleanCollectionPath(path)}/${encodeURIComponent(id)}`), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(serialize(docData))
@@ -454,7 +458,7 @@ export async function setDoc(docRef: any, data: any, options?: any): Promise<voi
 export async function updateDoc(docRef: any, data: any): Promise<void> {
   const { path, id } = docRef;
 
-  const response = await fetch(getLocalApiUrl(`/api/localdb/${encodeURIComponent(path)}/${encodeURIComponent(id)}`), {
+  const response = await fetch(getLocalApiUrl(`/api/localdb/${getCleanCollectionPath(path)}/${encodeURIComponent(id)}`), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(serialize(data))
@@ -473,7 +477,7 @@ export async function updateDoc(docRef: any, data: any): Promise<void> {
 export async function deleteDoc(docRef: any): Promise<void> {
   const { path, id } = docRef;
 
-  const response = await fetch(getLocalApiUrl(`/api/localdb/${encodeURIComponent(path)}/${encodeURIComponent(id)}`), {
+  const response = await fetch(getLocalApiUrl(`/api/localdb/${getCleanCollectionPath(path)}/${encodeURIComponent(id)}`), {
     method: 'DELETE'
   });
 
