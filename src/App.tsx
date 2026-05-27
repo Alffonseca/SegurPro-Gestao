@@ -5118,6 +5118,7 @@ export default function MainApp() {
               appSettings={appSettings} 
               companyId={effectiveCompanyId || ''}
               showList={canViewList('reports')}
+              receivables={receivables}
             />
           )}
           {activeTab === 'users' && <UsersManager users={users} currentUserData={currentUserData} currentCompany={currentCompany} showList={canViewList('users')} userRoles={userRoles} logAction={logAction} />}
@@ -12077,7 +12078,8 @@ function ReportsManager({
   sales = [],
   appSettings, 
   companyId,
-  showList
+  showList,
+  receivables = []
 }: { 
   visits: TechnicalVisit[], 
   financials: FinancialRecord[], 
@@ -12089,7 +12091,8 @@ function ReportsManager({
   sales: any[],
   appSettings: AppSettings, 
   companyId: string,
-  showList: boolean
+  showList: boolean,
+  receivables?: any[]
 }) {
   const [date, setDate] = useState<Date>(new Date());
   const [month, setMonth] = useState<number>(new Date().getMonth());
@@ -12222,15 +12225,49 @@ function ReportsManager({
         const list = snap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as any));
         const filtered = list.filter(item => isMatch(item.dueDate || item.createdAt));
         
+        // Add dynamic active contract projections for the selected period
+        const selMonth = reportType === 'daily' ? date.getMonth() : month;
+        const selYear = reportType === 'daily' ? date.getFullYear() : year;
+        const refMonthStr = `${String(selMonth + 1).padStart(2, '0')}/${selYear}`;
+
+        const activeContracts = (clients || []).filter(c => c.type === 'Contrato');
+        const contractProjections = activeContracts.map(client => {
+          const isContractVal = Number(client.contractValue || 0);
+          const paymentDay = Number(client.paymentDay || 10);
+          const sanitizedDay = Math.min(paymentDay, 28);
+          const isoDueDate = `${selYear}-${String(selMonth + 1).padStart(2, '0')}-${String(sanitizedDay).padStart(2, '0')}`;
+          
+          const alreadyExists = list.some(r => 
+            (r.clientId === client.id || (r.clientName || '').toLowerCase() === (client.name || '').toLowerCase()) &&
+            r.referenceMonth === refMonthStr
+          );
+          
+          if (alreadyExists) return null;
+          if (!isMatch(isoDueDate)) return null;
+
+          return {
+            id: `proj-${client.id}`,
+            clientName: client.name,
+            description: `Contrato Mensal - Ref ${refMonthStr}`,
+            value: isContractVal,
+            dueDate: isoDueDate,
+            status: 'Previsto'
+          };
+        }).filter(Boolean) as any[];
+
+        const combined = [...filtered, ...contractProjections];
+
         // Sort in ascending order of due date (or fall back to creation date)
-        filtered.sort((a, b) => {
+        combined.sort((a, b) => {
           const dateA = safeParseDate(a.dueDate || a.createdAt).getTime();
           const dateB = safeParseDate(b.dueDate || b.createdAt).getTime();
           return dateA - dateB;
         });
 
+        const totalValue = combined.reduce((sum, item) => sum + (Number(item.value) || 0), 0);
+
         const headers = ['Vencimento', 'Cliente', 'Descrição', 'Valor', 'Status'];
-        const rows = filtered.map(item => [
+        const rows = combined.map(item => [
           item.dueDate ? format(safeParseDate(item.dueDate), 'dd/MM/yyyy') : 'N/A',
           item.clientName || 'N/A',
           item.description || '',
@@ -12239,7 +12276,7 @@ function ReportsManager({
         ]);
 
         if (rows.length === 0) {
-          toast.error(`Nenhum registro de Contas a Receber encontrado para este período.`);
+          toast.error(`Nenhum registro de Contas a Receber ou Contrato ativo encontrado para este período.`);
           return;
         }
 
@@ -12247,7 +12284,9 @@ function ReportsManager({
           startY: 45,
           head: [headers],
           body: rows,
+          foot: [['TOTAL', '', '', `R$ ${totalValue.toFixed(2)}`, '']],
           headStyles: { fillColor: [16, 185, 129] },
+          footStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' },
           theme: 'grid'
         });
 
@@ -12271,6 +12310,8 @@ function ReportsManager({
           return dateA - dateB;
         });
 
+        const totalValue = filtered.reduce((sum, item) => sum + (Number(item.value) || 0), 0);
+
         const headers = ['Vencimento', 'Fornecedor', 'Descrição', 'Valor', 'Status'];
         const rows = filtered.map(item => [
           item.dueDate ? format(safeParseDate(item.dueDate), 'dd/MM/yyyy') : 'N/A',
@@ -12289,7 +12330,9 @@ function ReportsManager({
           startY: 45,
           head: [headers],
           body: rows,
+          foot: [['TOTAL', '', '', `R$ ${totalValue.toFixed(2)}`, '']],
           headStyles: { fillColor: [239, 68, 68] },
+          footStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' },
           theme: 'grid'
         });
 
