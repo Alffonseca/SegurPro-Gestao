@@ -48,8 +48,8 @@ import {
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { db } from '../firebase';
-import {
+import { 
+  db,
   collection,
   addDoc,
   updateDoc,
@@ -59,7 +59,7 @@ import {
   query,
   where,
   Timestamp
-} from 'firebase/firestore';
+} from '../firebase';
 import { toast } from 'sonner';
 
 // Type definitions
@@ -422,12 +422,12 @@ export function PayableManager({ companyId, suppliers = [], pixSettings, appSett
             <Select value={String(selectedMonth)} onValueChange={v => setSelectedMonth(Number(v))}>
               <SelectTrigger className="bg-transparent border-none text-white h-8 text-[11px] font-bold uppercase w-28 select-menu">
                 <span className="flex flex-1 text-left">
-                  {format(new Date(2022, selectedMonth, 1), 'MMMM', { locale: ptBR }).toUpperCase()}
+                  {format(new Date(2022, selectedMonth, 10, 12, 0, 0), 'MMMM', { locale: ptBR }).toUpperCase()}
                 </span>
               </SelectTrigger>
               <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                 {Array.from({ length: 12 }, (_, i) => (
-                  <SelectItem key={i} value={String(i)}>{format(new Date(2022, i, 1), 'MMMM', { locale: ptBR }).toUpperCase()}</SelectItem>
+                  <SelectItem key={i} value={String(i)}>{format(new Date(2022, i, 10, 12, 0, 0), 'MMMM', { locale: ptBR }).toUpperCase()}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -1324,12 +1324,12 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
             <Select value={String(selectedMonth)} onValueChange={v => setSelectedMonth(Number(v))}>
               <SelectTrigger className="bg-transparent border-none text-white h-8 text-[11px] font-bold uppercase w-28 select-menu">
                 <span className="flex flex-1 text-left">
-                  {format(new Date(2022, selectedMonth, 1), 'MMMM', { locale: ptBR }).toUpperCase()}
+                  {format(new Date(2022, selectedMonth, 10, 12, 0, 0), 'MMMM', { locale: ptBR }).toUpperCase()}
                 </span>
               </SelectTrigger>
               <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                 {Array.from({ length: 12 }, (_, i) => (
-                  <SelectItem key={i} value={String(i)}>{format(new Date(2022, i, 1), 'MMMM', { locale: ptBR }).toUpperCase()}</SelectItem>
+                  <SelectItem key={i} value={String(i)}>{format(new Date(2022, i, 10, 12, 0, 0), 'MMMM', { locale: ptBR }).toUpperCase()}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

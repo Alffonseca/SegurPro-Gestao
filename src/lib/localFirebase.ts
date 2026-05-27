@@ -3,6 +3,15 @@
 
 import { toast } from 'sonner';
 
+// Helper to allow connecting online version to local PC database
+export function getLocalApiUrl(path: string): string {
+  const customUrl = localStorage.getItem('LOCAL_DB_SERVER_URL') || '';
+  const cleanBase = customUrl.replace(/\/$/, ''); // remove trailing slash
+  const isAbsolute = cleanBase.startsWith('http://') || cleanBase.startsWith('https://');
+  const base = isAbsolute ? cleanBase : '';
+  return `${base}${path}`;
+}
+
 // Custom Timestamp implementation to replicate Firebase Timestamp behavior
 export class Timestamp {
   seconds: number;
@@ -217,7 +226,7 @@ class LocalDatabaseCache {
 
     const fetchPromise = (async () => {
       try {
-        const res = await fetch(`/api/localdb/${encodeURIComponent(collectionName)}`);
+        const res = await fetch(getLocalApiUrl(`/api/localdb/${encodeURIComponent(collectionName)}`));
         if (res.ok) {
           const data = await res.json();
           const deserializedData = deserialize(data);
@@ -399,7 +408,7 @@ export async function addDoc(collectionRef: any, data: any): Promise<any> {
   const id = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
   const docData = { ...data, id };
 
-  const response = await fetch(`/api/localdb/${encodeURIComponent(path)}`, {
+  const response = await fetch(getLocalApiUrl(`/api/localdb/${encodeURIComponent(path)}`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(serialize(docData))
@@ -420,7 +429,7 @@ export async function setDoc(docRef: any, data: any, options?: any): Promise<voi
   const { path, id } = docRef;
   const docData = { ...data, id };
 
-  const response = await fetch(`/api/localdb/${encodeURIComponent(path)}/${encodeURIComponent(id)}`, {
+  const response = await fetch(getLocalApiUrl(`/api/localdb/${encodeURIComponent(path)}/${encodeURIComponent(id)}`), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(serialize(docData))
@@ -445,7 +454,7 @@ export async function setDoc(docRef: any, data: any, options?: any): Promise<voi
 export async function updateDoc(docRef: any, data: any): Promise<void> {
   const { path, id } = docRef;
 
-  const response = await fetch(`/api/localdb/${encodeURIComponent(path)}/${encodeURIComponent(id)}`, {
+  const response = await fetch(getLocalApiUrl(`/api/localdb/${encodeURIComponent(path)}/${encodeURIComponent(id)}`), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(serialize(data))
@@ -464,7 +473,7 @@ export async function updateDoc(docRef: any, data: any): Promise<void> {
 export async function deleteDoc(docRef: any): Promise<void> {
   const { path, id } = docRef;
 
-  const response = await fetch(`/api/localdb/${encodeURIComponent(path)}/${encodeURIComponent(id)}`, {
+  const response = await fetch(getLocalApiUrl(`/api/localdb/${encodeURIComponent(path)}/${encodeURIComponent(id)}`), {
     method: 'DELETE'
   });
 
@@ -534,7 +543,7 @@ export function onAuthStateChanged(authInst: any, callback: (user: any) => void)
 export async function signInWithEmailAndPassword(authInst: any, emailInput: string, passwordInput: string): Promise<any> {
   const email = emailInput.trim().toLowerCase();
   
-  const response = await fetch('/api/localdb/auth/signin', {
+  const response = await fetch(getLocalApiUrl('/api/localdb/auth/signin'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password: passwordInput })
@@ -553,7 +562,7 @@ export async function signInWithEmailAndPassword(authInst: any, emailInput: stri
 export async function createUserWithEmailAndPassword(authInst: any, emailInput: string, passwordInput: string): Promise<any> {
   const email = emailInput.trim().toLowerCase();
 
-  const response = await fetch('/api/localdb/auth/signup', {
+  const response = await fetch(getLocalApiUrl('/api/localdb/auth/signup'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password: passwordInput, displayName: email.split('@')[0] })
@@ -578,7 +587,7 @@ export async function updateProfile(userRef: any, updateData: { displayName?: st
     const updatedUser = { ...localAuth.currentUser, ...updateData };
     localAuth.setCurrentUser(updatedUser);
 
-    await fetch(`/api/localdb/users/${encodeURIComponent(localAuth.currentUser.uid)}`, {
+    await fetch(getLocalApiUrl(`/api/localdb/users/${encodeURIComponent(localAuth.currentUser.uid)}`), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ displayName: updateData.displayName })
@@ -588,7 +597,7 @@ export async function updateProfile(userRef: any, updateData: { displayName?: st
 
 export async function updatePassword(userRef: any, newPasswordStr: string): Promise<void> {
   if (localAuth.currentUser) {
-    const response = await fetch('/api/admin/update-user-password', {
+    const response = await fetch(getLocalApiUrl('/api/admin/update-user-password'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ uid: localAuth.currentUser.uid, newPassword: newPasswordStr })

@@ -18,6 +18,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { 
+  db,
   collection, 
   query, 
   where, 
@@ -29,8 +30,7 @@ import {
   deleteDoc, 
   onSnapshot,
   Timestamp 
-} from 'firebase/firestore';
-import { db } from '../firebase';
+} from '../firebase';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 
@@ -213,7 +213,7 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `backup_${(appSettings.companyName || 'dados').replace(/\s+/g, '_')}_${dateStr}.json`;
+      link.download = `backup_${(appSettings?.companyName || 'dados').replace(/\s+/g, '_')}_${dateStr}.json`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);

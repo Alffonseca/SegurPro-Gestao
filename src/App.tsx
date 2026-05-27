@@ -4500,7 +4500,7 @@ export default function MainApp() {
       </aside>
 
       {/* Mobile Header */}
-      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-[#1a1d23] border-b border-[#2d3139] flex items-center justify-between px-4 z-50">
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-[#1a1d23] border-b border-[#2d3139] flex items-center justify-between px-4 z-50">
         <div className="flex items-center gap-3">
           {appSettings.logoUrl ? (
             <img src={appSettings.logoUrl} alt="Logo" className="h-8 w-auto object-contain max-w-[32px]" referrerPolicy="no-referrer" />
@@ -4513,14 +4513,24 @@ export default function MainApp() {
             {appSettings?.companyName || currentCompany?.companyName || currentCompany?.name || 'SegurPro Gestão'}
           </span>
         </div>
+        {/* PUNTO DE RESTAURACIÓN / RESTORE POINT FOR MOBILE HEADER BUTTON (PREVIOUS CODE):
         <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="text-white">
           {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+        </Button>
+        */}
+        <Button 
+          variant="ghost" 
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} 
+          className="text-white flex items-center gap-1 px-3 py-1 bg-[#1a1d23] hover:bg-[#252a33] hover:text-white border border-[#2d3139] h-10 rounded-lg text-[13px] font-bold font-mono tracking-tight"
+        >
+          <span>MENU-&gt;</span>
+          {isMobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
         </Button>
       </div>
 
       {/* Mobile Menu Overlay */}
       {isMobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 bg-[#0f1115] z-40 pt-16 flex flex-col">
+        <div className="lg:hidden fixed inset-0 bg-[#0f1115] z-40 pt-16 flex flex-col">
           <nav className="flex-1 p-6 space-y-3 overflow-y-auto">
             {[
               {
@@ -4680,8 +4690,8 @@ export default function MainApp() {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col pt-16 md:pt-0 overflow-hidden">
-        <header className="hidden md:flex h-20 items-center justify-between px-8 border-b border-[#2d3139] bg-[#1a1d23]">
+      <main className="flex-1 flex flex-col pt-16 lg:pt-0 overflow-hidden">
+        <header className="hidden lg:flex h-20 items-center justify-between px-8 border-b border-[#2d3139] bg-[#1a1d23]">
           {/* Left: Logo & Company Name */}
           <div className="flex items-center gap-5">
             {appSettings.logoUrl ? (
@@ -4778,7 +4788,7 @@ export default function MainApp() {
         </header>
 
         {/* Horizontal Scrollable Menu bar with premium sub-menus */}
-        <div className="w-full bg-[#16191f] border-b border-[#2d3139] shadow-md select-none sticky top-0 z-35">
+        <div className="hidden lg:block w-full bg-[#16191f] border-b border-[#2d3139] shadow-md select-none sticky top-0 z-35">
           {/* Click-away overlay when dropdown is open */}
           {openDropdown && (
             <div className="fixed inset-0 z-10" onClick={() => setOpenDropdown(null)} />
@@ -10731,6 +10741,12 @@ function SettingsManager({
   mode?: 'general' | 'financial'
 }) {
   const [localApp, setLocalApp] = useState<AppSettings>(appSettings || initialAppSettings);
+  const [dbMode, setDbMode] = useState<'default' | 'local' | 'online'>(
+    () => (localStorage.getItem('DB_MODE_OVERRIDE') as 'default' | 'local' | 'online') || 'default'
+  );
+  const [localDbUrl, setLocalDbUrl] = useState(
+    () => localStorage.getItem('LOCAL_DB_SERVER_URL') || ''
+  );
 
   useEffect(() => {
     if (appSettings && Object.keys(appSettings).length > 0) {
@@ -11459,6 +11475,106 @@ function SettingsManager({
                 </Button>
               </CardContent>
             </Card>
+            )}
+            
+            {mode === 'general' && (
+              <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-[#3b82f6]">
+                    <Database size={20} />
+                    Configuração do Banco de Dados
+                  </CardTitle>
+                  <CardDescription className="text-[#a0a0a0]">
+                    Defina se deseja usar o servidor local e configure a comunicação com sua base de dados local.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Explanatory Info Box */}
+                  <div className="p-4 rounded-lg bg-[#2d3139]/30 border border-[#2d3139]/80 text-[11px] space-y-3">
+                    <p className="font-bold text-[#3b82f6] uppercase tracking-wider text-xs">Instruções para Conexão Local:</p>
+                    <ul className="list-disc pl-4 space-y-2 text-[#a0a0a0] leading-relaxed">
+                      <li>
+                        <strong className="text-white">Manter o PC Ligado:</strong> O computador que hospeda a base (arquivo JSON/SQLite) deve estar ligado e com o servidor ativo.
+                      </li>
+                      <li>
+                        <strong className="text-white">Conexão na Mesma Rede (Wi-Fi):</strong> Outros dispositivos (celulares/tablets) na mesma Wi-Fi podem acessar seus dados. Mude para <span className="text-blue-400 font-semibold">Servidor Local</span> e informe o endereço IP completo do PC no campo abaixo (Ex: <code className="text-blue-400 bg-[#0f1115] px-1 rounded font-mono">http://192.168.1.100:3000</code>).
+                      </li>
+                      <li>
+                        <strong className="text-white">Acesso Externo de Qualquer Lugar (Web):</strong> Para que outros computadores e smartphones acessem de fora da rede Wi-Fi, instale uma ferramenta de túnel no seu PC principal (como <code className="text-blue-400 font-mono">Ngrok</code> ou <code className="text-blue-400 font-mono">Cloudflare Tunnels</code>) e configure o campo abaixo com o link público gerado (Ex: <code className="text-blue-400 bg-[#0f1115] px-1.5 py-0.5 rounded font-mono">https://seupc.ngrok-free.app</code>).
+                      </li>
+                    </ul>
+                  </div>
+
+                  {/* Mode Buttons */}
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0] text-xs font-semibold">Modo de Operação</Label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setDbMode('default')}
+                        className={`py-2 px-3 rounded-lg border text-[11px] font-bold uppercase transition-all ${
+                          dbMode === 'default'
+                            ? 'border-[#3b82f6] bg-[#3b82f6]/10 text-white'
+                            : 'border-[#2d3139] bg-[#0f1115] text-[#a0a0a0] hover:text-white hover:bg-[#16191f]'
+                        }`}
+                      >
+                        Padrão Env
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDbMode('online')}
+                        className={`py-2 px-3 rounded-lg border text-[11px] font-bold uppercase transition-all ${
+                          dbMode === 'online'
+                            ? 'border-[#3b82f6] bg-[#3b82f6]/10 text-white'
+                            : 'border-[#2d3139] bg-[#0f1115] text-[#a0a0a0] hover:text-white hover:bg-[#16191f]'
+                        }`}
+                      >
+                        Firebase (Cloud)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDbMode('local')}
+                        className={`py-2 px-3 rounded-lg border text-[11px] font-bold uppercase transition-all ${
+                          dbMode === 'local'
+                            ? 'border-[#3b82f6] bg-[#3b82f6]/10 text-white'
+                            : 'border-[#2d3139] bg-[#0f1115] text-[#a0a0a0] hover:text-white hover:bg-[#16191f]'
+                        }`}
+                      >
+                        Servidor Local
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Custom URL Input */}
+                  <div className="space-y-2">
+                    <Label htmlFor="localDbUrl" className="text-[#a0a0a0]">Endereço / URL do Servidor Local</Label>
+                    <Input
+                      id="localDbUrl"
+                      value={localDbUrl}
+                      onChange={e => setLocalDbUrl(e.target.value)}
+                      className="bg-[#0f1115] border-[#2d3139] text-white"
+                      placeholder="Ex: http://192.168.1.100:3000 ou https://xyz.ngrok-free.app"
+                    />
+                    <p className="text-[10px] text-[#71717a] leading-normal uppercase select-none tracking-wider">
+                      Deixe vazio se estiver rodando no próprio computador host, ou preencha para acessar o PC principal externamente.
+                    </p>
+                  </div>
+
+                  <Button 
+                    onClick={() => {
+                      localStorage.setItem('DB_MODE_OVERRIDE', dbMode);
+                      localStorage.setItem('LOCAL_DB_SERVER_URL', localDbUrl);
+                      toast.success('Configurações salvas! Reiniciando aplicação para aplicar as mudanças de banco comercial...');
+                      setTimeout(() => {
+                        window.location.reload();
+                      }, 1500);
+                    }}
+                    className="w-full bg-[#10b981] hover:bg-[#059669] text-white font-bold uppercase tracking-widest text-xs h-10 border border-[#10b981]/20 shadow-lg"
+                  >
+                    Salvar e Recarregar Sistema
+                  </Button>
+                </CardContent>
+              </Card>
             )}
           </div>
 
@@ -12582,6 +12698,26 @@ function Dashboard({
 
     const daysInMonth = new Date(nextMonthYear, nextMonthMonth + 1, 0).getDate();
 
+    // 1. Compile projected contract values from client records for next month
+    const activeContracts = (clients || []).filter(c => c.type === 'Contrato');
+    const contractProjections = activeContracts.map(client => {
+      const val = Number(client.contractValue || 0);
+      const paymentDay = Number(client.paymentDay || 10);
+      
+      const nextMonthMonthStr = `${String(nextMonthMonth + 1).padStart(2, '0')}/${nextMonthYear}`;
+      
+      // Look for a real receivable already registered in Firestore matching this client in next month
+      const exists = (receivables || []).some(r => 
+        (r.clientId === client.id || (r.clientName || '').toLowerCase() === (client.name || '').toLowerCase()) &&
+        r.referenceMonth === nextMonthMonthStr
+      );
+
+      return {
+        day: Math.min(paymentDay, 28),
+        value: exists ? 0 : val
+      };
+    });
+
     const forecast = [];
     for (let day = 1; day <= daysInMonth; day++) {
       // Filter receivables due on this day
@@ -12606,7 +12742,11 @@ function Dashboard({
         }
       });
 
-      const receita = dayReceivables.reduce((acc, r) => acc + (Number(r.value) || 0), 0);
+      // Income = directly launched receivables + contract-based dynamic predictions for next month
+      const receitaReal = dayReceivables.reduce((acc, r) => acc + (Number(r.value) || 0), 0);
+      const contractIncome = contractProjections.filter(p => p.day === day).reduce((acc, p) => acc + p.value, 0);
+      
+      const receita = receitaReal + contractIncome;
       const despesa = dayPayables.reduce((acc, p) => acc + (Number(p.value) || 0), 0);
 
       forecast.push({
@@ -12621,7 +12761,7 @@ function Dashboard({
       monthLabel: format(nextMonthDate, 'MMMM/yyyy', { locale: ptBR }),
       data: forecast
     };
-  }, [payables, receivables]);
+  }, [payables, receivables, clients]);
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#71717a'];
 
@@ -14540,6 +14680,58 @@ function VisitsManager({
   );
 }
 
+// OFX Statement Parser
+function parseOFX(text: string) {
+  const transactionRegex = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi;
+  const transactions = [];
+  let match;
+  
+  while ((match = transactionRegex.exec(text)) !== null) {
+    const block = match[1];
+    
+    // Helper to extract values
+    const extract = (tag: string): string => {
+      const tagRegex = new RegExp(`<${tag}>([^<\\n\\r]*)`, 'i');
+      const m = block.match(tagRegex);
+      if (m && m[1]) {
+        return m[1].replace(/<\/[^>]+>/gi, '').trim();
+      }
+      return '';
+    };
+
+    const trntype = extract('TRNTYPE');
+    const dtposted = extract('DTPOSTED');
+    const trnamt = extract('TRNAMT');
+    const memo = extract('MEMO') || extract('NAME') || 'Transação Extrato OFX';
+    const fitid = extract('FITID');
+
+    let date = new Date();
+    if (dtposted && dtposted.length >= 8) {
+      const year = parseInt(dtposted.substring(0, 4), 10);
+      const month = parseInt(dtposted.substring(4, 6), 10) - 1;
+      const day = parseInt(dtposted.substring(6, 8), 10);
+      date = new Date(year, month, day, 12, 0, 0);
+    }
+
+    const valueNum = Number(trnamt.replace(',', '.')) || 0;
+    const type = valueNum < 0 ? 'Despesa' : 'Receita';
+    const absoluteValue = Math.abs(valueNum);
+
+    transactions.push({
+      id: fitid || Math.random().toString(36).substring(7),
+      date,
+      description: memo,
+      value: absoluteValue,
+      type,
+      selected: true,
+      category: type === 'Receita' ? 'Faturamento' : 'Despesas Gerais',
+      paymentMethod: 'PIX'
+    });
+  }
+
+  return transactions;
+}
+
 // --- Financial Manager Component ---
 
 function FinancialManager({ 
@@ -14573,6 +14765,9 @@ function FinancialManager({
 }) {
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isOfxOpen, setIsOfxOpen] = useState(false);
+  const [ofxTransactions, setOfxTransactions] = useState<any[]>([]);
+  const [ofxIsParsing, setOfxIsParsing] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -15064,6 +15259,214 @@ function FinancialManager({
                   <LayoutGrid size={14} className="mr-1" /> Colunas
                 </Button>
               </div>
+              <Dialog open={isOfxOpen} onOpenChange={(val) => {
+                setIsOfxOpen(val);
+                if (!val) setOfxTransactions([]);
+              }}>
+                <DialogTrigger asChild>
+                  <Button className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white h-10 px-4 font-bold shadow-lg shadow-emerald-500/10">
+                    <Upload size={16} />
+                    IMPORTAR OFX
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 max-w-4xl w-[90vw]">
+                  <DialogHeader className="p-6 pb-2 flex-shrink-0 border-b border-[#2d3139]/40">
+                    <DialogTitle className="text-white flex items-center gap-2">
+                      <Upload className="text-emerald-400" size={20} />
+                      Importação de Extrato Bancário (OFX)
+                    </DialogTitle>
+                    <DialogDescription className="text-[#a0a0a0] text-xs">
+                      Selecione ou clique para carregar o arquivo .ofx baixado no aplicativo do seu banco para conciliar as receitas e despesas.
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6">
+                    {ofxTransactions.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center border-2 border-dashed border-[#2d3139] hover:border-emerald-500/40 rounded-xl p-10 bg-[#0f1115]/40 transition-all cursor-pointer relative lg:py-16">
+                        <input
+                          type="file"
+                          accept=".ofx"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            setOfxIsParsing(true);
+                            try {
+                              const text = await file.text();
+                              const parsed = parseOFX(text);
+                              if (parsed.length === 0) {
+                                toast.error("Nenhuma transação STMTTRN foi encontrada no arquivo. Verifique se é um arquivo OFX válido.");
+                              } else {
+                                setOfxTransactions(parsed);
+                                toast.success(`${parsed.length} transações carregadas com sucesso!`);
+                              }
+                            } catch (err) {
+                              toast.error("Erro ao ler o arquivo OFX.");
+                            } finally {
+                              setOfxIsParsing(false);
+                            }
+                          }}
+                          className="absolute inset-0 opacity-0 cursor-pointer"
+                        />
+                        <Upload size={40} className="text-[#71717a] mb-3 animate-pulse" />
+                        <p className="text-sm font-bold text-white uppercase tracking-wider mb-1">Selecionar Extrato Bancário</p>
+                        <p className="text-xs text-[#71717a] uppercase font-mono tracking-tight select-none">Clique ou arraste o arquivo contendo a extensão .ofx</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-[#71717a] uppercase tracking-wider font-mono">
+                            Lista de Transações ({ofxTransactions.filter(t => t.selected).length} selecionadas de {ofxTransactions.length})
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const allSelectedStatus = ofxTransactions.every(t => t.selected);
+                              setOfxTransactions(ofxTransactions.map(t => ({ ...t, selected: !allSelectedStatus })));
+                            }}
+                            className="text-xs font-mono font-bold uppercase tracking-wider text-blue-400 hover:text-blue-300"
+                          >
+                            {ofxTransactions.every(t => t.selected) ? "Desmarcar Todos" : "Marcar Todos"}
+                          </button>
+                        </div>
+
+                        {/* Transaction Table */}
+                        <div className="border border-[#2d3139] rounded-xl bg-[#0f1115]/50 overflow-hidden max-h-[300px] overflow-y-auto">
+                          <table className="w-full text-left text-xs font-mono border-collapse">
+                            <thead>
+                              <tr className="bg-[#1a1d23] border-b border-[#2d3139] text-[#71717a] tracking-wider uppercase font-black">
+                                <th className="p-3 w-10 text-center"></th>
+                                <th className="p-3">Data</th>
+                                <th className="p-3">Descrição (Memo)</th>
+                                <th className="p-3 text-right">Valor</th>
+                                <th className="p-3">Categoria</th>
+                                <th className="p-3">Forma Pagto</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {ofxTransactions.map((trx, idx) => (
+                                <tr key={trx.id} className="border-b border-[#2d3139]/40 hover:bg-[#1a1d23]/40">
+                                  <td className="p-3 text-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={trx.selected}
+                                      onChange={() => {
+                                        const updated = [...ofxTransactions];
+                                        updated[idx].selected = !updated[idx].selected;
+                                        setOfxTransactions(updated);
+                                      }}
+                                      className="rounded bg-[#1a1d23] border-[#2d3139] text-blue-500"
+                                    />
+                                  </td>
+                                  <td className="p-3 text-emerald-400 font-bold whitespace-nowrap">
+                                    {format(trx.date, 'dd/MM/yyyy')}
+                                  </td>
+                                  <td className="p-3 truncate max-w-[200px]" title={trx.description}>
+                                    {trx.description}
+                                  </td>
+                                  <td className={cn(
+                                    "p-3 text-right font-bold font-mono whitespace-nowrap",
+                                    trx.type === 'Receita' ? 'text-green-400' : 'text-red-400'
+                                  )}>
+                                    {trx.type === 'Receita' ? '+' : '-'} R$ {trx.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </td>
+                                  <td className="p-3">
+                                    <select
+                                      value={trx.category}
+                                      onChange={(e) => {
+                                        const updated = [...ofxTransactions];
+                                        updated[idx].category = e.target.value;
+                                        setOfxTransactions(updated);
+                                      }}
+                                      className="bg-[#1a1d23] border border-[#2d3139] text-white text-[10px] rounded px-1.5 py-0.5"
+                                    >
+                                      <option value="Faturamento">Faturamento (Geral)</option>
+                                      <option value="Serviço Normal">Serviço Normal</option>
+                                      <option value="Contrato Mensal">Contrato Mensal</option>
+                                      <option value="Peças / Equipamentos">Peças / Equipamentos</option>
+                                      <option value="Despesas Gerais">Despesas Gerais</option>
+                                      <option value="Impostos">Impostos</option>
+                                      <option value="Estrutura">Estrutura</option>
+                                      <option value="Salários / Comissões">Salários / Comissões</option>
+                                    </select>
+                                  </td>
+                                  <td className="p-3 text-[#a0a0a0]">
+                                    <select
+                                      value={trx.paymentMethod}
+                                      onChange={(e) => {
+                                        const updated = [...ofxTransactions];
+                                        updated[idx].paymentMethod = e.target.value;
+                                        setOfxTransactions(updated);
+                                      }}
+                                      className="bg-[#1a1d23] border border-[#2d3139] text-white text-[10px] rounded px-1.5 py-0.5"
+                                    >
+                                      <option value="PIX">PIX</option>
+                                      <option value="Dinheiro">Dinheiro</option>
+                                      <option value="Cartão">Cartão</option>
+                                    </select>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <DialogFooter className="p-6 border-t border-[#2d3139]/40 gap-2 flex-shrink-0">
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsOfxOpen(false)}
+                      className="border-[#2d3139] text-[#71717a] hover:text-white"
+                    >
+                      Cancelar
+                    </Button>
+                    {ofxTransactions.length > 0 && (
+                      <Button
+                        onClick={async () => {
+                          const toImport = ofxTransactions.filter(t => t.selected);
+                          if (toImport.length === 0) {
+                            toast.error("Nenhuma transação selecionada.");
+                            return;
+                          }
+
+                          let importedCount = 0;
+                          for (const info of toImport) {
+                            const newRec = {
+                              type: info.type,
+                              date: Timestamp.fromDate(info.date instanceof Date ? info.date : new Date()),
+                              value: Number(info.value) || 0,
+                              serviceType: info.type === 'Receita' ? 'Serviço Normal' : 'Despesas Gerais',
+                              category: info.category,
+                              paymentMethod: info.paymentMethod,
+                              pixAccountId: '',
+                              clientId: '',
+                              description: info.description,
+                              companyId,
+                              createdAt: Timestamp.now()
+                            };
+
+                            await addDoc(collection(db, 'financial'), newRec);
+                            importedCount++;
+                          }
+
+                          if (logAction) {
+                            logAction('financial', `Importou ${importedCount} transações via arquivo de extrato bancário OFX`);
+                          }
+
+                          toast.success(`Importação realizada! ${importedCount} lançamentos salvos com sucesso.`);
+                          setIsOfxOpen(false);
+                          setOfxTransactions([]);
+                        }}
+                        className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-6"
+                      >
+                        Importar Lançamentos ({ofxTransactions.filter(t => t.selected).length})
+                      </Button>
+                    )}
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
               <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
                 <DialogTrigger asChild>
                   <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white h-10 px-6 font-bold shadow-lg shadow-blue-500/10">

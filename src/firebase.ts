@@ -38,7 +38,12 @@ import * as localDb from './lib/localFirebase';
 export { firebaseConfig };
 
 // Dynamic mode toggle
-export const isLocalDb = (import.meta as any).env.VITE_LOCAL_DB === 'true';
+export const isLocalDb = (() => {
+  const override = localStorage.getItem('DB_MODE_OVERRIDE');
+  if (override === 'local') return true;
+  if (override === 'online') return false;
+  return (import.meta as any).env.VITE_LOCAL_DB === 'true';
+})();
 console.log(`[Database Initialization] Local DB Mode: ${isLocalDb}`);
 
 // Cloud Firebase initialization
