@@ -4513,7 +4513,7 @@ export default function MainApp() {
       </aside>
 
       {/* Mobile Header */}
-      <div className="xl:hidden fixed top-0 left-0 right-0 h-16 bg-[#1a1d23] border-b border-[#2d3139] flex items-center justify-between px-4 z-50">
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-[#1a1d23] border-b border-[#2d3139] flex items-center justify-between px-4 z-50">
         <div className="flex items-center gap-3">
           {appSettings.logoUrl ? (
             <img src={appSettings.logoUrl} alt="Logo" className="h-8 w-auto object-contain max-w-[32px]" referrerPolicy="no-referrer" />
@@ -4543,7 +4543,7 @@ export default function MainApp() {
 
       {/* Mobile Menu Overlay */}
       {isMobileMenuOpen && (
-        <div className="xl:hidden fixed inset-0 bg-[#0f1115] z-40 pt-16 flex flex-col">
+        <div className="lg:hidden fixed inset-0 bg-[#0f1115] z-40 pt-16 flex flex-col">
           <nav className="flex-1 p-6 space-y-3 overflow-y-auto">
             {[
               {
@@ -4703,8 +4703,8 @@ export default function MainApp() {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col pt-16 xl:pt-0 overflow-hidden">
-        <header className="hidden xl:flex h-20 items-center justify-between px-8 border-b border-[#2d3139] bg-[#1a1d23]">
+      <main className="flex-1 flex flex-col pt-16 lg:pt-0 overflow-hidden">
+        <header className="hidden lg:flex h-20 items-center justify-between px-8 border-b border-[#2d3139] bg-[#1a1d23]">
           {/* Left: Logo & Company Name */}
           <div className="flex items-center gap-5">
             {appSettings.logoUrl ? (
@@ -4801,7 +4801,7 @@ export default function MainApp() {
         </header>
 
         {/* Horizontal Scrollable Menu bar with premium sub-menus */}
-        <div className="hidden xl:block w-full bg-[#16191f] border-b border-[#2d3139] shadow-md select-none sticky top-0 z-35">
+        <div className="hidden lg:block w-full bg-[#16191f] border-b border-[#2d3139] shadow-md select-none sticky top-0 z-35">
           {/* Click-away overlay when dropdown is open */}
           {openDropdown && (
             <div className="fixed inset-0 z-10" onClick={() => setOpenDropdown(null)} />
