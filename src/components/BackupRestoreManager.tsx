@@ -65,6 +65,9 @@ interface BackupRestoreManagerProps {
 }
 
 export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, currentUserData }: BackupRestoreManagerProps) {
+  const SUPER_ADMIN_EMAILS = ['emailparasiteslixo@gmail.com', 'alffonseca42@gmail.com'];
+  const isMasterAdmin = isSuperAdmin && (currentUserData?.email ? SUPER_ADMIN_EMAILS.includes(currentUserData.email.toLowerCase().trim()) : false);
+
   const [saasGlobal, setSaasGlobal] = useState(false);
   const [selectedBackupCollections, setSelectedBackupCollections] = useState<string[]>(() => {
     const defaultList = [
@@ -72,7 +75,7 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
       'suppliers', 'serviceOrders', 'inventory', 'inventoryTransactions', 'logs', 'laudos',
       'payables', 'receivables'
     ];
-    if (isSuperAdmin) {
+    if (isMasterAdmin) {
       defaultList.push('registration_codes');
     }
     return defaultList;
@@ -102,7 +105,7 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
     payables: "Contas a Pagar",
     receivables: "Contas a Receber",
     logs: "Registros de Logs/Auditoria",
-    ...(isSuperAdmin ? { registration_codes: "Códigos de Registro SaaS (Licenças)" } : {})
+    ...(isMasterAdmin ? { registration_codes: "Códigos de Registro SaaS (Licenças)" } : {})
   };
 
   // Safe date formatting helper to avoid date format crash on undefined/invalid dates
@@ -157,7 +160,7 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
 
   // Helper code to capture current collection snapshot
   const fetchCurrentDataset = async (selectedCols: string[], forceGlobal: boolean = false) => {
-    const isGlobal = isSuperAdmin && (saasGlobal || forceGlobal);
+    const isGlobal = isMasterAdmin && (saasGlobal || forceGlobal);
     const backupData: any = { 
       companyName: isGlobal ? 'SaaS Global Backup' : (appSettings?.companyName || 'Empresa'), 
       companyId: isGlobal ? 'saas-global' : companyId, 
@@ -228,7 +231,7 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      const downloadName = saasGlobal && isSuperAdmin 
+      const downloadName = saasGlobal && isMasterAdmin 
         ? `backup_SaaS_completo_${dateStr}.json`
         : `backup_${(appSettings?.companyName || 'dados').replace(/\s+/g, '_')}_${dateStr}.json`;
       link.download = downloadName;
@@ -351,7 +354,7 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
       throw new Error("Nenhum dado correspondente encontrado.");
     }
 
-    const isGlobalRestore = isSuperAdmin && (backup.saasGlobal === true);
+    const isGlobalRestore = isMasterAdmin && (backup.saasGlobal === true);
 
     // 1. Clear existing data in selected modules/collections to avoid duplicates.
     for (const col of collections) {
@@ -464,8 +467,8 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
             </CardHeader>
             <CardContent className="space-y-6">
               
-              {/* SaaS Global toggle if Super Admin */}
-              {isSuperAdmin && (
+              {/* SaaS Global toggle if Master Admin */}
+              {isMasterAdmin && (
                 <div className="flex items-start space-x-3 p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl">
                   <input 
                     type="checkbox" 
