@@ -2718,6 +2718,8 @@ export default function MainApp() {
   const [visits, setVisits] = useState<TechnicalVisit[]>([]);
   const [serviceOrders, setServiceOrders] = useState<ServiceOrder[]>([]);
   const [financials, setFinancials] = useState<FinancialRecord[]>([]);
+  const [payables, setPayables] = useState<any[]>([]);
+  const [receivables, setReceivables] = useState<any[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [inventory, setInventory] = useState<any[]>([]);
   const [inventoryTransactions, setInventoryTransactions] = useState<any[]>([]);
@@ -3357,6 +3359,8 @@ export default function MainApp() {
     let visitsUnsubscribe = () => {};
     let serviceOrdersUnsubscribe = () => {};
     let financialUnsubscribe = () => {};
+    let payablesUnsubscribe = () => {};
+    let receivablesUnsubscribe = () => {};
     let budgetsUnsubscribe = () => {};
     let inventoryUnsubscribe = () => {};
     let inventoryTransactionsUnsubscribe = () => {};
@@ -3384,6 +3388,8 @@ export default function MainApp() {
       setServiceOrders([]);
       setBudgets([]);
       setFinancials([]);
+      setPayables([]);
+      setReceivables([]);
       setInventoryTransactions([]);
       setLogs([]);
 
@@ -3431,6 +3437,22 @@ export default function MainApp() {
             const dateB = safeParseDate(b.date).getTime();
             return dateB - dateA;
           }));
+        }
+      );
+
+      payablesUnsubscribe = onSnapshot(
+        query(collection(db, 'payables'), where('companyId', '==', companyId)),
+        (snapshot) => {
+          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setPayables(data);
+        }
+      );
+
+      receivablesUnsubscribe = onSnapshot(
+        query(collection(db, 'receivables'), where('companyId', '==', companyId)),
+        (snapshot) => {
+          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setReceivables(data);
         }
       );
 
@@ -3567,6 +3589,8 @@ export default function MainApp() {
       visitsUnsubscribe();
       serviceOrdersUnsubscribe();
       financialUnsubscribe();
+      payablesUnsubscribe();
+      receivablesUnsubscribe();
       budgetsUnsubscribe();
       inventoryUnsubscribe();
       inventoryTransactionsUnsubscribe();
@@ -4569,6 +4593,7 @@ export default function MainApp() {
                 show: canAccess('settings') || isSuperAdmin,
                 items: [
                   { id: 'settings', label: 'Configurações', icon: <Settings size={16} />, show: canAccess('settings') },
+                  { id: 'financial-settings', label: 'Config. Financeiras', icon: <DollarSign size={16} />, show: canAccess('settings') },
                   { id: 'backup-restore', label: 'Backup/Restauração', icon: <Database size={16} />, show: canAccess('settings') },
                   { id: 'super-admin', label: 'Admin SaaS', icon: <Shield size={16} className="text-yellow-500" />, show: isSuperAdmin }
                 ]
@@ -4598,7 +4623,7 @@ export default function MainApp() {
                       (cat.id === 'financial' && ['financial', 'receipts', 'payable', 'receivable'].includes(activeTab)) ||
                       (cat.id === 'vendas' && ['pdv', 'budgets', 'vendas-historico'].includes(activeTab)) ||
                       (cat.id === 'relatorio' && ['reports', 'logs'].includes(activeTab)) ||
-                      (cat.id === 'sistema' && ['settings', 'backup-restore', 'super-admin'].includes(activeTab)))
+                      (cat.id === 'sistema' && ['settings', 'financial-settings', 'backup-restore', 'super-admin'].includes(activeTab)))
                         ? "bg-blue-500/10 text-blue-400 border-blue-500/30 font-extrabold"
                         : "bg-[#16191f]/50 border-transparent text-[#71717a] hover:text-white"
                     )}
@@ -4691,6 +4716,7 @@ export default function MainApp() {
                activeTab === 'users' ? 'Controle de Equipe' :
                activeTab === 'logs' ? 'Logs do Sistema' :
                activeTab === 'settings' ? 'Configurações do Sistema' :
+               activeTab === 'financial-settings' ? 'Configurações Financeiras' :
                activeTab === 'inventory' ? 'Controle de Estoque' :
                activeTab === 'pdv' ? 'Abertura de PDV' :
                activeTab === 'backup-restore' ? 'Backup e Restauração' :
@@ -4831,6 +4857,7 @@ export default function MainApp() {
                   show: canAccess('settings') || isSuperAdmin,
                   items: [
                     { id: 'settings', label: 'Configurações', icon: <Settings size={12} />, show: canAccess('settings') },
+                    { id: 'financial-settings', label: 'Config. Financeiras', icon: <DollarSign size={12} />, show: canAccess('settings') },
                     { id: 'backup-restore', label: 'Backup/Restauração', icon: <Database size={12} />, show: canAccess('settings') },
                     { id: 'super-admin', label: 'Admin SaaS', icon: <Shield size={12} className="text-yellow-500" />, show: isSuperAdmin }
                   ]
@@ -4843,7 +4870,7 @@ export default function MainApp() {
                   (cat.id === 'financial' && ['financial', 'receipts', 'payable', 'receivable'].includes(activeTab)) ||
                   (cat.id === 'vendas' && ['pdv', 'budgets', 'vendas-historico'].includes(activeTab)) ||
                   (cat.id === 'relatorio' && ['reports', 'logs'].includes(activeTab)) ||
-                  (cat.id === 'sistema' && ['settings', 'backup-restore', 'super-admin'].includes(activeTab));
+                  (cat.id === 'sistema' && ['settings', 'financial-settings', 'backup-restore', 'super-admin'].includes(activeTab));
 
                 const hasDropdown = !!cat.items;
 
@@ -4923,6 +4950,8 @@ export default function MainApp() {
               financials={financials} 
               budgets={budgets} 
               clients={clients} 
+              payables={payables}
+              receivables={receivables} 
               onNavigate={(tab, filter) => {
                 if (tab === 'visits' && filter) {
                   setVisitsFilter(filter);
@@ -5343,23 +5372,42 @@ export default function MainApp() {
               currentUserData={currentUserData}
             />
           )}
-          {activeTab === 'settings' && (
-            <SettingsManager 
-              key={effectiveCompanyId}
-              pixSettings={pixSettings} 
-              appSettings={appSettings} 
-              user={user!} 
-              companyId={effectiveCompanyId || ''} 
-              currentUserData={currentUserData}
-              allCompanies={allCompanies}
-              selectedCompanyId={selectedCompanyId}
-              setSelectedCompanyId={setSelectedCompanyId}
-              isSuperAdmin={isSuperAdmin}
-              currentCompany={currentCompany}
-              customRoles={customRoles}
-              userRoles={userRoles}
-            />
-          )}
+           {activeTab === 'settings' && (
+             <SettingsManager 
+               key={`${effectiveCompanyId}-general`}
+               pixSettings={pixSettings} 
+               appSettings={appSettings} 
+               user={user!} 
+               companyId={effectiveCompanyId || ''} 
+               currentUserData={currentUserData}
+               allCompanies={allCompanies}
+               selectedCompanyId={selectedCompanyId}
+               setSelectedCompanyId={setSelectedCompanyId}
+               isSuperAdmin={isSuperAdmin}
+               currentCompany={currentCompany}
+               customRoles={customRoles}
+               userRoles={userRoles}
+               mode="general"
+             />
+           )}
+           {activeTab === 'financial-settings' && (
+             <SettingsManager 
+               key={`${effectiveCompanyId}-financial`}
+               pixSettings={pixSettings} 
+               appSettings={appSettings} 
+               user={user!} 
+               companyId={effectiveCompanyId || ''} 
+               currentUserData={currentUserData}
+               allCompanies={allCompanies}
+               selectedCompanyId={selectedCompanyId}
+               setSelectedCompanyId={setSelectedCompanyId}
+               isSuperAdmin={isSuperAdmin}
+               currentCompany={currentCompany}
+               customRoles={customRoles}
+               userRoles={userRoles}
+               mode="financial"
+             />
+           )}
           {activeTab === 'backup-restore' && (
             <BackupRestoreManager 
               key={effectiveCompanyId}
@@ -5374,6 +5422,7 @@ export default function MainApp() {
               companyId={effectiveCompanyId || ''} 
               suppliers={suppliers}
               pixSettings={pixSettings}
+              appSettings={appSettings}
             />
           )}
           {activeTab === 'receivable' && (
@@ -5603,67 +5652,91 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
-        <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest text-[#3b82f6]">Equipe e Acessos</h2>
-        <p className="text-[#a0a0a0] text-sm">Gerencie os membros da sua equipe e permissões de acesso.</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#2d3139]/30 pb-4 mb-6">
+        <div className="flex flex-col gap-2">
+          <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest text-[#3b82f6]">Equipe e Acessos</h2>
+          <p className="text-[#a0a0a0] text-sm">Gerencie os membros da sua equipe e permissões de acesso.</p>
+        </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div className="flex flex-col sm:flex-row gap-2">
-          <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-xl shadow-inner shadow-black/20">
-            <div className="text-[10px] uppercase text-[#71717a] font-black tracking-widest">Código de Equipe:</div>
-            <code className="text-[#3b82f6] font-mono font-bold text-sm">{currentCompany?.inviteCode || '---'}</code>
-            <div className="flex items-center gap-1">
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="h-6 w-6 text-[#71717a] hover:text-white"
-                onClick={() => {
-                  const inviteCode = currentCompany?.inviteCode;
-                  if (inviteCode) {
-                    const url = `${window.location.origin}${window.location.pathname}?code=${inviteCode}`;
-                    navigator.clipboard.writeText(url);
-                    toast.success('Link de convite copiado!');
-                  } else {
-                    toast.error('Gere um código nas configurações primeiro.');
-                  }
-                }}
-                title="Copiar Link de Convite"
-              >
-                <Share2 size={12} />
-              </Button>
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-6 w-6 text-[#71717a] hover:text-white" title="Ver QR Code">
-                    <QrCode size={12} />
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white w-fit">
-                  <DialogHeader>
-                    <DialogTitle className="text-white text-center">Convite de Equipe</DialogTitle>
-                    <DialogDescription className="text-center text-[#71717a] text-xs">Aponte a câmera para se juntar à empresa</DialogDescription>
-                  </DialogHeader>
-                  <div className="p-6 bg-white rounded-xl shadow-2xl flex items-center justify-center mx-auto">
-                    <QRCodeCanvas 
-                      value={`${window.location.origin}${window.location.pathname}?code=${currentCompany?.inviteCode}`}
-                      size={200}
-                      level="H"
-                      includeMargin={true}
-                    />
-                  </div>
-                  <div className="text-center font-mono font-bold text-lg tracking-widest mt-2">{currentCompany?.inviteCode}</div>
-                </DialogContent>
-              </Dialog>
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] justify-between items-start bg-[#1a1d23] border border-[#2d3139] p-8 rounded-2xl gap-8 mb-8 relative overflow-hidden group">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-[#3b82f6]/5 rounded-full -mr-16 -mt-16 blur-2xl group-hover:bg-[#3b82f6]/10 transition-colors"></div>
+        
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <h3 className="text-xl font-black text-white tracking-tight uppercase italic flex items-center gap-2">
+                <Share2 className="text-[#3b82f6]" size={20} />
+                Acesso de Equipe
+              </h3>
+              <Badge className="bg-green-500/20 text-green-400 border border-green-500/30 font-black text-[10px] uppercase">Ativo</Badge>
+            </div>
+            <p className="text-sm text-[#71717a] max-w-lg leading-relaxed">
+              Compartilhe o código ou o QR code abaixo para que novos <span className="text-[#3b82f6] font-bold">colaboradores</span> entrem diretamente na sua empresa.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-[#0f1115] px-6 py-4 rounded-xl border border-[#2d3139] text-[#3b82f6] font-mono font-black text-4xl tracking-widest shadow-inner select-all">
+                {currentCompany?.inviteCode || '...'}
+              </div>
+              <div className="flex flex-col gap-2">
+                <Button 
+                  variant="outline" 
+                  className="border-[#2d3139] hover:bg-white/5 text-white h-10 font-black text-[10px] uppercase tracking-widest gap-2"
+                  onClick={() => {
+                    const code = currentCompany?.inviteCode || '';
+                    if (code) {
+                      navigator.clipboard.writeText(code);
+                      toast.success('Código copiado!');
+                    }
+                  }}
+                >
+                  <Copy size={14} /> Copiar Código
+                </Button>
+                <Button 
+                  variant="default" 
+                  className="bg-[#3b82f6] hover:bg-[#2563eb] text-white h-10 font-black text-[10px] uppercase tracking-widest gap-2 shadow-lg shadow-blue-500/20"
+                  onClick={() => {
+                    const code = currentCompany?.inviteCode || '';
+                    if (code) {
+                      const url = `${window.location.origin}${window.location.pathname}?code=${code}`;
+                      navigator.clipboard.writeText(url);
+                      toast.success('Link de convite copiado!');
+                    }
+                  }}
+                >
+                  <ExternalLink size={14} /> Copiar Link
+                </Button>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 text-[10px] text-[#555] font-bold uppercase tracking-wider">
+              <Shield size={10} /> Segurança SegurPro Ativa
             </div>
           </div>
         </div>
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2 bg-[#3b82f1] hover:bg-[#2563eb] text-white h-11 px-6 font-bold shadow-lg shadow-blue-500/10">
-              <Plus size={18} />
-              NOVO USUÁRIO
-            </Button>
-          </DialogTrigger>
+
+        <div className="flex flex-col items-center gap-3">
+          <div className="p-3 bg-white rounded-xl shadow-2xl shadow-black/40">
+            <QRCodeCanvas 
+              value={`${window.location.origin}${window.location.pathname}?code=${currentCompany?.inviteCode || ''}`}
+              size={140}
+              level="H"
+              includeMargin={true}
+            />
+          </div>
+          <p className="text-[10px] text-[#71717a] font-black uppercase tracking-[0.2em]">Escanear para Entrar</p>
+        </div>
+      </div>
+
+      <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+        <DialogTrigger asChild>
+          <Button className="gap-2 bg-[#3b82f1] hover:bg-[#2563eb] text-white h-11 px-6 font-bold shadow-lg shadow-blue-500/10">
+            <Plus size={18} />
+            NOVO USUÁRIO
+          </Button>
+        </DialogTrigger>
           <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[85vh] overflow-hidden flex flex-col p-0 sm:max-w-[500px] shadow-2xl">
             <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Cadastrar Novo Usuário</DialogTitle>
@@ -5741,7 +5814,6 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
 
       {showList ? (
         viewMode === 'grid' ? (
@@ -10640,7 +10712,8 @@ function SettingsManager({
   isSuperAdmin = false,
   currentCompany,
   customRoles,
-  userRoles
+  userRoles,
+  mode = 'general'
 }: { 
   pixSettings: PixSettings, 
   appSettings: AppSettings, 
@@ -10654,7 +10727,8 @@ function SettingsManager({
   currentCompany?: any,
   customRoles: UserRole[],
   userRoles: UserRole[],
-  key?: any
+  key?: any,
+  mode?: 'general' | 'financial'
 }) {
   const [localApp, setLocalApp] = useState<AppSettings>(appSettings || initialAppSettings);
 
@@ -10688,6 +10762,71 @@ function SettingsManager({
     setLocalApp({ ...localApp, serviceTypes: updatedTypes });
   };
 
+  const [newPayableDestination, setNewPayableDestination] = useState('');
+  const [newPayableCategory, setNewPayableCategory] = useState('');
+
+  const handleAddPayableDestination = async () => {
+    if (!newPayableDestination.trim()) return;
+    const dest = newPayableDestination.trim();
+    if (localApp.payableDestinations?.includes(dest)) {
+      toast.error('Este destino já existe.');
+      return;
+    }
+    const updated = [...(localApp.payableDestinations || []), dest];
+    const updatedApp = { ...localApp, payableDestinations: updated };
+    setLocalApp(updatedApp);
+    setNewPayableDestination('');
+    try {
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'general'), { payableDestinations: updated }, { merge: true });
+      toast.success('Destino adicionado com sucesso!');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleRemovePayableDestination = async (destToRemove: string) => {
+    const updated = (localApp.payableDestinations || []).filter(d => d !== destToRemove);
+    const updatedApp = { ...localApp, payableDestinations: updated };
+    setLocalApp(updatedApp);
+    try {
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'general'), { payableDestinations: updated }, { merge: true });
+      toast.success('Destino removido.');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleAddPayableCategory = async () => {
+    if (!newPayableCategory.trim()) return;
+    const cat = newPayableCategory.trim();
+    if (localApp.payableCategories?.includes(cat)) {
+      toast.error('Esta categoria já existe.');
+      return;
+    }
+    const updated = [...(localApp.payableCategories || []), cat];
+    const updatedApp = { ...localApp, payableCategories: updated };
+    setLocalApp(updatedApp);
+    setNewPayableCategory('');
+    try {
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'general'), { payableCategories: updated }, { merge: true });
+      toast.success('Categoria adicionada com sucesso!');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleRemovePayableCategory = async (catToRemove: string) => {
+    const updated = (localApp.payableCategories || []).filter(c => c !== catToRemove);
+    const updatedApp = { ...localApp, payableCategories: updated };
+    setLocalApp(updatedApp);
+    try {
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'general'), { payableCategories: updated }, { merge: true });
+      toast.success('Categoria removida.');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const [editingServiceType, setEditingServiceType] = useState<string | null>(null);
   const [editServiceTypeLabel, setEditServiceTypeLabel] = useState('');
 
@@ -10714,6 +10853,24 @@ function SettingsManager({
   const [planInstallmentFilter, setPlanInstallmentFilter] = useState<string>('');
   const [lastUsedBrand, setLastUsedBrand] = useState<'VISA' | 'MASTERCARD' | 'AMERICA' | 'ELO'>('VISA');
   const [lastUsedType, setLastUsedType] = useState<'DÉBITO' | 'CRÉDITO'>('CRÉDITO');
+
+  const [installmentPlansViewMode, setInstallmentPlansViewMode] = useState<'list' | 'columns'>(() => {
+    return (localStorage.getItem('installmentPlansViewMode') as 'list' | 'columns') || 'list';
+  });
+
+  const [pixAccountsViewMode, setPixAccountsViewMode] = useState<'list' | 'columns'>(() => {
+    return (localStorage.getItem('pixAccountsViewMode') as 'list' | 'columns') || 'list';
+  });
+
+  const handleSetInstallmentPlansViewMode = (mode: 'list' | 'columns') => {
+    setInstallmentPlansViewMode(mode);
+    localStorage.setItem('installmentPlansViewMode', mode);
+  };
+
+  const handleSetPixAccountsViewMode = (mode: 'list' | 'columns') => {
+    setPixAccountsViewMode(mode);
+    localStorage.setItem('pixAccountsViewMode', mode);
+  };
 
   // Keep state in sync with props
   useEffect(() => {
@@ -11158,84 +11315,18 @@ function SettingsManager({
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
-        <h2 className="text-3xl font-black tracking-tighter text-white uppercase italic text-[#3b82f6]">Configurações</h2>
-        <p className="text-[#a0a0a0] text-sm uppercase tracking-[0.2em] font-medium">Controle de acesso, dados da empresa e backup.</p>
+        <h2 className="text-3xl font-black tracking-tighter text-white uppercase italic text-[#3b82f6]">
+          {mode === 'financial' ? 'Config. Financeiras' : 'Configurações'}
+        </h2>
+        <p className="text-[#a0a0a0] text-sm uppercase tracking-[0.2em] font-medium">
+          {mode === 'financial' ? 'Tipos de Serviço, Categorias de pagamento, Parcelamentos e Chaves PIX.' : 'Controle de acesso e dados da empresa.'}
+        </p>
       </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] justify-between items-start bg-[#1a1d23] border border-[#2d3139] p-8 rounded-2xl gap-8 mb-8 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-[#3b82f6]/5 rounded-full -mr-16 -mt-16 blur-2xl group-hover:bg-[#3b82f6]/10 transition-colors"></div>
-          
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <h3 className="text-xl font-black text-white tracking-tight uppercase italic flex items-center gap-2">
-                  <Share2 className="text-[#3b82f6]" size={20} />
-                  Acesso de Equipe
-                </h3>
-                <Badge className="bg-green-500/20 text-green-400 border border-green-500/30 font-black text-[10px] uppercase">Ativo</Badge>
-              </div>
-              <p className="text-sm text-[#71717a] max-w-lg leading-relaxed">
-                Compartilhe o código ou o QR code abaixo para que novos <span className="text-[#3b82f6] font-bold">colaboradores</span> entrem diretamente na sua empresa.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-4">
-              <div className="flex items-center gap-3">
-                <div className="bg-[#0f1115] px-6 py-4 rounded-xl border border-[#2d3139] text-[#3b82f6] font-mono font-black text-4xl tracking-widest shadow-inner select-all">
-                  {currentCompany?.inviteCode || '...'}
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Button 
-                    variant="outline" 
-                    className="border-[#2d3139] hover:bg-white/5 text-white h-10 font-black text-[10px] uppercase tracking-widest gap-2"
-                    onClick={() => {
-                      const code = currentCompany?.inviteCode || '';
-                      if (code) {
-                        navigator.clipboard.writeText(code);
-                        toast.success('Código copiado!');
-                      }
-                    }}
-                  >
-                    <Copy size={14} /> Copiar Código
-                  </Button>
-                  <Button 
-                    variant="default" 
-                    className="bg-[#3b82f6] hover:bg-[#2563eb] text-white h-10 font-black text-[10px] uppercase tracking-widest gap-2 shadow-lg shadow-blue-500/20"
-                    onClick={() => {
-                      const code = currentCompany?.inviteCode || '';
-                      if (code) {
-                        const url = `${window.location.origin}${window.location.pathname}?code=${code}`;
-                        navigator.clipboard.writeText(url);
-                        toast.success('Link de convite copiado!');
-                      }
-                    }}
-                  >
-                    <ExternalLink size={14} /> Copiar Link
-                  </Button>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 text-[10px] text-[#555] font-bold uppercase tracking-wider">
-                <Shield size={10} /> Segurança SegurPro Ativa
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-col items-center gap-3">
-            <div className="p-3 bg-white rounded-xl shadow-2xl shadow-black/40">
-              <QRCodeCanvas 
-                value={`${window.location.origin}${window.location.pathname}?code=${currentCompany?.inviteCode || ''}`}
-                size={140}
-                level="H"
-                includeMargin={true}
-              />
-            </div>
-            <p className="text-[10px] text-[#71717a] font-black uppercase tracking-[0.2em]">Escanear para Entrar</p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 gap-8 max-w-4xl mx-auto">
           <div className="space-y-8">
-            <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
+            {mode === 'general' && (
+              <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Settings className="text-[#3b82f6]" size={20} />
@@ -11368,9 +11459,12 @@ function SettingsManager({
                 </Button>
               </CardContent>
             </Card>
+            )}
           </div>
 
           <div className="space-y-8">
+            {mode === 'financial' && (
+              <>
             <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -11435,6 +11529,77 @@ function SettingsManager({
             </Card>
 
             <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ArrowUpRight className="text-[#3b82f6]" size={20} />
+                  Contas a Pagar (Destinos & Categorias)
+                </CardTitle>
+                <CardDescription className="text-[#71717a]">
+                  Personalize os destinos de pagamento e categorias para Contas a Pagar.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Destinos */}
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0] font-bold text-xs uppercase tracking-wide">Destinos de Pagamento</Label>
+                  <div className="flex gap-2">
+                    <Input 
+                      placeholder="Ex: Fornecedor de Cabos, Internet Link, Aluguel" 
+                      className="bg-[#0f1115] border-[#2d3139] text-white h-10"
+                      value={newPayableDestination}
+                      onChange={e => setNewPayableDestination(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleAddPayableDestination()}
+                    />
+                    <Button onClick={handleAddPayableDestination} className="bg-[#3b82f6] hover:bg-[#2563eb] h-10">
+                      <Plus size={16} />
+                    </Button>
+                  </div>
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {(localApp.payableDestinations || []).length === 0 ? (
+                      <span className="text-xs text-[#71717a] italic">Nenhum destino específico cadastrado. Usará fornecedores padrão.</span>
+                    ) : (
+                      (localApp.payableDestinations || []).map((dest: string) => (
+                        <Badge key={dest} className="bg-[#0f1115] border border-[#2d3139] text-[#a0a0a0] py-1.5 px-3 flex gap-2 items-center">
+                          {dest}
+                          <button onClick={() => handleRemovePayableDestination(dest)} className="text-[#555] hover:text-red-500 transition-colors">
+                            <X size={12} />
+                          </button>
+                        </Badge>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Categorias */}
+                <div className="space-y-2 border-t border-[#2d3139]/40 pt-4">
+                  <Label className="text-[#a0a0a0] font-bold text-xs uppercase tracking-wide">Categorias de Despesa</Label>
+                  <div className="flex gap-2">
+                    <Input 
+                      placeholder="Ex: Energia, Peças, Salários" 
+                      className="bg-[#0f1115] border-[#2d3139] text-white h-10"
+                      value={newPayableCategory}
+                      onChange={e => setNewPayableCategory(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleAddPayableCategory()}
+                    />
+                    <Button onClick={handleAddPayableCategory} className="bg-[#3b82f6] hover:bg-[#2563eb] h-10">
+                      <Plus size={16} />
+                    </Button>
+                  </div>
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {(localApp.payableCategories || ['Peças', 'Energia', 'Internet/Chip', 'Aluguel', 'Salários', 'Impostos', 'Softwares', 'Outros']).map((cat: string) => (
+                      <Badge key={cat} className="bg-[#0f1115] border border-[#2d3139] text-[#a0a0a0] py-1.5 px-3 flex gap-2 items-center">
+                        {cat}
+                        <button onClick={() => handleRemovePayableCategory(cat)} className="text-[#555] hover:text-red-500 transition-colors">
+                          <X size={12} />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
               <CardHeader className="flex flex-row items-center justify-between">
                 <div className="space-y-1">
                   <CardTitle className="flex items-center gap-2">
@@ -11454,62 +11619,104 @@ function SettingsManager({
                 </Button>
               </CardHeader>
               <CardContent>
-                <div className="mb-4 flex flex-col sm:flex-row gap-2">
-                  <Select value={planBrandFilter} onValueChange={(val: any) => setPlanBrandFilter(val)}>
-                    <SelectTrigger className="w-fit min-w-[110px] bg-[#0f1115] border-[#2d3139] text-white h-10 px-3">
-                      <SelectValue placeholder="Bandeira">
-                        {planBrandFilter === 'ALL' ? 'Todas' : (planBrandFilter === 'NONE' ? 'Nenhuma' : planBrandFilter)}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      <SelectItem value="NONE">Nenhum</SelectItem>
-                      <SelectItem value="ALL">Todas</SelectItem>
-                      <SelectItem value="VISA">VISA</SelectItem>
-                      <SelectItem value="MASTERCARD">MASTERCARD</SelectItem>
-                      <SelectItem value="AMERICA">AMEX</SelectItem>
-                      <SelectItem value="ELO">ELO</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="mb-4 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-[#2d3139]/30 pb-4">
+                  <div className="flex flex-wrap gap-2 flex-1">
+                    <Select value={planBrandFilter} onValueChange={(val: any) => setPlanBrandFilter(val)}>
+                      <SelectTrigger className="w-fit min-w-[110px] bg-[#0f1115] border-[#2d3139] text-white h-10 px-3">
+                        <SelectValue placeholder="Bandeira">
+                          {planBrandFilter === 'ALL' ? 'Todas' : (planBrandFilter === 'NONE' ? 'Nenhuma' : planBrandFilter)}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="NONE">Nenhum</SelectItem>
+                        <SelectItem value="ALL">Todas</SelectItem>
+                        <SelectItem value="VISA">VISA</SelectItem>
+                        <SelectItem value="MASTERCARD">MASTERCARD</SelectItem>
+                        <SelectItem value="AMERICA">AMEX</SelectItem>
+                        <SelectItem value="ELO">ELO</SelectItem>
+                      </SelectContent>
+                    </Select>
 
-                  <Select value={planTypeFilter} onValueChange={(val: any) => setPlanTypeFilter(val)}>
-                    <SelectTrigger className="flex-1 bg-[#0f1115] border-[#2d3139] text-white h-10">
-                      <SelectValue placeholder="Tipo">
-                        {planTypeFilter === 'ALL' ? 'Todos os Tipos' : planTypeFilter}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      <SelectItem value="ALL">Todos os Tipos</SelectItem>
-                      <SelectItem value="DÉBITO">DÉBITO</SelectItem>
-                      <SelectItem value="CRÉDITO">CRÉDITO</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    <Select value={planTypeFilter} onValueChange={(val: any) => setPlanTypeFilter(val)}>
+                      <SelectTrigger className="w-fit min-w-[140px] bg-[#0f1115] border-[#2d3139] text-white h-10">
+                        <SelectValue placeholder="Tipo">
+                          {planTypeFilter === 'ALL' ? 'Todos os Tipos' : planTypeFilter}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="ALL">Todos os Tipos</SelectItem>
+                        <SelectItem value="DÉBITO">DÉBITO</SelectItem>
+                        <SelectItem value="CRÉDITO">CRÉDITO</SelectItem>
+                      </SelectContent>
+                    </Select>
 
-                  <Input 
-                    type="number" 
-                    placeholder="Parcelas" 
-                    value={planInstallmentFilter}
-                    onChange={e => setPlanInstallmentFilter(e.target.value)}
-                    className="w-full sm:w-24 bg-[#0f1115] border-[#2d3139] text-white h-10"
-                  />
+                    <Input 
+                      type="number" 
+                      placeholder="Parcelas" 
+                      value={planInstallmentFilter}
+                      onChange={e => setPlanInstallmentFilter(e.target.value)}
+                      className="w-24 bg-[#0f1115] border-[#2d3139] text-white h-10"
+                    />
 
-                  <Button 
-                    variant="outline" 
-                    onClick={generateInstallmentPlansPDF}
-                    className="bg-[#0f1115] border-[#2d3139] hover:bg-[#1a1d23] hover:text-[#3b82f6] text-white h-10 flex gap-2 items-center"
-                  >
-                    <Download className="h-4 w-4" />
-                    PDF
-                  </Button>
+                    <Button 
+                      variant="outline" 
+                      onClick={generateInstallmentPlansPDF}
+                      className="bg-[#0f1115] border-[#2d3139] hover:bg-[#1a1d23] hover:text-[#3b82f6] text-white h-10 flex gap-2 items-center text-xs"
+                    >
+                      <Download className="h-4 w-4" />
+                      PDF
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center bg-[#0f1115] border border-[#2d3139] p-0.5 rounded-lg shrink-0">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleSetInstallmentPlansViewMode('list')}
+                      type="button"
+                      className={cn(
+                        "h-8 px-3 text-xs font-black uppercase tracking-wider rounded-md transition-all gap-1.5",
+                        installmentPlansViewMode === 'list' 
+                          ? "bg-[#3b82f6] text-white hover:bg-[#3b82f6] hover:text-white" 
+                          : "text-[#71717a] hover:text-white hover:bg-white/5"
+                      )}
+                    >
+                      <List size={14} />
+                      Lista
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleSetInstallmentPlansViewMode('columns')}
+                      type="button"
+                      className={cn(
+                        "h-8 px-3 text-xs font-black uppercase tracking-wider rounded-md transition-all gap-1.5",
+                        installmentPlansViewMode === 'columns' 
+                          ? "bg-[#3b82f6] text-white hover:bg-[#3b82f6] hover:text-white" 
+                          : "text-[#71717a] hover:text-white hover:bg-white/5"
+                      )}
+                    >
+                      <LayoutGrid size={14} />
+                      Colunas
+                    </Button>
+                  </div>
                 </div>
 
-                    <div className="space-y-3">
+                    <div className={cn(
+                      installmentPlansViewMode === 'columns' 
+                        ? "grid grid-cols-1 sm:grid-cols-2 gap-3" 
+                        : "space-y-3"
+                    )}>
                       {(localApp.installmentPlans || []).filter(p => {
                         const matchBrand = planBrandFilter === 'ALL' ? true : (planBrandFilter === 'NONE' ? false : p.brand === planBrandFilter);
                         const matchType = planTypeFilter === 'ALL' ? true : p.type === planTypeFilter;
                         const matchInstallment = planInstallmentFilter === '' ? true : p.installments === Number(planInstallmentFilter);
                         return matchBrand && matchType && matchInstallment;
                       }).length === 0 ? (
-                        <div className="p-4 text-center text-[#71717a] text-[10px] uppercase font-bold bg-[#0f1115] rounded-xl border border-dashed border-[#2d3139]">
+                        <div className={cn(
+                          "p-4 text-center text-[#71717a] text-[10px] uppercase font-bold bg-[#0f1115] rounded-xl border border-dashed border-[#2d3139]",
+                          installmentPlansViewMode === 'columns' && "sm:col-span-2"
+                        )}>
                           {planBrandFilter === 'NONE' ? 'Selecione uma bandeira para ver os planos' : 'Nenhum plano encontrado com os filtros selecionados'}
                         </div>
                       ) : (
@@ -11574,9 +11781,51 @@ function SettingsManager({
                 </Button>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
+                <div className="mb-4 flex justify-end border-b border-[#2d3139]/30 pb-4">
+                  <div className="flex items-center bg-[#0f1115] border border-[#2d3139] p-0.5 rounded-lg font-bold">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleSetPixAccountsViewMode('list')}
+                      type="button"
+                      className={cn(
+                        "h-8 px-3 text-xs font-black uppercase tracking-wider rounded-md transition-all gap-1.5",
+                        pixAccountsViewMode === 'list' 
+                          ? "bg-[#3b82f6] text-white hover:bg-[#3b82f6] hover:text-white" 
+                          : "text-[#71717a] hover:text-white hover:bg-white/5"
+                      )}
+                    >
+                      <List size={14} />
+                      Lista
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleSetPixAccountsViewMode('columns')}
+                      type="button"
+                      className={cn(
+                        "h-8 px-3 text-xs font-black uppercase tracking-wider rounded-md transition-all gap-1.5",
+                        pixAccountsViewMode === 'columns' 
+                          ? "bg-[#3b82f6] text-white hover:bg-[#3b82f6] hover:text-white" 
+                          : "text-[#71717a] hover:text-white hover:bg-white/5"
+                      )}
+                    >
+                      <LayoutGrid size={14} />
+                      Colunas
+                    </Button>
+                  </div>
+                </div>
+
+                <div className={cn(
+                  pixAccountsViewMode === 'columns'
+                    ? "grid grid-cols-1 sm:grid-cols-2 gap-3"
+                    : "space-y-3"
+                )}>
                   {(pixSettings?.accounts || []).length === 0 ? (
-                    <div className="p-4 text-center text-[#71717a] text-[10px] uppercase font-bold bg-[#0f1115] rounded-xl border border-dashed border-[#2d3139]">Nenhuma conta cadastrada</div>
+                    <div className={cn(
+                      "p-4 text-center text-[#71717a] text-[10px] uppercase font-bold bg-[#0f1115] rounded-xl border border-dashed border-[#2d3139]",
+                      pixAccountsViewMode === 'columns' && "sm:col-span-2"
+                    )}>Nenhuma conta cadastrada</div>
                   ) : (
                     pixSettings.accounts.map(acc => (
                       <div key={acc.id} className="flex flex-col p-4 bg-[#0f1115] border border-[#2d3139] rounded-xl group space-y-3">
@@ -11615,6 +11864,8 @@ function SettingsManager({
                 </div>
               </CardContent>
             </Card>
+              </>
+            )}
           </div>
         </div>
 
@@ -11755,8 +12006,12 @@ function SettingsManager({
           </DialogContent>
         </Dialog>
 
-        <RoleSettings companyId={companyId} customRoles={customRoles} userRoles={userRoles} />
-        <RolePermissionManager companyId={companyId} user={user} userRoles={userRoles} currentUserData={currentUserData} />
+        {mode === 'general' && (
+          <>
+            <RoleSettings companyId={companyId} customRoles={customRoles} userRoles={userRoles} />
+            <RolePermissionManager companyId={companyId} user={user} userRoles={userRoles} currentUserData={currentUserData} />
+          </>
+        )}
       </div>
     );
   }
@@ -11796,7 +12051,7 @@ function ReportsManager({
     const title = category.toUpperCase();
     const period = reportType === 'daily' 
       ? format(date, 'dd/MM/yyyy') 
-      : `${format(new Date(year, month), 'MMMM', { locale: ptBR })}/${year}`;
+      : `${format(new Date(year, month, 10, 12, 0, 0), 'MMMM', { locale: ptBR })}/${year}`;
     
     // Header
     doc.setFontSize(20);
@@ -11910,6 +12165,14 @@ function ReportsManager({
       getDocs(q).then(snap => {
         const list = snap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as any));
         const filtered = list.filter(item => isMatch(item.dueDate || item.createdAt));
+        
+        // Sort in ascending order of due date (or fall back to creation date)
+        filtered.sort((a, b) => {
+          const dateA = safeParseDate(a.dueDate || a.createdAt).getTime();
+          const dateB = safeParseDate(b.dueDate || b.createdAt).getTime();
+          return dateA - dateB;
+        });
+
         const headers = ['Vencimento', 'Cliente', 'Descrição', 'Valor', 'Status'];
         const rows = filtered.map(item => [
           item.dueDate ? format(safeParseDate(item.dueDate), 'dd/MM/yyyy') : 'N/A',
@@ -11944,6 +12207,14 @@ function ReportsManager({
       getDocs(q).then(snap => {
         const list = snap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as any));
         const filtered = list.filter(item => isMatch(item.dueDate || item.createdAt));
+        
+        // Sort in ascending order of due date (or fall back to creation date)
+        filtered.sort((a, b) => {
+          const dateA = safeParseDate(a.dueDate || a.createdAt).getTime();
+          const dateB = safeParseDate(b.dueDate || b.createdAt).getTime();
+          return dateA - dateB;
+        });
+
         const headers = ['Vencimento', 'Fornecedor', 'Descrição', 'Valor', 'Status'];
         const rows = filtered.map(item => [
           item.dueDate ? format(safeParseDate(item.dueDate), 'dd/MM/yyyy') : 'N/A',
@@ -12046,11 +12317,13 @@ function ReportsManager({
                     <Label className="text-[#a0a0a0]">Mês</Label>
                     <Select value={month.toString()} onValueChange={(v) => setMonth(parseInt(v))}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white h-11">
-                        <SelectValue />
+                        <span className="flex flex-1 text-left uppercase font-bold text-white">
+                          {format(new Date(2022, month, 10, 12, 0, 0), 'MMMM', { locale: ptBR }).toUpperCase()}
+                        </span>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         {Array.from({ length: 12 }, (_, i) => (
-                          <SelectItem key={i} value={i.toString()}>{format(new Date(2022, i, 1), 'MMMM', { locale: ptBR }).toUpperCase()}</SelectItem>
+                          <SelectItem key={i} value={i.toString()}>{format(new Date(2022, i, 10, 12, 0, 0), 'MMMM', { locale: ptBR }).toUpperCase()}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -12171,7 +12444,29 @@ function VisitsChart({ data, onBarClick }: { data: any[], onBarClick?: (date: Da
   );
 }
 
-function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets = [], clients = [], onNavigate, companyId, showList }: { visits: TechnicalVisit[], serviceOrders: ServiceOrder[], financials: FinancialRecord[], budgets: Budget[], clients: Client[], onNavigate: (tab: string, filter?: any) => void, companyId: string, showList: boolean }) {
+function Dashboard({ 
+  visits = [], 
+  serviceOrders = [], 
+  financials = [], 
+  budgets = [], 
+  clients = [], 
+  onNavigate, 
+  companyId, 
+  showList,
+  payables = [],
+  receivables = []
+}: { 
+  visits: TechnicalVisit[], 
+  serviceOrders: ServiceOrder[], 
+  financials: FinancialRecord[], 
+  budgets: Budget[], 
+  clients: Client[], 
+  onNavigate: (tab: string, filter?: any) => void, 
+  companyId: string, 
+  showList: boolean,
+  payables?: any[],
+  receivables?: any[]
+}) {
   const [weekOffset, setWeekOffset] = useState(0);
 
   const visitsByDay = useMemo(() => {
@@ -12278,6 +12573,55 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
       value: (visits || []).filter(v => v.type === type).length
     })).filter(t => t.value > 0);
   }, [visits]);
+
+  const nextMonthForecastData = useMemo(() => {
+    const today = new Date();
+    const nextMonthDate = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+    const nextMonthYear = nextMonthDate.getFullYear();
+    const nextMonthMonth = nextMonthDate.getMonth(); // 0-indexed
+
+    const daysInMonth = new Date(nextMonthYear, nextMonthMonth + 1, 0).getDate();
+
+    const forecast = [];
+    for (let day = 1; day <= daysInMonth; day++) {
+      // Filter receivables due on this day
+      const dayReceivables = (receivables || []).filter(r => {
+        if (!r.dueDate) return false;
+        try {
+          const d = safeParseDate(r.dueDate);
+          return d.getDate() === day && d.getMonth() === nextMonthMonth && d.getFullYear() === nextMonthYear;
+        } catch {
+          return false;
+        }
+      });
+
+      // Filter payables due on this day
+      const dayPayables = (payables || []).filter(p => {
+        if (!p.dueDate) return false;
+        try {
+          const d = safeParseDate(p.dueDate);
+          return d.getDate() === day && d.getMonth() === nextMonthMonth && d.getFullYear() === nextMonthYear;
+        } catch {
+          return false;
+        }
+      });
+
+      const receita = dayReceivables.reduce((acc, r) => acc + (Number(r.value) || 0), 0);
+      const despesa = dayPayables.reduce((acc, p) => acc + (Number(p.value) || 0), 0);
+
+      forecast.push({
+        name: String(day),
+        receita,
+        despesa,
+        totalDia: receita - despesa
+      });
+    }
+
+    return {
+      monthLabel: format(nextMonthDate, 'MMMM/yyyy', { locale: ptBR }),
+      data: forecast
+    };
+  }, [payables, receivables]);
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#71717a'];
 
@@ -12451,6 +12795,53 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
                   />
                   <Area type="monotone" dataKey="receita" stroke="#10b981" fillOpacity={1} fill="url(#colorIncome)" />
                   <Area type="monotone" dataKey="despesa" stroke="#ef4444" fillOpacity={1} fill="url(#colorExpense)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden col-span-full h-[410px]">
+          <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <CardTitle className="text-[15px] font-semibold text-white">Previsão Financeira Dupla de Vencimentos ({nextMonthForecastData.monthLabel})</CardTitle>
+              <p className="text-[11px] text-[#71717a] mt-0.5">Visão unificada dia a dia das contas a pagar e receber agendadas para o próximo mês.</p>
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-mono">
+              <span className="flex items-center gap-1.5 text-emerald-400">
+                <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block"></span>
+                Total a Receber: R$ {nextMonthForecastData.data.reduce((acc, item) => acc + item.receita, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+              <span className="flex items-center gap-1.5 text-red-500">
+                <span className="w-2.5 h-2.5 rounded-sm bg-red-500 inline-block"></span>
+                Total a Pagar: R$ {nextMonthForecastData.data.reduce((acc, item) => acc + item.despesa, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          </CardHeader>
+          <CardContent className="p-6 h-[330px]">
+            <div className="h-full w-full min-h-[250px]">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                <AreaChart data={nextMonthForecastData.data}>
+                  <defs>
+                    <linearGradient id="colorForecastIncome" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.25}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorForecastExpense" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#ef4444" stopOpacity={0.25}/>
+                      <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} label={{ value: 'Dia do Mês', position: 'insideBottom', offset: -5, fill: '#71717a', fontSize: 10 }} />
+                  <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(value) => `R$ ${value}`} />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
+                    itemStyle={{ color: '#fff' }}
+                    formatter={(value: any) => [`R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]}
+                    labelFormatter={(label) => `Dia ${label} de ${nextMonthForecastData.monthLabel}`}
+                  />
+                  <Area type="monotone" dataKey="receita" name="A Receber" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorForecastIncome)" />
+                  <Area type="monotone" dataKey="despesa" name="A Pagar" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorForecastExpense)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>

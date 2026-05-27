@@ -67,7 +67,8 @@ interface BackupRestoreManagerProps {
 export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, currentUserData }: BackupRestoreManagerProps) {
   const [selectedBackupCollections, setSelectedBackupCollections] = useState<string[]>([
     'companies', 'clients', 'visits', 'receipts', 'financial', 'budgets', 'users',
-    'suppliers', 'serviceOrders', 'inventory', 'inventoryTransactions', 'logs', 'laudos'
+    'suppliers', 'serviceOrders', 'inventory', 'inventoryTransactions', 'logs', 'laudos',
+    'payables', 'receivables'
   ]);
 
   const [restorePoints, setRestorePoints] = useState<any[]>([]);
@@ -91,7 +92,21 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
     inventory: "Produtos no Estoque",
     inventoryTransactions: "Movimentações de Estoque",
     suppliers: "Fornecedores",
+    payables: "Contas a Pagar",
+    receivables: "Contas a Receber",
     logs: "Registros de Logs/Auditoria"
+  };
+
+  // Safe date formatting helper to avoid date format crash on undefined/invalid dates
+  const safeFormatRestoreDate = (dateVal: any, formatPattern: string): string => {
+    if (!dateVal) return 'N/A';
+    try {
+      const d = new Date(dateVal);
+      if (isNaN(d.getTime())) return 'N/A';
+      return format(d, formatPattern);
+    } catch (e) {
+      return 'N/A';
+    }
   };
 
   // Real-time subscription to cloud restore points for visual feed
@@ -103,9 +118,15 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
       snapshot.forEach((docSnap) => {
         points.push({ id: docSnap.id, ...docSnap.data() });
       });
-      // Sort newer first
-      points.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      // Sort newer first safely
+      points.sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
+      });
       setRestorePoints(points);
+    }, (err) => {
+      console.error("Error reading restore points:", err);
     });
     return () => unsubscribe();
   }, [companyId]);
@@ -129,16 +150,17 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
   // Helper code to capture current collection snapshot
   const fetchCurrentDataset = async (selectedCols: string[]) => {
     const backupData: any = { 
-      companyName: appSettings.companyName || 'Empresa', 
+      companyName: appSettings?.companyName || 'Empresa', 
       companyId, 
-      documentNumber: appSettings.document || '', 
+      documentNumber: appSettings?.document || '', 
       exportedAt: new Date().toISOString(), 
       data: {} 
     };
 
     const collections = [
       'companies', 'clients', 'visits', 'receipts', 'financial', 'budgets', 'users',
-      'suppliers', 'serviceOrders', 'inventory', 'inventoryTransactions', 'logs', 'laudos'
+      'suppliers', 'serviceOrders', 'inventory', 'inventoryTransactions', 'logs', 'laudos',
+      'payables', 'receivables'
     ].filter(col => selectedCols.includes(col));
     
     for (const col of collections) {
@@ -270,7 +292,7 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
 
   // 4. Restore from Cloud Point
   const handleRestoreFromCloudPoint = async (point: any) => {
-    const isConfirmed = window.confirm(`ATENÇÃO CRÍTICA: Deseja realmente restaurar o ponto "${point.description}" criado em ${format(new Date(point.createdAt), 'dd/MM/yyyy HH:mm')} por ${point.createdBy}? Todos os dados atuais do sistema serão substituídos.`);
+    const isConfirmed = window.confirm(`ATENÇÃO CRÍTICA: Deseja realmente restaurar o ponto "${point.description}" criado em ${safeFormatRestoreDate(point.createdAt, 'dd/MM/yyyy HH:mm')} por ${point.createdBy}? Todos os dados atuais do sistema serão substituídos.`);
     if (!isConfirmed) return;
 
     setIsRestoring(true);
@@ -523,7 +545,7 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
                         <div className="space-y-1 flex-1 overflow-hidden">
                           <p className="text-xs font-bold text-white uppercase truncate tracking-tight">{pt.description}</p>
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] text-[#71717a]">
-                            <span>{format(new Date(pt.createdAt), 'dd/MM/yyyy HH:mm:ss')}</span>
+                            <span>{safeFormatRestoreDate(pt.createdAt, 'dd/MM/yyyy HH:mm:ss')}</span>
                             <span>•</span>
                             <span className="text-gray-400 italic font-mono truncate">{pt.createdBy}</span>
                           </div>

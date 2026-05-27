@@ -99,15 +99,58 @@ interface ReceivableRecord {
 }
 
 // ----------------------------------------------------
+// Safe parse date helper to avoid crashes
+// ----------------------------------------------------
+const safeParseDate = (date: any): Date => {
+  if (!date) return new Date();
+  if (date instanceof Date) {
+    const d = new Date(date);
+    if (d.getHours() === 0 && d.getMinutes() === 0) d.setHours(12);
+    return d;
+  }
+  if (date && typeof date.toDate === 'function') {
+    const d = date.toDate();
+    if (d.getHours() === 0 && d.getMinutes() === 0) d.setHours(12);
+    return d;
+  }
+  if (date && date.seconds !== undefined) {
+    const d = new Date(date.seconds * 1000);
+    if (d.getHours() === 0 && d.getMinutes() === 0) d.setHours(12);
+    return d;
+  }
+  if (typeof date === 'string') {
+    if (date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const parts = date.split('-').map(Number);
+      return new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
+    }
+    if (date.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+      const parts = date.split('/').map(Number);
+      return new Date(parts[2], parts[1] - 1, parts[0], 12, 0, 0);
+    }
+    if (date.match(/^\d{2}-\d{2}-\d{4}$/)) {
+      const parts = date.split('-').map(Number);
+      return new Date(parts[2], parts[1] - 1, parts[0], 12, 0, 0);
+    }
+    const d = new Date(date);
+    if (!isNaN(d.getTime())) {
+      if (d.getHours() === 0 && d.getMinutes() === 0) d.setHours(12);
+      return d;
+    }
+  }
+  return new Date();
+};
+
+// ----------------------------------------------------
 // 1. ACCOUNTS PAYABLE (CONTAS A PAGAR REAL)
 // ----------------------------------------------------
 interface PayableManagerProps {
   companyId: string;
   suppliers: any[];
   pixSettings: any;
+  appSettings?: any;
 }
 
-export function PayableManager({ companyId, suppliers = [], pixSettings }: PayableManagerProps) {
+export function PayableManager({ companyId, suppliers = [], pixSettings, appSettings }: PayableManagerProps) {
   const [payables, setPayables] = useState<PayableRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'Todos' | 'Pendente' | 'Pago'>('Todos');
@@ -115,6 +158,70 @@ export function PayableManager({ companyId, suppliers = [], pixSettings }: Payab
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isPayOpen, setIsPayOpen] = useState(false);
   const [selectedPayable, setSelectedPayable] = useState<PayableRecord | null>(null);
+
+  // Reference Period States for Contas a Pagar
+  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+
+  const currentMonthYearStr = useMemo(() => {
+    return `${String(selectedMonth + 1).padStart(2, '0')}/${selectedYear}`;
+  }, [selectedMonth, selectedYear]);
+
+  const years = [2024, 2025, 2026, 2027];
+
+  // Helper to calculate days to due date for payables list
+  const getDueDaysInfoPayable = (dueDateStr: string, status: string) => {
+    if (status === 'Pago') {
+      return { 
+        label: 'PG / LIQUIDADO', 
+        color: 'text-green-400 bg-green-500/10 border-green-500/20 border' 
+      };
+    }
+    if (!dueDateStr) {
+      return { 
+        label: 'A DEFINIR', 
+        color: 'text-gray-400 bg-gray-500/10 border-gray-500/20 border' 
+      };
+    }
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const dueDate = safeParseDate(dueDateStr);
+      dueDate.setHours(0, 0, 0, 0);
+
+      const diffTime = dueDate.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      if (diffDays < 0) {
+        const days = Math.abs(diffDays);
+        return {
+          label: `${days} ${days === 1 ? 'dia' : 'dias'} em atraso`,
+          color: 'text-red-400 bg-red-500/15 border-red-500/30 border'
+        };
+      } else if (diffDays === 0) {
+        return {
+          label: 'Hoje!',
+          color: 'text-orange-400 bg-orange-500/15 border-orange-500/30 border font-bold animate-pulse'
+        };
+      } else {
+        return {
+          label: `Faltam ${diffDays} ${diffDays === 1 ? 'dia' : 'dias'}`,
+          color: 'text-blue-400 bg-blue-500/15 border-blue-500/30 border'
+        };
+      }
+    } catch (err) {
+      return { label: 'INVÁLIDO', color: 'text-gray-400 border' };
+    }
+  };
+
+  const defaultCategories = ['Peças', 'Energia', 'Internet/Chip', 'Aluguel', 'Salários', 'Impostos', 'Softwares', 'Outros'];
+  const categoriesToUse = appSettings?.payableCategories && appSettings.payableCategories.length > 0
+    ? appSettings.payableCategories
+    : defaultCategories;
+
+  const destinationsToUse = appSettings?.payableDestinations && appSettings.payableDestinations.length > 0
+    ? appSettings.payableDestinations
+    : (suppliers || []).map((s: any) => s.name);
 
   // Form states
   const [description, setDescription] = useState('');
@@ -255,9 +362,32 @@ export function PayableManager({ companyId, suppliers = [], pixSettings }: Payab
     }
   };
 
-  // Filtered list
-  const filteredPayables = useMemo(() => {
+  // Filtered by Period
+  const filteredPayablesByPeriod = useMemo(() => {
     return payables.filter(p => {
+      let isSamePeriod = false;
+      if (p.dueDate) {
+        try {
+          const d = safeParseDate(p.dueDate);
+          if (d.getMonth() === selectedMonth && d.getFullYear() === selectedYear) {
+            isSamePeriod = true;
+          }
+        } catch (_) {}
+      } else if (p.createdAt) {
+        try {
+          const d = safeParseDate(p.createdAt);
+          if (d.getMonth() === selectedMonth && d.getFullYear() === selectedYear) {
+            isSamePeriod = true;
+          }
+        } catch (_) {}
+      }
+      return isSamePeriod;
+    });
+  }, [payables, selectedMonth, selectedYear]);
+
+  // Filtered and Searched list
+  const filteredPayables = useMemo(() => {
+    return filteredPayablesByPeriod.filter(p => {
       const matchesSearch = 
         (p.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (p.supplierName || '').toLowerCase().includes(searchTerm.toLowerCase());
@@ -265,15 +395,15 @@ export function PayableManager({ companyId, suppliers = [], pixSettings }: Payab
       const matchesStatus = statusFilter === 'Todos' || p.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
-  }, [payables, searchTerm, statusFilter]);
+  }, [filteredPayablesByPeriod, searchTerm, statusFilter]);
 
   // Dash details
   const stats = useMemo(() => {
-    const totalMonth = payables.reduce((acc, p) => acc + (p.status === 'Pago' ? 0 : Number(p.value || 0)), 0);
-    const totalPaid = payables.reduce((acc, p) => acc + (p.status === 'Pago' ? Number(p.value || 0) : 0), 0);
-    const totalPendingCount = payables.filter(p => p.status === 'Pendente').length;
+    const totalMonth = filteredPayablesByPeriod.reduce((acc, p) => acc + (p.status === 'Pago' ? 0 : Number(p.value || 0)), 0);
+    const totalPaid = filteredPayablesByPeriod.reduce((acc, p) => acc + (p.status === 'Pago' ? Number(p.value || 0) : 0), 0);
+    const totalPendingCount = filteredPayablesByPeriod.filter(p => p.status === 'Pendente').length;
     return { totalMonth, totalPaid, totalPendingCount };
-  }, [payables]);
+  }, [filteredPayablesByPeriod]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -285,84 +415,108 @@ export function PayableManager({ companyId, suppliers = [], pixSettings }: Payab
           </div>
           <p className="text-[#a0a0a0] text-sm uppercase tracking-[0.2em] font-medium">Controle real de saídas de caixa, despesas fixas e fornecedores.</p>
         </div>
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger asChild>
-            <Button className="bg-red-500 hover:bg-red-600 text-white font-bold uppercase tracking-wider text-xs px-4 h-11" onClick={resetForm}>
-              <Plus size={16} className="mr-2" />
-              Lançar Conta a Pagar
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-md">
-            <DialogHeader>
-              <DialogTitle className="text-lg italic font-black uppercase text-red-400">Novo Lançamento</DialogTitle>
-              <DialogDescription className="text-gray-400 text-xs text-left">Cadastre um compromisso financeiro para pagamento futuro.</DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleCreatePayable} className="space-y-4 pt-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="desc" className="text-xs text-gray-400 font-bold uppercase tracking-wider">Descrição comercial</Label>
-                <Input id="desc" value={description} onChange={e => setDescription(e.target.value)} placeholder="Ex: Conta de Luz de Junho" className="bg-[#0f1115] border-[#2d3139]" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
+        
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Month/Year selector for reference period */}
+          <div className="flex bg-[#0f1115] border border-[#2d3139] p-1.5 rounded-lg gap-1">
+            <Select value={String(selectedMonth)} onValueChange={v => setSelectedMonth(Number(v))}>
+              <SelectTrigger className="bg-transparent border-none text-white h-8 text-[11px] font-bold uppercase w-28 select-menu">
+                <span className="flex flex-1 text-left">
+                  {format(new Date(2022, selectedMonth, 1), 'MMMM', { locale: ptBR }).toUpperCase()}
+                </span>
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                {Array.from({ length: 12 }, (_, i) => (
+                  <SelectItem key={i} value={String(i)}>{format(new Date(2022, i, 1), 'MMMM', { locale: ptBR }).toUpperCase()}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={String(selectedYear)} onValueChange={v => setSelectedYear(Number(v))}>
+              <SelectTrigger className="bg-transparent border-none text-white h-8 text-[11px] font-bold w-18 select-menu">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                {years.map(y => (
+                  <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-red-500 hover:bg-red-600 text-white font-bold uppercase tracking-wider text-xs px-4 h-11" onClick={resetForm}>
+                <Plus size={16} className="mr-2" />
+                Lançar Conta a Pagar
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-md">
+              <DialogHeader>
+                <DialogTitle className="text-lg italic font-black uppercase text-red-400">Novo Lançamento</DialogTitle>
+                <DialogDescription className="text-gray-400 text-xs text-left">Cadastre um compromisso financeiro para pagamento futuro.</DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleCreatePayable} className="space-y-4 pt-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="val" className="text-xs text-gray-400 font-bold uppercase tracking-wider">Valor total (R$)</Label>
-                  <Input id="val" type="number" step="0.01" value={value} onChange={e => setValue(e.target.value)} placeholder="0,00" className="bg-[#0f1115] border-[#2d3139] font-mono text-white" />
+                  <Label htmlFor="desc" className="text-xs text-gray-400 font-bold uppercase tracking-wider">Descrição comercial</Label>
+                  <Input id="desc" value={description} onChange={e => setDescription(e.target.value)} placeholder="Ex: Conta de Luz de Junho" className="bg-[#0f1115] border-[#2d3139]" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="val" className="text-xs text-gray-400 font-bold uppercase tracking-wider">Valor total (R$)</Label>
+                    <Input id="val" type="number" step="0.01" value={value} onChange={e => setValue(e.target.value)} placeholder="0,00" className="bg-[#0f1115] border-[#2d3139] font-mono text-white" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="due" className="text-xs text-gray-400 font-bold uppercase tracking-wider">Vencimento</Label>
+                    <Input id="due" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Destino</Label>
+                    <Select value={supplierName} onValueChange={setSupplierName}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue placeholder="Selecione..." />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="Avulso">Avulso / Nenhum</SelectItem>
+                        {destinationsToUse.map((dest: string, idx: number) => (
+                          <SelectItem key={idx} value={dest}>{dest}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Categoria</Label>
+                    <Select value={category} onValueChange={setCategory}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        {categoriesToUse.map((cat: string, idx: number) => (
+                          <SelectItem key={idx} value={cat}>{cat}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="due" className="text-xs text-gray-400 font-bold uppercase tracking-wider">Vencimento</Label>
-                  <Input id="due" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  <Label htmlFor="notes" className="text-xs text-gray-400 font-bold uppercase tracking-wider font-mono">Notas Importantes</Label>
+                  <Textarea id="notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Observações opcionais de boleto, chave Pix ou contato." className="bg-[#0f1115] border-[#2d3139] h-16 min-h-16" />
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Fornecedor</Label>
-                  <Select value={supplierName} onValueChange={setSupplierName}>
-                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue placeholder="Selecione..." />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      <SelectItem value="Avulso">Avulso / Nenhum</SelectItem>
-                      {suppliers.map(sup => (
-                        <SelectItem key={sup.id} value={sup.name}>{sup.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Categoria</Label>
-                  <Select value={category} onValueChange={setCategory}>
-                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      <SelectItem value="Peças">Peças / Equipamentos</SelectItem>
-                      <SelectItem value="Energia">Energia Elétrica</SelectItem>
-                      <SelectItem value="Internet/Chip">Internet / Conectividade M2M</SelectItem>
-                      <SelectItem value="Aluguel">Aluguel / Condomínio</SelectItem>
-                      <SelectItem value="Salários">Salários / Comissões</SelectItem>
-                      <SelectItem value="Impostos">Impostos / Tributos</SelectItem>
-                      <SelectItem value="Softwares">Softwares / Licenças</SelectItem>
-                      <SelectItem value="Outros">Outros Extras</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="notes" className="text-xs text-gray-400 font-bold uppercase tracking-wider font-mono">Notas Importantes</Label>
-                <Textarea id="notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Observações opcionais de boleto, chave Pix ou contato." className="bg-[#0f1115] border-[#2d3139] h-16 min-h-16" />
-              </div>
-              <DialogFooter className="pt-2">
-                <Button type="submit" className="bg-red-500 hover:bg-red-600 font-mono font-bold w-full">LANÇAR CONTA</Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+                <DialogFooter className="pt-2">
+                  <Button type="submit" className="bg-red-500 hover:bg-red-600 font-mono font-bold w-full">LANÇAR CONTA</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-[#a0a0a0] font-bold uppercase tracking-wider">Total em Aberto</span>
+              <span className="text-xs text-[#a0a0a0] font-bold uppercase tracking-wider">Total em Aberto ({currentMonthYearStr})</span>
               <ArrowUpRight className="text-red-400 h-5 w-5" />
             </div>
             <p className="text-3xl font-black text-white mt-1 font-mono">R$ {stats.totalMonth.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
@@ -373,7 +527,7 @@ export function PayableManager({ companyId, suppliers = [], pixSettings }: Payab
         <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-[#a0a0a0] font-bold uppercase tracking-wider">Total Pago (Este Mês)</span>
+              <span className="text-xs text-[#a0a0a0] font-bold uppercase tracking-wider">Total Pago ({currentMonthYearStr})</span>
               <CheckCircle className="text-green-400 h-5 w-5" />
             </div>
             <p className="text-3xl font-black text-white mt-1 font-mono">R$ {stats.totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
@@ -384,11 +538,11 @@ export function PayableManager({ companyId, suppliers = [], pixSettings }: Payab
         <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-[#a0a0a0] font-bold uppercase tracking-wider">Proporção Operacional</span>
+              <span className="text-xs text-[#a0a0a0] font-bold uppercase tracking-wider">Proporção Operacional ({currentMonthYearStr})</span>
               <TrendingUp className="text-blue-400 h-5 w-5" />
             </div>
             <p className="text-3xl font-black text-white mt-1 font-mono">
-              {payables.length > 0 ? ((stats.totalPaid / (stats.totalMonth + stats.totalPaid || 1)) * 100).toFixed(0) : 0}%
+              {filteredPayablesByPeriod.length > 0 ? ((stats.totalPaid / (stats.totalMonth + stats.totalPaid || 1)) * 100).toFixed(0) : 0}%
             </p>
             <p className="text-[10px] text-gray-500 mt-1 uppercase">Taxa de Liquidação Financeira</p>
           </CardContent>
@@ -402,7 +556,7 @@ export function PayableManager({ companyId, suppliers = [], pixSettings }: Payab
               <ArrowUpRight className="text-red-400" size={18} />
               Lista de Obrigações de Caixa
             </CardTitle>
-            <CardDescription className="text-xs text-gray-500">Exibição de todos os títulos duplicatas, despesas recorrentes ou suprimentos.</CardDescription>
+            <CardDescription className="text-xs text-gray-500">Exibição de todos os títulos duplicatas, despesas recorrentes ou suprimentos para o período selecionado de {currentMonthYearStr}.</CardDescription>
           </div>
           <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
             <div className="relative w-full sm:w-60">
@@ -432,19 +586,20 @@ export function PayableManager({ companyId, suppliers = [], pixSettings }: Payab
             <div className="flex flex-col items-center justify-center p-12 bg-[#0f1115]/50 rounded-xl border border-dashed border-[#2d3139] text-center">
               <Building2 className="text-[#2d3139] h-12 w-12 mb-3" />
               <p className="text-xs font-bold text-white uppercase">Nenhuma conta encontrada</p>
-              <p className="text-[11px] text-[#71717a] mt-1">Crie listagens de despesas para acompanhar suas liquidações e caixa.</p>
+              <p className="text-[11px] text-[#71717a] mt-1">Crie listagens de despesas para acompanhar suas liquidações e caixa em {currentMonthYearStr}.</p>
             </div>
           ) : (
             <div className="overflow-x-auto border border-[#2d3139]/60 rounded-xl">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-[#0f1115] border-b border-[#2d3139] text-gray-400 uppercase tracking-widest text-[9px] font-bold">
-                    <th className="p-4">Credor</th>
+                    <th className="p-4">Destino</th>
                     <th className="p-4">Descrição</th>
                     <th className="p-4">Categoria</th>
                     <th className="p-4">Vencimento</th>
                     <th className="p-4">Valor</th>
                     <th className="p-4">Status</th>
+                    <th className="p-4">Dias p/ Vencer</th>
                     <th className="p-4 text-right">Ação</th>
                   </tr>
                 </thead>
@@ -463,17 +618,27 @@ export function PayableManager({ companyId, suppliers = [], pixSettings }: Payab
                         <Badge className="bg-red-400/5 text-red-400 border border-red-500/10 text-[9px] uppercase">{p.category}</Badge>
                       </td>
                       <td className="p-4 text-gray-400">
-                        {p.dueDate ? format(parseISO(p.dueDate), 'dd/MM/yyyy') : 'N/A'}
+                        {p.dueDate ? format(safeParseDate(p.dueDate), 'dd/MM/yyyy') : 'N/A'}
                       </td>
                       <td className="p-4 font-mono font-bold text-red-400">
                         R$ {Number(p.value).toFixed(2)}
                       </td>
                       <td className="p-4">
                         {p.status === 'Pago' ? (
-                          <Badge className="bg-green-500/15 text-green-400 border border-green-500/20 uppercase text-[9px]">PAGO ({p.paymentDate ? format(parseISO(p.paymentDate), 'dd/MM') : ''})</Badge>
+                          <Badge className="bg-green-500/15 text-green-400 border border-green-500/20 uppercase text-[9px]">PAGO ({p.paymentDate ? format(safeParseDate(p.paymentDate), 'dd/MM') : ''})</Badge>
                         ) : (
                           <Badge className="bg-yellow-500/15 text-yellow-500 border border-yellow-500/20 uppercase text-[9px]">PENDENTE</Badge>
                         )}
+                      </td>
+                      <td className="p-4">
+                        {(() => {
+                          const state = getDueDaysInfoPayable(p.dueDate, p.status);
+                          return (
+                            <span className={`text-[10px] font-bold px-2 py-1 rounded uppercase ${state.color}`}>
+                              {state.label}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="p-4 text-right">
                         <div className="flex justify-end gap-1.5 matches-box">
@@ -552,15 +717,15 @@ export function PayableManager({ companyId, suppliers = [], pixSettings }: Payab
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Fornecedor</Label>
+                <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Destino</Label>
                 <Select value={supplierName} onValueChange={setSupplierName}>
                   <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                     <SelectItem value="Avulso">Avulso</SelectItem>
-                    {suppliers.map(sup => (
-                      <SelectItem key={sup.id} value={sup.name}>{sup.name}</SelectItem>
+                    {destinationsToUse.map((dest: string, idx: number) => (
+                      <SelectItem key={idx} value={dest}>{dest}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -572,14 +737,9 @@ export function PayableManager({ companyId, suppliers = [], pixSettings }: Payab
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                    <SelectItem value="Peças">Peças / Equipamentos</SelectItem>
-                    <SelectItem value="Energia">Energia Elétrica</SelectItem>
-                    <SelectItem value="Internet/Chip">Internet / Conectividade M2M</SelectItem>
-                    <SelectItem value="Aluguel">Aluguel / Condomínio</SelectItem>
-                    <SelectItem value="Salários">Salários / Comissões</SelectItem>
-                    <SelectItem value="Impostos">Impostos / Tributos</SelectItem>
-                    <SelectItem value="Softwares">Softwares / Licenças</SelectItem>
-                    <SelectItem value="Outros">Outros Extras</SelectItem>
+                    {categoriesToUse.map((cat: string, idx: number) => (
+                      <SelectItem key={idx} value={cat}>{cat}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -1011,7 +1171,7 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
         isSamePeriod = true;
       } else if (r.dueDate) {
         try {
-          const d = parseISO(r.dueDate);
+          const d = safeParseDate(r.dueDate);
           if (d.getMonth() === selectedMonth && d.getFullYear() === selectedYear) {
             isSamePeriod = true;
           }
@@ -1163,7 +1323,9 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
           <div className="flex bg-[#0f1115] border border-[#2d3139] p-1.5 rounded-lg gap-1">
             <Select value={String(selectedMonth)} onValueChange={v => setSelectedMonth(Number(v))}>
               <SelectTrigger className="bg-transparent border-none text-white h-8 text-[11px] font-bold uppercase w-28 select-menu">
-                <SelectValue />
+                <span className="flex flex-1 text-left">
+                  {format(new Date(2022, selectedMonth, 1), 'MMMM', { locale: ptBR }).toUpperCase()}
+                </span>
               </SelectTrigger>
               <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                 {Array.from({ length: 12 }, (_, i) => (
@@ -1256,7 +1418,7 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
         <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-[#a0a0a0] font-bold uppercase tracking-wider">A Receber em Aberto</span>
+              <span className="text-xs text-[#a0a0a0] font-bold uppercase tracking-wider">Total em Aberto ({currentMonthYearStr})</span>
               <ArrowDownRight className="text-green-400 h-5 w-5" />
             </div>
             <p className="text-3xl font-black text-white mt-1 font-mono">R$ {stats.totalMonth.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
@@ -1394,7 +1556,7 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
                             R$ {Number(r.value).toFixed(2)}
                           </td>
                           <td className="p-4 text-gray-400 font-mono">
-                            {r.dueDate ? format(parseISO(r.dueDate), 'dd/MM/yyyy') : 'N/A'}
+                            {r.dueDate ? format(safeParseDate(r.dueDate), 'dd/MM/yyyy') : 'N/A'}
                           </td>
                           <td className="p-4">
                             <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded border inline-block ${dayInfo.color}`}>
@@ -1536,7 +1698,7 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
                           Dia {cp.paymentDay}
                         </td>
                         <td className="p-4 text-gray-400 font-mono">
-                          {format(parseISO(cp.dueDate), 'dd/MM/yyyy')}
+                          {format(safeParseDate(cp.dueDate), 'dd/MM/yyyy')}
                         </td>
                         <td className="p-4 font-mono font-bold text-green-400">
                           R$ {Number(cp.value).toFixed(2)}
