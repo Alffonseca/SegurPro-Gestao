@@ -2991,7 +2991,8 @@ export default function MainApp() {
       try {
         await getDocFromServer(doc(db, 'test', 'connection'));
       } catch (error: any) {
-        if (error.message.includes('the client is offline')) {
+        const errorMsg = error instanceof Error ? error.message : (error?.message || String(error || ''));
+        if (errorMsg && errorMsg.includes('the client is offline')) {
           console.error("Erro de conexão com o Firebase: O cliente está offline.");
           toast.error("Erro de conexão: Verifique se o Firestore foi ativado.");
         }
@@ -12119,6 +12120,8 @@ function ReportsManager({
     let filteredData: any[] = [];
     let tableHeaders: string[] = [];
     let tableRows: any[][] = [];
+    let tableFoot: any[][] | undefined = undefined;
+    let tableFootStyles: any = undefined;
 
     const isMatch = (itemDate: any) => {
       const d = safeParseDate(itemDate);
@@ -12139,22 +12142,54 @@ function ReportsManager({
         `R$ ${(v.totalValue || 0).toFixed(2)}`,
         v.status
       ]);
+      const totalVal = filteredData.reduce((sum, v) => sum + (Number(v.totalValue) || 0), 0);
+      tableFoot = [['TOTAL', '', '', `R$ ${totalVal.toFixed(2)}`, '']];
+      tableFootStyles = { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' };
     } else if (category === 'Financeiro') {
       try {
-        filteredData = financials.filter(f => isMatch(f.date));
+        filteredData = financials.filter(f => isMatch(f.date || f.createdAt));
         tableHeaders = ['Data', 'Cliente', 'Descrição', 'Valor', 'Tipo', 'Categoria'];
         tableRows = filteredData.map(f => {
-          const d = safeParseDate(f.date);
+          const d = safeParseDate(f.date || f.createdAt);
           const client = clients && clients.find ? clients.find(c => c.id === f.clientId) : null;
+          
+          const isReceitaCheck = f.type && ['receita', 'receitas', 'entrada', 'entradas'].includes(String(f.type).trim().toLowerCase());
+          const isDespesaCheck = f.type && ['despesa', 'despesas', 'saida', 'saídas', 'saída', 'saidas'].includes(String(f.type).trim().toLowerCase());
+          
+          let signPrefix = '';
+          if (isReceitaCheck) {
+            signPrefix = '(+) ';
+          } else if (isDespesaCheck) {
+            signPrefix = '(-) ';
+          }
+          
           return [
             d ? format(d, 'dd/MM/yyyy') : '--/--/----',
             client ? (client.name || 'N/A') : 'N/A',
             f.description || '',
-            `R$ ${(f.value || 0).toFixed(2)}`,
-            f.type || 'N/A',
+            `${signPrefix}R$ ${(f.value || 0).toFixed(2)}`,
+            isReceitaCheck ? 'RECEITA' : (isDespesaCheck ? 'DESPESA' : (f.type || 'N/A').toUpperCase()),
             f.category || 'N/A'
           ];
         });
+        
+        const income = filteredData.filter(f => {
+          const typeStr = String(f.type || '').trim().toLowerCase();
+          return typeStr === 'receita' || typeStr === 'receitas' || typeStr === 'entrada';
+        }).reduce((sum, f) => sum + (Number(f.value) || 0), 0);
+        
+        const expense = filteredData.filter(f => {
+          const typeStr = String(f.type || '').trim().toLowerCase();
+          return typeStr === 'despesa' || typeStr === 'despesas' || typeStr === 'saida' || typeStr === 'saída';
+        }).reduce((sum, f) => sum + (Number(f.value) || 0), 0);
+        
+        const balance = income - expense;
+        tableFoot = [
+          ['(+) TOTAL ENTRADAS (RECEITAS)', '', '', `R$ ${income.toFixed(2)}`, '', ''],
+          ['(-) TOTAL SAÍDAS (DESPESAS)', '', '', `R$ ${expense.toFixed(2)}`, '', ''],
+          ['(=) SALDO FINAL', '', '', `R$ ${balance.toFixed(2)}`, '', '']
+        ];
+        tableFootStyles = { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' };
       } catch (err) {
         console.error("Erro ao mapear relatório Financeiro:", err);
         toast.error("Erro ao compilar dados do Livro Financeiro.");
@@ -12169,6 +12204,9 @@ function ReportsManager({
         format(safeParseDate(r.createdAt), 'dd/MM/yyyy'),
         `R$ ${(r.value || 0).toFixed(2)}`
       ]);
+      const totalVal = filteredData.reduce((sum, r) => sum + (Number(r.value) || 0), 0);
+      tableFoot = [['TOTAL', '', '', `R$ ${totalVal.toFixed(2)}`]];
+      tableFootStyles = { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' };
     } else if (category === 'Orçamentos') {
       filteredData = budgets.filter(b => isMatch(b.createdAt));
       tableHeaders = ['Número', 'Cliente', 'Valor', 'Status'];
@@ -12178,6 +12216,9 @@ function ReportsManager({
         `R$ ${(b.total || 0).toFixed(2)}`,
         b.status
       ]);
+      const totalVal = filteredData.reduce((sum, b) => sum + (Number(b.total) || 0), 0);
+      tableFoot = [['TOTAL', '', `R$ ${totalVal.toFixed(2)}`, '']];
+      tableFootStyles = { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' };
     } else if (category === 'Clientes') {
       filteredData = clients;
       tableHeaders = ['Nome', 'Tipo', 'Telefone', 'Endereço'];
@@ -12188,16 +12229,22 @@ function ReportsManager({
         c.address
       ]);
     } else if (category === 'Ordem de Serviço') {
-      filteredData = serviceOrders.filter(os => isMatch(os.date));
+      filteredData = serviceOrders.filter(os => isMatch(os.date || os.createdAt || os.startDateTime));
       tableHeaders = ['Número', 'Cliente', 'Equipamento', 'Técnico', 'Status', 'Valor'];
-      tableRows = filteredData.map(os => [
-        formatRecordNumber(os.number, os.date),
-        os.clientName,
-        os.equipment,
-        os.technicianName,
-        os.status,
-        `R$ ${(os.totalValue || 0).toFixed(2)}`
-      ]);
+      tableRows = filteredData.map(os => {
+        const dateToUse = os.date || os.createdAt || os.startDateTime;
+        return [
+          formatRecordNumber(os.number, dateToUse),
+          os.clientName || 'N/A',
+          os.equipment || 'N/A',
+          os.technicianName || 'N/A',
+          os.status || 'N/A',
+          `R$ ${(os.totalValue || 0).toFixed(2)}`
+        ];
+      });
+      const totalVal = filteredData.reduce((sum, os) => sum + (Number(os.totalValue) || 0), 0);
+      tableFoot = [['TOTAL', '', '', '', '', `R$ ${totalVal.toFixed(2)}`]];
+      tableFootStyles = { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' };
     } else if (category === 'Fornecedores') {
       filteredData = suppliers; // Suppliers report might not need date filtering if they don't have a transaction date, but I'll leave it simple
       tableHeaders = ['Nº Cad.', 'Fornecedor', 'Atividade', 'Contato', 'Telefone', 'Cidade/UF'];
@@ -12219,6 +12266,9 @@ function ReportsManager({
         s.paymentMethod,
         `R$ ${(s.total || 0).toFixed(2)}`
       ]);
+      const totalVal = filteredData.reduce((sum, s) => sum + (Number(s.total) || 0), 0);
+      tableFoot = [['TOTAL', '', '', '', `R$ ${totalVal.toFixed(2)}`]];
+      tableFootStyles = { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' };
     } else if (category === 'Contas a Receber') {
       const q = query(collection(db, 'receivables'), where('companyId', '==', companyId));
       getDocs(q).then(snap => {
@@ -12316,7 +12366,7 @@ function ReportsManager({
         const rows = filtered.map(item => [
           item.dueDate ? format(safeParseDate(item.dueDate), 'dd/MM/yyyy') : 'N/A',
           item.supplierName || 'N/A',
-          item.description || '',
+          item.category || item.description || '',
           `R$ ${(item.value || 0).toFixed(2)}`,
           item.status || 'Pendente'
         ]);
@@ -12354,11 +12404,30 @@ function ReportsManager({
       startY: 45,
       head: [tableHeaders],
       body: tableRows,
+      foot: tableFoot,
       headStyles: { fillColor: [59, 130, 246] },
-      theme: 'grid'
+      footStyles: tableFootStyles,
+      theme: 'grid',
+      didParseCell: (data) => {
+        if (category === 'Financeiro' && data.section === 'body') {
+          const typeValue = Array.isArray(data.row.raw) ? String(data.row.raw[4]).toUpperCase() : '';
+          if (typeValue === 'RECEITA') {
+            if (data.column.index === 3 || data.column.index === 4) {
+              data.cell.styles.textColor = [16, 185, 129]; // Emerald 500
+              data.cell.styles.fontStyle = 'bold';
+            }
+          } else if (typeValue === 'DESPESA') {
+            if (data.column.index === 3 || data.column.index === 4) {
+              data.cell.styles.textColor = [239, 68, 68]; // Red 500
+              data.cell.styles.fontStyle = 'bold';
+            }
+          }
+        }
+      }
     });
 
-    doc.save(`Relatorio_${category}_${period.replace(/\//g, '_')}.pdf`);
+    const safeCategoryName = category.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "_");
+    doc.save(`Relatorio_${safeCategoryName}_${period.replace(/\//g, '_')}.pdf`);
     toast.success('Relatório gerado com sucesso!');
   };
 
