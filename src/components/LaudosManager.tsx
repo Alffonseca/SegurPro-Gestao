@@ -286,131 +286,218 @@ export function LaudosManager({
     }
   };
 
-  const handlePrintLaudo = (laudo: LaudoTecnico) => {
-    const docPdf = new jsPDF();
+  const handlePrintLaudo = async (laudo: LaudoTecnico) => {
+    const docPdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+    
+    // Helper to load image
+    const loadImage = (url: string): Promise<string | null> => {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'Anonymous';
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0);
+            try {
+              resolve(canvas.toDataURL('image/png'));
+            } catch (e) {
+              console.error("CORS Error loading image:", url);
+              resolve(null);
+            }
+          } else {
+            resolve(null);
+          }
+        };
+        img.onerror = () => resolve(null);
+        img.src = url;
+      });
+    };
+
     const dateStr = format(safeParseDate(laudo.date), 'dd/MM/yyyy');
-    const pageHeight = docPdf.internal.pageSize.height;
-    const pageWidth = docPdf.internal.pageSize.width;
-    const margin = 20;
+    const pageHeight = docPdf.internal.pageSize.getHeight();
+    const pageWidth = docPdf.internal.pageSize.getWidth();
+    const margin = 12; // Compact margins
     const contentWidth = pageWidth - (margin * 2);
 
-    let currentY = 15;
+    let currentY = 12;
 
-    // Background aesthetics
-    docPdf.setFillColor(248, 249, 250);
-    docPdf.rect(0, 0, pageWidth, pageHeight, 'F');
+    const drawLine = () => {
+      docPdf.setDrawColor(200, 200, 200);
+      docPdf.line(margin, currentY, pageWidth - margin, currentY);
+      currentY += 4;
+    };
 
-    // Branding / Logo Banner Header
-    docPdf.setFillColor(26, 29, 35);
-    docPdf.rect(0, 0, pageWidth, 40, 'F');
+    const drawSectionTitle = (title: string) => {
+      docPdf.setFillColor(240, 240, 240);
+      docPdf.rect(margin, currentY, contentWidth, 6, 'F');
+      docPdf.setFont('helvetica', 'bold');
+      docPdf.setFontSize(8.5);
+      docPdf.setTextColor(50, 50, 50);
+      docPdf.text(title.toUpperCase(), margin + 2, currentY + 4.2);
+      currentY += 8;
+    };
 
-    // Title inside banner
-    docPdf.setTextColor(255, 255, 255);
-    docPdf.setFontSize(16);
+    const checkPageBreak = (neededHeight: number) => {
+      if (currentY + neededHeight > pageHeight - 10) {
+        docPdf.addPage();
+        currentY = 12;
+        return true;
+      }
+      return false;
+    };
+
+    // Header Logo
+    if (appSettings?.logoUrl) {
+      try {
+        const logoData = await loadImage(appSettings.logoUrl);
+        if (logoData) {
+          docPdf.addImage(logoData, 'PNG', margin, currentY, 16, 16);
+        }
+      } catch (e) {
+        console.error("Erro ao adicionar logo ao PDF:", e);
+      }
+    }
+
+    docPdf.setFontSize(13);
     docPdf.setFont('helvetica', 'bold');
-    docPdf.text(appSettings?.companyName || 'SEGURPRO', margin, 20);
-
-    docPdf.setFontSize(12);
-    docPdf.setFont('helvetica', 'normal');
-    docPdf.setTextColor(156, 163, 175);
-    docPdf.text('LAUDO TÉCNICO DE INSPEÇÃO', margin, 28);
-
+    const laudoHeaderX = appSettings?.logoUrl ? margin + 20 : margin;
+    docPdf.text(appSettings?.companyName || 'SEGURPRO', laudoHeaderX, currentY + 5);
+    
     docPdf.setFontSize(10);
-    docPdf.setTextColor(255, 255, 255);
-    docPdf.text(`RELAÇÃO DA VISTORIA Nº ${formatRecordNumber(laudo.number)}`, pageWidth - margin, 20, { align: 'right' });
-    docPdf.text(`Data: ${dateStr}`, pageWidth - margin, 28, { align: 'right' });
+    docPdf.text(`LAUDO TÉCNICO DE INSPEÇÃO ${formatRecordNumber(laudo.number)}`, laudoHeaderX, currentY + 11);
+    
+    currentY += 18;
+    drawLine();
 
-    currentY = 50;
-
-    // Ficha Info Box
-    docPdf.setFillColor(255, 255, 255);
-    docPdf.roundedRect(margin, currentY, contentWidth, 35, 3, 3, 'FD');
-    docPdf.setDrawColor(229, 231, 235);
-
-    docPdf.setTextColor(26, 29, 35);
-    docPdf.setFontSize(10);
+    // 1. DADOS GERAIS
+    drawSectionTitle('1. Dados Gerais');
+    const boxWidth = (contentWidth / 2) - 3;
+    const boxHeight = 22; // Compact box height
+    const startY = currentY;
+    
+    // Draw Box for Client Data
+    docPdf.setDrawColor(200, 200, 200);
+    docPdf.rect(margin, currentY, boxWidth, boxHeight);
+    
+    docPdf.setFillColor(240, 240, 240);
+    docPdf.rect(margin, currentY, boxWidth, 6, 'F');
     docPdf.setFont('helvetica', 'bold');
-    docPdf.text('1. DADOS GERAIS', margin + 5, currentY + 7);
+    docPdf.setFontSize(8.5);
+    docPdf.text('DADOS DO CLIENTE', margin + 2, currentY + 4.2);
 
     docPdf.setFont('helvetica', 'normal');
-    docPdf.setFontSize(9);
-    docPdf.setTextColor(100, 116, 139);
-    docPdf.text(`Cliente:`, margin + 5, currentY + 14);
-    docPdf.setTextColor(26, 29, 35);
-    docPdf.text(`${laudo.clientName || 'N/A'}`, margin + 25, currentY + 14);
+    docPdf.setFontSize(8);
+    let clientY = currentY + 10;
 
-    docPdf.setTextColor(100, 116, 139);
-    docPdf.text(`Inspetor:`, margin + 5, currentY + 20);
-    docPdf.setTextColor(26, 29, 35);
-    docPdf.text(`${laudo.inspectorName || 'N/A'}`, margin + 25, currentY + 20);
+    docPdf.setFont('helvetica', 'bold');
+    docPdf.text('CLIENTE:', margin + 2, clientY);
+    docPdf.setFont('helvetica', 'normal');
+    const clientNameSplitted = docPdf.splitTextToSize(laudo.clientName || 'Cliente Sem Nome', boxWidth - 18);
+    docPdf.text(clientNameSplitted, margin + 15, clientY);
+    clientY += (clientNameSplitted.length * 3.5);
+    
+    docPdf.setFont('helvetica', 'bold');
+    docPdf.text('ENDEREÇO:', margin + 2, clientY);
+    docPdf.setFont('helvetica', 'normal');
+    const addressLines = docPdf.splitTextToSize(laudo.address || 'N/A', boxWidth - 22);
+    docPdf.text(addressLines, margin + 20, clientY);
 
-    docPdf.setTextColor(100, 116, 139);
-    docPdf.text(`Endereço:`, margin + 5, currentY + 26);
-    docPdf.setTextColor(26, 29, 35);
-    const splitAddress = docPdf.splitTextToSize(laudo.address || 'N/A', contentWidth - 30);
-    docPdf.text(splitAddress, margin + 25, currentY + 26);
+    // Right Column: Inspection Data Box
+    const rightColX = margin + boxWidth + 6;
+    docPdf.rect(rightColX, startY, boxWidth, boxHeight);
+    
+    docPdf.setFillColor(240, 240, 240);
+    docPdf.rect(rightColX, startY, boxWidth, 6, 'F');
+    docPdf.setFont('helvetica', 'bold');
+    docPdf.setFontSize(8.5);
+    docPdf.text('DADOS DA INSPEÇÃO', rightColX + 2, startY + 4.2);
 
-    currentY += 45;
+    let schedY = startY + 10;
+    docPdf.setFontSize(8);
+    
+    docPdf.setFont('helvetica', 'bold');
+    docPdf.text('INSPETOR:', rightColX + 2, schedY);
+    docPdf.setFont('helvetica', 'normal');
+    const inspectorSplitted = docPdf.splitTextToSize(laudo.inspectorName || 'N/A', boxWidth - 22);
+    docPdf.text(inspectorSplitted, rightColX + 20, schedY);
+    
+    schedY += 4.5;
+    docPdf.setFont('helvetica', 'bold');
+    docPdf.text('DATA:', rightColX + 2, schedY);
+    docPdf.setFont('helvetica', 'normal');
+    docPdf.text(dateStr, rightColX + 24, schedY);
+
+    schedY += 4.5;
+    docPdf.setFont('helvetica', 'bold');
+    docPdf.text('LAUDO N°:', rightColX + 2, schedY);
+    docPdf.setFont('helvetica', 'normal');
+    docPdf.text(formatRecordNumber(laudo.number), rightColX + 24, schedY);
+
+    currentY = startY + boxHeight + 4;
+    
+    docPdf.setDrawColor(200, 200, 200);
+    docPdf.line(margin, currentY, pageWidth - margin, currentY);
+    currentY += 6;
 
     // Multi-line sections renderer
     const drawSection = (title: string, content: string) => {
-      // Draw subtitle
-      docPdf.setFont('helvetica', 'bold');
-      docPdf.setFontSize(10);
-      docPdf.setTextColor(59, 130, 246);
-      docPdf.text(title, margin, currentY);
-      currentY += 5;
-
-      docPdf.setDrawColor(59, 130, 246);
-      docPdf.line(margin, currentY, margin + 25, currentY);
-      currentY += 5;
-
+      checkPageBreak(25);
+      drawSectionTitle(title);
+      
       docPdf.setFont('helvetica', 'normal');
-      docPdf.setFontSize(9);
-      docPdf.setTextColor(51, 65, 85);
+      docPdf.setFontSize(8.5);
+      docPdf.setTextColor(50, 50, 50);
       
       const splitLines = docPdf.splitTextToSize(content || 'Não informado.', contentWidth);
       splitLines.forEach((line: string) => {
-        if (currentY > pageHeight - 30) {
+        if (currentY > pageHeight - 15) {
           docPdf.addPage();
-          docPdf.setFillColor(248, 249, 250);
-          docPdf.rect(0, 0, pageWidth, pageHeight, 'F');
-          currentY = 25;
+          currentY = 12;
         }
         docPdf.text(line, margin, currentY);
-        currentY += 5;
+        currentY += 4;
       });
-      currentY += 10;
+      currentY += 5;
     };
 
-    drawSection('2. CONSTATAÇÕES GERAIS / CENÁRIO ENCONTRADO', laudo.overview);
-    drawSection('3. ANÁLISE TÉCNICA / DIAGNÓSTICO', laudo.technicalAnalysis);
-    drawSection('4. RECOMENDAÇÕES E DIRETRIZES DE SOLUÇÃO', laudo.recommendations);
+    drawSection('2. Constatações Gerais / Cenário Encontrado', laudo.overview);
+    drawSection('3. Análise Técnica / Diagnóstico', laudo.technicalAnalysis);
+    drawSection('4. Recomendações e Diretrizes de Solução', laudo.recommendations);
     
     if (laudo.observations) {
-      drawSection('5. INFORMAÇÕES COMPLEMENTARES', laudo.observations);
+      drawSection('5. Informações Complementares', laudo.observations);
     }
 
     // Signatures
-    currentY += 15;
-    if (currentY > pageHeight - 40) {
-      docPdf.addPage();
-      docPdf.setFillColor(248, 249, 250);
-      docPdf.rect(0, 0, pageWidth, pageHeight, 'F');
-      currentY = 30;
-    }
-
-    // Line signature
-    docPdf.setDrawColor(203, 213, 225);
-    docPdf.line(margin + 20, currentY, margin + 80, currentY);
-    docPdf.line(pageWidth - margin - 80, currentY, pageWidth - margin - 20, currentY);
-
-    currentY += 5;
+    checkPageBreak(22);
+    currentY += 4;
+    
     docPdf.setFont('helvetica', 'normal');
-    docPdf.setFontSize(8);
-    docPdf.setTextColor(100, 116, 139);
-    docPdf.text('Assinatura do Inspetor Responsável', margin + 23, currentY);
-    docPdf.text('Assinatura do Cliente / Representante', pageWidth - margin - 77, currentY);
+    docPdf.setFontSize(8.5);
+    const cityDate = appSettings?.city 
+      ? `${appSettings.city}, ${dateStr}`
+      : `Emissão em ${dateStr}`;
+    docPdf.text(cityDate, pageWidth / 2, currentY, { align: 'center' });
+    
+    currentY += 12;
+    
+    docPdf.setLineWidth(0.25);
+    docPdf.line(margin + 10, currentY, margin + 70, currentY);
+    docPdf.line(pageWidth - margin - 70, currentY, pageWidth - margin - 10, currentY);
+    
+    docPdf.setFontSize(7.5);
+    docPdf.text('Assinatura do Inspetor Responsável', margin + 40, currentY + 4, { align: 'center' });
+    docPdf.text(laudo.inspectorName || 'N/A', margin + 40, currentY + 8, { align: 'center' });
+    
+    docPdf.text('Assinatura do Cliente / Representante', pageWidth - margin - 40, currentY + 4, { align: 'center' });
+    docPdf.text(laudo.clientName || 'N/A', pageWidth - margin - 40, currentY + 8, { align: 'center' });
 
     // Save
     docPdf.save(`Laudo_Tecnico_${laudo.number}.pdf`);

@@ -20,6 +20,7 @@ import {
   AlertCircle,
   Download,
   Trash2,
+  Save,
   User,
   Minus,
   Maximize,
@@ -1076,31 +1077,31 @@ const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSetting
 
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 15;
+  const margin = 12; // Tighter margins to fit more content safely
   const contentWidth = pageWidth - (margin * 2);
-  let currentY = 15;
+  let currentY = 12;
 
   // Header helpers
   const drawLine = () => {
     doc.setDrawColor(200, 200, 200);
     doc.line(margin, currentY, pageWidth - margin, currentY);
-    currentY += 5;
+    currentY += 4;
   };
 
   const drawSectionTitle = (title: string) => {
     doc.setFillColor(240, 240, 240);
-    doc.rect(margin, currentY, contentWidth, 7, 'F');
+    doc.rect(margin, currentY, contentWidth, 6, 'F');
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
+    doc.setFontSize(8.5);
     doc.setTextColor(50, 50, 50);
-    doc.text(title.toUpperCase(), margin + 2, currentY + 5);
-    currentY += 10;
+    doc.text(title.toUpperCase(), margin + 2, currentY + 4.2);
+    currentY += 8;
   };
 
   const checkPageBreak = (neededHeight: number) => {
-    if (currentY + neededHeight > pageHeight - margin) {
+    if (currentY + neededHeight > pageHeight - 10) {
       doc.addPage();
-      currentY = margin;
+      currentY = 12;
       return true;
     }
     return false;
@@ -1109,45 +1110,47 @@ const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSetting
   // 1. HEADER
   if (appSettings.logoUrl) {
     try {
-      doc.addImage(appSettings.logoUrl, 'PNG', margin, currentY, 18, 18);
+      doc.addImage(appSettings.logoUrl, 'PNG', margin, currentY, 16, 16);
     } catch (e) {
       console.error("Erro logo OS:", e);
     }
   }
 
-  doc.setFontSize(14);
+  doc.setFontSize(13);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(0, 0, 0);
   const companyName = appSettings.companyName || '';
   const companyNameLines = doc.splitTextToSize(companyName, contentWidth / 2);
-  doc.text(companyNameLines, appSettings.logoUrl ? margin + 22 : margin, currentY + 6);
+  doc.text(companyNameLines, appSettings.logoUrl ? margin + 20 : margin, currentY + 5);
   
-  doc.setFontSize(9);
+  doc.setFontSize(8.5);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 100, 100);
   const addressLine = `${appSettings.address || ''}${appSettings.neighborhood ? `, ${appSettings.neighborhood}` : ''}`;
   const addressLines = doc.splitTextToSize(addressLine, contentWidth / 2);
-  const headerTextY = currentY + 6 + (companyNameLines.length * 5);
-  doc.text(addressLines, appSettings.logoUrl ? margin + 22 : margin, headerTextY);
-  doc.text(`${appSettings.city || ''} - CEP: ${appSettings.cep || ''}`, appSettings.logoUrl ? margin + 22 : margin, headerTextY + (addressLines.length * 4));
+  const headerTextY = currentY + 5 + (companyNameLines.length * 4.5);
+  doc.text(addressLines, appSettings.logoUrl ? margin + 20 : margin, headerTextY);
+  doc.text(`${appSettings.city || ''} - CEP: ${appSettings.cep || ''}`, appSettings.logoUrl ? margin + 20 : margin, headerTextY + (addressLines.length * 3.8));
 
   // OS Number and Date on the right
-  doc.setFontSize(12);
+  doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(0, 0, 0);
-  doc.text(`ORDEM DE SERVIÇO Nº ${formatRecordNumber(os.number, os.date)}`, pageWidth - margin, currentY + 7, { align: 'right' });
-  doc.setFontSize(10);
-  doc.text(`Data: ${format(safeParseDate(os.date), 'dd/MM/yyyy')}`, pageWidth - margin, currentY + 13, { align: 'right' });
+  doc.text(`ORDEM DE SERVIÇO Nº ${formatRecordNumber(os.number, os.date)}`, pageWidth - margin, currentY + 6, { align: 'right' });
   doc.setFontSize(9);
+  doc.text(`Data: ${format(safeParseDate(os.date), 'dd/MM/yyyy')}`, pageWidth - margin, currentY + 11, { align: 'right' });
+  doc.setFontSize(8.5);
   doc.setFont('helvetica', 'normal');
-  doc.text(`Técnico: ${os.technicianName}`, pageWidth - margin, currentY + 18, { align: 'right' });
+  doc.text(`Técnico: ${os.technicianName}`, pageWidth - margin, currentY + 15, { align: 'right' });
 
-  currentY += Math.max(20, 7 + (companyNameLines.length * 5) + (addressLines.length * 4) + 5);
+  currentY += Math.max(18, 5 + (companyNameLines.length * 4.5) + (addressLines.length * 3.8) + 4);
   drawLine();
 
-  // 1 & 2. DADOS DO CLIENTE E EQUIPAMENTO (BOX LAYOUT)
+  // 1. DADOS DO CLIENTE E AGENDAMENTO
+  drawSectionTitle('1. Dados do Cliente e Agendamento');
+
   const boxWidth = (contentWidth / 2) - 3;
-  const boxHeight = 35;
+  const boxHeight = 24; // Compact box height
   const startY = currentY;
 
   // Draw Box 1: Client Data
@@ -1156,28 +1159,28 @@ const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSetting
   doc.rect(margin, currentY, boxWidth, boxHeight);
   
   doc.setFillColor(240, 240, 240);
-  doc.rect(margin, currentY, boxWidth, 7, 'F');
+  doc.rect(margin, currentY, boxWidth, 6, 'F');
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text('1. DADOS DO CLIENTE', margin + 2, currentY + 5);
+  doc.setFontSize(8.5);
+  doc.text('DADOS DO CLIENTE', margin + 2, currentY + 4.2);
   
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  let clientY = currentY + 12;
+  let clientY = currentY + 10;
   
   doc.setFont('helvetica', 'bold');
   doc.text('NOME:', margin + 2, clientY);
   doc.setFont('helvetica', 'normal');
   const clientNameLines = doc.splitTextToSize(os.clientName || 'N/A', boxWidth - 18);
   doc.text(clientNameLines, margin + 15, clientY);
-  clientY += (clientNameLines.length * 4);
+  clientY += (clientNameLines.length * 3.5);
 
   doc.setFont('helvetica', 'bold');
   doc.text('ENDEREÇO:', margin + 2, clientY);
   doc.setFont('helvetica', 'normal');
   const addressLinesBox = doc.splitTextToSize(os.address || 'N/A', boxWidth - 22);
   doc.text(addressLinesBox, margin + 20, clientY);
-  clientY += (addressLinesBox.length * 4);
+  clientY += (addressLinesBox.length * 3.5);
 
   doc.setFont('helvetica', 'bold');
   doc.text('FONE:', margin + 2, clientY);
@@ -1189,11 +1192,11 @@ const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSetting
   doc.rect(col2X, startY, boxWidth, boxHeight);
   
   doc.setFillColor(240, 240, 240);
-  doc.rect(col2X, startY, boxWidth, 7, 'F');
+  doc.rect(col2X, startY, boxWidth, 6, 'F');
   doc.setFont('helvetica', 'bold');
-  doc.text('2. EQUIPAMENTO/SERVIÇO', col2X + 2, startY + 5);
+  doc.text('EQUIPAMENTO / SERVIÇO', col2X + 2, startY + 4.2);
   
-  let equipY = startY + 12;
+  let equipY = startY + 10;
   doc.setFontSize(8);
   
   doc.setFont('helvetica', 'bold');
@@ -1201,106 +1204,150 @@ const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSetting
   doc.setFont('helvetica', 'normal');
   const equipLinesBox = doc.splitTextToSize(os.equipment || 'N/A', boxWidth - 18);
   doc.text(equipLinesBox, col2X + 15, equipY);
-  equipY += (equipLinesBox.length * 4);
+  equipY += (equipLinesBox.length * 3.5);
 
   doc.setFont('helvetica', 'bold');
   doc.text('MARCA:', col2X + 2, equipY);
   doc.setFont('helvetica', 'normal');
   const brandLinesBox = doc.splitTextToSize(os.brandModelSN || 'N/A', boxWidth - 18);
   doc.text(brandLinesBox, col2X + 15, equipY);
-  equipY += (brandLinesBox.length * 4);
+  equipY += (brandLinesBox.length * 3.5);
 
   doc.setFont('helvetica', 'bold');
   doc.text('TIPO:', col2X + 2, equipY);
   doc.setFont('helvetica', 'normal');
   doc.text(os.serviceType || 'N/A', col2X + 15, equipY);
 
-  currentY = startY + boxHeight + 8;
-
-  // 3. PROBLEMA RELATADO
-  doc.setDrawColor(200, 200, 200);
-  doc.setLineWidth(0.3);
-  doc.line(margin, currentY - 4, pageWidth - margin, currentY - 4);
+  currentY = startY + boxHeight + 4;
+  
+  // Agendamento / Período de Trabalho info
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.text(`Início do Serviço: `, margin, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`${format(safeParseDate(os.startDateTime), 'dd/MM/yyyy HH:mm')}`, margin + 24, currentY);
   
   doc.setFont('helvetica', 'bold');
-  doc.text('Problema Relatado:', margin, currentY);
-  currentY += 4;
+  doc.text(`Fim do Serviço: `, margin + (contentWidth / 2), currentY);
   doc.setFont('helvetica', 'normal');
-  const probLines = doc.splitTextToSize(os.reportedProblem, contentWidth);
-  doc.text(probLines, margin, currentY);
-  currentY += (probLines.length * 5) + 3;
+  doc.text(`${format(safeParseDate(os.endDateTime), 'dd/MM/yyyy HH:mm')}`, margin + (contentWidth / 2) + 22, currentY);
+  currentY += 7;
 
-  // 4. DETALHES TÉCNICOS
-  checkPageBreak(20);
-  drawSectionTitle('3. Detalhes Técnicos (O que foi feito)');
+  // 2. DETALHES DO SERVIÇO
+  checkPageBreak(30);
+  drawSectionTitle('2. Detalhes do Serviço');
+  
   doc.setFont('helvetica', 'bold');
-  doc.text('Diagnóstico:', margin, currentY);
-  currentY += 4;
+  doc.setFontSize(8.5);
+  doc.text('Problema Relatado:', margin, currentY);
+  currentY += 3.5;
   doc.setFont('helvetica', 'normal');
-  const diagLines = doc.splitTextToSize(os.diagnosis, contentWidth);
-  doc.text(diagLines, margin, currentY);
-  currentY += (diagLines.length * 5) + 2;
+  const probLines = doc.splitTextToSize(os.reportedProblem || 'N/A', contentWidth);
+  doc.text(probLines, margin, currentY);
+  currentY += (probLines.length * 4) + 3;
 
-  checkPageBreak(15);
+  checkPageBreak(20);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Diagnóstico / Laudo Técnico:', margin, currentY);
+  currentY += 3.5;
+  doc.setFont('helvetica', 'normal');
+  const diagLines = doc.splitTextToSize(os.diagnosis || 'N/A', contentWidth);
+  doc.text(diagLines, margin, currentY);
+  currentY += (diagLines.length * 4) + 3;
+
+  checkPageBreak(20);
   doc.setFont('helvetica', 'bold');
   doc.text('Serviços Realizados:', margin, currentY);
-  currentY += 4;
+  currentY += 3.5;
   doc.setFont('helvetica', 'normal');
-  const servLines = doc.splitTextToSize(os.performedServices, contentWidth);
+  const servLines = doc.splitTextToSize(os.performedServices || 'N/A', contentWidth);
   doc.text(servLines, margin, currentY);
-  currentY += (servLines.length * 5) + 2;
+  currentY += (servLines.length * 4) + 4;
 
-  // Parts Table if exists
+  // 3. PEÇAS E MATERIAIS UTILIZADOS
+  checkPageBreak(25);
+  drawSectionTitle('3. Peças e Materiais Utilizados');
+  
   if (os.parts && os.parts.length > 0) {
-    checkPageBreak(20);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Peças/Materiais Substituídos:', margin, currentY);
-    currentY += 1;
+    const tableHead = includeValues 
+      ? [['Descrição', 'Qtd', 'V. Unitário', 'Total']]
+      : [['Descrição', 'Qtd']];
+      
+    const tableData = os.parts.map(p => {
+      const row = [p.description, p.quantity.toString()];
+      if (includeValues) {
+        row.push(`R$ ${(p.price || 0).toFixed(2)}`, `R$ ${((p.quantity || 0) * (p.price || 0)).toFixed(2)}`);
+      }
+      return row;
+    });
+
     autoTable(doc, {
       startY: currentY,
       margin: { left: margin },
-      head: [['Descrição', 'Qtd', 'V. Unitário', 'Total']],
-      body: os.parts.map(p => [p.description, p.quantity, `R$ ${(p.price || 0).toFixed(2)}`, `R$ ${((p.quantity || 0) * (p.price || 0)).toFixed(2)}`]),
+      head: tableHead,
+      body: tableData,
       theme: 'grid',
-      headStyles: { fillColor: [80, 80, 80], fontSize: 8 },
-      styles: { fontSize: 8 },
-      columnStyles: {
+      headStyles: { fillColor: [59, 130, 246], fontSize: 8, cellPadding: 1.5 },
+      styles: { fontSize: 8, cellPadding: 1.5 },
+      columnStyles: includeValues ? {
         1: { halign: 'center' },
         2: { halign: 'right' },
         3: { halign: 'right' }
+      } : {
+        1: { halign: 'center' }
       }
     });
-    currentY = (doc as any).lastAutoTable.finalY + 4;
+    currentY = (doc as any).lastAutoTable.finalY + 5;
+  } else {
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(8.5);
+    doc.text('Nenhum material/peça cadastrada neste serviço.', margin, currentY);
+    currentY += 6;
   }
 
-  // 4. TEMPOS E VALORES (Condicional)
+  // Values and Sections 4 & 5 (Condicional)
   if (includeValues) {
-    checkPageBreak(30);
-    drawSectionTitle('4. Tempos e Valores');
-    
+    const osPartsValue = (os.parts || []).reduce((acc, p) => acc + ((p.quantity || 0) * (p.price || 0)), 0);
+    const osLaborValue = os.laborValue || 0;
+    const osTotalValue = osPartsValue + osLaborValue;
+
+    // 4. DISCRIMINAÇÃO DE VALORES
+    checkPageBreak(25);
+    drawSectionTitle('4. Discriminação de Valores');
     doc.setFont('helvetica', 'normal');
-    doc.text(`Início: ${format(safeParseDate(os.startDateTime), 'dd/MM/yyyy HH:mm')}`, margin, currentY);
-    doc.text(`Fim: ${format(safeParseDate(os.endDateTime), 'dd/MM/yyyy HH:mm')}`, margin + contentWidth / 2, currentY);
-    currentY += 7;
-    
+    doc.setFontSize(8.5);
+    doc.setTextColor(50, 50, 50);
+
+    doc.text('Custo total dos materiais / peças:', margin, currentY);
+    doc.text(`R$ ${osPartsValue.toFixed(2)}`, margin + 110, currentY, { align: 'right' });
+    currentY += 4.5;
+
+    doc.text('Custo total da mão-de-obra / serviço:', margin, currentY);
+    doc.text(`R$ ${osLaborValue.toFixed(2)}`, margin + 110, currentY, { align: 'right' });
+    currentY += 4.5;
+
+    doc.setDrawColor(220, 220, 220);
+    doc.line(margin, currentY, margin + 110, currentY);
+    currentY += 4;
+
     doc.setFont('helvetica', 'bold');
-    doc.text(`Valor Mão de Obra: R$ ${(os.laborValue || 0).toFixed(2)}`, margin, currentY);
-    doc.text(`Valor Peças: R$ ${(os.partsValue || 0).toFixed(2)}`, margin + contentWidth / 2, currentY);
+    doc.setFontSize(10);
+    doc.setTextColor(0, 0, 0);
+    doc.text('VALOR TOTAL (MATERIAIS + SERVIÇO):', margin, currentY);
+    doc.text(`R$ ${osTotalValue.toFixed(2)}`, margin + 110, currentY, { align: 'right' });
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'normal');
     currentY += 7;
-    
-    doc.setFontSize(11);
-    doc.text(`VALOR TOTAL: R$ ${(os.totalValue || 0).toFixed(2)}`, margin, currentY);
-    doc.setFontSize(9);
-    currentY += 10;
 
     // PIX Info in OS PDF
     if (os.pixAccountId) {
       const selectedPix = pixSettings.accounts?.find(a => a.id === os.pixAccountId) || pixSettings.accounts?.[0];
       if (selectedPix) {
-        checkPageBreak(20);
+        checkPageBreak(25);
         doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
         doc.text('Dados para Pagamento (PIX):', margin, currentY);
-        currentY += 5;
+        currentY += 4.5;
         doc.setFont('helvetica', 'normal');
         doc.text(`Chave: ${selectedPix.key} - Banco: ${selectedPix.bank}`, margin, currentY);
         currentY += 4;
@@ -1308,22 +1355,23 @@ const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSetting
         
         // QR Code PIX
         try {
-          const qrSize = 35;
+          const qrSize = 25; // More compact QR Code size
           const qrContent = selectedPix.qrKey || selectedPix.key;
           const qrDataUrl = await QRCode.toDataURL(qrContent, { margin: 1, width: 150 });
-          doc.addImage(qrDataUrl, 'PNG', pageWidth - margin - qrSize - 5, currentY - 15, qrSize, qrSize);
+          doc.addImage(qrDataUrl, 'PNG', pageWidth - margin - qrSize - 4, currentY - 10, qrSize, qrSize);
         } catch (e) {
           console.error("Error generating PIX QR Code for Service Order", e);
         }
 
-        currentY += 8;
+        currentY += 7;
       }
     }
   }
 
   // Checklist
-  checkPageBreak(15);
+  checkPageBreak(12);
   doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
   doc.text('Checklist de Conformidade:', margin, currentY);
   currentY += 4;
   doc.setFont('helvetica', 'normal');
@@ -1335,42 +1383,45 @@ const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSetting
   currentY += 5;
 
   // 5. ASSINATURAS
-  checkPageBreak(40);
-  currentY += 10;
+  checkPageBreak(25);
+  currentY += 4;
 
-  doc.setFontSize(10);
+  doc.setFontSize(8.5);
   doc.setFont('helvetica', 'normal');
   const cityDateOS = formatFullDateWithCity(os.date, appSettings);
   doc.text(cityDateOS, pageWidth / 2, currentY, { align: 'center' });
   
-  currentY += 20;
+  currentY += 12; // Compact vertical space for signatures line
   
-  doc.setLineWidth(0.3);
-  doc.line(margin + 10, currentY, margin + 80, currentY);
-  doc.line(pageWidth - margin - 80, currentY, pageWidth - margin - 10, currentY);
+  doc.setLineWidth(0.25);
+  doc.line(margin + 10, currentY, margin + 70, currentY);
+  doc.line(pageWidth - margin - 70, currentY, pageWidth - margin - 10, currentY);
   
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Assinatura do Técnico', margin + 45, currentY + 5, { align: 'center' });
+  doc.setFontSize(7.5);
+  doc.text('Assinatura do Técnico', margin + 40, currentY + 4, { align: 'center' });
   
   const techName = os.technicianName || '';
   const isAndre = techName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes('andre');
   
   if (isAndre) {
-    doc.text(appSettings.responsible || techName, margin + 45, currentY + 9, { align: 'center' });
+    doc.text(appSettings.responsible || techName, margin + 40, currentY + 8, { align: 'center' });
   } else {
-    doc.text(techName, margin + 45, currentY + 9, { align: 'center' });
+    doc.text(techName, margin + 40, currentY + 8, { align: 'center' });
   }
 
-  doc.text('Assinatura do Cliente (Ciente)', pageWidth - margin - 45, currentY + 5, { align: 'center' });
+  doc.text('Assinatura do Cliente (Ciente)', pageWidth - margin - 40, currentY + 4, { align: 'center' });
+  doc.text(os.clientName || 'Cliente Sem Nome', pageWidth - margin - 40, currentY + 8, { align: 'center' });
+  if (os.contactName) {
+    doc.text(`Responsável: ${os.contactName}`, pageWidth - margin - 40, currentY + 11.5, { align: 'center' });
+  }
   
   if (os.technicianSignature) {
-    try { doc.addImage(os.technicianSignature, 'PNG', margin + 25, currentY - 18, 40, 16); } catch(e) {}
+    try { doc.addImage(os.technicianSignature, 'PNG', margin + 20, currentY - 14, 40, 13); } catch(e) {}
   } else if (isAndre && appSettings.signatureUrl) {
-    try { doc.addImage(appSettings.signatureUrl, 'PNG', margin + 25, currentY - 18, 40, 16); } catch(e) {}
+    try { doc.addImage(appSettings.signatureUrl, 'PNG', margin + 20, currentY - 14, 40, 13); } catch(e) {}
   }
   if (os.clientSignature) {
-    try { doc.addImage(os.clientSignature, 'PNG', pageWidth - margin - 65, currentY - 18, 40, 16); } catch(e) {}
+    try { doc.addImage(os.clientSignature, 'PNG', pageWidth - margin - 60, currentY - 14, 40, 13); } catch(e) {}
   }
 
   doc.save(`OS_${formatRecordNumber(os.number, os.date).replace('/', '-')}.pdf`);
@@ -1612,6 +1663,11 @@ interface Budget {
   clientName: string;
   clientPhone: string;
   address: string;
+  clientDocument?: string;
+  responsibleName?: string;
+  proposalValidity?: string;
+  deliveryTime?: string;
+  serviceWarranty?: string;
   items: { description: string; quantity: number; price: number; imageUrl?: string }[];
   serviceValue?: number;
   total: number;
@@ -10796,7 +10852,7 @@ function SettingsManager({
   
   const [newServiceType, setNewServiceType] = useState('');
 
-  const handleAddServiceType = () => {
+  const handleAddServiceType = async () => {
     if (!newServiceType.trim()) return;
     if (localApp.serviceTypes?.includes(newServiceType.trim())) {
       toast.error('Este tipo de serviço já existe.');
@@ -10805,11 +10861,23 @@ function SettingsManager({
     const updatedTypes = [...(localApp.serviceTypes || []), newServiceType.trim()];
     setLocalApp({ ...localApp, serviceTypes: updatedTypes });
     setNewServiceType('');
+    try {
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'general'), { serviceTypes: updatedTypes }, { merge: true });
+      toast.success('Tipo de serviço adicionado com sucesso!');
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  const handleRemoveServiceType = (typeToRemove: string) => {
+  const handleRemoveServiceType = async (typeToRemove: string) => {
     const updatedTypes = (localApp.serviceTypes || []).filter(t => t !== typeToRemove);
     setLocalApp({ ...localApp, serviceTypes: updatedTypes });
+    try {
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'general'), { serviceTypes: updatedTypes }, { merge: true });
+      toast.success('Tipo de serviço removido.');
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const [newPayableDestination, setNewPayableDestination] = useState('');
@@ -10880,13 +10948,19 @@ function SettingsManager({
   const [editingServiceType, setEditingServiceType] = useState<string | null>(null);
   const [editServiceTypeLabel, setEditServiceTypeLabel] = useState('');
 
-  const handleUpdateServiceType = () => {
+  const handleUpdateServiceType = async () => {
     if (!editingServiceType || !editServiceTypeLabel.trim()) return;
     const updatedTypes = (localApp.serviceTypes || []).map(t => 
       t === editingServiceType ? editServiceTypeLabel.trim() : t
     );
     setLocalApp({ ...localApp, serviceTypes: updatedTypes });
     setEditingServiceType(null);
+    try {
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'general'), { serviceTypes: updatedTypes }, { merge: true });
+      toast.success('Tipo de serviço atualizado com sucesso!');
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   // Multi-PIX states
@@ -11916,6 +11990,12 @@ function SettingsManager({
                 </div>
               </CardContent>
             </Card>
+            <div className="pt-4 pb-8">
+              <Button onClick={handleSaveApp} disabled={isSubmitting} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white font-bold uppercase tracking-widest text-xs h-12 flex gap-2 items-center justify-center">
+                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save size={16} />}
+                Salvar Configurações Financeiras
+              </Button>
+            </div>
               </>
             )}
           </div>
@@ -13229,7 +13309,7 @@ function VisitsManager({
     });
   }, [visits, dateFilterType, dayFilter, monthFilter, yearFilter, statusFilter, clientFilter]);
   const [newVisit, setNewVisit] = useState<Partial<TechnicalVisit>>({
-    type: 'CFTV',
+    type: (appSettings?.serviceTypes?.[0] || 'CFTV') as any,
     status: 'Agendada',
     date: new Date(),
     scheduledTime: '',
@@ -13293,7 +13373,7 @@ function VisitsManager({
 
       await logAction('create', 'visit', `Agendou visita para ${newVisit.clientName}`, docRef.id, newVisit.clientName);
       setNewVisit({ 
-        type: 'CFTV', 
+        type: (appSettings?.serviceTypes?.[0] || 'CFTV') as any, 
         status: 'Agendada', 
         date: new Date(), 
         scheduledTime: '',
@@ -13461,8 +13541,39 @@ function VisitsManager({
     }
   };
 
-  const generateVisitPDF = (visit: TechnicalVisit) => {
-    const doc = new jsPDF();
+  const generateVisitPDF = async (visit: TechnicalVisit) => {
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+    
+    // Helper to load image securely as Base64 format to bypass CORS limits
+    const loadImage = (url: string): Promise<string | null> => {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'Anonymous';
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0);
+            try {
+              resolve(canvas.toDataURL('image/png'));
+            } catch (e) {
+              console.error("CORS Error loading image:", url);
+              resolve(null);
+            }
+          } else {
+            resolve(null);
+          }
+        };
+        img.onerror = () => resolve(null);
+        img.src = url;
+      });
+    };
     
     // Resolve which date to print based on current status and status-change history
     const currentStatus = visit.status || 'Agendada';
@@ -13498,221 +13609,270 @@ function VisitsManager({
 
     const createdStr = visit.createdAt ? format(safeParseDate(visit.createdAt), 'dd/MM/yyyy HH:mm') : '';
     
-    // Header
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 12; // Tighter margins to fit more content safely
+    const contentWidth = pageWidth - (margin * 2);
+    let currentY = 12;
+
+    // Header helpers
+    const drawLine = () => {
+      doc.setDrawColor(200, 200, 200);
+      doc.line(margin, currentY, pageWidth - margin, currentY);
+      currentY += 4;
+    };
+
+    const drawSectionTitle = (title: string) => {
+      doc.setFillColor(240, 240, 240);
+      doc.rect(margin, currentY, contentWidth, 6, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(50, 50, 50);
+      doc.text(title.toUpperCase(), margin + 2, currentY + 4.2);
+      currentY += 8;
+    };
+
+    const checkPageBreak = (neededHeight: number) => {
+      if (currentY + neededHeight > pageHeight - 10) {
+        doc.addPage();
+        currentY = 12;
+        return true;
+      }
+      return false;
+    };
+
+    // Header Logo
     if (appSettings.logoUrl) {
       try {
-        doc.addImage(appSettings.logoUrl, 'PNG', 20, 10, 18, 18);
+        const logoData = await loadImage(appSettings.logoUrl);
+        if (logoData) {
+          doc.addImage(logoData, 'PNG', margin, currentY, 16, 16);
+        }
       } catch (e) {
         console.error("Erro ao adicionar logo ao PDF:", e);
       }
     }
 
-    doc.setFontSize(16);
+    doc.setFontSize(13);
     doc.setFont('helvetica', 'bold');
-    const headerX = appSettings.logoUrl ? 42 : 20;
-    doc.text(appSettings.companyName || '', headerX, 18);
-    
-    doc.setFontSize(12);
-    doc.text(`RELATÓRIO DE VISITA TÉCNICA ${formatRecordNumber(visit.number, visit.date)}`, headerX, 26);
+    const headerX = appSettings.logoUrl ? margin + 20 : margin;
+    doc.text(appSettings.companyName || '', headerX, currentY + 5);
     
     doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
+    doc.text(`RELATÓRIO DE VISITA TÉCNICA ${formatRecordNumber(visit.number, visit.date)}`, headerX, currentY + 11);
+    
+    currentY += 18;
+    drawLine();
 
-    let currentY = 40;
-
-    const drawSectionTitle = (title: string) => {
-      doc.setFillColor(240, 240, 240);
-      doc.rect(20, currentY, 170, 8, 'F');
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10);
-      doc.text(title, 25, currentY + 5.5);
-      doc.setFont('helvetica', 'normal');
-      currentY += 12;
-    };
-
-    // 2. DADOS DO CLIENTE & AGENDAMENTO
+    // 1. DADOS DO CLIENTE E AGENDAMENTO
     drawSectionTitle('1. Dados do Cliente e Agendamento');
-    const boxWidth = 83;
-    const boxHeight = visit.serviceAddress ? 42 : 35;
+    const boxWidth = (contentWidth / 2) - 3;
+    const boxHeight = 24; // Compact box height
+    const startY = currentY;
     
     // Draw Box for Client Data
     doc.setDrawColor(200, 200, 200);
     doc.setLineWidth(0.2);
-    doc.rect(20, currentY - 2, boxWidth, boxHeight);
+    doc.rect(margin, currentY, boxWidth, boxHeight);
     
-    // Left Column: Client Data
+    doc.setFillColor(240, 240, 240);
+    doc.rect(margin, currentY, boxWidth, 6, 'F');
     doc.setFont('helvetica', 'bold');
-    doc.text('CLIENTE:', 23, currentY + 5);
-    doc.setFont('helvetica', 'normal');
-    const clientNameSplitted = doc.splitTextToSize(visit.clientName, boxWidth - 28);
-    doc.text(clientNameSplitted, 48, currentY + 5);
-    
-    let clientDataY = currentY + 5 + (clientNameSplitted.length * 5);
-    
-    doc.setFont('helvetica', 'bold');
-    doc.text('ENDEREÇO:', 23, clientDataY);
-    doc.setFont('helvetica', 'normal');
-    const addressLines = doc.splitTextToSize(visit.address || 'N/A', boxWidth - 28);
-    doc.text(addressLines, 48, clientDataY);
-    
-    clientDataY += (addressLines.length * 5);
+    doc.setFontSize(8.5);
+    doc.text('DADOS DO CLIENTE', margin + 2, currentY + 4.2);
 
-    if (visit.serviceAddress) {
-      doc.setFont('helvetica', 'bold');
-      doc.text('SERVIÇO:', 23, clientDataY);
-      doc.setFont('helvetica', 'normal');
-      const serviceAddressLines = doc.splitTextToSize(visit.serviceAddress, boxWidth - 28);
-      doc.text(serviceAddressLines, 48, clientDataY);
-      clientDataY += (serviceAddressLines.length * 5);
-    }
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    let clientY = currentY + 10;
 
     doc.setFont('helvetica', 'bold');
-    doc.text('FONE:', 23, clientDataY);
+    doc.text('CLIENTE:', margin + 2, clientY);
     doc.setFont('helvetica', 'normal');
-    doc.text(`${visit.clientPhone || 'N/A'}`, 48, clientDataY);
+    const clientNameSplitted = doc.splitTextToSize(visit.clientName, boxWidth - 18);
+    doc.text(clientNameSplitted, margin + 15, clientY);
+    clientY += (clientNameSplitted.length * 3.5);
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text('ENDEREÇO:', margin + 2, clientY);
+    doc.setFont('helvetica', 'normal');
+    const addressLines = doc.splitTextToSize(visit.address || 'N/A', boxWidth - 22);
+    doc.text(addressLines, margin + 20, clientY);
+    clientY += (addressLines.length * 3.5);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('FONE:', margin + 2, clientY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`${visit.clientPhone || 'N/A'}`, margin + 15, clientY);
 
     // Right Column: Scheduling Data Box
-    const rightColX = 108;
-    doc.rect(rightColX, currentY - 2, boxWidth, boxHeight);
+    const rightColX = margin + boxWidth + 6;
+    doc.rect(rightColX, startY, boxWidth, boxHeight);
     
-    let schedY = currentY + 5;
+    doc.setFillColor(240, 240, 240);
+    doc.rect(rightColX, startY, boxWidth, 6, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text('AGENDAMENTO E EQUIPE', rightColX + 2, startY + 4.2);
+
+    let schedY = startY + 10;
+    doc.setFontSize(8);
     
     doc.setFont('helvetica', 'bold');
-    doc.text(schedLabel, rightColX + 3, schedY);
+    doc.text(schedLabel, rightColX + 2, schedY);
     doc.setFont('helvetica', 'normal');
-    doc.text(schedVal, rightColX + 35, schedY);
+    doc.text(schedVal, rightColX + 24, schedY);
     
-    schedY += 7;
+    schedY += 4.5;
     doc.setFont('helvetica', 'bold');
-    doc.text('PREVISÃO:', rightColX + 3, schedY);
+    doc.text('PREVISÃO:', rightColX + 2, schedY);
     doc.setFont('helvetica', 'normal');
     const expDateStr = visit.expectedDate ? format(safeParseDate(visit.expectedDate), 'dd/MM/yyyy') : '--/--/----';
-    doc.text(`${expDateStr}${visit.expectedTime ? ` às ${visit.expectedTime}` : ''}`, rightColX + 35, schedY);
+    doc.text(`${expDateStr}${visit.expectedTime ? ` às ${visit.expectedTime}` : ''}`, rightColX + 24, schedY);
 
-    schedY += 7;
+    schedY += 4.5;
     doc.setFont('helvetica', 'bold');
-    doc.text('TÉCNICO:', rightColX + 3, schedY);
+    doc.text('TÉCNICO:', rightColX + 2, schedY);
     doc.setFont('helvetica', 'normal');
-    const technicianSplitted = doc.splitTextToSize(visit.technicianName, boxWidth - 38);
-    doc.text(technicianSplitted, rightColX + 35, schedY);
+    const technicianSplitted = doc.splitTextToSize(visit.technicianName, boxWidth - 24);
+    doc.text(technicianSplitted, rightColX + 24, schedY);
 
-    currentY += boxHeight + 5;
+    currentY = startY + boxHeight + 4;
     
-    doc.setDrawColor(0, 0, 0);
-    doc.line(20, currentY, 190, currentY);
-    currentY += 10;
+    doc.setDrawColor(200, 200, 200);
+    doc.line(margin, currentY, pageWidth - margin, currentY);
+    currentY += 6;
     
-    // 3. DETALHES DO SERVIÇO
+    // 2. DETALHES DO SERVIÇO
     drawSectionTitle('2. Detalhes do Serviço');
     doc.setFont('helvetica', 'normal');
-    doc.text(`Tipo de Serviço: ${visit.type}`, 20, currentY);
-    currentY += 7;
-    doc.text(`Status: ${visit.status}`, 20, currentY);
-    currentY += 10;
+    doc.setFontSize(8.5);
+    doc.text(`Tipo de Serviço: ${visit.type}    |    Status: ${visit.status}`, margin, currentY);
+    currentY += 6;
     
-    doc.text('Descrição do Serviço/Problema:', 20, currentY);
-    currentY += 7;
-    const splitDesc = doc.splitTextToSize(visit.description || 'N/A', 170);
-    doc.text(splitDesc, 20, currentY);
-    currentY += (splitDesc.length * 5) + 10;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Descrição do Serviço/Problema:', margin, currentY);
+    currentY += 3.5;
+    doc.setFont('helvetica', 'normal');
+    const splitDesc = doc.splitTextToSize(visit.description || 'N/A', contentWidth);
+    doc.text(splitDesc, margin, currentY);
+    currentY += (splitDesc.length * 4) + 4;
 
-    // --- NOVO: SEÇÃO DE PEÇAS E MATERIAIS NO PDF DA VISITA ---
+    const vPartsValue = (visit.parts || []).reduce((acc, p) => acc + ((p.quantity || 0) * (p.price || 0)), 0);
+    const vTotalValue = visit.totalValue || 0;
+    const vLaborValue = Math.max(0, vTotalValue - vPartsValue);
+
+    // 3. PEÇAS E MATERIAIS UTILIZADOS
+    checkPageBreak(25);
+    drawSectionTitle('3. Peças e Materiais Utilizados');
+    
     if (visit.parts && visit.parts.length > 0) {
-      if (currentY > 230) { doc.addPage(); currentY = 20; }
-      drawSectionTitle('3. Peças e Materiais Utilizados');
-      
-      // Table Header for Parts
-      doc.setFillColor(245, 245, 245);
-      doc.rect(20, currentY, 170, 7, 'F');
-      doc.setFont('helvetica', 'bold');
-      doc.text('Descrição', 23, currentY + 5);
-      doc.text('Qtd', 130, currentY + 5);
-      doc.text('V. Unit', 150, currentY + 5);
-      doc.text('Total', 175, currentY + 5);
-      doc.setFont('helvetica', 'normal');
-      currentY += 10;
+      const tableHead = [['Descrição', 'Qtd', 'V. Unitário', 'Total']];
+      const tableData = visit.parts.map(p => [
+        p.description,
+        p.quantity.toString(),
+        `R$ ${(p.price || 0).toFixed(2)}`,
+        `R$ ${((p.quantity || 0) * (p.price || 0)).toFixed(2)}`
+      ]);
 
-      visit.parts.forEach(p => {
-        if (currentY > 275) { doc.addPage(); currentY = 20; }
-        const desc = p.description.length > 45 ? p.description.substring(0, 42) + '...' : p.description;
-        doc.text(desc, 23, currentY);
-        doc.text(p.quantity.toString(), 133, currentY);
-        doc.text(p.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), 148, currentY);
-        doc.text((p.quantity * p.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), 173, currentY);
-        currentY += 6;
+      autoTable(doc, {
+        startY: currentY,
+        margin: { left: margin },
+        head: tableHead,
+        body: tableData,
+        theme: 'grid',
+        headStyles: { fillColor: [59, 130, 246], fontSize: 8, cellPadding: 1.5 },
+        styles: { fontSize: 8, cellPadding: 1.5 },
+        columnStyles: {
+          1: { halign: 'center' },
+          2: { halign: 'right' },
+          3: { halign: 'right' }
+        }
       });
-      currentY += 5;
+      currentY = (doc as any).lastAutoTable.finalY + 5;
+    } else {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8.5);
+      doc.text('Nenhum material/peça cadastrada neste serviço.', margin, currentY);
+      currentY += 6;
     }
 
-    if (visit.observations) {
-      // Check if we need a new page for observations
-      if (currentY > 260) {
-        doc.addPage();
-        currentY = 20;
-      }
-      doc.setFont('helvetica', 'bold');
-      doc.text('Observações:', 20, currentY);
-      doc.setFont('helvetica', 'normal');
-      currentY += 7;
-      const splitObs = doc.splitTextToSize(visit.observations, 170);
-      doc.text(splitObs, 20, currentY);
-      currentY += (splitObs.length * 5) + 10;
-    }
-    
-    // Check space for total value
-    if (currentY > 270) {
-      doc.addPage();
-      currentY = 20;
-    }
+    // 4. DISCRIMINAÇÃO DE VALORES
+    checkPageBreak(30);
+    drawSectionTitle('4. Discriminação de Valores');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(50, 50, 50);
+
+    doc.text('Custo total dos materiais / peças:', margin, currentY);
+    doc.text(`R$ ${vPartsValue.toFixed(2)}`, margin + 110, currentY, { align: 'right' });
+    currentY += 4.5;
+
+    doc.text('Custo total da mão-de-obra / serviço:', margin, currentY);
+    doc.text(`R$ ${vLaborValue.toFixed(2)}`, margin + 110, currentY, { align: 'right' });
+    currentY += 4.5;
+
+    doc.setDrawColor(220, 220, 220);
+    doc.line(margin, currentY, margin + 110, currentY);
+    currentY += 4;
 
     doc.setFont('helvetica', 'bold');
-    doc.text(`VALOR DO SERVIÇO: R$ ${(visit.totalValue || 0).toFixed(2)}`, 20, currentY);
-    
-    // Signatures
-    let signatureY = currentY + 30;
-    
-    if (signatureY > 270) {
-      doc.addPage();
-      signatureY = 40;
+    doc.setFontSize(10);
+    doc.setTextColor(0, 0, 0);
+    doc.text('VALOR TOTAL (MATERIAIS + SERVIÇO):', margin, currentY);
+    doc.text(`R$ ${vTotalValue.toFixed(2)}`, margin + 110, currentY, { align: 'right' });
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'normal');
+    currentY += 7;
+
+    // Observações inseridas após o VALOR TOTAL
+    if (visit.observations) {
+      checkPageBreak(15);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Observações:', margin, currentY);
+      doc.setFont('helvetica', 'normal');
+      currentY += 3.5;
+      const splitObs = doc.splitTextToSize(visit.observations, contentWidth);
+      doc.text(splitObs, margin, currentY);
+      currentY += (splitObs.length * 4) + 4;
     }
     
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    const cityDate = formatFullDateWithCity(resolvedDate, appSettings);
-    doc.text(cityDate, 105, signatureY - 10, { align: 'center' });
-    
     // Signatures
+    checkPageBreak(22);
+    currentY += 4;
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    const cityDate = formatFullDateWithCity(resolvedDate, appSettings);
+    doc.text(cityDate, pageWidth / 2, currentY, { align: 'center' });
+    
+    currentY += 12;
+    
     const techName = visit.technicianName || '';
     const isAndre = techName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes('andre');
 
-    doc.setLineWidth(0.3);
-    if (visit.technicianSignature) {
-      try {
-        doc.addImage(visit.technicianSignature, 'PNG', 35, signatureY - 8, 40, 15);
-      } catch (e) {
-        console.error("Erro ao adicionar assinatura técnica:", e);
-      }
-    } else if (isAndre && appSettings.signatureUrl) {
-      try {
-        doc.addImage(appSettings.signatureUrl, 'PNG', 35, signatureY - 8, 40, 15);
-      } catch (e) {
-        console.error("Erro ao adicionar assinatura à visita:", e);
-      }
+    doc.setLineWidth(0.25);
+    doc.line(margin + 10, currentY, margin + 70, currentY);
+    doc.line(pageWidth - margin - 70, currentY, pageWidth - margin - 10, currentY);
+    
+    doc.setFontSize(7.5);
+    doc.text('Assinatura do Técnico', margin + 40, currentY + 4, { align: 'center' });
+    doc.text(isAndre ? (appSettings.responsible || techName) : techName, margin + 40, currentY + 8, { align: 'center' });
+    
+    doc.text('Assinatura do Cliente', pageWidth - margin - 40, currentY + 4, { align: 'center' });
+    doc.text(visit.clientName || 'Cliente Sem Nome', pageWidth - margin - 40, currentY + 8, { align: 'center' });
+    if (visit.responsibleName) {
+      doc.text(`Responsável: ${visit.responsibleName}`, pageWidth - margin - 40, currentY + 11.5, { align: 'center' });
     }
-    doc.line(25, signatureY + 10, 90, signatureY + 10);
-    doc.text('Assinatura do Técnico', 57.5, signatureY + 15, { align: 'center' });
-    doc.text(isAndre ? (appSettings.responsible || techName) : techName, 57.5, signatureY + 20, { align: 'center' });
+
+    if (visit.technicianSignature) {
+      try { doc.addImage(visit.technicianSignature, 'PNG', margin + 20, currentY - 14, 40, 13); } catch(e) {}
+    } else if (isAndre && appSettings.signatureUrl) {
+      try { doc.addImage(appSettings.signatureUrl, 'PNG', margin + 20, currentY - 14, 40, 13); } catch(e) {}
+    }
     
     if (visit.clientSignature) {
-      try {
-        doc.addImage(visit.clientSignature, 'PNG', 130, signatureY - 8, 40, 15);
-      } catch (e) {
-        console.error("Erro ao adicionar assinatura do cliente:", e);
-      }
+      try { doc.addImage(visit.clientSignature, 'PNG', pageWidth - margin - 60, currentY - 14, 40, 13); } catch(e) {}
     }
-    doc.line(120, signatureY + 10, 185, signatureY + 10);
-    doc.text('Assinatura do Cliente', 152.5, signatureY + 15, { align: 'center' });
-    doc.text(visit.responsibleName || visit.clientName, 152.5, signatureY + 20, { align: 'center' });
     
     doc.save(`visita_${visit.clientName.replace(/\s/g, '_')}.pdf`);
   };
@@ -13937,7 +14097,9 @@ function VisitsManager({
                     }
                   }}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue placeholder="Escolha um cliente..." />
+                      <SelectValue placeholder="Escolha um cliente...">
+                        {newVisit.clientId ? (clients.find(c => c.id === newVisit.clientId)?.name || "Cliente Sem Nome") : "Escolha um cliente..."}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       <div className="p-2 sticky top-0 bg-[#1a1d23] z-10 border-b border-[#2d3139]">
@@ -13989,12 +14151,9 @@ function VisitsManager({
                         </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                        <SelectItem value="CFTV">CFTV</SelectItem>
-                        <SelectItem value="Alarme">Alarme</SelectItem>
-                        <SelectItem value="Cerca Elétrica">Cerca Elétrica</SelectItem>
-                        <SelectItem value="Motor de Portão">Motor de Portão</SelectItem>
-                        <SelectItem value="Redes">Redes</SelectItem>
-                        <SelectItem value="Outros">Outros</SelectItem>
+                        {(appSettings?.serviceTypes || ['CFTV', 'Alarme', 'Cerca Elétrica', 'Motor de Portão', 'Redes', 'Outros']).map(type => (
+                          <SelectItem key={type} value={type}>{type}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -14514,12 +14673,9 @@ function VisitsManager({
                         </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                        <SelectItem value="CFTV">CFTV</SelectItem>
-                        <SelectItem value="Alarme">Alarme</SelectItem>
-                        <SelectItem value="Cerca Elétrica">Cerca Elétrica</SelectItem>
-                        <SelectItem value="Motor de Portão">Motor de Portão</SelectItem>
-                        <SelectItem value="Redes">Redes</SelectItem>
-                        <SelectItem value="Outros">Outros</SelectItem>
+                        {(appSettings?.serviceTypes || ['CFTV', 'Alarme', 'Cerca Elétrica', 'Motor de Portão', 'Redes', 'Outros']).map(type => (
+                          <SelectItem key={type} value={type}>{type}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -17638,8 +17794,11 @@ function BudgetsManager({
   };
 
   const generateBudgetPDF = async (budget: Budget) => {
-    const doc = new jsPDF();
-    const dateStr = format(safeParseDate(budget.createdAt), 'dd/MM/yyyy');
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
     
     // Helper to load image
     const loadImage = (url: string): Promise<string | null> => {
@@ -17673,34 +17832,178 @@ function BudgetsManager({
       budget.items.map(item => item.imageUrl ? loadImage(item.imageUrl) : Promise.resolve(null))
     );
 
+    // Page calculations
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 12; // Compact margins
+    const contentWidth = pageWidth - (margin * 2);
+    let currentY = 12;
+
+    // Helper functions for formatting sections
+    const drawLine = () => {
+      doc.setDrawColor(200, 200, 200);
+      doc.line(margin, currentY, pageWidth - margin, currentY);
+      currentY += 4;
+    };
+
+    const drawSectionTitle = (title: string) => {
+      doc.setFillColor(240, 240, 240);
+      doc.rect(margin, currentY, contentWidth, 6, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(50, 50, 50);
+      doc.text(title.toUpperCase(), margin + 2, currentY + 4.2);
+      currentY += 8;
+    };
+
+    const checkPageBreak = (neededHeight: number) => {
+      if (currentY + neededHeight > pageHeight - 10) {
+        doc.addPage();
+        currentY = 12;
+        return true;
+      }
+      return false;
+    };
+
     // Logo
     if (appSettings.logoUrl) {
       try {
         const logoData = await loadImage(appSettings.logoUrl);
         if (logoData) {
-          doc.addImage(logoData, 'PNG', 20, 10, 18, 18);
+          doc.addImage(logoData, 'PNG', margin, currentY, 16, 16);
         }
       } catch (e) {
         console.error("Erro ao adicionar logo ao PDF:", e);
       }
     }
 
-    doc.setFontSize(16);
+    doc.setFontSize(13);
     doc.setFont('helvetica', 'bold');
-    const budgetHeaderX = appSettings.logoUrl ? 42 : 20;
-    doc.text(appSettings.companyName || '', budgetHeaderX, 18);
-    
-    doc.setFontSize(12);
-    doc.text(`ORÇAMENTO DE SERVIÇOS ${formatRecordNumber(budget.number, budget.createdAt)}`, budgetHeaderX, 26);
+    const budgetHeaderX = appSettings.logoUrl ? margin + 20 : margin;
+    doc.text(appSettings.companyName || '', budgetHeaderX, currentY + 5);
     
     doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Data: ${dateStr}`, 20, 42);
-    doc.text(`Cliente: ${budget.clientName || 'Cliente Sem Nome'}`, 20, 57);
-    doc.text(`WhatsApp: ${budget.clientPhone || 'N/A'}`, 20, 64);
-    doc.text(`Endereço: ${budget.address || 'N/A'}`, 20, 71);
+    doc.text(`ORÇAMENTO DE SERVIÇOS ${formatRecordNumber(budget.number, budget.createdAt)}`, budgetHeaderX, currentY + 11);
+
+    // Emissão e Status no Canto Superior Direito (ao lado do cabeçalho)
+    const topRightX = pageWidth - margin;
+    doc.setFontSize(8.5);
     
-    doc.line(20, 77, 190, 77);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(50, 50, 50);
+    doc.text('EMISSÃO:', topRightX - 35, currentY + 5);
+    doc.setFont('helvetica', 'normal');
+    const bDateStr = budget.createdAt ? format(safeParseDate(budget.createdAt), 'dd/MM/yyyy') : '--/--/----';
+    doc.text(bDateStr, topRightX, currentY + 5, { align: 'right' });
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text('STATUS:', topRightX - 35, currentY + 11);
+    doc.setFont('helvetica', 'normal');
+    doc.text(budget.status || 'Pendente', topRightX, currentY + 11, { align: 'right' });
+    
+    currentY += 18;
+    drawLine();
+
+    // 1. DADOS DO CLIENTE E PROPOSTA
+    drawSectionTitle('1. Dados do Cliente e Proposta');
+    const boxWidth = (contentWidth / 2) - 3;
+    const startY = currentY;
+    
+    // Pre-calculate line splitting and required box height
+    const clientNameSplitted = doc.splitTextToSize(budget.clientName || 'Cliente Sem Nome', boxWidth - 18);
+    const addressLines = doc.splitTextToSize(budget.address || 'N/A', boxWidth - 22);
+
+    const valText = doc.splitTextToSize(budget.proposalValidity || '15 dias', boxWidth - 40);
+    const delText = doc.splitTextToSize(budget.deliveryTime || 'A combinar', boxWidth - 40);
+    const warText = doc.splitTextToSize(budget.serviceWarranty || '90 dias', boxWidth - 40);
+
+    const leftHeightNeeded = 10 + (clientNameSplitted.length * 3.5) + 1.5 + (addressLines.length * 3.5) + 1.5 + 5;
+    const rightHeightNeeded = 10 + (valText.length * 3.5) + 1.5 + (delText.length * 3.5) + 1.5 + (warText.length * 3.5) + 5;
+    const boxHeight = Math.max(leftHeightNeeded, rightHeightNeeded, 28);
+
+    // Draw Box for Client Data
+    doc.setDrawColor(200, 200, 200);
+    doc.rect(margin, currentY, boxWidth, boxHeight);
+    
+    doc.setFillColor(240, 240, 240);
+    doc.rect(margin, currentY, boxWidth, 6, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(50, 50, 50);
+    doc.text('DADOS DO CLIENTE', margin + 2, currentY + 4.2);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    let clientY = currentY + 10;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('CLIENTE:', margin + 2, clientY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(clientNameSplitted, margin + 15, clientY);
+    clientY += (clientNameSplitted.length * 3.5) + 1.5;
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text('ENDEREÇO:', margin + 2, clientY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(addressLines, margin + 20, clientY);
+    clientY += (addressLines.length * 3.5) + 1.5;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('FONE:', margin + 2, clientY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`${budget.clientPhone || 'N/A'}`, margin + 12, clientY);
+
+    // Right Column: Proposal Data Box
+    const rightColX = margin + boxWidth + 6;
+    doc.rect(rightColX, startY, boxWidth, boxHeight);
+    
+    doc.setFillColor(240, 240, 240);
+    doc.rect(rightColX, startY, boxWidth, 6, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text('DADOS DO ORÇAMENTO', rightColX + 2, startY + 4.2);
+
+    let schedY = startY + 10;
+    doc.setFontSize(8);
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text('VALIDADE DA PROPOSTA.:', rightColX + 2, schedY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(valText, rightColX + 38, schedY);
+    schedY += (valText.length * 3.5) + 1.5;
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text('PRAZO DE ENTREGA......:', rightColX + 2, schedY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(delText, rightColX + 38, schedY);
+    schedY += (delText.length * 3.5) + 1.5;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('GARANTIA DO SERVIÇO...:', rightColX + 2, schedY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(warText, rightColX + 38, schedY);
+
+    currentY = startY + boxHeight + 4;
+    
+    doc.setDrawColor(200, 200, 200);
+    doc.line(margin, currentY, pageWidth - margin, currentY);
+    currentY += 6;
+
+    // 2. DETALHES DO SERVIÇO
+    checkPageBreak(25);
+    drawSectionTitle('2. Detalhes do Serviço / Escopo');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(50, 50, 50);
+
+    const serviceDetails = budget.observations || 'Nenhum detalhe adicional informado.';
+    const detailsLines = doc.splitTextToSize(serviceDetails, contentWidth);
+    doc.text(detailsLines, margin, currentY);
+    currentY += (detailsLines.length * 4) + 4;
+
+    // 3. PEÇAS E MATERIAIS UTILIZADOS
+    checkPageBreak(25);
+    drawSectionTitle('3. Peças e Materiais Utilizados');
     
     // Items Table
     const hasImages = budget.items.some(item => item.imageUrl);
@@ -17721,48 +18024,73 @@ function BudgetsManager({
       return row;
     });
 
-    autoTable(doc, {
-      startY: 82,
-      head: tableHead,
-      body: tableData,
-      theme: 'grid',
-      headStyles: { fillColor: [59, 130, 246] },
-      styles: { fontSize: 9, valign: 'middle' },
-      columnStyles: hasImages ? { 0: { cellWidth: 15 } } : {},
-      didDrawCell: (data) => {
-        if (hasImages && data.section === 'body' && data.column.index === 0) {
-          const imgData = itemImages[data.row.index];
-          if (imgData) {
-            doc.addImage(imgData, 'PNG', data.cell.x + 2, data.cell.y + 2, 11, 11);
+    if (!budget.items || budget.items.length === 0) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8.5);
+      doc.text('Nenhum material/peça cadastrada neste orçamento.', margin, currentY);
+      currentY += 6;
+    } else {
+      autoTable(doc, {
+        startY: currentY,
+        margin: { left: margin },
+        head: tableHead,
+        body: tableData,
+        theme: 'grid',
+        headStyles: { fillColor: [59, 130, 246], fontSize: 8, cellPadding: 1.5 },
+        styles: { fontSize: 8, valign: 'middle', cellPadding: 1.5 },
+        columnStyles: hasImages ? { 0: { cellWidth: 15 } } : {},
+        didDrawCell: (data) => {
+          if (hasImages && data.section === 'body' && data.column.index === 0) {
+            const imgData = itemImages[data.row.index];
+            if (imgData) {
+              doc.addImage(imgData, 'PNG', data.cell.x + 2, data.cell.y + 2, 11, 11);
+            }
           }
         }
-      }
-    });
-
-    let finalY = (doc as any).lastAutoTable.finalY + 10;
+      });
+      currentY = (doc as any).lastAutoTable.finalY + 5;
+    }
 
     const { itemsTotal, serviceValue, baseTotal, finalTotal } = getBudgetCalculations(budget, appSettings);
-    
-    doc.setFontSize(10);
+
+    // 4. DISCRIMINAÇÃO DE VALORES
+    checkPageBreak(25);
+    drawSectionTitle('4. Discriminação de Valores');
     doc.setFont('helvetica', 'normal');
-    doc.text(`VALOR MATERIAL: R$ ${itemsTotal.toFixed(2)}`, 190, finalY, { align: 'right' });
-    finalY += 7;
-    doc.text(`VALOR MÃO DE OBRA: R$ ${serviceValue.toFixed(2)}`, 190, finalY, { align: 'right' });
-    finalY += 8;
-    
+    doc.setFontSize(8.5);
+    doc.setTextColor(50, 50, 50);
+
+    doc.text('Custo total dos materiais / peças:', margin, currentY);
+    doc.text(`R$ ${itemsTotal.toFixed(2)}`, margin + 110, currentY, { align: 'right' });
+    currentY += 4.5;
+
+    doc.text('Custo total da mão-de-obra / serviço:', margin, currentY);
+    doc.text(`R$ ${serviceValue.toFixed(2)}`, margin + 110, currentY, { align: 'right' });
+    currentY += 4.5;
+
+    doc.setDrawColor(220, 220, 220);
+    doc.line(margin, currentY, margin + 110, currentY);
+    currentY += 4;
+
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.text(`VALOR TOTAL: R$ ${finalTotal.toFixed(2)}`, 190, finalY, { align: 'right' });
+    doc.setFontSize(10);
+    doc.setTextColor(0, 0, 0);
+    doc.text('VALOR TOTAL (MATERIAIS + SERVIÇO):', margin, currentY);
+    doc.text(`R$ ${finalTotal.toFixed(2)}`, margin + 110, currentY, { align: 'right' });
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'normal');
+    currentY += 7;
 
     if (budget.paymentMethod) {
-      finalY += 10;
-      doc.setFontSize(10);
+      checkPageBreak(25);
+      drawSectionTitle('5. Condições de Pagamento');
       doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
       
       const isCardPayment = budget.paymentMethod === 'Cartão' || budget.paymentMethod === 'Cartão com Juros';
       const shouldShowBrand = isCardPayment && budget.selectedCardBrand;
       
-      doc.text(`Forma de Pagamento: ${budget.paymentMethod}${shouldShowBrand ? ` (${budget.selectedCardBrand})` : ''}`, 20, finalY);
+      doc.text(`Forma de Pagamento: ${budget.paymentMethod}${shouldShowBrand ? ` (${budget.selectedCardBrand})` : ''}`, margin, currentY);
       
       if (isCardPayment) {
         doc.setFont('helvetica', 'normal');
@@ -17771,84 +18099,83 @@ function BudgetsManager({
           if (plan) {
             const value = calculateInstallmentValue(baseTotal, plan.id);
             const totalFinanced = value * plan.installments;
-            doc.text(`Pagamento em ${plan.installments}x de R$ ${value.toFixed(2)} (${plan.interestRate}% juros - Com Juros)`, 20, finalY + 7);
-            doc.text(`Total Financiado: R$ ${totalFinanced.toFixed(2)}`, 20, finalY + 14);
-            finalY += 19;
+            currentY += 5;
+            doc.text(`Pagamento em ${plan.installments}x de R$ ${value.toFixed(2)} (${plan.interestRate}% juros - Com Juros)`, margin, currentY);
+            currentY += 4.5;
+            doc.text(`Total Financiado: R$ ${totalFinanced.toFixed(2)}`, margin, currentY);
+            currentY += 6;
           }
         } else {
           const installments = budget.installments || 1;
           const valuePerInstallment = baseTotal / installments;
-          doc.text(`Pagamento em ${installments}x de R$ ${valuePerInstallment.toFixed(2)} (Sem Juros)`, 20, finalY + 7);
-          finalY += 12;
+          currentY += 5;
+          doc.text(`Pagamento em ${installments}x de R$ ${valuePerInstallment.toFixed(2)} (Sem Juros)`, margin, currentY);
+          currentY += 6;
         }
       } else if (budget.paymentMethod === 'PIX') {
         const selectedPix = pixSettings.accounts?.find(a => a.id === budget.pixAccountId || a.label === budget.pixAccountId) || pixSettings.accounts?.[0];
         if (selectedPix) {
-          finalY += 10;
-          doc.setFontSize(10);
+          currentY += 5;
+          doc.setFontSize(8.5);
           doc.setFont('helvetica', 'bold');
-          doc.text('Dados para Pagamento (PIX):', 20, finalY);
+          doc.text('Dados para Pagamento (PIX):', margin, currentY);
+          currentY += 4.5;
           doc.setFont('helvetica', 'normal');
-          doc.text(`Chave: ${selectedPix.key} - Banco: ${selectedPix.bank}`, 20, finalY + 7);
-          doc.text(`Favorecido: ${selectedPix.favored} - CPF/CNPJ: ${selectedPix.document || ''}`, 20, finalY + 12);
+          doc.text(`Chave: ${selectedPix.key} - Banco: ${selectedPix.bank}`, margin, currentY);
+          currentY += 4;
+          doc.text(`Favorecido: ${selectedPix.favored} - CPF/CNPJ: ${selectedPix.document || ''}`, margin, currentY);
           
           // QR Code PIX
           try {
-            const qrSize = 35;
+            const qrSize = 30;
             const qrContent = selectedPix.qrKey || selectedPix.key;
-            const qrDataUrl = await QRCode.toDataURL(qrContent, { margin: 1, width: 150 });
-            doc.addImage(qrDataUrl, 'PNG', 150, finalY, qrSize, qrSize);
+            const qrDataUrl = await QRCode.toDataURL(qrContent, { margin: 1, width: 120 });
+            doc.addImage(qrDataUrl, 'PNG', pageWidth - margin - qrSize - 2, currentY - 11, qrSize, qrSize);
           } catch (e) {
             console.error("Error generating PIX QR Code for Budget", e);
           }
 
-          finalY += 15;
+          currentY += 8;
         }
       }
     }
+
+    // Signatures
+    checkPageBreak(25);
+    currentY += 12; // Lowered to avoid tight spacing after payment conditions
     
-    if (budget.observations) {
-      finalY += 15;
-      doc.setFontSize(10);
-      doc.text('Observações:', 20, finalY);
-      doc.setFont('helvetica', 'normal');
-      const splitObs = doc.splitTextToSize(budget.observations, 170);
-      doc.text(splitObs, 20, finalY + 7);
-      finalY += (splitObs.length * 5) + 10;
-    }
-
-    if (finalY > 240) {
-      doc.addPage();
-      finalY = 20;
-    }
-
-    doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
     const cityDateBudget = formatFullDateWithCity(budget.createdAt || new Date(), appSettings);
-    doc.text(cityDateBudget, 105, finalY + 5, { align: 'center' });
-
-    finalY += 20;
+    doc.text(cityDateBudget, pageWidth / 2, currentY, { align: 'center' });
     
+    currentY += 14; // Added more vertical space for signature line
+    
+    doc.setLineWidth(0.25);
+    doc.line(margin + 10, currentY, margin + 70, currentY);
+    doc.line(pageWidth - margin - 70, currentY, pageWidth - margin - 10, currentY);
+    
+    doc.setFontSize(7.5);
+    doc.text('Assinatura do Cliente', margin + 40, currentY + 4, { align: 'center' });
+    doc.text(budget.clientName || 'Cliente_Sem_Nome', margin + 40, currentY + 8, { align: 'center' });
+    if (budget.responsibleName) {
+      doc.text(`Responsável: ${budget.responsibleName}`, margin + 40, currentY + 11.5, { align: 'center' });
+    }
+    
+    doc.text('Assinatura da Empresa', pageWidth - margin - 40, currentY + 4, { align: 'center' });
+    doc.text(appSettings.companyName || '', pageWidth - margin - 40, currentY + 8, { align: 'center' });
+    if (appSettings.responsible) {
+      doc.text(`Responsável: ${appSettings.responsible}`, pageWidth - margin - 40, currentY + 11.5, { align: 'center' });
+    }
+
     if (budget.clientSignature) {
-      try {
-        doc.addImage(budget.clientSignature, 'PNG', 20, finalY - 15, 50, 15);
-      } catch (e) {
-        console.error("Erro ao adicionar assinatura do cliente ao orçamento:", e);
-      }
+      try { doc.addImage(budget.clientSignature, 'PNG', margin + 20, currentY - 14, 40, 13); } catch(e) {}
     }
-    doc.line(20, finalY, 70, finalY);
-    doc.text('Assinatura do Cliente', 45, finalY + 5, { align: 'center' });
-
+    
     if (appSettings.signatureUrl) {
-      try {
-        doc.addImage(appSettings.signatureUrl, 'PNG', 130, finalY - 15, 50, 15);
-      } catch (e) {
-        console.error("Erro ao adicionar assinatura da empresa ao orçamento:", e);
-      }
+      try { doc.addImage(appSettings.signatureUrl, 'PNG', pageWidth - margin - 60, currentY - 14, 40, 13); } catch(e) {}
     }
-    doc.line(120, finalY, 190, finalY);
-    doc.text(appSettings.responsible || appSettings.companyName, 155, finalY + 5, { align: 'center' });
-
+    
     const nameForFilename = (budget.clientName || 'Cliente_Sem_Nome').replace(/\s/g, '_');
     doc.save(`orcamento_${nameForFilename}.pdf`);
   };
@@ -18075,7 +18402,12 @@ function BudgetsManager({
                         clientName: client.name || '',
                         clientPhone: client.phone || '',
                         address: client.address || '',
-                        pixAccountId: client.pixAccountId
+                        pixAccountId: client.pixAccountId,
+                        clientDocument: client.document || '',
+                        responsibleName: client.responsible || '',
+                        proposalValidity: newBudget.proposalValidity || '15 dias',
+                        deliveryTime: newBudget.deliveryTime || 'A combinar',
+                        serviceWarranty: newBudget.serviceWarranty || '90 dias'
                       });
                     }
                   }}>
@@ -18119,6 +18451,32 @@ function BudgetsManager({
                 <div className="space-y-2">
                   <Label className="text-[#a0a0a0]">Endereço</Label>
                   <Input value={newBudget.address || ''} onChange={e => setNewBudget({...newBudget, address: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Responsável do Cliente (Opcional)</Label>
+                    <Input value={newBudget.responsibleName || ''} onChange={e => setNewBudget({...newBudget, responsibleName: e.target.value})} placeholder="Nome de quem assina pelo cliente" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">CPF/CNPJ do Cliente (Opcional)</Label>
+                    <Input value={newBudget.clientDocument || ''} onChange={e => setNewBudget({...newBudget, clientDocument: e.target.value})} placeholder="Ex: 00.000.000/0000-00" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]" htmlFor="newProposalValidity">Validade da Proposta</Label>
+                    <Input id="newProposalValidity" value={newBudget.proposalValidity || ''} onChange={e => setNewBudget({...newBudget, proposalValidity: e.target.value})} placeholder="Ex: 15 dias" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]" htmlFor="newDeliveryTime">Prazo de Entrega</Label>
+                    <Input id="newDeliveryTime" value={newBudget.deliveryTime || ''} onChange={e => setNewBudget({...newBudget, deliveryTime: e.target.value})} placeholder="Ex: 5 dias úteis" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]" htmlFor="newServiceWarranty">Garantia do Serviço</Label>
+                    <Input id="newServiceWarranty" value={newBudget.serviceWarranty || ''} onChange={e => setNewBudget({...newBudget, serviceWarranty: e.target.value})} placeholder="Ex: 90 dias" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
                 </div>
                 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -18731,6 +19089,32 @@ function BudgetsManager({
               <div className="space-y-2">
                 <Label className="text-[#a0a0a0]">Endereço</Label>
                 <Input value={editingBudget.address || ''} onChange={e => setEditingBudget({...editingBudget, address: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Responsável do Cliente (Opcional)</Label>
+                  <Input value={editingBudget.responsibleName || ''} onChange={e => setEditingBudget({...editingBudget, responsibleName: e.target.value})} placeholder="Nome de quem assina pelo cliente" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">CPF/CNPJ do Cliente (Opcional)</Label>
+                  <Input value={editingBudget.clientDocument || ''} onChange={e => setEditingBudget({...editingBudget, clientDocument: e.target.value})} placeholder="Ex: 00.000.000/0000-00" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]" htmlFor="editProposalValidity">Validade da Proposta</Label>
+                  <Input id="editProposalValidity" value={editingBudget.proposalValidity || ''} onChange={e => setEditingBudget({...editingBudget, proposalValidity: e.target.value})} placeholder="Ex: 15 dias" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]" htmlFor="editDeliveryTime">Prazo de Entrega</Label>
+                  <Input id="editDeliveryTime" value={editingBudget.deliveryTime || ''} onChange={e => setEditingBudget({...editingBudget, deliveryTime: e.target.value})} placeholder="Ex: 5 dias úteis" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]" htmlFor="editServiceWarranty">Garantia do Serviço</Label>
+                  <Input id="editServiceWarranty" value={editingBudget.serviceWarranty || ''} onChange={e => setEditingBudget({...editingBudget, serviceWarranty: e.target.value})} placeholder="Ex: 90 dias" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
