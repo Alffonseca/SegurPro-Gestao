@@ -1045,14 +1045,10 @@ const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettin
   doc.setFontSize(9);
   doc.text('CONTRATANTE', margin + 40, currentY + 5, { align: 'center' });
   doc.setFont('helvetica', 'bold');
-  doc.text(client.name || '', margin + 40, currentY + 10, { align: 'center' });
+  doc.text(client.name || 'Cliente Sem Nome', margin + 40, currentY + 10, { align: 'center' });
   doc.setFont('helvetica', 'normal');
-  let clientDetails = [];
-  if (client.document) clientDetails.push(client.document);
-  if (client.responsible) clientDetails.push(`Rep: ${client.responsible}`);
-  if (clientDetails.length > 0) {
-    doc.text(clientDetails.join(' - '), margin + 40, currentY + 15, { align: 'center' });
-  }
+  doc.text(client.document || '___________________________', margin + 40, currentY + 14, { align: 'center' });
+  doc.text(client.responsible || '___________________________', margin + 40, currentY + 18, { align: 'center' });
   
   doc.text('CONTRATADO', margin + 130, currentY + 5, { align: 'center' });
   doc.setFont('helvetica', 'bold');
@@ -1068,7 +1064,7 @@ const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettin
   doc.save(`contrato_${(client.name || 'cliente').replace(/\s/g, '_')}.pdf`);
 };
 
-const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSettings, pixSettings: PixSettings, includeValues = false) => {
+const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSettings, pixSettings: PixSettings, includeValues = false, clients: Client[] = []) => {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -1150,8 +1146,17 @@ const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSetting
   drawSectionTitle('1. Dados do Cliente e Agendamento');
 
   const boxWidth = (contentWidth / 2) - 3;
-  const boxHeight = 24; // Compact box height
   const startY = currentY;
+
+  // Split lines first to calculate height dynamically
+  const clientNameLines = doc.splitTextToSize(os.clientName || 'N/A', boxWidth - 18);
+  const addressLinesBox = doc.splitTextToSize(os.address || 'N/A', boxWidth - 22);
+  const equipLinesBox = doc.splitTextToSize(os.equipment || 'N/A', boxWidth - 18);
+  const brandLinesBox = doc.splitTextToSize(os.brandModelSN || 'N/A', boxWidth - 18);
+
+  const leftHeightNeeded = 10 + (clientNameLines.length * 3.5) + (addressLinesBox.length * 3.5) + 6;
+  const rightHeightNeeded = 10 + (equipLinesBox.length * 3.5) + (brandLinesBox.length * 3.5) + 6;
+  const boxHeight = Math.max(leftHeightNeeded, rightHeightNeeded, 28);
 
   // Draw Box 1: Client Data
   doc.setDrawColor(200, 200, 200);
@@ -1171,15 +1176,13 @@ const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSetting
   doc.setFont('helvetica', 'bold');
   doc.text('NOME:', margin + 2, clientY);
   doc.setFont('helvetica', 'normal');
-  const clientNameLines = doc.splitTextToSize(os.clientName || 'N/A', boxWidth - 18);
-  doc.text(clientNameLines, margin + 15, clientY);
+  doc.text(clientNameLines, margin + 18, clientY);
   clientY += (clientNameLines.length * 3.5);
 
   doc.setFont('helvetica', 'bold');
   doc.text('ENDEREÇO:', margin + 2, clientY);
   doc.setFont('helvetica', 'normal');
-  const addressLinesBox = doc.splitTextToSize(os.address || 'N/A', boxWidth - 22);
-  doc.text(addressLinesBox, margin + 20, clientY);
+  doc.text(addressLinesBox, margin + 22, clientY);
   clientY += (addressLinesBox.length * 3.5);
 
   doc.setFont('helvetica', 'bold');
@@ -1202,15 +1205,13 @@ const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSetting
   doc.setFont('helvetica', 'bold');
   doc.text('EQUIP:', col2X + 2, equipY);
   doc.setFont('helvetica', 'normal');
-  const equipLinesBox = doc.splitTextToSize(os.equipment || 'N/A', boxWidth - 18);
-  doc.text(equipLinesBox, col2X + 15, equipY);
+  doc.text(equipLinesBox, col2X + 18, equipY);
   equipY += (equipLinesBox.length * 3.5);
 
   doc.setFont('helvetica', 'bold');
   doc.text('MARCA:', col2X + 2, equipY);
   doc.setFont('helvetica', 'normal');
-  const brandLinesBox = doc.splitTextToSize(os.brandModelSN || 'N/A', boxWidth - 18);
-  doc.text(brandLinesBox, col2X + 15, equipY);
+  doc.text(brandLinesBox, col2X + 18, equipY);
   equipY += (brandLinesBox.length * 3.5);
 
   doc.setFont('helvetica', 'bold');
@@ -1409,11 +1410,18 @@ const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSetting
     doc.text(techName, margin + 40, currentY + 8, { align: 'center' });
   }
 
-  doc.text('Assinatura do Cliente (Ciente)', pageWidth - margin - 40, currentY + 4, { align: 'center' });
-  doc.text(os.clientName || 'Cliente Sem Nome', pageWidth - margin - 40, currentY + 8, { align: 'center' });
-  if (os.contactName) {
-    doc.text(`Responsável: ${os.contactName}`, pageWidth - margin - 40, currentY + 11.5, { align: 'center' });
-  }
+  const clientRegistry = clients?.find(c => c.id === os.clientId || (c.name && c.name.toLowerCase().trim() === os.clientName?.toLowerCase().trim()));
+  const osClientName = clientRegistry?.name || os.clientName || 'Cliente Sem Nome';
+  const osClientDoc = clientRegistry?.document || os.clientDocument || '___________________________';
+  const osClientResp = clientRegistry?.responsible || os.contactName || '___________________________';
+
+  doc.text('Assinatura do Cliente', pageWidth - margin - 40, currentY + 4, { align: 'center' });
+  let clientLabelY = currentY + 8;
+  doc.text(osClientName, pageWidth - margin - 40, clientLabelY, { align: 'center' });
+  clientLabelY += 3.5;
+  doc.text(osClientDoc, pageWidth - margin - 40, clientLabelY, { align: 'center' });
+  clientLabelY += 3.5;
+  doc.text(osClientResp, pageWidth - margin - 40, clientLabelY, { align: 'center' });
   
   if (os.technicianSignature) {
     try { doc.addImage(os.technicianSignature, 'PNG', margin + 20, currentY - 14, 40, 13); } catch(e) {}
@@ -1573,6 +1581,7 @@ interface ServiceOrder {
   address: string;
   contact: string;
   contactName?: string;
+  clientDocument?: string;
   
   // Equipment Info
   equipment: string;
@@ -1617,6 +1626,7 @@ interface TechnicalVisit {
   clientName: string;
   clientPhone: string;
   address: string;
+  clientDocument?: string;
   date: any; // Firestore Timestamp
   scheduledTime?: string;
   expectedDate?: any; // Data prevista
@@ -13858,11 +13868,18 @@ function VisitsManager({
     doc.text('Assinatura do Técnico', margin + 40, currentY + 4, { align: 'center' });
     doc.text(isAndre ? (appSettings.responsible || techName) : techName, margin + 40, currentY + 8, { align: 'center' });
     
+    const clientRegistry = clients?.find(c => c.id === visit.clientId || (c.name && c.name.toLowerCase().trim() === visit.clientName?.toLowerCase().trim()));
+    const vClientName = clientRegistry?.name || visit.clientName || 'Cliente Sem Nome';
+    const vClientDoc = clientRegistry?.document || visit.clientDocument || '___________________________';
+    const vClientResp = clientRegistry?.responsible || visit.responsibleName || '___________________________';
+
     doc.text('Assinatura do Cliente', pageWidth - margin - 40, currentY + 4, { align: 'center' });
-    doc.text(visit.clientName || 'Cliente Sem Nome', pageWidth - margin - 40, currentY + 8, { align: 'center' });
-    if (visit.responsibleName) {
-      doc.text(`Responsável: ${visit.responsibleName}`, pageWidth - margin - 40, currentY + 11.5, { align: 'center' });
-    }
+    let clientLabelY = currentY + 8;
+    doc.text(vClientName, pageWidth - margin - 40, clientLabelY, { align: 'center' });
+    clientLabelY += 3.5;
+    doc.text(vClientDoc, pageWidth - margin - 40, clientLabelY, { align: 'center' });
+    clientLabelY += 3.5;
+    doc.text(vClientResp, pageWidth - margin - 40, clientLabelY, { align: 'center' });
 
     if (visit.technicianSignature) {
       try { doc.addImage(visit.technicianSignature, 'PNG', margin + 20, currentY - 14, 40, 13); } catch(e) {}
@@ -14092,7 +14109,8 @@ function VisitsManager({
                         clientName: client.name,
                         clientPhone: client.phone,
                         address: client.address,
-                        responsibleName: client.responsible || ''
+                        responsibleName: client.responsible || '',
+                        clientDocument: client.document || ''
                       });
                     }
                   }}>
@@ -14202,14 +14220,18 @@ function VisitsManager({
                   <Label htmlFor="observations" className="text-[#a0a0a0]">Observações Internas / Adicionais</Label>
                   <Input id="observations" value={newVisit.observations || ''} onChange={e => setNewVisit({...newVisit, observations: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="techName" className="text-[#a0a0a0]">Nome do Técnico</Label>
                     <Input id="techName" value={newVisit.technicianName || ''} onChange={e => setNewVisit({...newVisit, technicianName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="responsibleName" className="text-[#a0a0a0]">Responsável no Local</Label>
-                    <Input id="responsibleName" value={newVisit.responsibleName || ''} onChange={e => setNewVisit({...newVisit, responsibleName: e.target.value})} placeholder="Nome de quem acompanhará" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    <Input id="responsibleName" value={newVisit.responsibleName || ''} onChange={e => setNewVisit({...newVisit, responsibleName: e.target.value})} placeholder="Quem acompanhará" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="clientDocument" className="text-[#a0a0a0]">CPF/CNPJ do Cliente</Label>
+                    <Input id="clientDocument" value={newVisit.clientDocument || ''} onChange={e => setNewVisit({...newVisit, clientDocument: e.target.value})} placeholder="Ex: 00.000.000/0000-00" className="bg-[#0f1115] border-[#2d3139] text-white" />
                   </div>
                 </div>
                 <div className="space-y-4 pt-4 border-t border-[#2d3139]/50">
@@ -14818,7 +14840,7 @@ function VisitsManager({
                     <Input id="editVal" type="number" value={editingVisit.totalValue || ''} onChange={e => setEditingVisit({...editingVisit, totalValue: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="editTechName" className="text-[#a0a0a0]">Nome do Técnico</Label>
                     <Input id="editTechName" value={editingVisit.technicianName || ''} onChange={e => setEditingVisit({...editingVisit, technicianName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
@@ -14826,6 +14848,10 @@ function VisitsManager({
                   <div className="space-y-2">
                     <Label htmlFor="editResponsibleName" className="text-[#a0a0a0]">Responsável no Local</Label>
                     <Input id="editResponsibleName" value={editingVisit.responsibleName || ''} onChange={e => setEditingVisit({...editingVisit, responsibleName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="editClientDocument" className="text-[#a0a0a0]">CPF/CNPJ do Cliente</Label>
+                    <Input id="editClientDocument" value={editingVisit.clientDocument || ''} onChange={e => setEditingVisit({...editingVisit, clientDocument: e.target.value})} placeholder="Ex: 00.000.000/0000-00" className="bg-[#0f1115] border-[#2d3139] text-white" />
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -16656,7 +16682,8 @@ function ServiceOrdersManager({
                       clientName: c.name || '', 
                       address: c.address || '', 
                       contact: c.phone || '',
-                      contactName: c.responsible || ''
+                      contactName: c.responsible || '',
+                      clientDocument: c.document || ''
                     });
                   }}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white tracking-widest uppercase text-[10px] font-black h-10">
@@ -16694,6 +16721,28 @@ function ServiceOrdersManager({
                       {users.map(u => <SelectItem key={u.uid} value={u.uid}>{u.displayName || u.email}</SelectItem>)}
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+
+              {/* Responsável e CPF/CNPJ do Cliente */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Responsável do Cliente (Opcional)</Label>
+                  <Input 
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                    value={newOS.contactName || ''} 
+                    onChange={e => setNewOS({...newOS, contactName: e.target.value})} 
+                    placeholder="Nome de quem assina pelo cliente" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>CPF/CNPJ do Cliente (Opcional)</Label>
+                  <Input 
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                    value={newOS.clientDocument || ''} 
+                    onChange={e => setNewOS({...newOS, clientDocument: e.target.value})} 
+                    placeholder="Ex: 00.000.000/0000-00" 
+                  />
                 </div>
               </div>
 
@@ -17188,6 +17237,28 @@ function ServiceOrdersManager({
                   </div>
                 </div>
 
+                {/* Responsável e CPF/CNPJ do Cliente (Editar) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Responsável do Cliente (Opcional)</Label>
+                    <Input 
+                      className="bg-[#0f1115] border-[#2d3139]" 
+                      value={editingOS.contactName || ''} 
+                      onChange={e => setEditingOS({...editingOS, contactName: e.target.value})} 
+                      placeholder="Nome de quem assina pelo cliente" 
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>CPF/CNPJ do Cliente (Opcional)</Label>
+                    <Input 
+                      className="bg-[#0f1115] border-[#2d3139]" 
+                      value={editingOS.clientDocument || ''} 
+                      onChange={e => setEditingOS({...editingOS, clientDocument: e.target.value})} 
+                      placeholder="Ex: 00.000.000/0000-00" 
+                    />
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label>Equipamento</Label>
@@ -17383,7 +17454,7 @@ function ServiceOrdersManager({
             <Button 
               variant="outline" 
               onClick={async () => {
-                if (selectedOSForPDF) await generateServiceOrderPDF(selectedOSForPDF, appSettings, pixSettings, false);
+                if (selectedOSForPDF) await generateServiceOrderPDF(selectedOSForPDF, appSettings, pixSettings, false, clients);
                 setIsValuesModalOpen(false);
               }} 
               className="flex-1 border-[#2d3139] text-white hover:bg-[#2d3139]"
@@ -17392,7 +17463,7 @@ function ServiceOrdersManager({
             </Button>
             <Button 
               onClick={async () => {
-                if (selectedOSForPDF) await generateServiceOrderPDF(selectedOSForPDF, appSettings, pixSettings, true);
+                if (selectedOSForPDF) await generateServiceOrderPDF(selectedOSForPDF, appSettings, pixSettings, true, clients);
                 setIsValuesModalOpen(false);
               }} 
               className="flex-1 bg-[#3b82f6] hover:bg-[#2563eb] text-white"
@@ -17917,7 +17988,9 @@ function BudgetsManager({
     const delText = doc.splitTextToSize(budget.deliveryTime || 'A combinar', boxWidth - 40);
     const warText = doc.splitTextToSize(budget.serviceWarranty || '90 dias', boxWidth - 40);
 
-    const leftHeightNeeded = 10 + (clientNameSplitted.length * 3.5) + 1.5 + (addressLines.length * 3.5) + 1.5 + 5;
+    const leftHeightNeeded = 10 + (clientNameSplitted.length * 3.5) + 1.5 + (addressLines.length * 3.5) + 1.5 + 5
+                             + (budget.clientDocument ? 5 : 0)
+                             + (budget.responsibleName ? 5 : 0);
     const rightHeightNeeded = 10 + (valText.length * 3.5) + 1.5 + (delText.length * 3.5) + 1.5 + (warText.length * 3.5) + 5;
     const boxHeight = Math.max(leftHeightNeeded, rightHeightNeeded, 28);
 
@@ -17952,6 +18025,23 @@ function BudgetsManager({
     doc.text('FONE:', margin + 2, clientY);
     doc.setFont('helvetica', 'normal');
     doc.text(`${budget.clientPhone || 'N/A'}`, margin + 12, clientY);
+    clientY += 5;
+
+    if (budget.clientDocument) {
+      doc.setFont('helvetica', 'bold');
+      doc.text('CNPJ/CPF:', margin + 2, clientY);
+      doc.setFont('helvetica', 'normal');
+      doc.text(budget.clientDocument, margin + 20, clientY);
+      clientY += 5;
+    }
+
+    if (budget.responsibleName) {
+      doc.setFont('helvetica', 'bold');
+      doc.text('RESPONSÁVEL:', margin + 2, clientY);
+      doc.setFont('helvetica', 'normal');
+      doc.text(budget.responsibleName, margin + 26, clientY);
+      clientY += 5;
+    }
 
     // Right Column: Proposal Data Box
     const rightColX = margin + boxWidth + 6;
@@ -18155,12 +18245,19 @@ function BudgetsManager({
     doc.line(margin + 10, currentY, margin + 70, currentY);
     doc.line(pageWidth - margin - 70, currentY, pageWidth - margin - 10, currentY);
     
+    const clientRegistry = clients?.find(c => c.id === budget.clientId || (c.name && c.name.toLowerCase().trim() === budget.clientName?.toLowerCase().trim()));
+    const bClientName = clientRegistry?.name || budget.clientName || 'Cliente Sem Nome';
+    const bClientDoc = clientRegistry?.document || budget.clientDocument || '___________________________';
+    const bClientResp = clientRegistry?.responsible || budget.responsibleName || '___________________________';
+
     doc.setFontSize(7.5);
     doc.text('Assinatura do Cliente', margin + 40, currentY + 4, { align: 'center' });
-    doc.text(budget.clientName || 'Cliente_Sem_Nome', margin + 40, currentY + 8, { align: 'center' });
-    if (budget.responsibleName) {
-      doc.text(`Responsável: ${budget.responsibleName}`, margin + 40, currentY + 11.5, { align: 'center' });
-    }
+    let clientLabelY = currentY + 8;
+    doc.text(bClientName, margin + 40, clientLabelY, { align: 'center' });
+    clientLabelY += 3.5;
+    doc.text(bClientDoc, margin + 40, clientLabelY, { align: 'center' });
+    clientLabelY += 3.5;
+    doc.text(bClientResp, margin + 40, clientLabelY, { align: 'center' });
     
     doc.text('Assinatura da Empresa', pageWidth - margin - 40, currentY + 4, { align: 'center' });
     doc.text(appSettings.companyName || '', pageWidth - margin - 40, currentY + 8, { align: 'center' });
