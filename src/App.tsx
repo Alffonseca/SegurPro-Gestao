@@ -1435,6 +1435,221 @@ const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSetting
   doc.save(`OS_${formatRecordNumber(os.number, os.date).replace('/', '-')}.pdf`);
 };
 
+const generateDeliveryReceiptPDF = async (os: ServiceOrder, appSettings: AppSettings, clients: Client[] = []) => {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 15;
+  const contentWidth = pageWidth - (margin * 2);
+  let currentY = 15;
+
+  const drawLine = () => {
+    doc.setDrawColor(200, 200, 200);
+    doc.line(margin, currentY, pageWidth - margin, currentY);
+    currentY += 4;
+  };
+
+  const drawSectionTitle = (title: string) => {
+    doc.setFillColor(242, 245, 249);
+    doc.rect(margin, currentY, contentWidth, 6, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(30, 41, 59);
+    doc.text(title.toUpperCase(), margin + 2, currentY + 4.2);
+    currentY += 8;
+  };
+
+  const checkPageBreakInGenerator = (neededHeight: number) => {
+    if (currentY + neededHeight > pageHeight - 15) {
+      doc.addPage();
+      currentY = 15;
+      return true;
+    }
+    return false;
+  };
+
+  // 1. HEADER WITH LOGO
+  if (appSettings.logoUrl) {
+    try {
+      doc.addImage(appSettings.logoUrl, 'PNG', margin, currentY, 16, 16);
+    } catch (e) {
+      console.error("Erro logo Comprovante:", e);
+    }
+  }
+
+  // Company Name
+  doc.setFontSize(13);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42); // slate 900
+  const companyName = appSettings.companyName || '';
+  const companyNameLines = doc.splitTextToSize(companyName, contentWidth / 2);
+  doc.text(companyNameLines, appSettings.logoUrl ? margin + 20 : margin, currentY + 5);
+  
+  // Company Address & Details
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(71, 85, 105); // slate 600
+  const addressLine = `${appSettings.address || ''}${appSettings.neighborhood ? `, ${appSettings.neighborhood}` : ''}`;
+  const addressLines = doc.splitTextToSize(addressLine, contentWidth / 2);
+  const headerTextY = currentY + 5 + (companyNameLines.length * 4.5);
+  doc.text(addressLines, appSettings.logoUrl ? margin + 20 : margin, headerTextY);
+  doc.text(`${appSettings.city || ''} - CEP: ${appSettings.cep || ''}`, appSettings.logoUrl ? margin + 20 : margin, headerTextY + (addressLines.length * 3.8));
+
+  // Document Title & Company Info on the Right
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(59, 130, 246); // Brand blue
+  doc.text('COMPROVANTE DE ENTREGA', pageWidth - margin, currentY + 6, { align: 'right' });
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 100, 100);
+  if (appSettings.document) {
+    doc.text(`CNPJ: ${appSettings.document}`, pageWidth - margin, currentY + 11.5, { align: 'right' });
+  }
+  if (appSettings.companyPhone) {
+    doc.text(`Telefone / WhatsApp: ${appSettings.companyPhone}`, pageWidth - margin, currentY + 15.5, { align: 'right' });
+  }
+
+  currentY += Math.max(18, 5 + (companyNameLines.length * 4.5) + (addressLines.length * 3.8) + 4);
+  drawLine();
+  currentY += 2;
+
+  // Find Client Register
+  const clientRegistry = clients?.find(c => c.id === os.clientId || (c.name && c.name.toLowerCase().trim() === os.clientName?.toLowerCase().trim()));
+  const clientName = clientRegistry?.name || os.clientName || 'Cliente Sem Nome';
+  const clientDoc = clientRegistry?.document || os.clientDocument || '___________________________';
+  const clientPhone = clientRegistry?.phone || os.contact || '___________________________';
+
+  // 1. DADOS DO CLIENTE
+  drawSectionTitle('Dados do Cliente');
+  
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Nome do Cliente:', margin, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(51, 65, 85);
+  doc.text(clientName, margin + 28, currentY);
+  currentY += 5;
+  
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('CPF / CNPJ:', margin, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(51, 65, 85);
+  doc.text(clientDoc, margin + 28, currentY);
+  currentY += 5;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('Telefone:', margin, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(51, 65, 85);
+  doc.text(clientPhone, margin + 28, currentY);
+  currentY += 8;
+
+  // 2. DADOS DO EQUIPAMENTO
+  drawSectionTitle('Dados do Equipamento');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('Equipamento:', margin, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(51, 65, 85);
+  doc.text(os.equipment || 'Não especificado', margin + 42, currentY);
+  currentY += 5;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('Marca / Modelo:', margin, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(51, 65, 85);
+  doc.text(os.brandModelSN || 'Não especificado', margin + 42, currentY);
+  currentY += 5;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('Acessórios entregues:', margin, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(51, 65, 85);
+  
+  // accessories - falls back to extra notes or standard default
+  const accessoriesText = os.notes || 'Carregador, bateria, cabos, capa (ou nenhum acessório adicional registrado)';
+  const splitAccessories = doc.splitTextToSize(accessoriesText, contentWidth - 42);
+  doc.text(splitAccessories, margin + 42, currentY);
+  currentY += (splitAccessories.length * 3.8) + 8;
+
+  // 3. TERMO DE RETIRADA E CONDIÇÕES
+  checkPageBreakInGenerator(40);
+  drawSectionTitle('Termo de Retirada e Condições');
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 23, 42);
+  
+  const osNumStr = os.number ? `OS nº ${formatRecordNumber(os.number, os.date)}` : '________';
+  const declarationText = `Declaro que estou recebendo o equipamento acima descrito da assistência técnica após a conclusão do serviço/orçamento. Confirmo que o equipamento foi testado na minha presença, encontra-se em perfeitas condições físicas e de funcionamento, e dou por encerrado o atendimento referente à Ordem de Serviço (OS) nº ${osNumStr}.`;
+  
+  const splitDeclaration = doc.splitTextToSize(declarationText, contentWidth);
+  doc.text(splitDeclaration, margin, currentY);
+  currentY += (splitDeclaration.length * 4) + 8;
+
+  // Data
+  const getFormattedCurrentDate = () => {
+    const months = [
+      'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+    ];
+    const today = new Date();
+    const day = String(today.getDate()).padStart(2, '0');
+    const month = months[today.getMonth()];
+    const year = today.getFullYear();
+    return `${day} de ${month} de ${year}`;
+  };
+
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Data da Entrega: ${getFormattedCurrentDate()}`, margin, currentY);
+  currentY += 20;
+
+  // Signature Block
+  checkPageBreakInGenerator(30);
+  
+  doc.setLineWidth(0.3);
+  doc.setDrawColor(150, 150, 150);
+  doc.line(pageWidth / 2 - 45, currentY, pageWidth / 2 + 45, currentY);
+  currentY += 4.5;
+  
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text('Assinatura do Cliente', pageWidth / 2, currentY, { align: 'center' });
+  currentY += 4;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.text(clientName, pageWidth / 2, currentY, { align: 'center' });
+  
+  if (clientDoc && clientDoc !== '___________________________') {
+    currentY += 3.5;
+    doc.text(`CPF / CNPJ: ${clientDoc}`, pageWidth / 2, currentY, { align: 'center' });
+  }
+
+  // Draw customer signature if available
+  if (os.clientSignature) {
+    try {
+      doc.addImage(os.clientSignature, 'PNG', pageWidth / 2 - 20, currentY - 22, 40, 12);
+    } catch (e) {
+      console.error("Erro comprovante assinatura:", e);
+    }
+  }
+
+  const filePrefix = os.number ? `Comprovante_Entrega_OS_${formatRecordNumber(os.number, os.date).replace('/', '-')}` : 'Comprovante_Entrega';
+  doc.save(`${filePrefix}.pdf`);
+};
+
 const generateOSLabelsPDF = (selectedOSs: ServiceOrder[], appSettings: AppSettings) => {
   // Configurando jsPDF para folha A4
   const doc = new jsPDF({
@@ -17043,12 +17258,20 @@ function ServiceOrdersManager({
                         </div>
                         <span className="text-[9px] text-[#71717a] truncate">{os.technicianName}</span>
                       </div>
-                      <Button variant="ghost" size="sm" className="h-5 px-1 text-[8px] bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white uppercase font-black tracking-tighter" onClick={(e) => {
-                        e.stopPropagation();
-                        generateOSLabelsPDF([os], appSettings);
-                      }}>
-                        Etiqueta
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="sm" className="h-5 px-1 text-[8px] bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white uppercase font-black tracking-tighter" onClick={(e) => {
+                          e.stopPropagation();
+                          generateOSLabelsPDF([os], appSettings);
+                        }}>
+                          Etiqueta
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-5 px-1 text-[8px] bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white uppercase font-black tracking-tighter" onClick={(e) => {
+                          e.stopPropagation();
+                          generateDeliveryReceiptPDF(os, appSettings, clients);
+                        }}>
+                          Entrega
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </Card>
@@ -17081,7 +17304,7 @@ function ServiceOrdersManager({
                     selectedRowId === os.id ? "bg-blue-500/10" : "hover:bg-[#25282e]/30"
                   )}
                 >
-                  <TableCell className="w-[150px] p-2">
+                  <TableCell className="w-[180px] p-2">
                     <div className="flex items-center gap-1.5 flex-nowrap">
                       <Button variant="outline" size="icon" title="Editar" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={(e) => {
                         e.stopPropagation();
@@ -17095,6 +17318,12 @@ function ServiceOrdersManager({
                         setIsValuesModalOpen(true);
                       }}>
                         PDF
+                      </Button>
+                      <Button variant="outline" size="sm" className="h-7 px-1 border-[#2d3139] text-emerald-500 hover:bg-emerald-500/10 text-[9px] font-bold" onClick={(e) => {
+                        e.stopPropagation();
+                        generateDeliveryReceiptPDF(os, appSettings, clients);
+                      }}>
+                        Entrega
                       </Button>
                       <Button variant="outline" size="icon" title="Excluir" className="h-7 w-7 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={(e) => {
                         e.stopPropagation();
