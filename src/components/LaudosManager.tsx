@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, addDoc, updateDoc, deleteDoc, doc, Timestamp } from '../firebase';
 import { format } from 'date-fns';
@@ -22,7 +22,8 @@ import {
   Notebook,
   Building,
   Printer,
-  ChevronRight
+  ChevronRight,
+  Upload
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { Button } from '@/components/ui/button';
@@ -65,6 +66,7 @@ export interface LaudoTecnico {
   recommendations: string; // Recomendações e Conclusões
   observations?: string;
   createdAt: any;
+  photos?: string[]; // base64 images of the location
 }
 
 interface LaudosManagerProps {
@@ -94,6 +96,143 @@ const formatRecordNumber = (number?: number | string) => {
   return String(number).padStart(5, '0');
 };
 
+const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 600): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+
+      // Scale calculations
+      if (width > height) {
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        // Compress as JPEG to make it lightweight
+        resolve(canvas.toDataURL('image/jpeg', 0.7));
+      } else {
+        resolve(base64Str);
+      }
+    };
+    img.onerror = () => {
+      resolve(base64Str);
+    };
+  });
+};
+
+interface PhotoUploaderProps {
+  photos: string[];
+  onChange: (photos: string[]) => void;
+}
+
+function PhotoUploader({ photos = [], onChange }: PhotoUploaderProps) {
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    setIsUploading(true);
+    const newPhotos = [...photos];
+
+    for (const file of files) {
+      if (newPhotos.length >= 6) {
+        toast.error("Limite máximo de 6 fotos atingido.");
+        break;
+      }
+
+      await new Promise<void>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          const rawBase64 = event.target?.result as string;
+          try {
+            const compressed = await compressImage(rawBase64);
+            newPhotos.push(compressed);
+          } catch (err) {
+            newPhotos.push(rawBase64);
+          }
+          resolve();
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    onChange(newPhotos);
+    setIsUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleRemovePhoto = (index: number) => {
+    const updated = photos.filter((_, i) => i !== index);
+    onChange(updated);
+  };
+
+  return (
+    <div className="space-y-3">
+      <Label className="text-[#a0a0a0] text-[#a0a0a0] text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
+        <Upload size={14} className="text-[#3b82f6]" />
+        Fotos do Local (Máx. 6)
+      </Label>
+      
+      <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+        {photos.map((photo, index) => (
+          <div key={index} className="relative group aspect-video rounded-lg overflow-hidden border border-[#2d3139] bg-[#0f1115]">
+            <img src={photo} alt={`Foto do local ${index + 1}`} className="w-full h-full object-cover" referrerpolicy="no-referrer" />
+            <button
+              type="button"
+              onClick={() => handleRemovePhoto(index)}
+              className="absolute top-1 right-1 bg-red-600 hover:bg-red-700 text-white rounded-full p-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+              title="Excluir foto"
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
+        ))}
+
+        {photos.length < 6 && (
+          <div 
+            onClick={() => fileInputRef.current?.click()}
+            className="flex flex-col items-center justify-center border border-dashed border-[#2d3139] hover:border-[#3b82f6]/50 bg-[#0f1115] hover:bg-[#2d3139]/20 transition-all rounded-lg aspect-video cursor-pointer text-center p-2 group"
+          >
+            {isUploading ? (
+              <Loader2 className="h-5 w-5 text-[#3b82f6] animate-spin" />
+            ) : (
+              <>
+                <Plus size={18} className="text-[#71717a] group-hover:text-[#3b82f6] transition-colors" />
+                <span className="text-[10px] text-[#71717a] group-hover:text-white mt-1 transition-colors font-bold uppercase tracking-widest">Adicionar</span>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+      <input 
+        type="file" 
+        ref={fileInputRef}
+        onChange={handleFileChange} 
+        multiple 
+        accept="image/*" 
+        className="hidden" 
+      />
+    </div>
+  );
+}
+
 export function LaudosManager({ 
   laudos = [], 
   clients = [], 
@@ -119,7 +258,8 @@ export function LaudosManager({
     address: '',
     clientId: '',
     clientName: '',
-    visitId: ''
+    visitId: '',
+    photos: []
   });
   const [editingLaudo, setEditingLaudo] = useState<LaudoTecnico | null>(null);
   
@@ -199,7 +339,8 @@ export function LaudosManager({
         recommendations: newLaudo.recommendations || '',
         observations: newLaudo.observations || '',
         companyId,
-        createdAt: Timestamp.now()
+        createdAt: Timestamp.now(),
+        photos: newLaudo.photos || []
       };
 
       const docRef = await addDoc(collection(db, 'laudos'), laudoData);
@@ -218,7 +359,8 @@ export function LaudosManager({
         address: '',
         clientId: '',
         clientName: '',
-        visitId: ''
+        visitId: '',
+        photos: []
       });
       setIsAddOpen(false);
       toast.success('Laudo Técnico cadastrado com sucesso!');
@@ -250,7 +392,8 @@ export function LaudosManager({
       const { id, ...data } = editingLaudo;
       const updatedData = {
         ...data,
-        date: editingLaudo.date ? Timestamp.fromDate(new Date(editingLaudo.date)) : Timestamp.now()
+        date: editingLaudo.date ? Timestamp.fromDate(new Date(editingLaudo.date)) : Timestamp.now(),
+        photos: editingLaudo.photos || []
       };
 
       await updateDoc(doc(db, 'laudos', id), updatedData);
@@ -475,6 +618,45 @@ export function LaudosManager({
       drawSection('5. Informações Complementares', laudo.observations);
     }
 
+    // Photographic record
+    if (laudo.photos && laudo.photos.length > 0) {
+      checkPageBreak(40);
+      drawSectionTitle('MÓDULO FOTOGRÁFICO - REGISTRO DE INSPEÇÃO');
+      
+      let photoY = currentY;
+      const colWidth = (contentWidth / 2) - 3;
+      const photoHeight = 35; // height of image on PDF
+
+      for (let index = 0; index < laudo.photos.length; index++) {
+        const photo = laudo.photos[index];
+        const isNewRow = index % 2 === 0;
+        const xOffset = isNewRow ? margin : margin + colWidth + 6;
+        
+        if (isNewRow && (photoY + photoHeight + 10 > pageHeight - 15)) {
+          docPdf.addPage();
+          photoY = 12;
+        }
+
+        try {
+          docPdf.addImage(photo, 'JPEG', xOffset, photoY, colWidth, photoHeight);
+          docPdf.setDrawColor(200, 200, 200);
+          docPdf.rect(xOffset, photoY, colWidth, photoHeight);
+          
+          docPdf.setFont('helvetica', 'normal');
+          docPdf.setFontSize(7.5);
+          docPdf.setTextColor(100, 100, 100);
+          docPdf.text(`Foto ${index + 1} - Registro da Visita`, xOffset + 2, photoY + photoHeight + 4);
+        } catch (e) {
+          console.error("Erro ao inserir foto no PDF:", e);
+        }
+
+        if (!isNewRow || index === laudo.photos.length - 1) {
+          photoY += photoHeight + 8;
+        }
+      }
+      currentY = photoY + 2;
+    }
+
     // Signatures
     checkPageBreak(22);
     currentY += 4;
@@ -574,7 +756,9 @@ export function LaudosManager({
                     <Label className="text-[#a0a0a0]">Selecione o Cliente</Label>
                     <Select value={newLaudo.clientId} onValueChange={(val) => handleClientChange(val)}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                        <SelectValue placeholder="Selecione um cliente..." />
+                        <SelectValue placeholder="Selecione um cliente...">
+                          {newLaudo.clientId ? (clients.find(c => c.id === newLaudo.clientId)?.name || "Cliente Sem Nome") : "Selecione um cliente..."}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         {clients.map(c => (
@@ -682,6 +866,13 @@ export function LaudosManager({
                   />
                 </div>
 
+                <div className="space-y-2 border-t border-[#2d3139]/30 pt-4">
+                  <PhotoUploader 
+                    photos={newLaudo.photos || []} 
+                    onChange={(photos) => setNewLaudo({...newLaudo, photos})} 
+                  />
+                </div>
+
                 <div className="space-y-2">
                   <Label className="text-[#a0a0a0]">Status do Documento</Label>
                   <Select value={newLaudo.status} onValueChange={(val: 'Rascunho' | 'Finalizado') => setNewLaudo({...newLaudo, status: val})}>
@@ -770,7 +961,8 @@ export function LaudosManager({
                             onClick={() => {
                               setEditingLaudo({
                                 ...laudo,
-                                date: laudo.date ? format(safeParseDate(laudo.date), "yyyy-MM-dd") : ''
+                                date: laudo.date ? format(safeParseDate(laudo.date), "yyyy-MM-dd") : '',
+                                photos: laudo.photos || []
                               });
                               setIsEditOpen(true);
                             }}
@@ -847,7 +1039,8 @@ export function LaudosManager({
                         onClick={() => {
                           setEditingLaudo({
                             ...laudo,
-                            date: laudo.date ? format(safeParseDate(laudo.date), "yyyy-MM-dd") : ''
+                            date: laudo.date ? format(safeParseDate(laudo.date), "yyyy-MM-dd") : '',
+                            photos: laudo.photos || []
                           });
                           setIsEditOpen(true);
                         }}
@@ -896,7 +1089,9 @@ export function LaudosManager({
                     <Label className="text-[#a0a0a0]">Selecione o Cliente</Label>
                     <Select value={editingLaudo.clientId} onValueChange={(val) => handleClientChange(val, true)}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                        <SelectValue />
+                        <SelectValue placeholder="Selecione um cliente...">
+                          {editingLaudo.clientId ? (clients.find(c => c.id === editingLaudo.clientId)?.name || "Cliente Sem Nome") : "Selecione um cliente..."}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         {clients.map(c => (
@@ -995,6 +1190,13 @@ export function LaudosManager({
                     value={editingLaudo.observations || ''} 
                     onChange={e => setEditingLaudo({...editingLaudo, observations: e.target.value})} 
                     className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  />
+                </div>
+
+                <div className="space-y-2 border-t border-[#2d3139]/30 pt-4">
+                  <PhotoUploader 
+                    photos={editingLaudo.photos || []} 
+                    onChange={(photos) => setEditingLaudo({...editingLaudo, photos})} 
                   />
                 </div>
 
