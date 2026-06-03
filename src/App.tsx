@@ -3284,6 +3284,55 @@ export default function MainApp() {
     }
   };
 
+  const sessionLoggedRef = useRef<string | null>(null);
+
+  // Registro de entrada no sistema (login / abertura do app)
+  useEffect(() => {
+    if (user && currentUserData?.companyId) {
+      const sessionKey = `${user.uid}-${currentUserData.companyId}`;
+      if (sessionLoggedRef.current !== sessionKey) {
+        sessionLoggedRef.current = sessionKey;
+        logAction('login', 'system', `Entrou no sistema`);
+      }
+    } else if (!user) {
+      sessionLoggedRef.current = null;
+    }
+  }, [user, currentUserData?.companyId]);
+
+  // Listener para notificar o usuário master em tempo real quando algum colaborador entra no sistema
+  useEffect(() => {
+    if (!user || !effectiveCompanyId || !isSuperAdmin) return;
+
+    // Apenas entradas ocorridas APÓS o início da sessão do master atual
+    const sessionStartTime = Timestamp.now();
+
+    const q = query(
+      collection(db, 'logs'),
+      where('companyId', '==', effectiveCompanyId),
+      where('action', '==', 'login'),
+      where('timestamp', '>', sessionStartTime)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === 'added') {
+          const logData = change.doc.data();
+          // Não notifica se o próprio usuário master for quem entrou
+          if (logData.userId !== user.uid) {
+            toast.info(`Colaborador ${logData.userName || logData.userEmail || 'Desconhecido'} acabou de entrar no sistema!`, {
+              icon: '👋',
+              duration: 6000
+            });
+          }
+        }
+      });
+    }, (error) => {
+      console.error("Erro no listener de logins de colaboradores:", error);
+    });
+
+    return () => unsubscribe();
+  }, [user, effectiveCompanyId, isSuperAdmin]);
+
   // User Heartbeat (Online Status)
   useEffect(() => {
     if (!user || !currentUserData?.companyId) return;
