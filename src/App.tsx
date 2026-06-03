@@ -1759,20 +1759,55 @@ const generateOSLabelsPDF = (selectedOSs: ServiceOrder[], appSettings: AppSettin
     };
 
     drawField('Cliente:', os.clientName);
-    drawField('Início:', formatDateSafe(os.startDateTime));
-    drawField('Fim:', os.status === 'Concluído' ? formatDateSafe(os.updatedAt || os.endDateTime) : formatDateSafe(os.endDateTime));
-    drawField('Eqp/Mod:', `${os.equipment} ${os.brandModelSN}`);
-    drawField('Técnico:', os.technicianName || 'N/A');
-    drawField('Status:', os.status);
+    drawField('Eqp/Mod:', `${os.equipment || ''} ${os.brandModelSN || ''}`.trim());
 
-    // Anotações
+    // Início e Fim lado a lado para economizar espaço vertical
     doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.text('Início:', startX + internalMargin, currentY);
+    doc.setFont('helvetica', 'normal');
+    const startStr = formatDateSafe(os.startDateTime);
+    doc.text(startStr, startX + internalMargin + 8, currentY);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Fim:', startX + internalMargin + (contentWidth / 2) + 2, currentY);
+    doc.setFont('helvetica', 'normal');
+    const endStr = os.status === 'Concluído' ? formatDateSafe(os.updatedAt || os.endDateTime) : formatDateSafe(os.endDateTime);
+    doc.text(endStr, startX + internalMargin + (contentWidth / 2) + 8, currentY);
+    
+    currentY += rowHeightText;
+
+    // Técnico e Status lado a lado para economizar mais espaço vertical
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.text('Téc:', startX + internalMargin, currentY);
+    doc.setFont('helvetica', 'normal');
+    const techName = (os.technicianName || 'N/A').split(' ')[0]; // primeiro nome
+    doc.text(techName, startX + internalMargin + 6, currentY);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Status:', startX + internalMargin + (contentWidth / 2) + 2, currentY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(os.status || 'N/A', startX + internalMargin + (contentWidth / 2) + 12, currentY);
+
+    currentY += rowHeightText + 1;
+
+    // Anotações com espaço garantido e limitadora de layout inteligente
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
     doc.text('Anotações:', startX + internalMargin, currentY);
     currentY += 3;
+    
     doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
     const noteText = os.notes || '';
     const splitNote = doc.splitTextToSize(noteText, contentWidth);
-    const visibleNote = splitNote.slice(0, 2);
+    
+    // Calcula quantas linhas de nota cabem até o limite da etiqueta (startY + labelHeight - internalMargin)
+    const spaceLeft = (startY + labelHeight - internalMargin) - currentY;
+    const maxLinesPossible = Math.max(1, Math.floor(spaceLeft / 3));
+    const visibleNote = splitNote.slice(0, maxLinesPossible);
+    
     doc.text(visibleNote, startX + internalMargin, currentY);
 
     // Reset line width for next label
@@ -12941,6 +12976,30 @@ function Dashboard({
   receivables?: any[]
 }) {
   const [weekOffset, setWeekOffset] = useState(0);
+  const [selectedForecastMonth, setSelectedForecastMonth] = useState<number>(() => {
+    const today = new Date();
+    return (today.getMonth() + 1) % 12;
+  });
+  const [selectedForecastYear, setSelectedForecastYear] = useState<number>(() => {
+    const today = new Date();
+    const nextMonthDate = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+    return nextMonthDate.getFullYear();
+  });
+
+  const monthsList = [
+    { label: 'Jan', index: 0 },
+    { label: 'Fev', index: 1 },
+    { label: 'Mar', index: 2 },
+    { label: 'Abr', index: 3 },
+    { label: 'Mai', index: 4 },
+    { label: 'Jun', index: 5 },
+    { label: 'Jul', index: 6 },
+    { label: 'Ago', index: 7 },
+    { label: 'Set', index: 8 },
+    { label: 'Out', index: 9 },
+    { label: 'Nov', index: 10 },
+    { label: 'Dez', index: 11 }
+  ];
 
   const visitsByDay = useMemo(() => {
     const today = new Date();
@@ -13048,25 +13107,23 @@ function Dashboard({
   }, [visits]);
 
   const nextMonthForecastData = useMemo(() => {
-    const today = new Date();
-    const nextMonthDate = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-    const nextMonthYear = nextMonthDate.getFullYear();
-    const nextMonthMonth = nextMonthDate.getMonth(); // 0-indexed
+    const forecastYear = selectedForecastYear;
+    const forecastMonth = selectedForecastMonth; // 0-indexed
 
-    const daysInMonth = new Date(nextMonthYear, nextMonthMonth + 1, 0).getDate();
+    const daysInMonth = new Date(forecastYear, forecastMonth + 1, 0).getDate();
 
-    // 1. Compile projected contract values from client records for next month
+    // 1. Compile projected contract values from client records for selected month
     const activeContracts = (clients || []).filter(c => c.type === 'Contrato');
     const contractProjections = activeContracts.map(client => {
       const val = Number(client.contractValue || 0);
       const paymentDay = Number(client.paymentDay || 10);
       
-      const nextMonthMonthStr = `${String(nextMonthMonth + 1).padStart(2, '0')}/${nextMonthYear}`;
+      const forecastMonthStr = `${String(forecastMonth + 1).padStart(2, '0')}/${forecastYear}`;
       
-      // Look for a real receivable already registered in Firestore matching this client in next month
+      // Look for a real receivable already registered in Firestore matching this client in selected month
       const exists = (receivables || []).some(r => 
         (r.clientId === client.id || (r.clientName || '').toLowerCase() === (client.name || '').toLowerCase()) &&
-        r.referenceMonth === nextMonthMonthStr
+        r.referenceMonth === forecastMonthStr
       );
 
       return {
@@ -13082,7 +13139,7 @@ function Dashboard({
         if (!r.dueDate) return false;
         try {
           const d = safeParseDate(r.dueDate);
-          return d.getDate() === day && d.getMonth() === nextMonthMonth && d.getFullYear() === nextMonthYear;
+          return d.getDate() === day && d.getMonth() === forecastMonth && d.getFullYear() === forecastYear;
         } catch {
           return false;
         }
@@ -13093,13 +13150,13 @@ function Dashboard({
         if (!p.dueDate) return false;
         try {
           const d = safeParseDate(p.dueDate);
-          return d.getDate() === day && d.getMonth() === nextMonthMonth && d.getFullYear() === nextMonthYear;
+          return d.getDate() === day && d.getMonth() === forecastMonth && d.getFullYear() === forecastYear;
         } catch {
           return false;
         }
       });
 
-      // Income = directly launched receivables + contract-based dynamic predictions for next month
+      // Income = directly launched receivables + contract-based dynamic predictions for selected month
       const receitaReal = dayReceivables.reduce((acc, r) => acc + (Number(r.value) || 0), 0);
       const contractIncome = contractProjections.filter(p => p.day === day).reduce((acc, p) => acc + p.value, 0);
       
@@ -13114,11 +13171,12 @@ function Dashboard({
       });
     }
 
+    const targetDate = new Date(forecastYear, forecastMonth, 1);
     return {
-      monthLabel: format(nextMonthDate, 'MMMM/yyyy', { locale: ptBR }),
+      monthLabel: format(targetDate, 'MMMM/yyyy', { locale: ptBR }),
       data: forecast
     };
-  }, [payables, receivables, clients]);
+  }, [payables, receivables, clients, selectedForecastMonth, selectedForecastYear]);
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#71717a'];
 
@@ -13298,11 +13356,11 @@ function Dashboard({
           </CardContent>
         </Card>
 
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden col-span-full h-[410px]">
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden col-span-full min-h-[470px] flex flex-col">
           <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
               <CardTitle className="text-[15px] font-semibold text-white">Previsão Financeira Dupla de Vencimentos ({nextMonthForecastData.monthLabel})</CardTitle>
-              <p className="text-[11px] text-[#71717a] mt-0.5">Visão unificada dia a dia das contas a pagar e receber agendadas para o próximo mês.</p>
+              <p className="text-[11px] text-[#71717a] mt-0.5">Visão unificada dia a dia das contas a pagar e receber agendadas para o mês selecionado.</p>
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-mono">
               <span className="flex items-center gap-1.5 text-emerald-400">
@@ -13315,8 +13373,8 @@ function Dashboard({
               </span>
             </div>
           </CardHeader>
-          <CardContent className="p-6 h-[330px]">
-            <div className="h-full w-full min-h-[250px]">
+          <CardContent className="p-6 flex-1 flex flex-col gap-5">
+            <div className="h-full w-full min-h-[220px] flex-1">
               <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <AreaChart data={nextMonthForecastData.data}>
                   <defs>
@@ -13341,6 +13399,53 @@ function Dashboard({
                   <Area type="monotone" dataKey="despesa" name="A Pagar" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorForecastExpense)" />
                 </AreaChart>
               </ResponsiveContainer>
+            </div>
+
+            {/* Months Selector Bar below the chart */}
+            <div className="flex flex-col md:flex-row items-center justify-between gap-3 bg-[#15171c]/50 p-2.5 rounded-lg border border-[#2d3139]/50 mt-1">
+              <div className="flex items-center gap-1.5 bg-[#0f1115] p-1 rounded-lg border border-[#2d3139] shrink-0">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-[#71717a] hover:text-white hover:bg-[#1a1d23]"
+                  onClick={() => setSelectedForecastYear(prev => prev - 1)}
+                >
+                  <ChevronLeft size={14} />
+                </Button>
+                <span className="text-xs font-bold text-white px-2 font-mono">{selectedForecastYear}</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-[#71717a] hover:text-white hover:bg-[#1a1d23]"
+                  onClick={() => setSelectedForecastYear(prev => prev + 1)}
+                >
+                  <ChevronRight size={14} />
+                </Button>
+              </div>
+
+              <div className="flex-1 flex justify-center overflow-x-auto max-w-full no-scrollbar py-0.5">
+                <div className="flex items-center gap-1 justify-center shrink-0">
+                  {monthsList.map((m) => {
+                    const isSelected = selectedForecastMonth === m.index;
+                    return (
+                      <Button
+                        key={m.index}
+                        variant={isSelected ? "default" : "ghost"}
+                        size="sm"
+                        className={cn(
+                          "h-7 px-2.5 text-xs font-semibold rounded-md transition-all shrink-0",
+                          isSelected 
+                            ? "bg-blue-600 text-white shadow-sm hover:bg-blue-700" 
+                            : "text-[#a0a0a0] hover:text-white hover:bg-[#25282e]/50"
+                        )}
+                        onClick={() => setSelectedForecastMonth(m.index)}
+                      >
+                        {m.label}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -16850,11 +16955,11 @@ function ServiceOrdersManager({
         </div>
 
         <div className="flex items-center gap-2 mt-1">
-          {serviceOrders.length > 0 && selectedIds.length === 0 && (
+          {filteredServiceOrders.length > 0 && selectedIds.length === 0 && (
             <Button 
               variant="outline" 
               className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-xs h-9 uppercase font-black"
-              onClick={() => setSelectedIds(serviceOrders.map(os => os.id))}
+              onClick={() => setSelectedIds(filteredServiceOrders.map(os => os.id))}
             >
               Selecionar Todas
             </Button>
@@ -16863,7 +16968,7 @@ function ServiceOrdersManager({
             <Button 
               className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white h-9 text-xs font-black uppercase"
               onClick={() => {
-                const selectedOS = serviceOrders.filter(os => selectedIds.includes(os.id));
+                const selectedOS = filteredServiceOrders.filter(os => selectedIds.includes(os.id));
                 generateOSLabelsPDF(selectedOS, appSettings);
                 setSelectedIds([]);
               }}
