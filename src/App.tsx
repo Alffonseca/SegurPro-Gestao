@@ -3045,22 +3045,6 @@ export default function MainApp() {
   const [laudos, setLaudos] = useState<LaudoTecnico[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement || !!(document as any).webkitIsFullScreen || !!(document as any).mozFullScreen || !!(document as any).msFullscreenElement);
-    };
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
-    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
-    return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
-      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
-      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
-    };
-  }, []);
-
   const enterFullscreen = () => {
     try {
       const docElm = document.documentElement;
@@ -3073,6 +3057,7 @@ export default function MainApp() {
       } else if ((docElm as any).msRequestFullscreen) {
         (docElm as any).msRequestFullscreen()?.catch?.((err: any) => console.warn(err));
       }
+      setIsFullscreen(true);
     } catch (err) {
       console.warn("Fullscreen request blocked or not supported:", err);
     }
@@ -3080,19 +3065,19 @@ export default function MainApp() {
 
   const exitFullscreen = () => {
     try {
-      if (document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement) {
-        if (document.exitFullscreen) {
-          document.exitFullscreen().catch((err: any) => console.warn("Fullscreen exit error:", err));
-        } else if ((document as any).webkitExitFullscreen) {
-          (document as any).webkitExitFullscreen()?.catch?.((err: any) => console.warn(err));
-        } else if ((document as any).mozCancelFullScreen) {
-          (document as any).mozCancelFullScreen()?.catch?.((err: any) => console.warn(err));
-        } else if ((document as any).msExitFullscreen) {
-          (document as any).msExitFullscreen()?.catch?.((err: any) => console.warn(err));
-        }
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch((err: any) => console.warn("Fullscreen exit error:", err));
+      } else if ((document as any).webkitExitFullscreen) {
+        (document as any).webkitExitFullscreen()?.catch?.((err: any) => console.warn(err));
+      } else if ((document as any).mozCancelFullScreen) {
+        (document as any).mozCancelFullScreen()?.catch?.((err: any) => console.warn(err));
+      } else if ((document as any).msExitFullscreen) {
+        (document as any).msExitFullscreen()?.catch?.((err: any) => console.warn(err));
       }
+      setIsFullscreen(false);
     } catch (err) {
       console.warn("Fullscreen exit failed:", err);
+      setIsFullscreen(false);
     }
   };
 
@@ -3103,6 +3088,32 @@ export default function MainApp() {
       enterFullscreen();
     }
   };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement || !!(document as any).webkitIsFullScreen || !!(document as any).mozFullScreen || !!(document as any).msFullscreenElement);
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        exitFullscreen();
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   const [users, setUsers] = useState<any[]>([]);
   const [allGlobalUsers, setAllGlobalUsers] = useState<any[]>([]);
@@ -21766,133 +21777,135 @@ function InventoryManager({
 
       {/* Edit Item Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-lg shadow-2xl">
-          <DialogHeader>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[85vh] overflow-hidden flex flex-col p-0 sm:max-w-lg shadow-2xl">
+          <DialogHeader className="p-6 pb-2 flex-shrink-0">
             <DialogTitle className="text-2xl font-black text-white uppercase italic tracking-tighter flex items-center gap-2">
               <Package className="text-blue-500" /> Editar Item de Estoque
             </DialogTitle>
           </DialogHeader>
-          {selectedItem && (
-            <div className="grid grid-cols-2 gap-4 py-4">
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Código / SKU</Label>
-                <Input 
-                  value={selectedItem.code || ''} 
-                  onChange={e => setSelectedItem({...selectedItem, code: e.target.value})} 
-                  className="bg-[#0f1115] border-[#2d3139]" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Nome da Peça</Label>
-                <Input 
-                  value={selectedItem.name || ''} 
-                  onChange={e => setSelectedItem({...selectedItem, name: e.target.value})} 
-                  className="bg-[#0f1115] border-[#2d3139]" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Categoria</Label>
-                <Input 
-                  value={selectedItem.category || ''} 
-                  onChange={e => setSelectedItem({...selectedItem, category: e.target.value})} 
-                  className="bg-[#0f1115] border-[#2d3139]" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Localização</Label>
-                <Input 
-                  value={selectedItem.location || ''} 
-                  onChange={e => setSelectedItem({...selectedItem, location: e.target.value})} 
-                  className="bg-[#0f1115] border-[#2d3139]" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Estoque Atual</Label>
-                <Input 
-                  type="number"
-                  value={selectedItem.quantity || ''} 
-                  onChange={e => setSelectedItem({...selectedItem, quantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
-                  className="bg-[#0f1115] border-[#2d3139]" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Mínimo para Alerta</Label>
-                <Input 
-                  type="number"
-                  value={selectedItem.minQuantity || ''} 
-                  onChange={e => setSelectedItem({...selectedItem, minQuantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
-                  className="bg-[#0f1115] border-[#2d3139]" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Custo (R$)</Label>
-                <Input 
-                  type="number"
-                  value={selectedItem.costPrice || ''} 
-                  onChange={e => {
-                    const cost = e.target.value === '' ? 0 : Number(e.target.value);
-                    const margin = selectedItem.profitMargin || 0;
-                    const sellingPrice = Number((cost * (1 + margin / 100)).toFixed(2));
-                    setSelectedItem({...selectedItem, costPrice: cost, price: sellingPrice});
-                  }} 
-                  className="bg-[#0f1115] border-[#2d3139]" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Margem de Lucro (%)</Label>
-                <Input 
-                  type="number"
-                  value={selectedItem.profitMargin || ''} 
-                  onChange={e => {
-                    const margin = e.target.value === '' ? 0 : Number(e.target.value);
-                    const cost = selectedItem.costPrice || 0;
-                    const sellingPrice = Number((cost * (1 + margin / 100)).toFixed(2));
-                    setSelectedItem({...selectedItem, profitMargin: margin, price: sellingPrice});
-                  }} 
-                  className="bg-[#0f1115] border-[#2d3139]" 
-                />
-              </div>
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2 custom-scrollbar">
+            {selectedItem && (
+              <div className="grid grid-cols-2 gap-4 py-4">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Código / SKU</Label>
+                  <Input 
+                    value={selectedItem.code || ''} 
+                    onChange={e => setSelectedItem({...selectedItem, code: e.target.value})} 
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Nome da Peça</Label>
+                  <Input 
+                    value={selectedItem.name || ''} 
+                    onChange={e => setSelectedItem({...selectedItem, name: e.target.value})} 
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Categoria</Label>
+                  <Input 
+                    value={selectedItem.category || ''} 
+                    onChange={e => setSelectedItem({...selectedItem, category: e.target.value})} 
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Localização</Label>
+                  <Input 
+                    value={selectedItem.location || ''} 
+                    onChange={e => setSelectedItem({...selectedItem, location: e.target.value})} 
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Estoque Atual</Label>
+                  <Input 
+                    type="number"
+                    value={selectedItem.quantity || ''} 
+                    onChange={e => setSelectedItem({...selectedItem, quantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Mínimo para Alerta</Label>
+                  <Input 
+                    type="number"
+                    value={selectedItem.minQuantity || ''} 
+                    onChange={e => setSelectedItem({...selectedItem, minQuantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Custo (R$)</Label>
+                  <Input 
+                    type="number"
+                    value={selectedItem.costPrice || ''} 
+                    onChange={e => {
+                      const cost = e.target.value === '' ? 0 : Number(e.target.value);
+                      const margin = selectedItem.profitMargin || 0;
+                      const sellingPrice = Number((cost * (1 + margin / 100)).toFixed(2));
+                      setSelectedItem({...selectedItem, costPrice: cost, price: sellingPrice});
+                    }} 
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Margem de Lucro (%)</Label>
+                  <Input 
+                    type="number"
+                    value={selectedItem.profitMargin || ''} 
+                    onChange={e => {
+                      const margin = e.target.value === '' ? 0 : Number(e.target.value);
+                      const cost = selectedItem.costPrice || 0;
+                      const sellingPrice = Number((cost * (1 + margin / 100)).toFixed(2));
+                      setSelectedItem({...selectedItem, profitMargin: margin, price: sellingPrice});
+                    }} 
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                  />
+                </div>
 
-              <div className="col-span-2 space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Venda (Final) (R$)</Label>
-                <Input 
-                  type="number"
-                  value={selectedItem.price || ''} 
-                  onChange={e => {
-                    const sellingPrice = e.target.value === '' ? 0 : Number(e.target.value);
-                    const cost = selectedItem.costPrice || 0;
-                    // Calculate margin based on selling price if cost is available
-                    let margin = selectedItem.profitMargin || 0;
-                    if (cost > 0) {
-                      margin = Number(((sellingPrice / cost - 1) * 100).toFixed(2));
-                    }
-                    setSelectedItem({...selectedItem, price: sellingPrice, profitMargin: margin});
-                  }} 
-                  onFocus={(e) => e.target.select()}
-                  className="bg-[#0f1115] border-[#2d3139] h-11 text-lg font-bold text-blue-400" 
-                />
-                <p className="text-[10px] text-blue-400/70 italic">Preço final utilizado nos orçamentos e vendas.</p>
+                <div className="col-span-2 space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Venda (Final) (R$)</Label>
+                  <Input 
+                    type="number"
+                    value={selectedItem.price || ''} 
+                    onChange={e => {
+                      const sellingPrice = e.target.value === '' ? 0 : Number(e.target.value);
+                      const cost = selectedItem.costPrice || 0;
+                      // Calculate margin based on selling price if cost is available
+                      let margin = selectedItem.profitMargin || 0;
+                      if (cost > 0) {
+                        margin = Number(((sellingPrice / cost - 1) * 100).toFixed(2));
+                      }
+                      setSelectedItem({...selectedItem, price: sellingPrice, profitMargin: margin});
+                    }} 
+                    onFocus={(e) => e.target.select()}
+                    className="bg-[#0f1115] border-[#2d3139] h-11 text-lg font-bold text-blue-400" 
+                  />
+                  <p className="text-[10px] text-blue-400/70 italic">Preço final utilizado nos orçamentos e vendas.</p>
+                </div>
+                <div className="col-span-2 space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Link da Imagem do Produto (URL)</Label>
+                  <Input 
+                    value={selectedItem.imageUrl || ''} 
+                    onChange={e => setSelectedItem({...selectedItem, imageUrl: e.target.value})} 
+                    placeholder="https://exemplo.com/imagem.jpg"
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                  />
+                </div>
+                <div className="col-span-2 space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Observações</Label>
+                  <Input 
+                    value={selectedItem.description || ''} 
+                    onChange={e => setSelectedItem({...selectedItem, description: e.target.value})} 
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                  />
+                </div>
               </div>
-              <div className="col-span-2 space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Link da Imagem do Produto (URL)</Label>
-                <Input 
-                  value={selectedItem.imageUrl || ''} 
-                  onChange={e => setSelectedItem({...selectedItem, imageUrl: e.target.value})} 
-                  placeholder="https://exemplo.com/imagem.jpg"
-                  className="bg-[#0f1115] border-[#2d3139]" 
-                />
-              </div>
-              <div className="col-span-2 space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Observações</Label>
-                <Input 
-                  value={selectedItem.description || ''} 
-                  onChange={e => setSelectedItem({...selectedItem, description: e.target.value})} 
-                  className="bg-[#0f1115] border-[#2d3139]" 
-                />
-              </div>
-            </div>
-          )}
-          <DialogFooter className="bg-[#0f1115]/50 p-6 -mx-6 -mb-6 border-t border-[#2d3139]">
+            )}
+          </div>
+          <DialogFooter className="bg-[#0f1115]/50 p-6 border-t border-[#2d3139] flex-shrink-0">
             <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139]">Cancelar</Button>
             <Button onClick={handleUpdateItem} className="bg-[#3b82f6] hover:bg-[#2563eb] font-black uppercase italic tracking-tighter">Atualizar Registro</Button>
           </DialogFooter>
@@ -21901,137 +21914,139 @@ function InventoryManager({
 
       {/* Add Item Dialog */}
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-lg shadow-2xl">
-          <DialogHeader>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[85vh] overflow-hidden flex flex-col p-0 sm:max-w-lg shadow-2xl">
+          <DialogHeader className="p-6 pb-2 flex-shrink-0">
             <DialogTitle className="text-2xl font-black text-white uppercase italic tracking-tighter flex items-center gap-2">
               <Package className="text-blue-500" /> Novo Item de Estoque
             </DialogTitle>
             <DialogDescription className="text-[#a0a0a0]">Cadastre novas peças ou componentes para uso técnico.</DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-4 py-4">
-            <div className="space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Código / SKU</Label>
-              <Input 
-                value={newItem.code || ''} 
-                onChange={e => setNewItem({...newItem, code: e.target.value})} 
-                className="bg-[#0f1115] border-[#2d3139] focus:ring-blue-500" 
-                placeholder="Ex: SSD-240-KING"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Nome da Peça</Label>
-              <Input 
-                value={newItem.name || ''} 
-                onChange={e => setNewItem({...newItem, name: e.target.value})} 
-                className="bg-[#0f1115] border-[#2d3139] focus:ring-blue-500" 
-                placeholder="Ex: SSD 240GB Kingston"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Categoria</Label>
-              <Input 
-                value={newItem.category || ''} 
-                onChange={e => setNewItem({...newItem, category: e.target.value})} 
-                className="bg-[#0f1115] border-[#2d3139]" 
-                placeholder="Ex: Armazenamento"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Localização (Armário/Box)</Label>
-              <Input 
-                value={newItem.location || ''} 
-                onChange={e => setNewItem({...newItem, location: e.target.value})} 
-                className="bg-[#0f1115] border-[#2d3139]" 
-                placeholder="Prateleira A2"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Saldo Inicial</Label>
-              <Input 
-                type="number"
-                value={newItem.quantity || ''} 
-                onChange={e => setNewItem({...newItem, quantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
-                onFocus={(e) => e.target.select()}
-                className="bg-[#0f1115] border-[#2d3139]" 
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Qtd. Mínima (Aviso)</Label>
-              <Input 
-                type="number"
-                value={newItem.minQuantity || ''} 
-                onChange={e => setNewItem({...newItem, minQuantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
-                onFocus={(e) => e.target.select()}
-                className="bg-[#0f1115] border-[#2d3139]" 
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Custo (R$)</Label>
-              <Input 
-                type="number"
-                value={newItem.costPrice || ''} 
-                onChange={e => {
-                  const cost = e.target.value === '' ? 0 : Number(e.target.value);
-                  const margin = newItem.profitMargin || 0;
-                  const final = Number((cost * (1 + margin / 100)).toFixed(2));
-                  setNewItem({...newItem, costPrice: cost, price: final});
-                }} 
-                className="bg-[#0f1115] border-[#2d3139]" 
-                placeholder="0.00"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Margem de Lucro (%)</Label>
-              <Input 
-                type="number"
-                value={newItem.profitMargin || ''} 
-                onChange={e => {
-                  const margin = e.target.value === '' ? 0 : Number(e.target.value);
-                  const cost = newItem.costPrice || 0;
-                  const final = Number((cost * (1 + margin / 100)).toFixed(2));
-                  setNewItem({...newItem, profitMargin: margin, price: final});
-                }} 
-                className="bg-[#0f1115] border-[#2d3139]" 
-                placeholder="Ex: 30"
-              />
-            </div>
-            <div className="col-span-2 space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Venda (R$)</Label>
-              <Input 
-                type="number"
-                value={newItem.price || ''} 
-                onChange={e => {
-                  const final = e.target.value === '' ? 0 : Number(e.target.value);
-                  const cost = newItem.costPrice || 0;
-                  let margin = newItem.profitMargin || 0;
-                  if (cost > 0) {
-                    margin = Number(((final / cost - 1) * 100).toFixed(2));
-                  }
-                  setNewItem({...newItem, price: final, profitMargin: margin});
-                }} 
-                onFocus={(e) => e.target.select()}
-                className="bg-[#0f1115] border-[#2d3139] h-11 text-lg font-bold text-emerald-500" 
-              />
-            </div>
-            <div className="col-span-2 space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Link da Imagem do Produto (URL)</Label>
-              <Input 
-                value={newItem.imageUrl || ''} 
-                onChange={e => setNewItem({...newItem, imageUrl: e.target.value})} 
-                className="bg-[#0f1115] border-[#2d3139] focus:ring-blue-500" 
-                placeholder="https://exemplo.com/imagem.jpg"
-              />
-            </div>
-            <div className="col-span-2 space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Observações Técnicas</Label>
-              <Input 
-                value={newItem.description || ''} 
-                onChange={e => setNewItem({...newItem, description: e.target.value})} 
-                className="bg-[#0f1115] border-[#2d3139]" 
-              />
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2 custom-scrollbar">
+            <div className="grid grid-cols-2 gap-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Código / SKU</Label>
+                <Input 
+                  value={newItem.code || ''} 
+                  onChange={e => setNewItem({...newItem, code: e.target.value})} 
+                  className="bg-[#0f1115] border-[#2d3139] focus:ring-blue-500" 
+                  placeholder="Ex: SSD-240-KING"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Nome da Peça</Label>
+                <Input 
+                  value={newItem.name || ''} 
+                  onChange={e => setNewItem({...newItem, name: e.target.value})} 
+                  className="bg-[#0f1115] border-[#2d3139] focus:ring-blue-500" 
+                  placeholder="Ex: SSD 240GB Kingston"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Categoria</Label>
+                <Input 
+                  value={newItem.category || ''} 
+                  onChange={e => setNewItem({...newItem, category: e.target.value})} 
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                  placeholder="Ex: Armazenamento"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Localização (Armário/Box)</Label>
+                <Input 
+                  value={newItem.location || ''} 
+                  onChange={e => setNewItem({...newItem, location: e.target.value})} 
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                  placeholder="Prateleira A2"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Saldo Inicial</Label>
+                <Input 
+                  type="number"
+                  value={newItem.quantity || ''} 
+                  onChange={e => setNewItem({...newItem, quantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                  onFocus={(e) => e.target.select()}
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Qtd. Mínima (Aviso)</Label>
+                <Input 
+                  type="number"
+                  value={newItem.minQuantity || ''} 
+                  onChange={e => setNewItem({...newItem, minQuantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                  onFocus={(e) => e.target.select()}
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Custo (R$)</Label>
+                <Input 
+                  type="number"
+                  value={newItem.costPrice || ''} 
+                  onChange={e => {
+                    const cost = e.target.value === '' ? 0 : Number(e.target.value);
+                    const margin = newItem.profitMargin || 0;
+                    const final = Number((cost * (1 + margin / 100)).toFixed(2));
+                    setNewItem({...newItem, costPrice: cost, price: final});
+                  }} 
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Margem de Lucro (%)</Label>
+                <Input 
+                  type="number"
+                  value={newItem.profitMargin || ''} 
+                  onChange={e => {
+                    const margin = e.target.value === '' ? 0 : Number(e.target.value);
+                    const cost = newItem.costPrice || 0;
+                    const final = Number((cost * (1 + margin / 100)).toFixed(2));
+                    setNewItem({...newItem, profitMargin: margin, price: final});
+                  }} 
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                  placeholder="Ex: 30"
+                />
+              </div>
+              <div className="col-span-2 space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Venda (R$)</Label>
+                <Input 
+                  type="number"
+                  value={newItem.price || ''} 
+                  onChange={e => {
+                    const final = e.target.value === '' ? 0 : Number(e.target.value);
+                    const cost = newItem.costPrice || 0;
+                    let margin = newItem.profitMargin || 0;
+                    if (cost > 0) {
+                      margin = Number(((final / cost - 1) * 100).toFixed(2));
+                    }
+                    setNewItem({...newItem, price: final, profitMargin: margin});
+                  }} 
+                  onFocus={(e) => e.target.select()}
+                  className="bg-[#0f1115] border-[#2d3139] h-11 text-lg font-bold text-emerald-500" 
+                />
+              </div>
+              <div className="col-span-2 space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Link da Imagem do Produto (URL)</Label>
+                <Input 
+                  value={newItem.imageUrl || ''} 
+                  onChange={e => setNewItem({...newItem, imageUrl: e.target.value})} 
+                  className="bg-[#0f1115] border-[#2d3139] focus:ring-blue-500" 
+                  placeholder="https://exemplo.com/imagem.jpg"
+                />
+              </div>
+              <div className="col-span-2 space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Observações Técnicas</Label>
+                <Input 
+                  value={newItem.description || ''} 
+                  onChange={e => setNewItem({...newItem, description: e.target.value})} 
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                />
+              </div>
             </div>
           </div>
-          <DialogFooter className="bg-[#0f1115]/50 p-6 -mx-6 -mb-6 border-t border-[#2d3139]">
+          <DialogFooter className="bg-[#0f1115]/50 p-6 border-t border-[#2d3139] flex-shrink-0">
             <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139]">Cancelar</Button>
             <Button onClick={handleSaveItem} className="bg-[#3b82f6] hover:bg-[#2563eb] font-black uppercase italic tracking-tighter">Salvar no Inventário</Button>
           </DialogFooter>
@@ -22040,8 +22055,8 @@ function InventoryManager({
 
       {/* Transaction Dialog (Entry/Exit) */}
       <Dialog open={isTransactionOpen} onOpenChange={setIsTransactionOpen}>
-        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-lg shadow-2xl">
-          <DialogHeader>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[85vh] overflow-hidden flex flex-col p-0 sm:max-w-lg shadow-2xl">
+          <DialogHeader className="p-6 pb-2 flex-shrink-0">
             <DialogTitle className="text-2xl font-black text-white uppercase italic tracking-tighter flex items-center gap-2">
               {transactionType === 'entry' ? (
                 <>
@@ -22056,98 +22071,100 @@ function InventoryManager({
               )}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Item Selecionado</Label>
-              <Select value={newTransaction.itemId} onValueChange={val => setNewTransaction({...newTransaction, itemId: val})}>
-                <SelectTrigger className="bg-[#0f1115] border-[#2d3139] h-12">
-                  <SelectValue placeholder="Selecione o item..." />
-                </SelectTrigger>
-                <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                  {inventory.map(item => (
-                    <SelectItem key={item.id} value={item.id} className="focus:bg-[#3b82f6]/20">
-                      <div className="flex justify-between items-center w-64">
-                         <span className="font-bold">{item.name}</span>
-                         <Badge variant="outline" className="text-[8px] font-mono opacity-60 border-[#2d3139] ml-2">Saldo: {item.quantity}</Badge>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2 custom-scrollbar">
+            <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Quantidade ({transactionType === 'entry' ? 'Recebida' : 'Utilizada'})</Label>
-                <Input 
-                  type="number" 
-                  value={newTransaction.quantity || ''} 
-                  onChange={e => setNewTransaction({...newTransaction, quantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
-                  className="bg-[#0f1115] border-[#2d3139] h-11 text-lg font-mono font-bold text-center" 
-                />
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Item Selecionado</Label>
+                <Select value={newTransaction.itemId} onValueChange={val => setNewTransaction({...newTransaction, itemId: val})}>
+                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] h-12">
+                    <SelectValue placeholder="Selecione o item..." />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                    {inventory.map(item => (
+                      <SelectItem key={item.id} value={item.id} className="focus:bg-[#3b82f6]/20">
+                        <div className="flex justify-between items-center w-64">
+                           <span className="font-bold">{item.name}</span>
+                           <Badge variant="outline" className="text-[8px] font-mono opacity-60 border-[#2d3139] ml-2">Saldo: {item.quantity}</Badge>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">N. de Série / Lote (SN)</Label>
-                <Input 
-                  value={newTransaction.serialNumber} 
-                  onChange={e => setNewTransaction({...newTransaction, serialNumber: e.target.value})} 
-                  className="bg-[#0f1115] border-[#2d3139] h-11 font-mono tracking-tighter" 
-                  placeholder="Ex: CN-02J-0F..."
-                />
-              </div>
-            </div>
-
-            {transactionType === 'exit' && (
-              <div className="bg-[#0f1115]/30 p-4 rounded-xl border border-[#2d3139] space-y-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                  <span className="text-[10px] font-black uppercase text-blue-500 tracking-widest">Informações de Integração</span>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Quantidade ({transactionType === 'entry' ? 'Recebida' : 'Utilizada'})</Label>
+                  <Input 
+                    type="number" 
+                    value={newTransaction.quantity || ''} 
+                    onChange={e => setNewTransaction({...newTransaction, quantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                    className="bg-[#0f1115] border-[#2d3139] h-11 text-lg font-mono font-bold text-center" 
+                  />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-[#71717a] text-[10px] uppercase font-bold">Vincular a</Label>
-                    <Select value={newTransaction.referenceType} onValueChange={(val: any) => setNewTransaction({...newTransaction, referenceType: val, referenceId: ''})}>
-                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                        <SelectItem value="none">Nenhum vínculo</SelectItem>
-                        <SelectItem value="os">Ordem de Serviço (OS)</SelectItem>
-                        <SelectItem value="visit">Visita Técnica</SelectItem>
-                      </SelectContent>
-                    </Select>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">N. de Série / Lote (SN)</Label>
+                  <Input 
+                    value={newTransaction.serialNumber} 
+                    onChange={e => setNewTransaction({...newTransaction, serialNumber: e.target.value})} 
+                    className="bg-[#0f1115] border-[#2d3139] h-11 font-mono tracking-tighter" 
+                    placeholder="Ex: CN-02J-0F..."
+                  />
+                </div>
+              </div>
+
+              {transactionType === 'exit' && (
+                <div className="bg-[#0f1115]/30 p-4 rounded-xl border border-[#2d3139] space-y-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                    <span className="text-[10px] font-black uppercase text-blue-500 tracking-widest">Informações de Integração</span>
                   </div>
-                  {newTransaction.referenceType !== 'none' && (
+                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label className="text-[#71717a] text-[10px] uppercase font-bold">Localizar #{newTransaction.referenceType.toUpperCase()}</Label>
-                      <Select value={newTransaction.referenceId} onValueChange={val => setNewTransaction({...newTransaction, referenceId: val})}>
-                        <SelectTrigger className="bg-[#0f1115] border-[#2d3139] overflow-hidden">
-                          <SelectValue placeholder="Selecione..." />
+                      <Label className="text-[#71717a] text-[10px] uppercase font-bold">Vincular a</Label>
+                      <Select value={newTransaction.referenceType} onValueChange={(val: any) => setNewTransaction({...newTransaction, referenceType: val, referenceId: ''})}>
+                        <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
+                          <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                          {newTransaction.referenceType === 'os' ? 
-                            serviceOrders.slice(0, 50).map(os => <SelectItem key={os.id} value={os.id}>OS #{os.number} - {os.clientName}</SelectItem>) :
-                            visits.slice(0, 50).map(v => <SelectItem key={v.id} value={v.id}>Visita #{v.number} - {v.clientName}</SelectItem>)
-                          }
+                          <SelectItem value="none">Nenhum vínculo</SelectItem>
+                          <SelectItem value="os">Ordem de Serviço (OS)</SelectItem>
+                          <SelectItem value="visit">Visita Técnica</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
-                  )}
+                    {newTransaction.referenceType !== 'none' && (
+                      <div className="space-y-2">
+                        <Label className="text-[#71717a] text-[10px] uppercase font-bold">Localizar #{newTransaction.referenceType.toUpperCase()}</Label>
+                        <Select value={newTransaction.referenceId} onValueChange={val => setNewTransaction({...newTransaction, referenceId: val})}>
+                          <SelectTrigger className="bg-[#0f1115] border-[#2d3139] overflow-hidden">
+                            <SelectValue placeholder="Selecione..." />
+                          </SelectTrigger>
+                          <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                            {newTransaction.referenceType === 'os' ? 
+                              serviceOrders.slice(0, 50).map(os => <SelectItem key={os.id} value={os.id}>OS #{os.number} - {os.clientName}</SelectItem>) :
+                              visits.slice(0, 50).map(v => <SelectItem key={v.id} value={v.id}>Visita #{v.number} - {v.clientName}</SelectItem>)
+                            }
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            <div className="space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Justificativa / Motivo</Label>
-              <Input 
-                value={newTransaction.observations} 
-                onChange={e => setNewTransaction({...newTransaction, observations: e.target.value})} 
-                className="bg-[#0f1115] border-[#2d3139] font-medium" 
-                placeholder="Ex: Troca de SSD em garantia ou Compra nota #123"
-              />
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Justificativa / Motivo</Label>
+                <Input 
+                  value={newTransaction.observations} 
+                  onChange={e => setNewTransaction({...newTransaction, observations: e.target.value})} 
+                  className="bg-[#0f1115] border-[#2d3139] font-medium" 
+                  placeholder="Ex: Troca de SSD em garantia ou Compra nota #123"
+                />
+              </div>
             </div>
           </div>
-          <DialogFooter className="bg-[#0f1115]/50 p-6 -mx-6 -mb-6 border-t border-[#2d3139]">
+          <DialogFooter className="bg-[#0f1115]/50 p-6 border-t border-[#2d3139] flex-shrink-0">
             <Button variant="outline" onClick={() => setIsTransactionOpen(false)} className="border-[#2d3139]">Cancelar</Button>
             <Button onClick={handleProcessTransaction} className={cn("font-black uppercase italic tracking-tighter", transactionType === 'entry' ? "bg-emerald-500 hover:bg-emerald-600" : "bg-amber-500 hover:bg-amber-600")}>
               Confirmar {transactionType === 'entry' ? 'Entrada' : 'Baixa'}

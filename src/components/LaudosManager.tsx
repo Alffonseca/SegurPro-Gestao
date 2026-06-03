@@ -145,7 +145,7 @@ function PhotoUploader({ photos = [], onChange }: PhotoUploaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
+    const files = Array.from(e.target.files || []) as File[];
     if (files.length === 0) return;
 
     setIsUploading(true);
@@ -169,7 +169,7 @@ function PhotoUploader({ photos = [], onChange }: PhotoUploaderProps) {
           }
           resolve();
         };
-        reader.readAsDataURL(file);
+        reader.readAsDataURL(file as Blob);
       });
     }
 
