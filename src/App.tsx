@@ -3308,17 +3308,17 @@ export default function MainApp() {
 
     const q = query(
       collection(db, 'logs'),
-      where('companyId', '==', effectiveCompanyId),
-      where('action', '==', 'login'),
-      where('timestamp', '>', sessionStartTime)
+      where('companyId', '==', effectiveCompanyId)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       snapshot.docChanges().forEach((change) => {
         if (change.type === 'added') {
           const logData = change.doc.data();
-          // Não notifica se o próprio usuário master for quem entrou
-          if (logData.userId !== user.uid) {
+          const logTimestamp = logData.timestamp ? (logData.timestamp.toMillis ? logData.timestamp.toMillis() : (logData.timestamp.seconds ? logData.timestamp.seconds * 1000 : 0)) : 0;
+          const sessionStartMillis = sessionStartTime.toMillis();
+          // Certifica-se de que a ação é login, ocorreu após o início da sessão e não é o próprio usuário
+          if (logData.action === 'login' && logTimestamp > sessionStartMillis && logData.userId !== user.uid) {
             toast.info(`Colaborador ${logData.userName || logData.userEmail || 'Desconhecido'} acabou de entrar no sistema!`, {
               icon: '👋',
               duration: 6000
@@ -13197,6 +13197,7 @@ function Dashboard({
       // Filter receivables due on this day
       const dayReceivables = (receivables || []).filter(r => {
         if (!r.dueDate) return false;
+        if (r.status === 'Pago') return false;
         try {
           const d = safeParseDate(r.dueDate);
           return d.getDate() === day && d.getMonth() === forecastMonth && d.getFullYear() === forecastYear;
@@ -13208,6 +13209,7 @@ function Dashboard({
       // Filter payables due on this day
       const dayPayables = (payables || []).filter(p => {
         if (!p.dueDate) return false;
+        if (p.status === 'Pago') return false;
         try {
           const d = safeParseDate(p.dueDate);
           return d.getDate() === day && d.getMonth() === forecastMonth && d.getFullYear() === forecastYear;
@@ -18989,8 +18991,8 @@ function BudgetsManager({
                               ...newBudget, 
                               paymentMethod: method as any,
                               interestType: 'none',
-                              selectedCardBrand: undefined,
-                              selectedInstallmentPlanId: undefined,
+                              selectedCardBrand: '',
+                              selectedInstallmentPlanId: '',
                               installments: 1,
                               cashAcceptancePercent: method === 'Dinheiro' ? 50 : undefined,
                               cashDeliveryPercent: method === 'Dinheiro' ? 50 : undefined
@@ -19039,11 +19041,11 @@ function BudgetsManager({
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label className="text-[#a0a0a0]">Bandeira do Cartão</Label>
-                      <Select value={newBudget.selectedCardBrand} onValueChange={(val: any) => {
+                      <Select value={newBudget.selectedCardBrand || ''} onValueChange={(val: any) => {
                         setNewBudget({
                           ...newBudget, 
                           selectedCardBrand: val,
-                          selectedInstallmentPlanId: undefined,
+                          selectedInstallmentPlanId: '',
                           installments: 1,
                           installmentValue: undefined
                         });
@@ -19062,7 +19064,7 @@ function BudgetsManager({
 
                     <div className="space-y-2">
                       <Label className="text-[#a0a0a0]">Plano / Parcelas</Label>
-                      <Select value={newBudget.selectedInstallmentPlanId} onValueChange={(val) => {
+                      <Select value={newBudget.selectedInstallmentPlanId || ''} onValueChange={(val) => {
                         const plan = appSettings.installmentPlans?.find(p => p.id === val);
                         setNewBudget({
                           ...newBudget, 
@@ -19627,8 +19629,8 @@ function BudgetsManager({
                             ...editingBudget, 
                             paymentMethod: method as any,
                             interestType: 'none',
-                            selectedCardBrand: undefined,
-                            selectedInstallmentPlanId: undefined,
+                            selectedCardBrand: '',
+                            selectedInstallmentPlanId: '',
                             installments: 1,
                             cashAcceptancePercent: method === 'Dinheiro' ? 50 : undefined,
                             cashDeliveryPercent: method === 'Dinheiro' ? 50 : undefined
@@ -19681,7 +19683,7 @@ function BudgetsManager({
                       setEditingBudget({
                         ...editingBudget, 
                         selectedCardBrand: val,
-                        selectedInstallmentPlanId: undefined,
+                        selectedInstallmentPlanId: '',
                         installments: 1,
                         installmentValue: undefined
                       });

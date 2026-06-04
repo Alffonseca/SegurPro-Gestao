@@ -647,6 +647,11 @@ export function PayableManager({ companyId, suppliers = [], pixSettings, appSett
                               onClick={() => {
                                 setSelectedPayable(p);
                                 setPayDate(format(new Date(), 'yyyy-MM-dd'));
+                                if (pixSettings?.accounts?.length > 0) {
+                                  setPixAccountId(pixSettings.accounts[0].id);
+                                } else {
+                                  setPixAccountId('');
+                                }
                                 setIsPayOpen(true);
                               }}
                               className="bg-green-500 hover:bg-green-600 text-white font-bold h-7 px-2.5 text-[10px] uppercase.tracking-wider"
@@ -796,7 +801,7 @@ export function PayableManager({ companyId, suppliers = [], pixSettings, appSett
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       {pixSettings.accounts.map((acc: any) => (
-                        <SelectItem key={acc.id} value={acc.id}>{acc.bank} - {acc.description}</SelectItem>
+                        <SelectItem key={acc.id} value={acc.id}>{acc.bank} - {acc.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -1601,6 +1606,11 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
                                       onClick={() => {
                                         setSelectedReceivable(r);
                                         setPayDate(format(new Date(), 'yyyy-MM-dd'));
+                                        if (pixSettings?.accounts?.length > 0) {
+                                          setPixAccountId(pixSettings.accounts[0].id);
+                                        } else {
+                                          setPixAccountId('');
+                                        }
                                         setIsPayOpen(true);
                                       }}
                                       className="bg-green-500 hover:bg-green-600 text-white font-bold h-7 px-2.5 text-[10px] uppercase tracking-wider animate-pulse"
@@ -1849,7 +1859,7 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       {pixSettings.accounts.map((acc: any) => (
-                        <SelectItem key={acc.id} value={acc.id}>{acc.bank} - {acc.description}</SelectItem>
+                        <SelectItem key={acc.id} value={acc.id}>{acc.bank} - {acc.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
