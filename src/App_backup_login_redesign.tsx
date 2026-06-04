@@ -4345,13 +4345,11 @@ export default function MainApp() {
   // The inviteCodeUrl will stay in the URL and be processed by the CompanyWizard after login.
   if (!user) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-[#0f1115] p-4 md:p-8 overflow-y-auto">
-        <div className="w-full max-w-4xl space-y-8 py-8 animate-in fade-in duration-500">
-          
-          {/* Logo with Company Name on Top */}
-          <div className="text-center space-y-4">
+      <div className="flex h-screen flex-col items-center justify-center bg-[#0f1115] p-6 overflow-y-auto">
+        <div className="w-full max-w-md space-y-8 text-center py-8">
+          <div className="space-y-4">
             {inviteCodeUrl && (
-              <div className="max-w-md mx-auto bg-[#3b82f6]/10 border border-[#3b82f6]/30 p-4 rounded-xl flex items-center gap-4 mb-4 text-left animate-in slide-in-from-top duration-700">
+              <div className="bg-[#3b82f6]/10 border border-[#3b82f6]/30 p-4 rounded-xl flex items-center gap-4 mb-4 text-left animate-in slide-in-from-top duration-700">
                 <div className="p-2 bg-[#3b82f6] rounded-lg text-white">
                   <Plus className="h-6 w-6" />
                 </div>
@@ -4362,343 +4360,308 @@ export default function MainApp() {
               </div>
             )}
             
-            <div className="flex flex-col items-center gap-3">
-              {appSettings.logoUrl ? (
-                <div className="mx-auto flex h-20 w-auto items-center justify-center overflow-hidden mb-1">
-                  <img src={appSettings.logoUrl} alt="Logo" className="max-h-full max-w-full object-contain" referrerPolicy="no-referrer" />
-                </div>
-              ) : (
-                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[#3b82f6] text-white shadow-xl shadow-blue-900/20 mb-1">
-                  <Shield size={32} />
-                </div>
-              )}
-              <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-white bg-gradient-to-r from-white via-gray-200 to-gray-400 bg-clip-text text-transparent">
-                {inviteCodeUrl ? 'Ativação de Cadastro' : (currentCompany?.name || appSettings.companyName || 'SegurPro SaaS')}
-              </h1>
-              <p className="text-[#71717a] text-xs md:text-sm max-w-lg">
-                {inviteCodeUrl 
-                  ? 'Use o formulário abaixo para criar sua conta e ativar seu código de liberação.' 
-                  : 'Controle total para instaladores de segurança eletrônica.'}
-              </p>
-            </div>
+            {appSettings.logoUrl ? (
+              <div className="mx-auto flex h-24 w-auto items-center justify-center overflow-hidden mb-4">
+                <img src={appSettings.logoUrl} alt="Logo" className="max-h-full max-w-full object-contain" referrerPolicy="no-referrer" />
+              </div>
+            ) : (
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[#3b82f6] text-white shadow-xl shadow-blue-900/20">
+                <Shield size={32} />
+              </div>
+            )}
+            <h1 className="text-3xl font-bold tracking-tight text-white">
+              {inviteCodeUrl ? 'Ativação de Cadastro' : (currentCompany?.name || appSettings.companyName || 'SegurPro SaaS')}
+            </h1>
+            <p className="text-[#71717a]">
+              {inviteCodeUrl 
+                ? 'Use o formulário abaixo para criar sua conta e ativar seu código de liberação.' 
+                : 'Controle total para instaladores de segurança eletrônica.'}
+            </p>
           </div>
 
-          {/* Two-Column Layout */}
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-stretch">
-            
-            {/* Left Column: Email/Password Authentication (spanning 7 columns on md) */}
-            <div className="md:col-span-7 flex flex-col">
-              <Card className={`border-[#2d3139] bg-[#1a1d23] h-full flex flex-col justify-between ${inviteCodeUrl ? 'ring-2 ring-blue-500/30' : ''}`}>
-                <CardHeader>
-                  <CardTitle className="text-white text-lg flex items-center gap-2">
-                    <Shield size={18} className="text-[#3b82f6]" />
-                    {inviteCodeUrl 
-                      ? (authMode === 'login' ? 'Vincular Convite' : 'Criar Conta de Admin') 
-                      : (authMode === 'login' ? 'Entrar com E-mail' : 'Criar Nova Conta')}
-                  </CardTitle>
-                  <CardDescription className="text-[#71717a] text-xs">
-                    {inviteCodeUrl ? (
-                      <div className="bg-blue-500/10 border border-blue-500/20 p-3 rounded-lg mb-2 text-left">
-                         <p className="text-blue-400 text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2">
-                           <Shield size={14} /> Convite Mestre
-                         </p>
-                         <p className="text-white text-xs mt-1">
-                           Registrando convite mestre <span className="font-mono font-bold text-blue-300">{inviteCodeUrl}</span>.
-                         </p>
+          <Card className={`border-[#2d3139] bg-[#1a1d23] ${inviteCodeUrl ? 'ring-2 ring-blue-500/30 shadow-2xl shadow-blue-500/10' : ''}`}>
+            <CardHeader>
+              <CardTitle className="text-white">
+                {inviteCodeUrl 
+                  ? (authMode === 'login' ? 'Vincular Convite' : 'Criar Conta de Admin') 
+                  : (authMode === 'login' ? 'Bem-vindo' : 'Criar Conta')}
+              </CardTitle>
+              <CardDescription className="text-[#71717a]">
+                {inviteCodeUrl ? (
+                  <div className="bg-blue-500/10 border border-blue-500/20 p-3 rounded-lg mb-2 text-left">
+                     <p className="text-blue-400 text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2">
+                       <Shield size={14} /> Convite Mestre Detectado
+                     </p>
+                     <p className="text-white text-xs mt-1">
+                       Identificamos o código <span className="font-mono font-bold text-blue-300">{inviteCodeUrl}</span>. 
+                       {authMode === 'register' ? ' Cadastre-se para ativar sua nova empresa.' : ' Entre para vincular este acesso à sua conta.'}
+                     </p>
+                  </div>
+                ) : (authMode === 'login' ? 'Faça login para gerenciar suas visitas e finanças.' : 'Cadastre-se para começar a usar o sistema.')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {lastAuthError && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                  <div className="bg-[#1a1d23] border border-[#2d3139] rounded-xl max-w-md w-full overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 text-left">
+                    {/* Header of Modal */}
+                    <div className="p-5 border-b border-[#2d3139] bg-[#1f232b] flex items-center gap-2.5">
+                      <div className="p-2 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400">
+                        <ShieldAlert size={20} />
                       </div>
-                    ) : (authMode === 'login' ? 'Insira suas credenciais de segurança cadastradas.' : 'Cadastre sua conta para começar imediatamente.')}
-                  </CardDescription>
-                </CardHeader>
-
-                <CardContent className="space-y-4 flex-1">
-                  {lastAuthError && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-                      <div className="bg-[#1a1d23] border border-[#2d3139] rounded-xl max-w-md w-full overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 text-left">
-                        {/* Header of Modal */}
-                        <div className="p-5 border-b border-[#2d3139] bg-[#1f232b] flex items-center gap-2.5">
-                          <div className="p-2 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400">
-                            <ShieldAlert size={20} />
-                          </div>
-                          <div>
-                            <h3 className="font-bold text-white text-sm md:text-base">
-                              {lastAuthError === 'INVALID_CREDENTIALS' 
-                                ? 'Credencial Inválida ou Não Encontrada' 
-                                : lastAuthError === 'TIMEOUT' 
-                                  ? 'Tempo de Conexão Esgotado' 
-                                  : 'Problema na Autenticação'}
-                            </h3>
-                            <p className="text-[11px] text-gray-400 mt-0.5">Identificamos o seguinte detalhe:</p>
-                          </div>
-                        </div>
-                        
-                        {/* Content of Modal */}
-                        <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto text-xs md:text-sm text-gray-300">
-                          {lastAuthError === 'INVALID_CREDENTIALS' ? (
-                            <div className="space-y-3 leading-relaxed">
-                              <p className="text-[#e2e8f0]">
-                                O Firebase retornou <span className="text-red-400 font-mono text-[11px] bg-[#0f1115] px-1.5 py-0.5 rounded border border-[#2d3139]">auth/invalid-credential</span>. Se o login está falhando, considere as soluções mais comuns:
+                      <div>
+                        <h3 className="font-bold text-white text-sm md:text-base">
+                          {lastAuthError === 'INVALID_CREDENTIALS' 
+                            ? 'Credencial Inválida ou Não Encontrada' 
+                            : lastAuthError === 'TIMEOUT' 
+                              ? 'Tempo de Conexão Esgotado' 
+                              : 'Problema na Autenticação'}
+                        </h3>
+                        <p className="text-[11px] text-gray-400 mt-0.5">Identificamos o seguinte detalhe:</p>
+                      </div>
+                    </div>
+                    
+                    {/* Content of Modal */}
+                    <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto text-xs md:text-sm text-gray-300">
+                      {lastAuthError === 'INVALID_CREDENTIALS' ? (
+                        <div className="space-y-3 leading-relaxed">
+                          <p className="text-[#e2e8f0]">
+                            O Firebase retornou <span className="text-red-400 font-mono text-[11px] bg-[#0f1115] px-1.5 py-0.5 rounded border border-[#2d3139]">auth/invalid-credential</span>. Se o login está falhando, considere as soluções mais comuns:
+                          </p>
+                          <div className="bg-[#0f1115] rounded-lgs p-3.5 border border-[#2d3139]/55 space-y-3 rounded-lg text-xs">
+                            <div className="space-y-1">
+                              <p className="font-bold text-white text-[11.5px] flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                Fez o primeiro acesso via Google?
                               </p>
-                              <div className="bg-[#0f1115] rounded-lgs p-3.5 border border-[#2d3139]/55 space-y-3 rounded-lg text-xs">
-                                <div className="space-y-1">
-                                  <p className="font-bold text-white text-[11.5px] flex items-center gap-1.5">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                                    Fez o primeiro acesso via Google?
-                                  </p>
-                                  <p className="text-[#b0b0b0] text-[11px] pl-3">
-                                    Se você se cadastrou clicando no botão do Google, você <span className="text-blue-400 font-bold">não tem uma senha tradicional</span> cadastrada. Entre utilizando o botão <strong className="text-white">Google</strong> abaixo.
-                                  </p>
-                                </div>
-                                
-                                <hr className="border-[#2d3139]/40" />
-
-                                <div className="space-y-1">
-                                  <p className="font-bold text-white text-[11.5px] flex items-center gap-1.5">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                                    Quer usar Senha Tradicional?
-                                  </p>
-                                  <p className="text-[#b0b0b0] text-[11px] pl-3">
-                                    Se você usava o Google mas agora quer entrar com e-mail/senha tradicional, clique no botão <button type="button" onClick={() => { setLastAuthError(null); handlePasswordReset(); }} className="text-blue-400 font-semibold underline hover:text-blue-300 focus:outline-none">Esqueceu a senha?</button>. Você receberá um e-mail para registrar sua senha.
-                                  </p>
-                                </div>
-
-                                <hr className="border-[#2d3139]/40" />
-
-                                <div className="space-y-1">
-                                  <p className="font-bold text-white text-[11.5px] flex items-center gap-1.5">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                                    Usuários Criados Pelo Administrador
-                                  </p>
-                                  <p className="text-[#b0b0b0] text-[11px] pl-3">
-                                    Se você é membro de equipe, o seu usuário é o seu e-mail cadastrado em letras minúsculas. Certifique-se de que não possui espaços ou letras maiúsculas.
-                                  </p>
-                                </div>
-                              </div>
+                              <p className="text-[#b0b0b0] text-[11px] pl-3">
+                                Se você se cadastrou clicando no botão do Google, você <span className="text-blue-400 font-bold">não tem uma senha tradicional</span> cadastrada. Entre utilizando o botão <strong className="text-white">Google</strong> abaixo.
+                              </p>
                             </div>
-                          ) : lastAuthError === 'TIMEOUT' ? (
-                            <p className="leading-relaxed text-xs text-gray-300">
-                              O servidor Firebase demorou mais que 8 segundos para responder. Verifique se o método de "E-mail/Senha" está devidamente ativado na aba "Autenticação" do seu console Firebase ou tente novamente com outra conexão de internet.
-                            </p>
-                          ) : lastAuthError === 'OP_NOT_ALLOWED' ? (
-                            <p className="leading-relaxed text-xs text-gray-300">
-                              O provedor de e-mail e senha está desativado no Firebase. Ative o método "E-mail/Senha" no seu console Firebase (Seção de Autenticação para que logins de equipe funcionem).
-                            </p>
-                          ) : lastAuthError === 'EMAIL_IN_USE' ? (
-                            <p className="leading-relaxed text-xs text-gray-300">
-                              Este usuário ou e-mail já está em uso em uma conta no sistema. Por favor utilize uma credencial diferente ou faça o login com o Google.
-                            </p>
-                          ) : lastAuthError === 'WEAK_PASSWORD' ? (
-                            <p className="leading-relaxed text-xs text-gray-300">
-                              A senha inserida é considerada fraca pela segurança do Firebase. A senha deve ter pelo menos 6 caracteres.
-                            </p>
-                          ) : lastAuthError === 'INVALID_EMAIL' ? (
-                            <p className="leading-relaxed text-xs text-gray-300">
-                              O formato do usuário ou e-mail é considerado inválido pelo Firebase. Verifique se digitou corretamente.
-                            </p>
-                          ) : (
-                            <p className="leading-relaxed text-xs text-gray-300">
-                              Usuário ou senha incorretos. Se você foi cadastrado pelo administrador de equipe, verifique letras maiúsculas/minúsculas e certifique-se de que a senha inserida está correta.
-                            </p>
-                          )}
-                        </div>
+                            
+                            <hr className="border-[#2d3139]/40" />
 
-                        {/* Footer of Modal */}
-                        <div className="p-4 bg-[#14161c] border-t border-[#2d3139] flex flex-col md:flex-row gap-2 justify-end">
-                          <Button 
-                            type="button" 
-                            onClick={() => {
-                              setLastAuthError(null);
-                              handleLogin();
-                            }}
-                            variant="outline"
-                            className="w-full md:w-auto gap-2 border-[#2d3139] text-white hover:bg-[#2d3139] h-10 px-4 text-xs font-semibold"
-                          >
-                            <svg className="h-4 w-4" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
-                              <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
-                            </svg>
-                            Entrar com Google
-                          </Button>
-                          <Button 
-                            type="button" 
-                            onClick={() => setLastAuthError(null)}
-                            className="w-full md:w-auto bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none h-10 px-6 text-xs font-semibold"
-                          >
-                            Ok
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                            <div className="space-y-1">
+                              <p className="font-bold text-white text-[11.5px] flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                Quer usar Senha Tradicional?
+                              </p>
+                              <p className="text-[#b0b0b0] text-[11px] pl-3">
+                                Se você usava o Google mas agora quer entrar com e-mail/senha tradicional, clique no botão <button type="button" onClick={() => { setLastAuthError(null); handlePasswordReset(); }} className="text-blue-400 font-semibold underline hover:text-blue-300 focus:outline-none">Esqueceu a senha?</button>. Você receberá um e-mail para registrar sua senha.
+                              </p>
+                            </div>
 
-                  <form onSubmit={handleEmailAuth} className="space-y-4 text-left">
-                    {authMode === 'register' && (
-                      <div className="space-y-2">
-                        <Label htmlFor="reg-name" className="text-[#a0a0a0]">Nome Completo</Label>
-                        <Input 
-                          id="reg-name" 
-                          type="text" 
-                          value={displayName} 
-                          onChange={e => setDisplayName(e.target.value)} 
-                          placeholder="Seu nome"
-                          className="bg-[#0f1115] border-[#2d3139] text-white" 
-                        />
-                      </div>
-                    )}
-                    <div className="space-y-2">
-                      <Label htmlFor="auth-username" className="text-[#a0a0a0]">Usuário ou E-mail</Label>
-                      <Input 
-                        id="auth-username" 
-                        type="text" 
-                        value={email} 
-                        onChange={e => setEmail(e.target.value)} 
-                        placeholder="Seu usuário ou e-mail registrado"
-                        className="bg-[#0f1115] border-[#2d3139] text-white" 
-                      />
-                      <p className="text-[10px] text-[#555] mt-1 italic">Dica: Se não for e-mail, usaremos @segurpro.com</p>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="auth-pass" className="text-[#a0a0a0]">Senha</Label>
-                        {authMode === 'login' && (
-                          <button
-                            type="button"
-                            onClick={handlePasswordReset}
-                            className="text-[11px] text-[#3b82f6] hover:text-blue-300 hover:underline transition-colors focus:outline-none"
-                          >
-                            Esqueceu a senha?
-                          </button>
-                        )}
-                      </div>
-                      <div className="relative">
-                        <Input 
-                          id="auth-pass" 
-                          type={showPassword ? "text" : "password"} 
-                          value={password} 
-                          onChange={e => setPassword(e.target.value)} 
-                          placeholder="••••••••"
-                          className="bg-[#0f1115] border-[#2d3139] text-white pr-10" 
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-[#71717a] hover:text-white transition-colors"
-                        >
-                          {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                        </button>
-                      </div>
-                    </div>
-                    <Button type="submit" disabled={isAuthLoading} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none h-11 flex items-center justify-center gap-2">
-                      {isAuthLoading ? (
-                        <>
-                          <RefreshCw className="h-4 w-4 animate-spin" />
-                          <span>{authMode === 'login' ? 'Entrando...' : 'Cadastrando...'}</span>
-                        </>
+                            <hr className="border-[#2d3139]/40" />
+
+                            <div className="space-y-1">
+                              <p className="font-bold text-white text-[11.5px] flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                Usuários Criados Pelo Administrador
+                              </p>
+                              <p className="text-[#b0b0b0] text-[11px] pl-3">
+                                Se você é membro de equipe, o seu usuário é o seu e-mail cadastrado em letras minúsculas. Certifique-se de que não possui espaços ou letras maiúsculas.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ) : lastAuthError === 'TIMEOUT' ? (
+                        <p className="leading-relaxed text-xs text-gray-300">
+                          O servidor Firebase demorou mais que 8 segundos para responder. Verifique se o método de "E-mail/Senha" está devidamente ativado na aba "Autenticação" do seu console Firebase ou tente novamente com outra conexão de internet.
+                        </p>
+                      ) : lastAuthError === 'OP_NOT_ALLOWED' ? (
+                        <p className="leading-relaxed text-xs text-gray-300">
+                          O provedor de e-mail e senha está desativado no Firebase. Ative o método "E-mail/Senha" no seu console Firebase (Seção de Autenticação para que logins de equipe funcionem).
+                        </p>
+                      ) : lastAuthError === 'EMAIL_IN_USE' ? (
+                        <p className="leading-relaxed text-xs text-gray-300">
+                          Este usuário ou e-mail já está em uso em uma conta no sistema. Por favor utilize uma credencial diferente ou faça o login com o Google.
+                        </p>
+                      ) : lastAuthError === 'WEAK_PASSWORD' ? (
+                        <p className="leading-relaxed text-xs text-gray-300">
+                          A senha inserida é considerada fraca pela segurança do Firebase. A senha deve ter pelo menos 6 caracteres.
+                        </p>
+                      ) : lastAuthError === 'INVALID_EMAIL' ? (
+                        <p className="leading-relaxed text-xs text-gray-300">
+                          O formato do usuário ou e-mail é considerado inválido pelo Firebase. Verifique se digitou corretamente.
+                        </p>
                       ) : (
-                        <span>{authMode === 'login' ? 'Entrar com E-mail' : 'Cadastrar e Acessar'}</span>
+                        <p className="leading-relaxed text-xs text-gray-300">
+                          Usuário ou senha incorretos. Se você foi cadastrado pelo administrador de equipe, verifique letras maiúsculas/minúsculas e certifique-se de que a senha inserida está correta.
+                        </p>
                       )}
-                    </Button>
-                  </form>
-
-                  <div className="pt-4 text-center">
-                    <button 
-                      onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
-                      className="text-xs text-[#3b82f6] hover:underline"
-                    >
-                      {authMode === 'login' ? 'Não tem uma conta? Cadastre-se' : 'Já tem uma conta? Faça login'}
-                    </button>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Right Column: Google Connection / Social Access (spanning 5 columns on md) */}
-            <div className="md:col-span-5 flex flex-col">
-              <Card className="border-[#2d3139] bg-[#1a1d23] h-full flex flex-col justify-between">
-                <CardHeader>
-                  <CardTitle className="text-white text-lg flex items-center gap-2">
-                    <svg className="h-4 w-4 text-[#3b82f6]" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
-                      <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
-                    </svg>
-                    Acesso Rápido
-                  </CardTitle>
-                  <CardDescription className="text-[#71717a] text-xs">
-                    Conecte instantaneamente utilizando sua conta Google sem precisar lembrar de senhas.
-                  </CardDescription>
-                </CardHeader>
-
-                <CardContent className="space-y-6 flex-1 flex flex-col justify-center py-6">
-                  <div className="flex flex-col items-center justify-center text-center space-y-4 py-4">
-                    <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-blue-500/20 to-purple-500/25 flex items-center justify-center border border-blue-500/30 animate-pulse">
-                      <svg className="h-8 w-8 text-[#3b82f6]" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
-                        <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
-                      </svg>
                     </div>
-                    <div className="space-y-1">
-                      <p className="text-white font-semibold text-sm">Autenticação Unificada</p>
-                      <p className="text-[#a0a0a0] text-xs">Acesso rápido e 100% criptografado.</p>
-                      <p className="text-[#71717a] text-[11px] leading-relaxed max-w-xs">
-                        Ideal para administradores, instaladores e parceiros que já têm login integrado do Google.
-                      </p>
-                    </div>
-                  </div>
 
-                  <Button onClick={handleLogin} variant="outline" className="w-full gap-2.5 border-[#2d3139] text-white hover:bg-[#3b82f6]/10 hover:text-white bg-[#0f1115] h-12 text-sm font-semibold shadow-md transition-all duration-200">
-                    <svg className="h-4 w-4 text-white" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
-                      <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
-                    </svg>
-                    Entrar com o Google
-                  </Button>
-
-                  <div className="pt-4 border-t border-[#2d3139]/55 w-full space-y-2">
-                    <a 
-                      href="?assinatura=portal"
-                      className="flex items-center justify-center gap-2 text-xs text-[#71717a] hover:text-white transition-colors py-1.5"
-                    >
-                      <Key size={12} />
-                      Área de Assinatura do Cliente
-                    </a>
-
-                    {((import.meta as any).env.VITE_LOCAL_DB === 'true') && (
+                    {/* Footer of Modal */}
+                    <div className="p-4 bg-[#14161c] border-t border-[#2d3139] flex flex-col md:flex-row gap-2 justify-end">
                       <Button 
-                        onClick={async () => {
-                          const confirmClose = window.confirm("Deseja realmente encerrar o servidor local do SegurPro e fechar o programa?");
-                          if (!confirmClose) return;
-                          try {
-                            toast.info("Encerrando o servidor local...");
-                            await fetch('/api/system/shutdown', { method: 'POST' });
-                          } catch (e) {
-                            console.error("Não foi possível enviar comando de finalização ao servidor.", e);
-                          }
-                          window.close();
-                          setTimeout(() => {
-                            document.body.innerHTML = `
-                              <div style="min-height: 100vh; background-color: #0f1115; color: #e0e0e0; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; padding: 20px; text-align: center;">
-                                <div style="background-color: #1a1d23; border: 1px solid #2d3139; padding: 32px; border-radius: 12px; max-w: 400px; width: 100%; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);">
-                                  <div style="width: 48px; height: 48px; background-color: rgba(239, 68, 68, 0.1); border-radius: 9999px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto; border: 1px solid rgba(239, 68, 68, 0.2);">
-                                    <span style="color: #ef4444; font-size: 24px; font-weight: bold; line-height: 1;">✕</span>
-                                  </div>
-                                  <h2 style="color: #ffffff; margin-top: 0; font-size: 18px; font-weight: bold; text-transform: uppercase; tracking-wider; margin-bottom: 8px;">Servidor Encerrado</h2>
-                                  <p style="color: #a0a0a0; font-size: 13px; margin-bottom: 24px; line-height: 1.5;">O servidor local do SegurPro foi finalizado com sucesso.</p>
-                                  <p style="color: #71717a; font-size: 11px; font-style: italic;">Você já pode fechar esta janela do seu navegador.</p>
-                                </div>
-                              </div>
-                            `;
-                          }, 300);
+                        type="button" 
+                        onClick={() => {
+                          setLastAuthError(null);
+                          handleLogin();
                         }}
                         variant="outline"
-                        className="w-full gap-2 border-red-500/20 text-red-400 hover:bg-neutral-950 hover:text-red-500 transition-all h-9 text-[10px] font-black uppercase tracking-wider mt-1 border-dashed"
+                        className="w-full md:w-auto gap-2 border-[#2d3139] text-white hover:bg-[#2d3139] h-10 px-4 text-xs font-semibold"
                       >
-                        <Power size={11} className="mr-1.5" />
-                        Encerrar Servidor & Fechar Programa
+                        <svg className="h-4 w-4" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
+                          <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
+                        </svg>
+                        Entrar com Google
                       </Button>
+                      <Button 
+                        type="button" 
+                        onClick={() => setLastAuthError(null)}
+                        className="w-full md:w-auto bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none h-10 px-6 text-xs font-semibold"
+                      >
+                        Ok
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <form onSubmit={handleEmailAuth} className="space-y-4 text-left">
+                {authMode === 'register' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="reg-name" className="text-[#a0a0a0]">Nome Completo</Label>
+                    <Input 
+                      id="reg-name" 
+                      type="text" 
+                      value={displayName} 
+                      onChange={e => setDisplayName(e.target.value)} 
+                      placeholder="Seu nome"
+                      className="bg-[#0f1115] border-[#2d3139] text-white" 
+                    />
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="auth-username" className="text-[#a0a0a0]">Usuário ou E-mail</Label>
+                  <Input 
+                    id="auth-username" 
+                    type="text" 
+                    value={email} 
+                    onChange={e => setEmail(e.target.value)} 
+                    placeholder="Seu usuário ou e-mail registrado"
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  />
+                  <p className="text-[10px] text-[#555] mt-1 italic">Dica: Se não for e-mail, usaremos @segurpro.com</p>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="auth-pass" className="text-[#a0a0a0]">Senha</Label>
+                    {authMode === 'login' && (
+                      <button
+                        type="button"
+                        onClick={handlePasswordReset}
+                        className="text-[11px] text-[#3b82f6] hover:text-blue-300 hover:underline transition-colors focus:outline-none"
+                      >
+                        Esqueceu a senha?
+                      </button>
                     )}
                   </div>
-                </CardContent>
-              </Card>
-            </div>
+                  <div className="relative">
+                    <Input 
+                      id="auth-pass" 
+                      type={showPassword ? "text" : "password"} 
+                      value={password} 
+                      onChange={e => setPassword(e.target.value)} 
+                      placeholder="••••••••"
+                      className="bg-[#0f1115] border-[#2d3139] text-white pr-10" 
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#71717a] hover:text-white transition-colors"
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                </div>
+                <Button type="submit" disabled={isAuthLoading} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none h-11">
+                  {isAuthLoading ? (
+                    <div className="flex items-center gap-2">
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      <span>{authMode === 'login' ? 'Entrando...' : 'Cadastrando...'}</span>
+                    </div>
+                  ) : (
+                    <span>{authMode === 'login' ? 'Entrar' : 'Cadastrar'}</span>
+                  )}
+                </Button>
+              </form>
 
-          </div>
+              <div className="relative py-2">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-[#2d3139]"></span>
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-[#1a1d23] px-2 text-[#71717a]">Ou continue com</span>
+                </div>
+              </div>
 
-          <p className="text-center text-xs text-[#555] pt-4">© 2026 {appSettings.companyName || 'SegurPro Gestão'}. Todos os direitos reservados.</p>
+              <Button onClick={handleLogin} variant="outline" className="w-full gap-2 border-[#2d3139] text-white hover:bg-[#2d3139]">
+                <svg className="h-4 w-4" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
+                  <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
+                </svg>
+                Google
+              </Button>
+
+              <div className="pt-4">
+                <button 
+                  onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
+                  className="text-sm text-[#3b82f6] hover:underline"
+                >
+                  {authMode === 'login' ? 'Não tem uma conta? Cadastre-se' : 'Já tem uma conta? Faça login'}
+                </button>
+              </div>
+
+              <div className="pt-2 border-t border-[#2d3139]/50 mt-4">
+                <a 
+                  href="?assinatura=portal"
+                  className="flex items-center justify-center gap-2 text-xs text-[#71717a] hover:text-white transition-colors py-2"
+                >
+                  <Key size={12} />
+                  Área de Assinatura do Cliente
+                </a>
+              </div>
+
+              {((import.meta as any).env.VITE_LOCAL_DB === 'true') && (
+                <div className="pt-2 border-t border-[#2d3139]/50 mt-1">
+                  <Button 
+                    onClick={async () => {
+                      const confirmClose = window.confirm("Deseja realmente encerrar o servidor local do SegurPro e fechar o programa?");
+                      if (!confirmClose) return;
+                      try {
+                        toast.info("Encerrando o servidor local...");
+                        await fetch('/api/system/shutdown', { method: 'POST' });
+                      } catch (e) {
+                        console.error("Não foi possível enviar comando de finalização ao servidor.", e);
+                      }
+                      window.close();
+                      setTimeout(() => {
+                        document.body.innerHTML = `
+                          <div style="min-height: 100vh; background-color: #0f1115; color: #e0e0e0; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; padding: 20px; text-align: center;">
+                            <div style="background-color: #1a1d23; border: 1px solid #2d3139; padding: 32px; border-radius: 12px; max-w: 400px; width: 100%; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);">
+                              <div style="width: 48px; height: 48px; background-color: rgba(239, 68, 68, 0.1); border-radius: 9999px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto; border: 1px solid rgba(239, 68, 68, 0.2);">
+                                <span style="color: #ef4444; font-size: 24px; font-weight: bold; line-height: 1;">✕</span>
+                              </div>
+                              <h2 style="color: #ffffff; margin-top: 0; font-size: 18px; font-weight: bold; text-transform: uppercase; tracking-wider; margin-bottom: 8px;">Servidor Encerrado</h2>
+                              <p style="color: #a0a0a0; font-size: 13px; margin-bottom: 24px; line-height: 1.5;">O servidor local do SegurPro foi finalizado com sucesso.</p>
+                              <p style="color: #71717a; font-size: 11px; font-style: italic;">Você já pode fechar esta janela do seu navegador.</p>
+                            </div>
+                          </div>
+                        `;
+                      }, 300);
+                    }}
+                    variant="outline"
+                    className="w-full gap-2 border-red-500/20 text-red-400 hover:bg-neutral-950 hover:text-red-500 transition-all h-9 text-[10px] font-black uppercase tracking-wider mt-1 border-dashed"
+                  >
+                    <Power size={11} />
+                    Encerrar Servidor & Fechar Programa
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+          <p className="text-xs text-[#555]">© 2026 {appSettings.companyName || 'SegurPro Gestão'}. Todos os direitos reservados.</p>
         </div>
       </div>
     );
