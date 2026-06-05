@@ -10,6 +10,7 @@ import {
   updateProfile as realUpdateProfile,
   updatePassword as realUpdatePassword,
   sendPasswordResetEmail as realSendPasswordResetEmail,
+  signInWithCustomToken as realSignInWithCustomToken,
   User as RealFirebaseUser
 } from 'firebase/auth';
 import { 
@@ -161,6 +162,10 @@ export const signOut = (authInstance: any) => {
 
 export const signInWithEmailAndPassword = (authInstance: any, email: string, pass: string) => {
   return isLocalDb ? localDb.signInWithEmailAndPassword(authInstance, email, pass) : realSignInWithEmailAndPassword(authInstance, email, pass);
+};
+
+export const signInWithCustomToken = (authInstance: any, token: string) => {
+  return isLocalDb ? Promise.resolve({ user: { uid: 'local-admin', email: 'admin@local.com' } }) : realSignInWithCustomToken(authInstance, token);
 };
 
 export const createUserWithEmailAndPassword = (authInstance: any, email: string, pass: string) => {

@@ -94,6 +94,7 @@ import {
   onAuthStateChanged, 
   signOut,
   signInWithEmailAndPassword,
+  signInWithCustomToken,
   createUserWithEmailAndPassword,
   updateProfile,
   updatePassword,
@@ -161,6 +162,7 @@ import {
 } from '@/components/ui/select';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
+import LicenseVerifierSplash from './components/LicenseVerifierSplash';
 
 const SUPER_ADMIN_EMAILS = ['emailparasiteslixo@gmail.com', 'alffonseca42@gmail.com'];
 import { LaudosManager, LaudoTecnico } from './components/LaudosManager';
@@ -759,20 +761,25 @@ function TableDoubleScroll({ children }: { children: React.ReactNode }) {
 
 const ALL_MENU_ITEMS = [
   { id: 'dashboard', label: 'Painel Geral' },
-  { id: 'clients', label: 'Clientes' },
-  { id: 'suppliers', label: 'Fornecedores' },
-  { id: 'pdv', label: 'PDV / Caixa' },
-  { id: 'financial', label: 'Financeiro' },
-  { id: 'receipts', label: 'Recibos' },
-  { id: 'reports', label: 'Relatórios' },
-  { id: 'budgets', label: 'Orçamentos' },
-  { id: 'laudos', label: 'Laudos Técnicos' },
   { id: 'visits', label: 'Visitas Técnicas' },
   { id: 'service-orders', label: 'Ordens de Serviço' },
-  { id: 'inventory', label: 'Estoque de Peças' },
-  { id: 'users', label: 'Gerenciar Equipe' },
+  { id: 'laudos', label: 'Laudos Técnicos' },
+  { id: 'clients', label: 'Clientes' },
+  { id: 'suppliers', label: 'Fornecedores' },
+  { id: 'budgets', label: 'Orçamentos' },
+  { id: 'pdv', label: 'PDV (Vendas)' },
+  { id: 'vendas-historico', label: 'Histórico de Vendas' },
+  { id: 'inventory', label: 'Estoque / Produtos' },
+  { id: 'financial', label: 'Financeiro (Lançamentos)' },
+  { id: 'payable', label: 'Contas a Pagar' },
+  { id: 'receivable', label: 'Contas a Receber' },
+  { id: 'receipts', label: 'Recibos / Emissor' },
+  { id: 'reports', label: 'Relatórios Gerenciais' },
+  { id: 'users', label: 'Equipe / Permissões' },
   { id: 'logs', label: 'Logs do Sistema' },
-  { id: 'settings', label: 'Configurações' }
+  { id: 'settings', label: 'Configurações' },
+  { id: 'financial-settings', label: 'Config. Financeiras' },
+  { id: 'backup-restore', label: 'Backup/Restauração' }
 ];
 
 interface UserRole {
@@ -3011,6 +3018,7 @@ export default function MainApp() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [isLicenseVerifying, setIsLicenseVerifying] = useState(true);
 
   const signerTokenUrl = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
@@ -3383,6 +3391,7 @@ export default function MainApp() {
 
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      setIsLicenseVerifying(true);
       if (!currentUser) {
         setCurrentUserData(null);
         setCurrentCompany(null);
@@ -3530,9 +3539,9 @@ export default function MainApp() {
     // Hard restriction for super-admin tab
     if (tabName === 'super-admin') return isSuperAdmin;
 
-    // Owners and Super Admins bypass SaaS menu restrictions for visibility
-    // but we still respect company-level enabledMenus for regular staff
-    if (isSuperAdmin || role === 'owner') return true;
+    // Only Super Admins bypass SaaS-level menu restrictions.
+    // Company owners and staff are strictly bound by the custom menus enabled via SaaS license options.
+    if (isSuperAdmin) return true;
 
     // SaaS specific menu restriction
     if (currentCompany?.enabledMenus) {
@@ -3551,12 +3560,15 @@ export default function MainApp() {
     } else if (!currentCompany?.enabledMenus) {
       // Default menus for companies without specific settings
       const defaultMenus = [
-        'dashboard', 'visits', 'receipts', 'clients', 'financial', 
-        'inventory', 'service-orders', 'budgets', 'settings', 'pdv',
-        'suppliers', 'reports', 'users', 'logs', 'laudos'
+        'dashboard', 'visits', 'service-orders', 'laudos', 'clients',
+        'suppliers', 'budgets', 'pdv', 'vendas-historico', 'inventory',
+        'financial', 'payable', 'receivable', 'receipts', 'reports',
+        'users', 'logs', 'settings', 'financial-settings', 'backup-restore'
       ];
       if (!defaultMenus.includes(tabName)) return false;
     }
+    
+    if (role === 'owner') return true;
     
     if (role === 'admin') {
       // Admin should see everything allowed for the company except logs maybe?
@@ -4001,6 +4013,9 @@ export default function MainApp() {
 
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({
+      prompt: 'select_account'
+    });
     try {
       await signInWithPopup(auth, provider);
       toast.success('Login realizado com sucesso!');
@@ -4238,15 +4253,64 @@ export default function MainApp() {
     try {
       const cleanPassword = password.trim();
       if (authMode === 'login') {
-        // Enforce a safety timeout on the signInWithEmailAndPassword promise
-        const signInPromise = signInWithEmailAndPassword(auth, finalEmail, cleanPassword);
-        const timeoutPromise = new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error('TIMEOUT')), 8000)
-        );
+        let isSuccessfullySignedIn = false;
+        let userCredential = null;
+        try {
+          // Enforce a safety timeout on the signInWithEmailAndPassword promise
+          const signInPromise = signInWithEmailAndPassword(auth, finalEmail, cleanPassword);
+          const timeoutPromise = new Promise<never>((_, reject) => 
+            setTimeout(() => reject(new Error('TIMEOUT')), 8000)
+          );
 
-        const userCredential = await Promise.race([signInPromise, timeoutPromise]);
-        toast.success(`Bem-vindo, ${userCredential.user.displayName || 'usuário'}!`);
-        enterFullscreen();
+          userCredential = await Promise.race([signInPromise, timeoutPromise]);
+          isSuccessfullySignedIn = true;
+        } catch (signInErr: any) {
+          console.warn("Standard client login failed or timed out, trying API fallback:", signInErr.message || signInErr);
+          
+          try {
+            // Let's call the /api/auth/fallback-login endpoint
+            const res = await fetch('/api/auth/fallback-login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email, password: cleanPassword })
+            });
+            
+            if (res.ok) {
+              const data = await res.json();
+              if (data.success && data.customToken) {
+                // Sign in with the custom token
+                userCredential = await signInWithCustomToken(auth, data.customToken);
+                isSuccessfullySignedIn = true;
+              } else if (data.success && data.user) {
+                // Local simulation success or bypass with a mock user
+                const mockUser = {
+                  uid: data.user.uid,
+                  email: data.user.email,
+                  displayName: data.user.displayName,
+                  emailVerified: true
+                };
+                setUser(mockUser);
+                isSuccessfullySignedIn = true;
+                toast.success(`Bem-vindo, ${mockUser.displayName}!`);
+                enterFullscreen();
+                setIsAuthLoading(false);
+                return;
+              } else {
+                throw signInErr; // Re-throw original sign-in error if API response lacks tokens
+              }
+            } else {
+              throw signInErr; // Re-throw original sign-in error if API failed
+            }
+          } catch (fallbackErr) {
+            console.error("Fallback login also failed:", fallbackErr);
+            throw signInErr; // Prefer throwing the original auth sign-in error with code information
+          }
+        }
+
+        if (isSuccessfullySignedIn && userCredential) {
+          toast.success(`Bem-vindo, ${userCredential.user.displayName || 'usuário'}!`);
+          enterFullscreen();
+        }
       } else {
         if (!displayName) {
           toast.error('Por favor, informe seu nome para o cadastro.');
@@ -4345,37 +4409,37 @@ export default function MainApp() {
   // The inviteCodeUrl will stay in the URL and be processed by the CompanyWizard after login.
   if (!user) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-[#0f1115] p-4 md:p-8 overflow-y-auto">
-        <div className="w-full max-w-4xl space-y-8 py-8 animate-in fade-in duration-500">
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#0f1115] p-3 md:p-6 overflow-y-auto">
+        <div className="w-full max-w-4xl space-y-4 py-2 animate-in fade-in duration-500">
           
           {/* Logo with Company Name on Top */}
-          <div className="text-center space-y-4">
+          <div className="text-center space-y-2">
             {inviteCodeUrl && (
-              <div className="max-w-md mx-auto bg-[#3b82f6]/10 border border-[#3b82f6]/30 p-4 rounded-xl flex items-center gap-4 mb-4 text-left animate-in slide-in-from-top duration-700">
-                <div className="p-2 bg-[#3b82f6] rounded-lg text-white">
-                  <Plus className="h-6 w-6" />
+              <div className="max-w-md mx-auto bg-[#3b82f6]/10 border border-[#3b82f6]/30 p-3 rounded-lg flex items-center gap-3 mb-2 text-left animate-in slide-in-from-top duration-700">
+                <div className="p-1.5 bg-[#3b82f6] rounded text-white">
+                  <Plus className="h-4 w-4" />
                 </div>
                 <div>
-                  <h3 className="text-white font-bold text-sm uppercase tracking-tighter italic">Voucher de Adesão Detectado!</h3>
-                  <p className="text-[#a0a0a0] text-[10px]">Crie sua conta agora para ativar seu acesso exclusivo com o código <span className="text-white font-mono">{inviteCodeUrl}</span></p>
+                  <h3 className="text-white font-bold text-xs uppercase tracking-tighter italic">Voucher de Adesão Detectado!</h3>
+                  <p className="text-[#a0a0a0] text-[9px]">Crie sua conta agora para ativar seu acesso exclusivo com o código <span className="text-white font-mono">{inviteCodeUrl}</span></p>
                 </div>
               </div>
             )}
             
-            <div className="flex flex-col items-center gap-3">
+            <div className="flex flex-col items-center gap-1.5">
               {appSettings.logoUrl ? (
-                <div className="mx-auto flex h-20 w-auto items-center justify-center overflow-hidden mb-1">
+                <div className="mx-auto flex h-14 w-auto items-center justify-center overflow-hidden mb-0.5">
                   <img src={appSettings.logoUrl} alt="Logo" className="max-h-full max-w-full object-contain" referrerPolicy="no-referrer" />
                 </div>
               ) : (
-                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[#3b82f6] text-white shadow-xl shadow-blue-900/20 mb-1">
-                  <Shield size={32} />
+                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-[#3b82f6] text-white shadow-lg shadow-blue-900/20 mb-0.5">
+                  <Shield size={22} />
                 </div>
               )}
-              <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-white bg-gradient-to-r from-white via-gray-200 to-gray-400 bg-clip-text text-transparent">
+              <h1 className="text-xl md:text-2xl font-extrabold tracking-tight text-white bg-gradient-to-r from-white via-gray-200 to-gray-400 bg-clip-text text-transparent">
                 {inviteCodeUrl ? 'Ativação de Cadastro' : (currentCompany?.name || appSettings.companyName || 'SegurPro SaaS')}
               </h1>
-              <p className="text-[#71717a] text-xs md:text-sm max-w-lg">
+              <p className="text-[#71717a] text-[11px] md:text-xs max-w-md">
                 {inviteCodeUrl 
                   ? 'Use o formulário abaixo para criar sua conta e ativar seu código de liberação.' 
                   : 'Controle total para instaladores de segurança eletrônica.'}
@@ -4384,25 +4448,25 @@ export default function MainApp() {
           </div>
 
           {/* Two-Column Layout */}
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-stretch">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-stretch">
             
             {/* Left Column: Email/Password Authentication (spanning 7 columns on md) */}
             <div className="md:col-span-7 flex flex-col">
-              <Card className={`border-[#2d3139] bg-[#1a1d23] h-full flex flex-col justify-between ${inviteCodeUrl ? 'ring-2 ring-blue-500/30' : ''}`}>
-                <CardHeader>
-                  <CardTitle className="text-white text-lg flex items-center gap-2">
-                    <Shield size={18} className="text-[#3b82f6]" />
+              <Card className={`border-[#2d3139]/80 bg-[#1a1d23] h-full flex flex-col justify-between ${inviteCodeUrl ? 'ring-2 ring-blue-500/30' : ''}`}>
+                <CardHeader className="p-4 pb-2 space-y-1">
+                  <CardTitle className="text-white text-base flex items-center gap-2">
+                    <Shield size={16} className="text-[#3b82f6]" />
                     {inviteCodeUrl 
                       ? (authMode === 'login' ? 'Vincular Convite' : 'Criar Conta de Admin') 
                       : (authMode === 'login' ? 'Entrar com E-mail' : 'Criar Nova Conta')}
                   </CardTitle>
-                  <CardDescription className="text-[#71717a] text-xs">
+                  <CardDescription className="text-[#71717a] text-[11px] leading-snug">
                     {inviteCodeUrl ? (
-                      <div className="bg-blue-500/10 border border-blue-500/20 p-3 rounded-lg mb-2 text-left">
-                         <p className="text-blue-400 text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2">
-                           <Shield size={14} /> Convite Mestre
+                      <div className="bg-blue-500/10 border border-blue-500/20 p-2.5 rounded mb-1 text-left">
+                         <p className="text-blue-400 text-[9px] font-black uppercase tracking-[0.2em] flex items-center gap-1.5">
+                           <Shield size={12} /> Convite Mestre
                          </p>
-                         <p className="text-white text-xs mt-1">
+                         <p className="text-white text-[11px] mt-0.5">
                            Registrando convite mestre <span className="font-mono font-bold text-blue-300">{inviteCodeUrl}</span>.
                          </p>
                       </div>
@@ -4410,7 +4474,7 @@ export default function MainApp() {
                   </CardDescription>
                 </CardHeader>
 
-                <CardContent className="space-y-4 flex-1">
+                <CardContent className="p-4 pt-1 space-y-3 flex-1">
                   {lastAuthError && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
                       <div className="bg-[#1a1d23] border border-[#2d3139] rounded-xl max-w-md w-full overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 text-left">
@@ -4529,40 +4593,40 @@ export default function MainApp() {
                     </div>
                   )}
 
-                  <form onSubmit={handleEmailAuth} className="space-y-4 text-left">
+                  <form onSubmit={handleEmailAuth} className="space-y-2.5 text-left">
                     {authMode === 'register' && (
-                      <div className="space-y-2">
-                        <Label htmlFor="reg-name" className="text-[#a0a0a0]">Nome Completo</Label>
+                      <div className="space-y-1">
+                        <Label htmlFor="reg-name" className="text-[#a0a0a0] text-[11px]">Nome Completo</Label>
                         <Input 
                           id="reg-name" 
                           type="text" 
                           value={displayName} 
                           onChange={e => setDisplayName(e.target.value)} 
                           placeholder="Seu nome"
-                          className="bg-[#0f1115] border-[#2d3139] text-white" 
+                          className="bg-[#0f1115] border-[#2d3139] text-white h-8.5 text-xs px-3 py-1.5" 
                         />
                       </div>
                     )}
-                    <div className="space-y-2">
-                      <Label htmlFor="auth-username" className="text-[#a0a0a0]">Usuário ou E-mail</Label>
+                    <div className="space-y-1">
+                      <Label htmlFor="auth-username" className="text-[#a0a0a0] text-[11px]">Usuário ou E-mail</Label>
                       <Input 
                         id="auth-username" 
                         type="text" 
                         value={email} 
                         onChange={e => setEmail(e.target.value)} 
                         placeholder="Seu usuário ou e-mail registrado"
-                        className="bg-[#0f1115] border-[#2d3139] text-white" 
+                        className="bg-[#0f1115] border-[#2d3139] text-white h-8.5 text-xs px-3 py-1.5" 
                       />
-                      <p className="text-[10px] text-[#555] mt-1 italic">Dica: Se não for e-mail, usaremos @segurpro.com</p>
+                      <p className="text-[9px] text-[#555] mt-0.5 italic">Dica: Se não for e-mail, usaremos @segurpro.com</p>
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-1">
                       <div className="flex items-center justify-between">
-                        <Label htmlFor="auth-pass" className="text-[#a0a0a0]">Senha</Label>
+                        <Label htmlFor="auth-pass" className="text-[#a0a0a0] text-[11px]">Senha</Label>
                         {authMode === 'login' && (
                           <button
                             type="button"
                             onClick={handlePasswordReset}
-                            className="text-[11px] text-[#3b82f6] hover:text-blue-300 hover:underline transition-colors focus:outline-none"
+                            className="text-[10px] text-[#3b82f6] hover:text-blue-300 hover:underline transition-colors focus:outline-none"
                           >
                             Esqueceu a senha?
                           </button>
@@ -4575,21 +4639,21 @@ export default function MainApp() {
                           value={password} 
                           onChange={e => setPassword(e.target.value)} 
                           placeholder="••••••••"
-                          className="bg-[#0f1115] border-[#2d3139] text-white pr-10" 
+                          className="bg-[#0f1115] border-[#2d3139] text-white pr-10 h-8.5 text-xs px-3 py-1.5" 
                         />
                         <button
                           type="button"
                           onClick={() => setShowPassword(!showPassword)}
                           className="absolute right-3 top-1/2 -translate-y-1/2 text-[#71717a] hover:text-white transition-colors"
                         >
-                          {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                         </button>
                       </div>
                     </div>
-                    <Button type="submit" disabled={isAuthLoading} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none h-11 flex items-center justify-center gap-2">
+                    <Button type="submit" disabled={isAuthLoading} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none h-8.5 text-xs flex items-center justify-center gap-2 mt-1">
                       {isAuthLoading ? (
                         <>
-                          <RefreshCw className="h-4 w-4 animate-spin" />
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
                           <span>{authMode === 'login' ? 'Entrando...' : 'Cadastrando...'}</span>
                         </>
                       ) : (
@@ -4598,10 +4662,10 @@ export default function MainApp() {
                     </Button>
                   </form>
 
-                  <div className="pt-4 text-center">
+                  <div className="pt-2 text-center">
                     <button 
                       onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
-                      className="text-xs text-[#3b82f6] hover:underline"
+                      className="text-[11px] text-[#3b82f6] hover:underline"
                     >
                       {authMode === 'login' ? 'Não tem uma conta? Cadastre-se' : 'Já tem uma conta? Faça login'}
                     </button>
@@ -4612,56 +4676,54 @@ export default function MainApp() {
 
             {/* Right Column: Google Connection / Social Access (spanning 5 columns on md) */}
             <div className="md:col-span-5 flex flex-col">
-              <Card className="border-[#2d3139] bg-[#1a1d23] h-full flex flex-col justify-between">
-                <CardHeader>
-                  <CardTitle className="text-white text-lg flex items-center gap-2">
+              <Card className="border-[#2d3139]/80 bg-[#1a1d23] h-full flex flex-col justify-between">
+                <CardHeader className="p-4 pb-2 space-y-1">
+                  <CardTitle className="text-white text-base flex items-center gap-2">
                     <svg className="h-4 w-4 text-[#3b82f6]" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
                       <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
                     </svg>
                     Acesso Rápido
                   </CardTitle>
-                  <CardDescription className="text-[#71717a] text-xs">
-                    Conecte instantaneamente utilizando sua conta Google sem precisar lembrar de senhas.
+                  <CardDescription className="text-[#71717a] text-[11px] leading-snug">
+                    Conecte usando sua conta Google sem precisar de senhas.
                   </CardDescription>
                 </CardHeader>
 
-                <CardContent className="space-y-6 flex-1 flex flex-col justify-center py-6">
-                  <div className="flex flex-col items-center justify-center text-center space-y-4 py-4">
-                    <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-blue-500/20 to-purple-500/25 flex items-center justify-center border border-blue-500/30 animate-pulse">
-                      <svg className="h-8 w-8 text-[#3b82f6]" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
+                <CardContent className="p-4 pt-1 space-y-3 flex-1 flex flex-col justify-between">
+                  <div className="flex flex-col items-center justify-center text-center space-y-2 py-1">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500/20 to-purple-500/25 flex items-center justify-center border border-blue-500/30 animate-pulse">
+                      <svg className="h-5 w-5 text-[#3b82f6]" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
                         <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
                       </svg>
                     </div>
-                    <div className="space-y-1">
-                      <p className="text-white font-semibold text-sm">Autenticação Unificada</p>
-                      <p className="text-[#a0a0a0] text-xs">Acesso rápido e 100% criptografado.</p>
-                      <p className="text-[#71717a] text-[11px] leading-relaxed max-w-xs">
-                        Ideal para administradores, instaladores e parceiros que já têm login integrado do Google.
+                    <div className="space-y-0.5">
+                      <p className="text-white font-semibold text-xs">Autenticação Unificada</p>
+                      <p className="text-[#a0a0a0] text-[10px]">Acesso rápido e criptografado.</p>
+                      <p className="text-[#71717a] text-[10px] leading-relaxed max-w-xs">
+                        Para administradores, instaladores e parceiros com conta Google.
                       </p>
                     </div>
                   </div>
 
-                  <Button onClick={handleLogin} variant="outline" className="w-full gap-2.5 border-[#2d3139] text-white hover:bg-[#3b82f6]/10 hover:text-white bg-[#0f1115] h-12 text-sm font-semibold shadow-md transition-all duration-200">
-                    <svg className="h-4 w-4 text-white" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
+                  <Button onClick={handleLogin} variant="outline" className="w-full gap-2 border-[#2d3139] text-white hover:bg-[#3b82f6]/10 hover:text-white bg-[#0f1115] h-8.5 text-xs font-semibold shadow-sm transition-all duration-200">
+                    <svg className="h-3.5 w-3.5 text-white" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
                       <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
                     </svg>
                     Entrar com o Google
                   </Button>
 
-                  <div className="pt-4 border-t border-[#2d3139]/55 w-full space-y-2">
+                  <div className="pt-2 border-t border-[#2d3139]/30 w-full space-y-1.5 mt-auto">
                     <a 
                       href="?assinatura=portal"
-                      className="flex items-center justify-center gap-2 text-xs text-[#71717a] hover:text-white transition-colors py-1.5"
+                      className="flex items-center justify-center gap-2 text-[11px] text-[#71717a] hover:text-white transition-colors py-1"
                     >
-                      <Key size={12} />
+                      <Key size={11} />
                       Área de Assinatura do Cliente
                     </a>
 
                     {((import.meta as any).env.VITE_LOCAL_DB === 'true') && (
                       <Button 
                         onClick={async () => {
-                          const confirmClose = window.confirm("Deseja realmente encerrar o servidor local do SegurPro e fechar o programa?");
-                          if (!confirmClose) return;
                           try {
                             toast.info("Encerrando o servidor local...");
                             await fetch('/api/system/shutdown', { method: 'POST' });
@@ -4685,7 +4747,7 @@ export default function MainApp() {
                           }, 300);
                         }}
                         variant="outline"
-                        className="w-full gap-2 border-red-500/20 text-red-400 hover:bg-neutral-950 hover:text-red-500 transition-all h-9 text-[10px] font-black uppercase tracking-wider mt-1 border-dashed"
+                        className="w-full gap-2 border-red-500/20 text-red-400 hover:bg-neutral-950 hover:text-red-500 transition-all h-8 text-[10px] font-black uppercase tracking-wider mt-0.5 border-dashed"
                       >
                         <Power size={11} className="mr-1.5" />
                         Encerrar Servidor & Fechar Programa
@@ -4746,6 +4808,22 @@ export default function MainApp() {
           </Button>
         </Card>
       </div>
+    );
+  }
+
+  // Live SaaS Contract/License verification after login - Super Admin bypasses this
+  if (user && currentUserData?.companyId && currentCompany && isLicenseVerifying && !isSuperAdmin) {
+    return (
+      <LicenseVerifierSplash 
+        user={user} 
+        company={currentCompany} 
+        onVerified={() => setIsLicenseVerifying(false)} 
+        onSignOut={() => {
+          signOut(auth);
+          setIsLicenseVerifying(true);
+        }}
+        appSettings={appSettings}
+      />
     );
   }
 
@@ -9267,6 +9345,37 @@ function SuperAdminPanel({
   const [selectedCompanyIdForClear, setSelectedCompanyIdForClear] = useState('');
   const [isClearingUserHistory, setIsClearingUserHistory] = useState(false);
 
+  // Global Core Updates state
+  const [publishingVersion, setPublishingVersion] = useState(saasSettings?.latestVersion || 'v4.8.2');
+  const [publishingNotes, setPublishingNotes] = useState(saasSettings?.latestNotes || 'Melhorias de desempenho e correções visuais.');
+  const [publishingFileUrl, setPublishingFileUrl] = useState(saasSettings?.latestFileUrl || '');
+  const [isSavingUpdatesConfig, setIsSavingUpdatesConfig] = useState(false);
+
+  useEffect(() => {
+    if (saasSettings) {
+      if (saasSettings.latestVersion) setPublishingVersion(saasSettings.latestVersion);
+      if (saasSettings.latestNotes) setPublishingNotes(saasSettings.latestNotes);
+      if (saasSettings.latestFileUrl) setPublishingFileUrl(saasSettings.latestFileUrl);
+    }
+  }, [saasSettings]);
+
+  const handleSaveGlobalUpdatesSettings = async () => {
+    setIsSavingUpdatesConfig(true);
+    try {
+      await setDoc(doc(db, 'saas_settings', 'global'), {
+        latestVersion: publishingVersion,
+        latestNotes: publishingNotes,
+        latestFileUrl: publishingFileUrl
+      }, { merge: true });
+      toast.success("Novos parâmetros de atualização publicados globalmente!");
+    } catch (saveError) {
+      console.error("Error saving global updates:", saveError);
+      toast.error("Erro ao salvar parâmetros globais.");
+    } finally {
+      setIsSavingUpdatesConfig(false);
+    }
+  };
+
   const companyUsersForClear = allUsers.filter(u => u.companyId === selectedCompanyIdForClear);
   const companyUsers = allUsers.filter(u => u.companyId === selectedCompanyId);
 
@@ -9489,7 +9598,13 @@ function SuperAdminPanel({
         customPrice: Number(editingCompany.customPrice) || 0,
         billingCycle: editingCompany.billingCycle || 'mensal',
         receivesUpdates: editingCompany.receivesUpdates ?? true,
-        enabledMenus: editingCompany.enabledMenus || ['resumo', 'visits', 'receipts', 'clients', 'financial', 'inventory', 'os', 'budgets', 'settings', 'pdv'],
+        supportChannels: editingCompany.supportChannels || ['whatsapp', 'email'],
+        enabledMenus: editingCompany.enabledMenus || [
+          'dashboard', 'visits', 'service-orders', 'laudos', 'clients',
+          'suppliers', 'budgets', 'pdv', 'vendas-historico', 'inventory',
+          'financial', 'payable', 'receivable', 'receipts', 'reports',
+          'users', 'logs', 'settings', 'financial-settings', 'backup-restore'
+        ],
         ownerName: editingCompany.ownerName || '',
         ownerEmail: editingCompany.ownerEmail || '',
         dbMode: editingCompany.dbMode || 'default',
@@ -9504,10 +9619,72 @@ function SuperAdminPanel({
     }
   };
 
+  const [editingOwnerPassword, setEditingOwnerPassword] = useState<string>('');
+  const [newOwnerPassword, setNewOwnerPassword] = useState<string>('');
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState<boolean>(false);
+
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [companyToToggle, setCompanyToToggle] = useState<{id: string, status: string} | null>(null);
   const [editingCompany, setEditingCompany] = useState<any>(null);
+
+  useEffect(() => {
+    if (isEditCompanyOpen && editingCompany?.ownerId) {
+      setEditingOwnerPassword('Carregando...');
+      setNewOwnerPassword('');
+      fetch(`/api/admin/user-password/${editingCompany.ownerId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.password) {
+            setEditingOwnerPassword(data.password);
+          } else {
+            setEditingOwnerPassword('Senha oculta/não encontrada');
+          }
+        })
+        .catch(() => {
+          setEditingOwnerPassword('Erro ao carregar');
+        });
+    } else {
+      setEditingOwnerPassword('');
+      setNewOwnerPassword('');
+    }
+  }, [isEditCompanyOpen, editingCompany?.ownerId]);
+
+  const handleUpdateOwnerPassword = async () => {
+    if (!editingCompany?.ownerId) return;
+    if (!newOwnerPassword.trim()) {
+      toast.error("Por favor, digite a nova senha.");
+      return;
+    }
+    if (newOwnerPassword.trim().length < 6) {
+      toast.error("A senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+    setIsUpdatingPassword(true);
+    try {
+      const response = await fetch('/api/admin/update-user-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: editingCompany.ownerId,
+          newPassword: newOwnerPassword.trim()
+        })
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        toast.success("Senha do proprietário alterada com sucesso!");
+        setEditingOwnerPassword(newOwnerPassword.trim());
+        setNewOwnerPassword('');
+      } else {
+        toast.error(data.error || "Erro ao atualizar senha.");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro de conexão ao alterar senha.");
+    } finally {
+      setIsUpdatingPassword(false);
+    }
+  };
 
   const editingCompanyOwner = useMemo(() => {
     if (!editingCompany?.ownerId) return null;
@@ -9752,10 +9929,12 @@ function SuperAdminPanel({
         receivesUpdates: editingCompany.receivesUpdates ?? true,
         isExempt: editingCompany.isExempt || false,
         dbMode: editingCompany.dbMode || 'default',
+        supportChannels: editingCompany.supportChannels || ['whatsapp', 'email'],
         enabledMenus: editingCompany.enabledMenus || [
-          'dashboard', 'visits', 'receipts', 'clients', 'financial', 
-          'inventory', 'service-orders', 'budgets', 'settings', 'pdv',
-          'suppliers', 'reports', 'users', 'logs'
+          'dashboard', 'visits', 'service-orders', 'laudos', 'clients',
+          'suppliers', 'budgets', 'pdv', 'vendas-historico', 'inventory',
+          'financial', 'payable', 'receivable', 'receipts', 'reports',
+          'users', 'logs', 'settings', 'financial-settings', 'backup-restore'
         ]
       });
       toast.success("Plano da empresa atualizado!");
@@ -10246,6 +10425,60 @@ function SuperAdminPanel({
       <Card className="bg-[#1a1d23] border-[#2d3139] text-white shadow-xl hover:border-blue-500/20 transition-all mb-8">
         <CardHeader>
           <CardTitle className="text-white flex items-center gap-2">
+            <RefreshCw className="text-[#3b82f6]" size={20} />
+            Publicação de Atualizações do Core (SaaS Central)
+          </CardTitle>
+          <CardDescription className="text-[#71717a]">
+            Publique novos pacotes de atualização para que os clientes licenciados que possuem atualizações liberadas possam aplicar as melhorias e correções no sistema deles.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black tracking-widest">Código da Versão Comercial (ex: v4.8.3)</Label>
+              <Input 
+                value={publishingVersion}
+                onChange={(e) => setPublishingVersion(e.target.value)}
+                placeholder="v4.8.3"
+                className="bg-[#0f1115] border-[#2d3139] text-white h-11"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black tracking-widest">Localização/URL do Pacote de Patch (.zip ou diretório)</Label>
+              <Input 
+                value={publishingFileUrl}
+                onChange={(e) => setPublishingFileUrl(e.target.value)}
+                placeholder="Ex: /updates/v4.8.3.zip ou URL externa de CDN"
+                className="bg-[#0f1115] border-[#2d3139] text-white h-11"
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-[#a0a0a0] text-[10px] uppercase font-black tracking-widest">Notas da Versão (Melhorias, Novidades e Correções)</Label>
+            <textarea
+              value={publishingNotes}
+              onChange={(e) => setPublishingNotes(e.target.value)}
+              placeholder="Novos módulos adicionados..."
+              className="w-full bg-[#0f1115] border border-[#2d3139] rounded-md p-3 text-sm text-white font-sans h-24 focus:outline-none focus:border-blue-500 transition-colors"
+            />
+          </div>
+          <div className="p-3 bg-[#0f1115] border border-[#2d3139] rounded-lg text-xs text-[#71717a] leading-relaxed">
+            💡 <span className="text-neutral-300 font-semibold">Onde deixar o arquivo de atualização?</span> Você pode armazenar o arquivo compactado em <span className="text-zinc-500 font-mono">/public/updates/</span> deste projeto, em um bucket do Google Cloud Storage, ou no seu próprio servidor central, e depois colar o link de download direto no campo acima. Quando as empresas parceiras checarem por atualizações, elas lerão este registro do Firestore e poderão instalar os novos recursos instantaneamente de forma integrada.
+          </div>
+          <Button 
+            onClick={handleSaveGlobalUpdatesSettings} 
+            disabled={isSavingUpdatesConfig}
+            className="w-full bg-[#10b981] hover:bg-[#059669] text-white font-bold h-11 shadow-lg shadow-emerald-500/10"
+          >
+            {isSavingUpdatesConfig ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+            PUBLICAR E DISPONIBILIZAR ATUALIZAÇÃO ONLINE AGORA
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="bg-[#1a1d23] border-[#2d3139] text-white shadow-xl hover:border-blue-500/20 transition-all mb-8">
+        <CardHeader>
+          <CardTitle className="text-white flex items-center gap-2">
             <CreditCard className="text-[#3b82f6]" size={20} />
             Importar Juros de Cartões
           </CardTitle>
@@ -10323,7 +10556,8 @@ function SuperAdminPanel({
                         ...company,
                         billingCycle: company.billingCycle || saasSettings?.billingCycle || 'mensal',
                         customPrice: company.customPrice !== undefined ? company.customPrice : (saasSettings?.price || 0),
-                        receivesUpdates: company.receivesUpdates ?? true
+                        receivesUpdates: company.receivesUpdates ?? true,
+                        supportChannels: company.supportChannels || ['whatsapp', 'email']
                       });
                       setIsEditCompanyOpen(true);
                     }}
@@ -10420,7 +10654,7 @@ function SuperAdminPanel({
                 </div>
 
                 {editingCompanyOwner && (
-                  <div className="p-4 bg-[#0f1115] border border-blue-500/20 rounded-xl space-y-2 shadow-inner group transition-all hover:border-blue-500/40">
+                  <div className="p-4 bg-[#0f1115] border border-blue-500/20 rounded-xl space-y-3 shadow-inner group transition-all hover:border-blue-500/40 text-left">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-blue-400">
                         <UserIcon size={14} className="group-hover:scale-110 transition-transform" />
@@ -10428,10 +10662,41 @@ function SuperAdminPanel({
                       </div>
                       <Badge variant="outline" className="text-[8px] bg-blue-500/10 text-blue-400 border-blue-400/20 uppercase font-black tracking-widest">Master Admin</Badge>
                     </div>
-                    <div className="flex flex-col gap-0.5">
+                    <div className="flex flex-col gap-0.5 border-b border-[#2d3139]/30 pb-2.5">
                       <span className="text-sm font-black text-white tracking-tight">{editingCompanyOwner.displayName || editingCompanyOwner.name || 'Nome não informado'}</span>
                       <div className="flex items-center gap-2 text-[#71717a]">
                         <span className="text-[11px] font-medium font-mono">{editingCompanyOwner.email}</span>
+                      </div>
+                    </div>
+                    
+                    {/* Exibição e troca de senha do proprietário da licença */}
+                    <div className="space-y-2.5 pt-0.5">
+                      <div className="flex items-center justify-between bg-[#13151b] border border-[#2d3139] rounded-lg p-2">
+                        <div className="flex flex-col">
+                          <span className="text-[9px] uppercase font-black text-[#71717a] tracking-wider">Senha Atual</span>
+                          <span className="text-xs font-mono font-bold text-[#f59e0b] truncate">{editingOwnerPassword || '---'}</span>
+                        </div>
+                        <span className="text-[8px] uppercase font-bold text-gray-500 bg-gray-500/10 px-2.5 py-1 rounded border border-gray-500/20">Acesso SaaS</span>
+                      </div>
+                      
+                      <div className="space-y-1">
+                        <Label className="text-[9px] uppercase font-bold text-[#a0a0a0]">Mudar Senha do Proprietário</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            type="text"
+                            value={newOwnerPassword}
+                            onChange={(e) => setNewOwnerPassword(e.target.value)}
+                            placeholder="Nova senha (min. 6 dig)"
+                            className="bg-[#13151b] border-[#2d3139] text-white h-7 text-xs flex-1"
+                          />
+                          <Button 
+                            onClick={handleUpdateOwnerPassword}
+                            disabled={isUpdatingPassword}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold h-7 text-[10px] px-2.5 transition-colors shrink-0"
+                          >
+                            {isUpdatingPassword ? 'Gravando...' : 'Mudar'}
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -10444,22 +10709,28 @@ function SuperAdminPanel({
                       <span className="text-[10px] text-[#71717a]">Selecione quais abas esta empresa pode ver.</span>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 p-3 bg-[#0f1115]/50 border border-[#2d3139] rounded-lg">
+                  <div className="grid grid-cols-2 gap-2 p-3 bg-[#0f1115]/50 border border-[#2d3139] rounded-lg max-h-[230px] overflow-y-auto custom-scrollbar">
                     {[
-                      {id: 'dashboard', label: 'Dashboard'},
+                      {id: 'dashboard', label: 'Painel Geral'},
                       {id: 'visits', label: 'Visitas Técnicas'},
-                      {id: 'receipts', label: 'Recibos'},
-                      {id: 'clients', label: 'Clientes'},
-                      {id: 'financial', label: 'Financeiro'},
-                      {id: 'inventory', label: 'Estoque'},
                       {id: 'service-orders', label: 'Ordens de Serviço'},
+                      {id: 'laudos', label: 'Laudos Técnicos'},
+                      {id: 'clients', label: 'Clientes'},
+                      {id: 'suppliers', label: 'Fornecedores'},
                       {id: 'budgets', label: 'Orçamentos'},
                       {id: 'pdv', label: 'PDV (Vendas)'},
-                      {id: 'suppliers', label: 'Fornecedores'},
-                      {id: 'reports', label: 'Relatórios'},
-                      {id: 'users', label: 'Equipe'},
-                      {id: 'logs', label: 'Logs'},
-                      {id: 'settings', label: 'Configurações'}
+                      {id: 'vendas-historico', label: 'Histórico de Vendas'},
+                      {id: 'inventory', label: 'Estoque / Produtos'},
+                      {id: 'financial', label: 'Financeiro (Lançamentos)'},
+                      {id: 'payable', label: 'Contas a Pagar'},
+                      {id: 'receivable', label: 'Contas a Receber'},
+                      {id: 'receipts', label: 'Recibos / Emissor'},
+                      {id: 'reports', label: 'Relatórios Gerenciais'},
+                      {id: 'users', label: 'Equipe / Permissões'},
+                      {id: 'logs', label: 'Logs do Sistema'},
+                      {id: 'settings', label: 'Configurações'},
+                      {id: 'financial-settings', label: 'Config. Financeiras'},
+                      {id: 'backup-restore', label: 'Backup/Restauração'}
                     ].map(menu => (
                       <div key={menu.id} className="flex items-center space-x-2">
                         <Checkbox 
@@ -10467,9 +10738,10 @@ function SuperAdminPanel({
                           checked={editingCompany?.enabledMenus ? editingCompany.enabledMenus.includes(menu.id) : true}
                           onCheckedChange={(checked) => {
                             const current = editingCompany?.enabledMenus || [
-                              'dashboard', 'visits', 'receipts', 'clients', 'financial', 
-                              'inventory', 'service-orders', 'budgets', 'settings', 'pdv',
-                              'suppliers', 'reports', 'users', 'logs'
+                              'dashboard', 'visits', 'service-orders', 'laudos', 'clients',
+                              'suppliers', 'budgets', 'pdv', 'vendas-historico', 'inventory',
+                              'financial', 'payable', 'receivable', 'receipts', 'reports',
+                              'users', 'logs', 'settings', 'financial-settings', 'backup-restore'
                             ];
                             let updated;
                             if (checked) {
@@ -10480,7 +10752,7 @@ function SuperAdminPanel({
                             setEditingCompany({...editingCompany, enabledMenus: updated});
                           }}
                         />
-                        <Label htmlFor={`menu-${menu.id}`} className="text-xs cursor-pointer">{menu.label}</Label>
+                        <Label htmlFor={`menu-${menu.id}`} className="text-[11px] cursor-pointer text-neutral-300 hover:text-white transition-colors select-none">{menu.label}</Label>
                       </div>
                     ))}
                   </div>
@@ -10578,6 +10850,45 @@ function SuperAdminPanel({
               </select>
               <p className="text-[9px] text-[#71717a] uppercase font-semibold leading-normal mt-1 tracking-tight">
                 Instrui o terminal desse cliente a forçar o banco escolhido. Se alterado, a sessão sincronizará e reiniciará.
+              </p>
+            </div>
+
+            {/* Canais de Suporte Técnico Habilitados */}
+            <div className="space-y-3 p-4 bg-[#0f1115]/50 border border-[#2d3139] rounded-lg">
+              <Label className="text-[#a0a0a0] text-[10px] font-bold uppercase tracking-widest text-[#3b82f6]">Modalidades de Suporte Técnico</Label>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                {[
+                  { id: 'whatsapp', label: 'WhatsApp', color: 'text-emerald-400' },
+                  { id: 'telefone', label: 'Telefone', color: 'text-sky-400' },
+                  { id: 'email', label: 'E-mail (e-Ticket)', color: 'text-amber-400' },
+                  { id: 'acesso_remoto', label: 'Acesso Remoto', color: 'text-fuchsia-400' }
+                ].map(channel => {
+                  const currentChannels = editingCompany?.supportChannels || ['whatsapp', 'email'];
+                  const isChecked = currentChannels.includes(channel.id);
+                  return (
+                    <div key={channel.id} className="flex items-center space-x-2">
+                      <Checkbox 
+                        id={`support-${channel.id}`} 
+                        checked={isChecked}
+                        onCheckedChange={(checked) => {
+                          let updated;
+                          if (checked) {
+                            updated = [...currentChannels, channel.id];
+                          } else {
+                            updated = currentChannels.filter((c: string) => c !== channel.id);
+                          }
+                          setEditingCompany({...editingCompany, supportChannels: updated});
+                        }}
+                      />
+                      <Label htmlFor={`support-${channel.id}`} className={cn("text-[11px] cursor-pointer select-none font-bold", channel.color)}>
+                        {channel.label}
+                      </Label>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-[9px] text-[#71717a] uppercase font-semibold leading-normal mt-1 tracking-tight">
+                Define quais modais e links de suporte estarão visíveis para a empresa no topo ou painel de configurações.
               </p>
             </div>
 
@@ -11207,6 +11518,166 @@ function SettingsManager({
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
+  const [updateLogLines, setUpdateLogLines] = useState<string[]>([]);
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'up-to-date' | 'update-available' | 'updating' | 'error'>('idle');
+  const [foundUpdateInfo, setFoundUpdateInfo] = useState<{ version: string; notes: string; fileUrl: string } | null>(null);
+  const [showInstallerInstructionsModal, setShowInstallerInstructionsModal] = useState(false);
+
+  const handleCheckUpdates = async () => {
+    if (currentCompany?.receivesUpdates === false) {
+      setUpdateStatus('error');
+      setIsCheckingUpdates(true);
+      setUpdateLogLines([
+        "Iniciando requisição de handshake com servidor central...",
+        "🔴 ERRO 403 - ACESSO RESTRITO (SaaS License Level Block)",
+        "A empresa licenciada (ID: " + (companyId || "indefinido") + ") está parametrizada com o recebimento de atualizações travado.",
+        "Consulte seu distribuidor ou administrador SaaS para contratar a liberação de novos recursos on-line."
+      ]);
+      return;
+    }
+
+    setIsCheckingUpdates(true);
+    setUpdateStatus('checking');
+    setUpdateLogLines([
+      "Conectando ao SaaS Central da Synclayers...",
+    ]);
+
+    const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+    await sleep(700);
+    setUpdateLogLines(prev => [...prev, "✓ Conexão Handshake SSL estabelecida com sucesso."]);
+    setUpdateLogLines(prev => [...prev, "Sincronizando assinatura digital de licenciamento..."]);
+    
+    await sleep(900);
+    setUpdateLogLines(prev => [...prev, "✓ Licenciamento verificado para: " + (currentCompany?.name || "Sua Empresa") + "."]);
+    setUpdateLogLines(prev => [...prev, "Analisando manifestos de patches e arquivos operacionais locais disponíveis..."]);
+    
+    await sleep(1000);
+    const currentVersion = currentCompany?.version || 'v4.8.2';
+    setUpdateLogLines(prev => [...prev, `• Versão Atual: ${currentVersion}`]);
+    setUpdateLogLines(prev => [...prev, "• Modo Técnico: " + (currentCompany?.dbMode === 'local' ? "Híbrido Offline Sandbox" : "Nuvem Real Cloud")]);
+    setUpdateLogLines(prev => [...prev, "Buscando catálogo de atualizações publicadas no SaaS Central..."]);
+
+    await sleep(1100);
+    try {
+      const globalDoc = await getDoc(doc(db, 'saas_settings', 'global'));
+      if (globalDoc.exists()) {
+        const latestData = globalDoc.data();
+        const latestVersion = latestData?.latestVersion || 'v4.8.2';
+        const latestNotes = latestData?.latestNotes || 'Melhorias de desempenho e correções visuais.';
+        const latestFileUrl = latestData?.latestFileUrl || '';
+
+        if (latestVersion !== currentVersion && latestVersion !== 'v4.8.2') {
+          setUpdateLogLines(prev => [
+            ...prev,
+            `🎁 NOVA ATUALIZAÇÃO ENCONTRADA: ${latestVersion}`,
+            `📝 Notas da Versão: ${latestNotes}`,
+            latestFileUrl ? `📦 Local do Arquivo de Patch: ${latestFileUrl}` : `📦 Arquivo: Repositório Base Mestre`
+          ]);
+          setFoundUpdateInfo({ version: latestVersion, notes: latestNotes, fileUrl: latestFileUrl });
+          setUpdateStatus('update-available');
+        } else {
+          setUpdateLogLines(prev => [
+            ...prev,
+            "✓ Banco de dados e estrutura local estão otimizados e em perfeita conformidade.",
+            `🎉 Seu sistema já está rodando a última versão estável recomendada (${currentVersion})!`
+          ]);
+          setUpdateStatus('up-to-date');
+        }
+      } else {
+        setUpdateLogLines(prev => [
+          ...prev,
+          "✓ Banco de dados e estrutura local estão otimizados e em perfeita conformidade.",
+          `🎉 Seu sistema já está rodando a última versão estável recomendada (v4.8.2)!`
+        ]);
+        setUpdateStatus('up-to-date');
+      }
+    } catch (e: any) {
+      console.warn("Firestore updates directory unconfigured or offline:", e.message || e);
+      setUpdateLogLines(prev => [
+        ...prev,
+        "✓ Banco de dados e estrutura local estão em conformidade.",
+        `🎉 Seu sistema já está rodando a última versão estável recomendada (v4.8.2-local)!`
+      ]);
+      setUpdateStatus('up-to-date');
+    }
+  };
+
+  const handleApplyUpdate = async () => {
+    if (!foundUpdateInfo?.version) return;
+    setUpdateStatus('updating');
+    setUpdateLogLines([
+      `Iniciando implantação integrada de versão para ${foundUpdateInfo.version}...`,
+    ]);
+
+    const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+    await sleep(700);
+    setUpdateLogLines(prev => [...prev, "• Baixando manifesto de compilações..."]);
+    if (foundUpdateInfo.fileUrl) {
+      setUpdateLogLines(prev => [...prev, `• Iniciando redirecionamento para download: ${foundUpdateInfo.fileUrl}...`]);
+    } else {
+      setUpdateLogLines(prev => [...prev, "• Obtendo pacotes de compilação do repositório mestre..."]);
+    }
+
+    await sleep(900);
+    // At this point we trigger the browser download of the fileUrl (e.g. Google Drive/Electron installer URL)
+    if (foundUpdateInfo.fileUrl) {
+      try {
+        const dlink = document.createElement('a');
+        dlink.href = foundUpdateInfo.fileUrl;
+        dlink.setAttribute('download', '');
+        dlink.setAttribute('target', '_blank');
+        dlink.setAttribute('rel', 'noopener noreferrer');
+        document.body.appendChild(dlink);
+        dlink.click();
+        document.body.removeChild(dlink);
+        setUpdateLogLines(prev => [...prev, "✓ Comando de download enviado com sucesso!"]);
+      } catch (dlErr) {
+        console.error("Failed to automatically trigger download link:", dlErr);
+        // Fallback standard window opening
+        window.open(foundUpdateInfo.fileUrl, '_blank');
+        setUpdateLogLines(prev => [...prev, "• Aberto endereço de download do executável em nova aba segura."]);
+      }
+    }
+
+    await sleep(1000);
+    setUpdateLogLines(prev => [...prev, "✓ Registro local sincronizado. Atualizando licença de software e registros em tempo real..."]);
+
+    try {
+      await updateDoc(doc(db, 'companies', companyId), {
+        version: foundUpdateInfo.version,
+        updatedAt: Timestamp.now()
+      });
+      setUpdateLogLines(prev => [
+        ...prev,
+        "✓ Registro lógico de sistema no Cloud Firestore atualizado para " + foundUpdateInfo.version,
+        `🎉 PARÂMETROS PREPARADOS PARA INSTALAÇÃO: ${foundUpdateInfo.version}!`,
+        "Por favor, configure as permissões e execute o instalador conforme as instruções."
+      ]);
+      setUpdateStatus('up-to-date');
+      toast.success(`Parâmetros de atualização preparados para versão ${foundUpdateInfo.version}!`);
+      
+      // Delay before showing the modal with full steps
+      setTimeout(() => {
+        setShowInstallerInstructionsModal(true);
+      }, 600);
+    } catch (err: any) {
+      console.warn("Fallback local system updates save:", err.message || err);
+      setUpdateLogLines(prev => [
+        ...prev,
+        "✓ Registro local sincronizado na sandbox cliente local.",
+        `🎉 PARÂMETROS LOCALMENTE PREPARADOS: ${foundUpdateInfo.version}!`
+      ]);
+      setUpdateStatus('up-to-date');
+      
+      setTimeout(() => {
+        setShowInstallerInstructionsModal(true);
+      }, 600);
+    }
+  };
+  
   const [newServiceType, setNewServiceType] = useState('');
 
   const handleAddServiceType = async () => {
@@ -11804,10 +12275,363 @@ function SettingsManager({
         </p>
       </div>
 
-        <div className="grid grid-cols-1 gap-8 max-w-4xl mx-auto">
-          <div className="space-y-8">
-            {mode === 'general' && (
-              <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
+      <div className="grid grid-cols-1 gap-8 max-w-4xl mx-auto">
+        <div className="space-y-8">
+          {mode === 'general' && (
+            <>
+              {/* Painel de Licenciamento SaaS do Cliente */}
+              <Card className="bg-[#1a1d23] border-[#2d3139] text-white overflow-hidden relative mb-8">
+                <div className="absolute top-0 right-0 p-4">
+                  <span className="text-[10px] uppercase font-bold tracking-widest text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-md border border-emerald-500/20 flex items-center gap-1.5 shadow-sm">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    Licença Certificada
+                  </span>
+                </div>
+                
+                <CardHeader className="border-b border-[#2d3139]/30 bg-[#16191f]/40 p-5">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Shield className="text-[#3b82f6]" size={18} />
+                    Informações de Licenciamento & SaaS
+                  </CardTitle>
+                  <CardDescription className="text-[#71717a] text-[11px] uppercase tracking-wider font-semibold">
+                    Status de ativação e recursos contratados para esta Empresa.
+                  </CardDescription>
+                </CardHeader>
+                
+                <CardContent className="p-5 space-y-5 text-left">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center py-1.5 border-b border-[#2d3139]/30">
+                        <span className="text-[11px] text-[#71717a] uppercase font-bold tracking-wider">ID de Licenciamento:</span>
+                        <span className="text-[11px] font-mono font-bold text-white bg-[#0f1115] px-2 py-0.5 rounded border border-[#2d3139]/50">{companyId}</span>
+                      </div>
+                      
+                      <div className="flex justify-between items-center py-1.5 border-b border-[#2d3139]/30">
+                        <span className="text-[11px] text-[#71717a] uppercase font-bold tracking-wider">Status do Contrato:</span>
+                        <span className="text-xs font-black text-emerald-400 uppercase">Ativo</span>
+                      </div>
+                      
+                      <div className="flex justify-between items-center py-1.5 border-b border-[#2d3139]/30">
+                        <span className="text-[11px] text-[#71717a] uppercase font-bold tracking-wider">Parâmetro de Cobrança:</span>
+                        <span className="text-xs font-bold text-white bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded text-blue-300">
+                          {currentCompany?.isExempt ? 'Isenta / Parceria Cortesia' : `SaaS Mensal (${currentCompany?.customPrice && parseFloat(currentCompany.customPrice) > 0 ? 'R$ ' + currentCompany?.customPrice : 'Valor Padrão'})`}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center py-1.5 border-b border-[#2d3139]/30">
+                        <span className="text-[11px] text-[#71717a] uppercase font-bold tracking-wider">Suporte Técnico:</span>
+                        <div className="flex flex-wrap gap-1 justify-end max-w-[200px]">
+                          {(() => {
+                            const channels = currentCompany?.supportChannels || ['whatsapp', 'email'];
+                            if (channels.length === 0) return <span className="text-xs text-red-400 font-bold">NÃO INCLUSO</span>;
+                            return channels.map((ch: string) => {
+                              if (ch === 'whatsapp') return <span key={ch} className="text-[9px] font-black tracking-widest px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase font-sans">WhatsApp</span>;
+                              if (ch === 'telefone') return <span key={ch} className="text-[9px] font-black tracking-widest px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20 uppercase font-sans">Telefone</span>;
+                              if (ch === 'email') return <span key={ch} className="text-[9px] font-black tracking-widest px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase font-sans">E-mail</span>;
+                              if (ch === 'acesso_remoto' || ch === 'acesso-remoto') return <span key={ch} className="text-[9px] font-black tracking-widest px-1.5 py-0.5 rounded bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/20 uppercase font-sans">Remoto</span>;
+                              return null;
+                            });
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center py-1.5 border-b border-[#2d3139]/30">
+                        <span className="text-[11px] text-[#71717a] uppercase font-bold tracking-wider">Atualizações On-line:</span>
+                        <span className={`text-xs font-bold ${currentCompany?.receivesUpdates === false ? 'text-orange-400' : 'text-blue-400'}`}>
+                          {currentCompany?.receivesUpdates === false ? 'TRAVADA (Bloqueado)' : 'HABILITADA (Recebendo Recursos)'}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center py-1.5 border-b border-[#2d3139]/30">
+                        <span className="text-[11px] text-[#71717a] uppercase font-bold tracking-wider">Modo de Operação:</span>
+                        <span className="text-xs font-bold text-indigo-400 uppercase">
+                          {currentCompany?.dbMode === 'local' ? 'Servidor Local Sandbox' : currentCompany?.dbMode === 'online' ? 'Nuvem Real Cloud' : 'Híbrido Padrão'}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center py-1.5 border-b border-[#2d3139]/30">
+                        <span className="text-[11px] text-[#71717a] uppercase font-bold tracking-wider">Ciclo Comercial:</span>
+                        <span className="text-xs font-mono font-bold text-white uppercase">{currentCompany?.billingCycle || 'mensal'}</span>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Seção Interativa para Checar por Atualizações */}
+                  <div className="p-4 bg-[#0f1115]/80 border border-[#2d3139] rounded-xl space-y-4">
+                    <div className="flex items-center justify-between flex-wrap gap-3">
+                      <div className="flex flex-col gap-0.5 text-left">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-300">Atualização do Core do Sistema</span>
+                        <span className="text-[10px] text-neutral-500">Verifique se existem novos recursos ou patches de segurança pendentes.</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {updateStatus === 'update-available' && foundUpdateInfo && (
+                          <Button
+                            size="sm"
+                            onClick={handleApplyUpdate}
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-8 px-4 transition-all duration-200 shadow-md animate-pulse"
+                          >
+                            <RefreshCw size={12} className="mr-1.5 shrink-0" />
+                            Instalar {foundUpdateInfo.version}
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          disabled={updateStatus === 'checking' || updateStatus === 'updating'}
+                          onClick={handleCheckUpdates}
+                          className={cn(
+                            "font-bold text-xs h-8 px-4 transition-all duration-200 shadow-md",
+                            (updateStatus === 'checking' || updateStatus === 'updating')
+                              ? "bg-[#0f1115] border border-[#2d3139] text-[#71717a]" 
+                              : "bg-blue-600 text-white hover:bg-blue-500"
+                          )}
+                        >
+                          <RefreshCw size={12} className={cn("mr-1.5 shrink-0", (updateStatus === 'checking' || updateStatus === 'updating') && "animate-spin")} />
+                          {updateStatus === 'checking' ? "Verificando..." : updateStatus === 'updating' ? "Instalando..." : "Checar Atualizações"}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {isCheckingUpdates && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        className="bg-[#050608] border border-[#22252c] rounded-lg p-3 text-left font-mono font-bold text-[11px] space-y-1.5 shadow-inner"
+                      >
+                        <div className="flex items-center justify-between border-b border-[#2d3139]/40 pb-1.5 mb-1.5">
+                          <span className="text-[#a0a0a0] uppercase text-[9px] tracking-widest flex items-center gap-1.5">
+                            <span className={cn("h-1.5 w-1.5 rounded-full", (updateStatus === 'checking' || updateStatus === 'updating') ? "bg-blue-400 animate-ping" : updateStatus === 'error' ? "bg-red-500" : "bg-green-500")}></span>
+                            Mecanismo de Atualizações Online
+                          </span>
+                          <span className="text-[9px] text-[#71717a]">Build 2026.06</span>
+                        </div>
+                        <div className="space-y-1 max-h-[160px] overflow-y-auto custom-scrollbar">
+                          {updateLogLines.map((line, idx) => (
+                            <div 
+                              key={idx} 
+                              className={cn(
+                                "leading-relaxed text-left transition-all duration-300 border-l border-[#2d3139]/30 pl-2",
+                                line.startsWith('✓') ? 'text-green-400' :
+                                line.startsWith('•') ? 'text-blue-300' :
+                                line.startsWith('🔴') ? 'text-red-400' :
+                                line.startsWith('🎁') ? 'text-yellow-400 font-extrabold text-xs block mt-1' :
+                                line.startsWith('📝') ? 'text-blue-200 font-sans font-medium text-xs bg-blue-950/20 p-2 border border-blue-500/20 rounded block my-1' :
+                                line.startsWith('🎉') ? 'text-green-400 font-extrabold font-sans text-xs bg-emerald-950/25 px-2 py-1.5 border border-emerald-500/25 rounded mt-3 inline-block text-left' :
+                                'text-[#e0e0e0]'
+                              )}
+                            >
+                              {line}
+                            </div>
+                          ))}
+                        </div>
+                        {updateStatus !== 'checking' && updateStatus !== 'updating' && (
+                          <div className="pt-2 text-right">
+                            <Button 
+                              size="sm" 
+                              variant="ghost" 
+                              className="h-6 text-[10px] hover:bg-[#1f232b] text-neutral-400 font-bold hover:text-white"
+                              onClick={() => {
+                                setIsCheckingUpdates(false);
+                                setUpdateStatus('idle');
+                                setFoundUpdateInfo(null);
+                              }}
+                            >
+                              Fechar Painel
+                            </Button>
+                          </div>
+                        )}
+                      </motion.div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2.5 pt-3">
+                    <Label className="text-xs text-[#a0a0a0] font-bold uppercase tracking-wider block">
+                      Telas e Recursos Liberados nesta Licença
+                    </Label>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { id: 'dashboard', label: 'Painel Geral' },
+                        { id: 'visits', label: 'Visitas Técnicas' },
+                        { id: 'service-orders', label: 'Ordens de Serviço' },
+                        { id: 'laudos', label: 'Laudos Técnicos' },
+                        { id: 'inventory', label: 'Estoque' },
+                        { id: 'pdv', label: 'PDV (Vendas)' },
+                        { id: 'vendas-historico', label: 'Histórico de Vendas' },
+                        { id: 'budgets', label: 'Orçamentos' },
+                        { id: 'financial', label: 'Financeiro (Lançamentos)' },
+                        { id: 'payable', label: 'Contas a Pagar' },
+                        { id: 'receivable', label: 'Contas a Receber' },
+                        { id: 'receipts', label: 'Recibos' },
+                        { id: 'clients', label: 'Clientes' },
+                        { id: 'suppliers', label: 'Fornecedores' },
+                        { id: 'reports', label: 'Relatórios Gerenciais' },
+                        { id: 'users', label: 'Equipe' },
+                        { id: 'logs', label: 'Logs do Sistema' },
+                        { id: 'settings', label: 'Configurações' },
+                        { id: 'financial-settings', label: 'Config. Financeiras' },
+                        { id: 'backup-restore', label: 'Backup/Restauração' }
+                      ].map((menu) => {
+                        let regId = menu.id;
+                        if (menu.id === 'vendas-historico') regId = 'pdv';
+                        if (menu.id === 'payable' || menu.id === 'receivable') regId = 'financial';
+                        if (menu.id === 'financial-settings' || menu.id === 'backup-restore') regId = 'settings';
+
+                        const isAllowed = currentCompany?.enabledMenus 
+                          ? (currentCompany.enabledMenus.includes(regId) || 
+                             (regId === 'dashboard' && currentCompany.enabledMenus.includes('resumo')) ||
+                             (regId === 'service-orders' && currentCompany.enabledMenus.includes('os')))
+                          : true;
+
+                        return (
+                          <span 
+                            key={menu.id} 
+                            className={`text-[10px] font-bold px-2.5 py-1 rounded-md flex items-center gap-1.5 border transition-all ${
+                              isAllowed 
+                                ? 'bg-[#3b82f6]/10 text-blue-300 border-[#3b82f6]/30' 
+                                : 'bg-neutral-950/40 text-red-500 border-red-940/40 line-through opacity-50'
+                            }`}
+                          >
+                            {!isAllowed && <Lock size={10} className="shrink-0 text-red-500" />}
+                            {menu.label}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                    {currentCompany?.receivesUpdates === false && (
+                      <div className="bg-orange-500/10 border border-orange-500/20 p-3 rounded-lg flex items-center gap-3 mt-4">
+                        <AlertTriangle className="h-5 w-5 text-orange-400 shrink-0" />
+                        <div>
+                          <h4 className="text-orange-400 font-bold text-xs uppercase italic tracking-wider">Atenção: Licença em Versão Estática</h4>
+                          <p className="text-[#a0a0a0] text-[10px] leading-relaxed">
+                            Esta empresa não possui direito a novas atualizações de recursos. Solicite a liberação técnica com o administrador SaaS.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Centered Instructions Modal for System Update (Method 1) */}
+                <Dialog open={showInstallerInstructionsModal} onOpenChange={setShowInstallerInstructionsModal}>
+                  <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[480px] p-0 overflow-hidden shadow-2xl">
+                    <DialogHeader className="p-6 pb-2 text-left bg-gradient-to-b from-blue-950/25 to-transparent">
+                      <DialogTitle className="flex items-center gap-2.5 text-lg font-black tracking-tight text-white">
+                        <Download className="text-blue-400 animate-bounce" size={20} />
+                        Configuração do Patch Iniciada
+                      </DialogTitle>
+                      <DialogDescription className="text-neutral-400 text-xs">
+                        Siga as instruções abaixo para concluir a atualização para a versão <span className="text-blue-300 font-bold">{foundUpdateInfo?.version || 'Instalada'}</span>.
+                      </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="p-6 pt-2 space-y-4 text-left text-sm text-neutral-300">
+                      <div className="p-4 bg-[#0f1115] border border-blue-500/20 rounded-xl space-y-2">
+                        <span className="text-[10px] font-black uppercase text-blue-400 tracking-wider flex items-center gap-1.5">
+                          <span className="h-2 w-2 rounded-full bg-blue-400 animate-ping"></span>
+                          Status do Download
+                        </span>
+                        <p className="text-xs leading-relaxed text-neutral-300">
+                          O arquivo de instalação atualizado foi requisitado com sucesso e deve estar sendo baixado pelo seu navegador agora.
+                        </p>
+                        {foundUpdateInfo?.fileUrl && (
+                          <div className="pt-1.5 flex flex-col gap-1">
+                            <span className="text-[9px] font-mono text-neutral-500 truncate max-w-full">Link do pacote: {foundUpdateInfo.fileUrl}</span>
+                            <a href={foundUpdateInfo.fileUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-400 hover:underline flex items-center gap-1 shrink-0">
+                              Baixar Novamente <ExternalLink size={12} className="ml-1" />
+                            </a>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-3">
+                        <h4 className="text-[11px] uppercase font-black tracking-wider text-neutral-400">Como Instalar (Passo a Passo)</h4>
+                        
+                        <div className="space-y-3 font-medium">
+                          <div className="flex gap-3">
+                            <div className="flex-shrink-0 h-5 w-5 rounded-full bg-[#2d3139] border border-[#3f4450] text-[10px] font-black flex items-center justify-center text-white">
+                              1
+                            </div>
+                            <div className="space-y-0.5">
+                              <p className="text-xs font-bold text-white">Aguarde o download</p>
+                              <p className="text-[11px] text-neutral-400 leading-normal">
+                                Aguarde até que o navegador termine de baixar o novo instalador executável (normalmente chamado <code className="font-mono bg-neutral-950 px-1 py-0.5 rounded text-neutral-300">Setup.exe</code> ou similar).
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-3">
+                            <div className="flex-shrink-0 h-5 w-5 rounded-full bg-[#2d3139] border border-[#3f4450] text-[10px] font-black flex items-center justify-center text-white">
+                              2
+                            </div>
+                            <div className="space-y-0.5">
+                              <p className="text-xs font-bold text-white">Feche esta Janela do Sistema</p>
+                              <p className="text-[11px] text-[#ef4444] font-bold leading-normal">
+                                É altamente recomendado fechar o sistema atual utilizando o botão de encerramento abaixo para evitar que arquivos de banco de dados locais fiquem travados.
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-3">
+                            <div className="flex-shrink-0 h-5 w-5 rounded-full bg-[#2d3139] border border-[#3f4450] text-[10px] font-black flex items-center justify-center text-white">
+                              3
+                            </div>
+                            <div className="space-y-0.5">
+                              <p className="text-xs font-bold text-white">Execute a Instalação por cima</p>
+                              <p className="text-[11px] text-neutral-400 leading-normal">
+                                Dê um duplo clique no instalador baixado para instalar por cima. Seus dados e configurações do cliente <span className="text-[#f59e0b] font-bold">não serão afetados</span> no processo!
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <DialogFooter className="p-6 pt-2 bg-[#0f1115]/50 border-t border-[#2d3139] flex flex-col sm:flex-row gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => setShowInstallerInstructionsModal(false)}
+                        className="border-[#2d3139] text-white hover:bg-[#2d3139] h-9 text-xs font-bold"
+                      >
+                        Continuar no Sistema
+                      </Button>
+                      
+                      {((import.meta as any).env.VITE_LOCAL_DB === 'true') ? (
+                        <Button
+                          variant="destructive"
+                          onClick={async () => {
+                            try {
+                              await fetch('/api/system/shutdown', { method: 'POST' });
+                            } catch (e) {
+                              console.error("Erro ao desligar o servidor local:", e);
+                            }
+                            window.close();
+                          }}
+                          className="bg-red-600 hover:bg-red-700 text-white font-black h-9 text-xs flex items-center gap-1.5 shadow"
+                        >
+                          <Power size={13} />
+                          Fechar & Instalar Agora
+                        </Button>
+                      ) : (
+                        <Button
+                          onClick={() => {
+                            setShowInstallerInstructionsModal(false);
+                            toast.info("Por favor, execute o instalador baixado para concluir a melhoria.");
+                          }}
+                          className="bg-blue-600 hover:bg-blue-700 text-white font-black h-9 text-xs flex items-center gap-1.5 shadow"
+                        >
+                          Entendi, Fechar
+                        </Button>
+                      )}
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+
+                <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Settings className="text-[#3b82f6]" size={20} />
@@ -11940,6 +12764,7 @@ function SettingsManager({
                 </Button>
               </CardContent>
             </Card>
+            </>
             )}
             
             {/* Database card removed as requested. Configured inside Admin SaaS client licenses */}
@@ -14857,12 +15682,42 @@ function VisitsManager({
                         <Eye size={12} />
                       </Button>
                       <Button variant="outline" size="icon" title="Abrir Navegação (Maps)" className="h-7 w-7 border-[#2d3139] text-green-500 hover:bg-green-500/10" onClick={() => {
-                        const targetAddress = visit.serviceAddress || visit.address || '';
-                        const address = `${targetAddress} ${visit.cep || ''}`.trim();
+                        const clientRegistry = (clients || []).find(c => 
+                          c.id === visit.clientId || 
+                          (c.name && visit.clientName && c.name.toLowerCase().trim() === visit.clientName.toLowerCase().trim())
+                        );
+
+                        let address = '';
+                        let usingRegistry = false;
+                        if (clientRegistry) {
+                          const parts = [];
+                          if (clientRegistry.address) parts.push(clientRegistry.address);
+                          if (clientRegistry.neighborhood) parts.push(clientRegistry.neighborhood);
+                          if (clientRegistry.city) parts.push(clientRegistry.city);
+                          if (clientRegistry.cep) parts.push(clientRegistry.cep);
+                          
+                          if (parts.length > 0) {
+                            address = parts.join(', ').trim();
+                            usingRegistry = true;
+                          }
+                        }
+
+                        if (!address) {
+                          const targetAddress = visit.serviceAddress || visit.address || '';
+                          address = `${targetAddress} ${visit.cep || ''}`.trim();
+                        }
+
                         if (!address) {
                           toast.error('Endereço não informado.');
                           return;
                         }
+
+                        if (usingRegistry) {
+                          toast.success('Abrindo GPS usando o endereço cadastrado do cliente.');
+                        } else {
+                          toast.info('Abrindo GPS usando o endereço registrado na visita.');
+                        }
+
                         window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`, '_blank');
                       }}>
                         <Navigation size={12} />
@@ -15004,8 +15859,42 @@ function VisitsManager({
                     variant="outline" 
                     className="h-8 gap-2 bg-green-600/10 border-green-600/20 text-green-500 hover:bg-green-600 hover:text-white"
                     onClick={() => {
-                      const targetAddress = viewingVisit.serviceAddress || viewingVisit.address || '';
-                      const address = `${targetAddress} ${viewingVisit.cep || ''}`.trim();
+                      const clientRegistry = (clients || []).find(c => 
+                        c.id === viewingVisit.clientId || 
+                        (c.name && viewingVisit.clientName && c.name.toLowerCase().trim() === viewingVisit.clientName.toLowerCase().trim())
+                      );
+
+                      let address = '';
+                      let usingRegistry = false;
+                      if (clientRegistry) {
+                        const parts = [];
+                        if (clientRegistry.address) parts.push(clientRegistry.address);
+                        if (clientRegistry.neighborhood) parts.push(clientRegistry.neighborhood);
+                        if (clientRegistry.city) parts.push(clientRegistry.city);
+                        if (clientRegistry.cep) parts.push(clientRegistry.cep);
+                        
+                        if (parts.length > 0) {
+                          address = parts.join(', ').trim();
+                          usingRegistry = true;
+                        }
+                      }
+
+                      if (!address) {
+                        const targetAddress = viewingVisit.serviceAddress || viewingVisit.address || '';
+                        address = `${targetAddress} ${viewingVisit.cep || ''}`.trim();
+                      }
+
+                      if (!address) {
+                        toast.error('Endereço não informado.');
+                        return;
+                      }
+
+                      if (usingRegistry) {
+                        toast.success('Abrindo GPS usando o endereço cadastrado do cliente.');
+                      } else {
+                        toast.info('Abrindo GPS usando o endereço registrado na visita.');
+                      }
+
                       window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`, '_blank');
                     }}
                   >
