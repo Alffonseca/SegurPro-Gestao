@@ -286,19 +286,22 @@ async function startServer() {
       return res.status(400).json({ error: "E-mail/Usuário e senha são obrigatórios." });
     }
 
-    const finalEmail = (() => {
-      let clean = String(email).trim().toLowerCase();
-      if (!clean) return "";
-      if (clean.includes("@")) {
-        if (clean.startsWith("@") || clean.endsWith("@")) return "";
-        return clean;
-      }
-      clean = clean.replace(/[^a-z0-9._-]/g, "");
-      if (!clean) return "";
-      return `${clean}@segurpro.com`;
-    })();
+    const cleanEmail = String(email).trim().toLowerCase();
+    const emailCandidates: string[] = [];
 
-    if (!finalEmail) {
+    if (cleanEmail.includes("@")) {
+      if (!cleanEmail.startsWith("@") && !cleanEmail.endsWith("@")) {
+        emailCandidates.push(cleanEmail);
+      }
+    } else {
+      const cleanUser = cleanEmail.replace(/[^a-z0-9._-]/g, "");
+      if (cleanUser) {
+        emailCandidates.push(`${cleanUser}@segurtecpro.com`);
+        emailCandidates.push(`${cleanUser}@segurpro.com`);
+      }
+    }
+
+    if (emailCandidates.length === 0) {
       return res.status(400).json({ error: "E-mail ou usuário em formato inválido." });
     }
 
@@ -310,7 +313,7 @@ async function startServer() {
       const authUsers = readJSONFile(authUsersPath);
       const localUser = authUsers.find(
         (u) =>
-          u.email.toLowerCase() === finalEmail.toLowerCase() &&
+          emailCandidates.map(e => e.toLowerCase()).includes(u.email.toLowerCase()) &&
           String(u.password) === String(password)
       );
       if (localUser) {
@@ -328,16 +331,19 @@ async function startServer() {
     if (!matchedUser && isFirebaseInitialized) {
       try {
         const usersRef = admin.firestore().collection("users");
-        const snapshot = await usersRef.where("email", "==", finalEmail.toLowerCase()).get();
-        if (!snapshot.empty) {
-          const docSnap = snapshot.docs[0];
-          const userData = docSnap.data();
-          if (String(userData?.password || '') === String(password)) {
-            matchedUser = {
-              uid: docSnap.id,
-              email: userData.email || finalEmail,
-              displayName: userData.displayName || "Usuário Master",
-            };
+        for (const candEmail of emailCandidates) {
+          const snapshot = await usersRef.where("email", "==", candEmail.toLowerCase()).get();
+          if (!snapshot.empty) {
+            const docSnap = snapshot.docs[0];
+            const userData = docSnap.data();
+            if (String(userData?.password || '') === String(password)) {
+              matchedUser = {
+                uid: docSnap.id,
+                email: userData.email || candEmail,
+                displayName: userData.displayName || "Usuário Master",
+              };
+              break;
+            }
           }
         }
       } catch (err: any) {

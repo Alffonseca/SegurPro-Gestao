@@ -377,7 +377,7 @@ const printRecordReceipt = (r: any, isPayable: boolean, currentPayment: { date: 
   // Under signature line text
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(9);
-  doc.text(String(appSettings?.companyName || 'SEGURPRO').toUpperCase(), 105, sigY + 5, { align: 'center' });
+  doc.text(String(appSettings?.companyName || 'SEGURTEC-PRO').toUpperCase(), 105, sigY + 5, { align: 'center' });
   doc.setFont('Helvetica', 'normal');
   doc.setFontSize(8.5);
   doc.text(String(appSettings?.responsible || 'André').toUpperCase(), 105, sigY + 10, { align: 'center' });

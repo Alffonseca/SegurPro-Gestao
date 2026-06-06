@@ -1,5 +1,5 @@
 {
-  "name": "SegurPro Gestão",
+  "name": "SegurTec-Pro Gestão",
   "description": "Sistema avançado para empresas de segurança eletrônica, abrangendo gestão financeira, ordens de serviço, controle de estoque e visitas técnicas.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

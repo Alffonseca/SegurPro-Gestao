@@ -511,7 +511,7 @@ export function LaudosManager({
     docPdf.setFontSize(13);
     docPdf.setFont('helvetica', 'bold');
     const laudoHeaderX = appSettings?.logoUrl ? margin + 20 : margin;
-    docPdf.text(appSettings?.companyName || 'SEGURPRO', laudoHeaderX, currentY + 5);
+    docPdf.text(appSettings?.companyName || 'SEGURTEC-PRO', laudoHeaderX, currentY + 5);
     
     docPdf.setFontSize(10);
     docPdf.text(`LAUDO TÉCNICO DE INSPEÇÃO ${formatRecordNumber(laudo.number)}`, laudoHeaderX, currentY + 11);

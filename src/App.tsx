@@ -2438,7 +2438,7 @@ function CompanyWizard({ onCreate, onJoin, initialCode }: { onCreate: (name: str
               <Input 
                 value={name} 
                 onChange={e => setName(e.target.value)} 
-                placeholder="Ex: SegurPro Filial" 
+                placeholder="Ex: SegurTec-Pro Filial" 
                 className="bg-[#0f1115] border-[#2d3139] text-white" 
               />
             </div>
@@ -2738,7 +2738,7 @@ function SignaturePortalPage({ onVerify }: { onVerify: (token: string) => void }
         </form>
 
         <p className="text-center text-[#71717a] text-xs pt-8 border-t border-[#2d3139]/50">
-          Powered by <span className="text-white font-bold tracking-widest text-[10px]">SEGURPRO GESTÃO</span>
+          Powered by <span className="text-white font-bold tracking-widest text-[10px]">AF TECNOLOGIA</span>
         </p>
       </div>
     </div>
@@ -2997,7 +2997,7 @@ const getFinalEmail = (input: string) => {
   clean = clean.replace(/[^a-z0-9._-]/g, '');
   if (!clean) return '';
   
-  return `${clean}@segurpro.com`;
+  return `${clean}@segurtecpro.com`;
 };
 
 const initialAppSettings: AppSettings = {
@@ -3365,7 +3365,7 @@ export default function MainApp() {
 
   // 1. Auth Listener
   useEffect(() => {
-    const titleText = currentCompany?.name || appSettings?.companyName || 'SegurPro Gestão';
+    const titleText = currentCompany?.name || appSettings?.companyName || 'SegurTec-Pro Gestão';
     document.title = titleText;
   }, [currentCompany?.name, appSettings?.companyName]);
 
@@ -4265,15 +4265,32 @@ export default function MainApp() {
           userCredential = await Promise.race([signInPromise, timeoutPromise]);
           isSuccessfullySignedIn = true;
         } catch (signInErr: any) {
-          console.warn("Standard client login failed or timed out, trying API fallback:", signInErr.message || signInErr);
-          
-          try {
-            // Let's call the /api/auth/fallback-login endpoint
-            const res = await fetch('/api/auth/fallback-login', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email, password: cleanPassword })
-            });
+          // Backward-compatible fallback. If they autofilled with @segurtecpro.com, try the legacy @segurpro.com domain
+          if (finalEmail.endsWith('@segurtecpro.com')) {
+            const oldEmail = finalEmail.replace('@segurtecpro.com', '@segurpro.com');
+            console.log(`Checking backward-compatible login session for legacy domain: ${oldEmail}`);
+            try {
+              const retryPromise = signInWithEmailAndPassword(auth, oldEmail, cleanPassword);
+              const timeoutPromise = new Promise<never>((_, reject) => 
+                setTimeout(() => reject(new Error('TIMEOUT')), 8000)
+              );
+              userCredential = await Promise.race([retryPromise, timeoutPromise]);
+              isSuccessfullySignedIn = true;
+            } catch (retryErr) {
+              console.warn("Legacy domain sign-in also failed, proceeding to server proxy fallback");
+            }
+          }
+
+          if (!isSuccessfullySignedIn) {
+            console.warn("Standard client login failed or timed out, trying API fallback:", signInErr.message || signInErr);
+            
+            try {
+              // Let's call the /api/auth/fallback-login endpoint
+              const res = await fetch('/api/auth/fallback-login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password: cleanPassword })
+              });
             
             if (res.ok) {
               const data = await res.json();
@@ -4306,6 +4323,7 @@ export default function MainApp() {
             throw signInErr; // Prefer throwing the original auth sign-in error with code information
           }
         }
+      }
 
         if (isSuccessfullySignedIn && userCredential) {
           toast.success(`Bem-vindo, ${userCredential.user.displayName || 'usuário'}!`);
@@ -4397,7 +4415,7 @@ export default function MainApp() {
             </div>
           </div>
           <div className="text-center space-y-2">
-            <p className="text-lg font-semibold text-white tracking-widest uppercase">{appSettings.companyName || 'SegurPro Gestão'}</p>
+            <p className="text-lg font-semibold text-white tracking-widest uppercase">{appSettings.companyName || 'SegurTec-Pro Gestão'}</p>
             <p className="text-xs font-medium text-[#71717a] animate-pulse">Iniciando ambiente seguro...</p>
           </div>
         </div>
@@ -4437,7 +4455,7 @@ export default function MainApp() {
                 </div>
               )}
               <h1 className="text-xl md:text-2xl font-extrabold tracking-tight text-white bg-gradient-to-r from-white via-gray-200 to-gray-400 bg-clip-text text-transparent">
-                {inviteCodeUrl ? 'Ativação de Cadastro' : (currentCompany?.name || appSettings.companyName || 'SegurPro SaaS')}
+                {inviteCodeUrl ? 'Ativação de Cadastro' : (currentCompany?.name || appSettings.companyName || 'SegurTec-Pro SaaS')}
               </h1>
               <p className="text-[#71717a] text-[11px] md:text-xs max-w-md">
                 {inviteCodeUrl 
@@ -4617,7 +4635,7 @@ export default function MainApp() {
                         placeholder="Seu usuário ou e-mail registrado"
                         className="bg-[#0f1115] border-[#2d3139] text-white h-8.5 text-xs px-3 py-1.5" 
                       />
-                      <p className="text-[9px] text-[#555] mt-0.5 italic">Dica: Se não for e-mail, usaremos @segurpro.com</p>
+                      <p className="text-[9px] text-[#555] mt-0.5 italic">Dica: Se não for e-mail, usaremos @segurtecpro.com</p>
                     </div>
                     <div className="space-y-1">
                       <div className="flex items-center justify-between">
@@ -4739,7 +4757,7 @@ export default function MainApp() {
                                     <span style="color: #ef4444; font-size: 24px; font-weight: bold; line-height: 1;">✕</span>
                                   </div>
                                   <h2 style="color: #ffffff; margin-top: 0; font-size: 18px; font-weight: bold; text-transform: uppercase; tracking-wider; margin-bottom: 8px;">Servidor Encerrado</h2>
-                                  <p style="color: #a0a0a0; font-size: 13px; margin-bottom: 24px; line-height: 1.5;">O servidor local do SegurPro foi finalizado com sucesso.</p>
+                                  <p style="color: #a0a0a0; font-size: 13px; margin-bottom: 24px; line-height: 1.5;">O servidor local do SegurTec-Pro foi finalizado com sucesso.</p>
                                   <p style="color: #71717a; font-size: 11px; font-style: italic;">Você já pode fechar esta janela do seu navegador.</p>
                                 </div>
                               </div>
@@ -4760,7 +4778,7 @@ export default function MainApp() {
 
           </div>
 
-          <p className="text-center text-xs text-[#555] pt-4">© 2026 {appSettings.companyName || 'SegurPro Gestão'}. Todos os direitos reservados.</p>
+          <p className="text-center text-xs text-[#555] pt-4">© 2026 {appSettings.companyName || 'SegurTec-Pro Gestão'}. Todos os direitos reservados.</p>
         </div>
       </div>
     );
@@ -5015,7 +5033,7 @@ export default function MainApp() {
             </div>
           )}
           <span className="font-bold tracking-tight text-white truncate max-w-[180px]">
-            {appSettings?.companyName || currentCompany?.companyName || currentCompany?.name || 'SegurPro Gestão'}
+            {appSettings?.companyName || currentCompany?.companyName || currentCompany?.name || 'SegurTec-Pro Gestão'}
           </span>
         </div>
         {/* PUNTO DE RESTAURACIÓN / RESTORE POINT FOR MOBILE HEADER BUTTON (PREVIOUS CODE):
@@ -5208,7 +5226,7 @@ export default function MainApp() {
             )}
             <div className="flex flex-col text-left">
               <span className="font-bold tracking-wider text-white text-xs uppercase leading-snug">
-                {appSettings?.companyName || currentCompany?.companyName || currentCompany?.name || 'SegurPro Gestão'}
+                {appSettings?.companyName || currentCompany?.companyName || currentCompany?.name || 'SegurTec-Pro Gestão'}
               </span>
               <span className="text-[9px] text-[#71717a] uppercase tracking-widest leading-none">
                 {format(new Date(), "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })}
@@ -5984,6 +6002,28 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
   const [userToDelete, setUserToDelete] = useState<any>(null);
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
 
+  const [currentTeammatePassword, setCurrentTeammatePassword] = useState<string>('');
+
+  useEffect(() => {
+    if (isEditOpen && editingUser?.id) {
+      setCurrentTeammatePassword('Carregando...');
+      fetch(`/api/admin/user-password/${editingUser.id}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.password) {
+            setCurrentTeammatePassword(data.password);
+          } else {
+            setCurrentTeammatePassword('Senha oculta/não encontrada');
+          }
+        })
+        .catch(() => {
+          setCurrentTeammatePassword('Erro ao carregar');
+        });
+    } else {
+      setCurrentTeammatePassword('');
+    }
+  }, [isEditOpen, editingUser?.id]);
+
   const handleAddUser = async () => {
     if (!newUser.name || !newUser.email || !newUser.password) {
       toast.error('Preencha todos os campos.');
@@ -6235,7 +6275,7 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
               </div>
             </div>
             <div className="flex items-center gap-2 text-[10px] text-[#555] font-bold uppercase tracking-wider">
-              <Shield size={10} /> Segurança SegurPro Ativa
+              <Shield size={10} /> Segurança SegurTec-Pro Ativa
             </div>
           </div>
         </div>
@@ -6520,6 +6560,17 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-2 border-t border-[#2d3139]/30 pt-3 mt-1">
+                  <Label className="text-[#a0a0a0]">Senha Salva no Cadastro</Label>
+                  <div className="flex items-center justify-between bg-[#13151b] border border-[#2d3139] rounded-lg p-2 text-xs">
+                    {currentTeammatePassword === 'Senha oculta/não encontrada' ? (
+                      <span className="text-gray-400">●●●●●● (Criptografada na Nuvem)</span>
+                    ) : (
+                      <span className="font-mono font-bold text-[#f59e0b]">{currentTeammatePassword || 'Criptografada / Não informada'}</span>
+                    )}
+                    <span className="text-[8px] uppercase font-bold text-gray-500 bg-gray-500/10 px-2 py-0.5 rounded border border-gray-500/20">Backup Local/Firestore</span>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label className="text-[#a0a0a0]">Nova Senha (opcional)</Label>
@@ -9356,6 +9407,9 @@ function SuperAdminPanel({
   const [publishingVersion, setPublishingVersion] = useState(saasSettings?.latestVersion || 'v4.8.2');
   const [publishingNotes, setPublishingNotes] = useState(saasSettings?.latestNotes || 'Melhorias de desempenho e correções visuais.');
   const [publishingFileUrl, setPublishingFileUrl] = useState(saasSettings?.latestFileUrl || '');
+  const [supportPhone, setSupportPhone] = useState(saasSettings?.supportPhone || '');
+  const [supportWhatsapp, setSupportWhatsapp] = useState(saasSettings?.supportWhatsapp || '');
+  const [supportEmail, setSupportEmail] = useState(saasSettings?.supportEmail || '');
   const [isSavingUpdatesConfig, setIsSavingUpdatesConfig] = useState(false);
 
   useEffect(() => {
@@ -9363,6 +9417,9 @@ function SuperAdminPanel({
       if (saasSettings.latestVersion) setPublishingVersion(saasSettings.latestVersion);
       if (saasSettings.latestNotes) setPublishingNotes(saasSettings.latestNotes);
       if (saasSettings.latestFileUrl) setPublishingFileUrl(saasSettings.latestFileUrl);
+      if (saasSettings.supportPhone) setSupportPhone(saasSettings.supportPhone);
+      if (saasSettings.supportWhatsapp) setSupportWhatsapp(saasSettings.supportWhatsapp);
+      if (saasSettings.supportEmail) setSupportEmail(saasSettings.supportEmail);
     }
   }, [saasSettings]);
 
@@ -9372,9 +9429,12 @@ function SuperAdminPanel({
       await setDoc(doc(db, 'saas_settings', 'global'), {
         latestVersion: publishingVersion,
         latestNotes: publishingNotes,
-        latestFileUrl: publishingFileUrl
+        latestFileUrl: publishingFileUrl,
+        supportPhone,
+        supportWhatsapp,
+         supportEmail
       }, { merge: true });
-      toast.success("Novos parâmetros de atualização publicados globalmente!");
+      toast.success("Novos parâmetros de atualização e canais de suporte salvos com sucesso!");
     } catch (saveError) {
       console.error("Error saving global updates:", saveError);
       toast.error("Erro ao salvar parâmetros globais.");
@@ -9679,7 +9739,25 @@ function SuperAdminPanel({
       });
       const data = await response.json();
       if (response.ok && data.success) {
-        toast.success("Senha do proprietário alterada com sucesso!");
+        if (data.fallback) {
+          toast.warning(
+            <div className="space-y-2 text-left p-1 text-xs">
+              <p className="font-bold text-amber-400">⚠️ Salvo com Observação (API do Google Desativada)</p>
+              <p className="text-gray-300 leading-relaxed">
+                A senha foi registrada com sucesso na base Firestore! Porém, a redefinição de credenciais no **servidor de login do Firebase** falhou porque a <strong>Identity Toolkit API</strong> está desativada na sua conta Google Cloud.
+              </p>
+              <div className="bg-black/60 rounded border border-white/10 p-2 font-mono text-[10px] select-all break-all text-blue-300">
+                https://console.developers.google.com/apis/api/identitytoolkit.googleapis.com/overview?project=154805406116
+              </div>
+              <p className="text-[10px] text-gray-400">
+                Copie o link acima, abra-o no seu navegador para ativar a API e tente alterar a senha novamente para que ela passe a valer no ambiente Cloud real.
+              </p>
+            </div>,
+            { duration: 20000 }
+          );
+        } else {
+          toast.success("Senha do proprietário alterada com sucesso no Firebase!");
+        }
         setEditingOwnerPassword(newOwnerPassword.trim());
         setNewOwnerPassword('');
       } else {
@@ -10469,6 +10547,40 @@ function SuperAdminPanel({
               className="w-full bg-[#0f1115] border border-[#2d3139] rounded-md p-3 text-sm text-white font-sans h-24 focus:outline-none focus:border-blue-500 transition-colors"
             />
           </div>
+
+          <div className="border-t border-[#2d3139] pt-4 mt-2 space-y-4">
+            <h4 className="text-xs font-black uppercase tracking-widest text-[#3b82f6]">Canais de Suporte de Atualizações (AF TECNOLOGIA)</h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black tracking-widest">Telefone de Suporte</Label>
+                <Input 
+                  value={supportPhone}
+                  onChange={(e) => setSupportPhone(e.target.value)}
+                  placeholder="Ex: (91) 99999-9999"
+                  className="bg-[#0f1115] border-[#2d3139] text-white h-11"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black tracking-widest">WhatsApp de Suporte</Label>
+                <Input 
+                  value={supportWhatsapp}
+                  onChange={(e) => setSupportWhatsapp(e.target.value)}
+                  placeholder="Ex: https://wa.me/5591999999999"
+                  className="bg-[#0f1115] border-[#2d3139] text-white h-11"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black tracking-widest">E-mail de Suporte</Label>
+                <Input 
+                  value={supportEmail}
+                  onChange={(e) => setSupportEmail(e.target.value)}
+                  placeholder="Ex: suporte@aftecnologia.com.br"
+                  className="bg-[#0f1115] border-[#2d3139] text-white h-11"
+                />
+              </div>
+            </div>
+          </div>
+
           <div className="p-3 bg-[#0f1115] border border-[#2d3139] rounded-lg text-xs text-[#71717a] leading-relaxed">
             💡 <span className="text-neutral-300 font-semibold">Onde deixar o arquivo de atualização?</span> Você pode armazenar o arquivo compactado em <span className="text-zinc-500 font-mono">/public/updates/</span> deste projeto, em um bucket do Google Cloud Storage, ou no seu próprio servidor central, e depois colar o link de download direto no campo acima. Quando as empresas parceiras checarem por atualizações, elas lerão este registro do Firestore e poderão instalar os novos recursos instantaneamente de forma integrada.
           </div>
@@ -10681,7 +10793,11 @@ function SuperAdminPanel({
                       <div className="flex items-center justify-between bg-[#13151b] border border-[#2d3139] rounded-lg p-2">
                         <div className="flex flex-col">
                           <span className="text-[9px] uppercase font-black text-[#71717a] tracking-wider">Senha Atual</span>
-                          <span className="text-xs font-mono font-bold text-[#f59e0b] truncate">{editingOwnerPassword || '---'}</span>
+                          {editingOwnerPassword === 'Senha oculta/não encontrada' ? (
+                            <span className="text-[11px] font-semibold text-gray-400">●●●●●● (Criptografada na Nuvem)</span>
+                          ) : (
+                            <span className="text-xs font-mono font-bold text-[#f59e0b] truncate">{editingOwnerPassword || '---'}</span>
+                          )}
                         </div>
                         <span className="text-[8px] uppercase font-bold text-gray-500 bg-gray-500/10 px-2.5 py-1 rounded border border-gray-500/20">Acesso SaaS</span>
                       </div>
@@ -11532,41 +11648,68 @@ function SettingsManager({
   const [showInstallerInstructionsModal, setShowInstallerInstructionsModal] = useState(false);
 
   const handleCheckUpdates = async () => {
+    setIsCheckingUpdates(true);
+    setUpdateStatus('checking');
+    setUpdateLogLines([
+      "Conectando ao SaaS Central...",
+    ]);
+
+    const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+    await sleep(400);
+
+    let latestVersion = 'v4.8.2';
+    let supportPhoneStr = '';
+    let supportWhatsappStr = '';
+    let supportEmailStr = '';
+    try {
+      const globalDoc = await getDoc(doc(db, 'saas_settings', 'global'));
+      if (globalDoc.exists()) {
+        const latestData = globalDoc.data();
+        latestVersion = latestData?.latestVersion || 'v4.8.2';
+        supportPhoneStr = latestData?.supportPhone || '';
+        supportWhatsappStr = latestData?.supportWhatsapp || '';
+        supportEmailStr = latestData?.supportEmail || '';
+      }
+    } catch (err) {
+      console.warn("Could not fetch remote version at beginning of check:", err);
+    }
+
+    const currentVersion = currentCompany?.version || 'v4.8.2';
+
     if (currentCompany?.receivesUpdates === false) {
       setUpdateStatus('error');
-      setIsCheckingUpdates(true);
+      const supportDetails = [];
+      if (supportPhoneStr) supportDetails.push(`Telefone: ${supportPhoneStr}`);
+      if (supportWhatsappStr) supportDetails.push(`WhatsApp: ${supportWhatsappStr}`);
+      if (supportEmailStr) supportDetails.push(`E-mail: ${supportEmailStr}`);
+      const supportLineText = supportDetails.length > 0 
+        ? `Canais de Suporte: ${supportDetails.join(' | ')}`
+        : 'Entre em contato com a AF TECNOLOGIA para obter ajuda.';
+
       setUpdateLogLines([
         "Iniciando requisição de handshake com servidor central...",
         "🔴 ERRO 403 - ACESSO RESTRITO (SaaS License Level Block)",
-        "A empresa licenciada (ID: " + (companyId || "indefinido") + ") está parametrizada com o recebimento de atualizações travado.",
-        "Consulte seu distribuidor ou administrador SaaS para contratar a liberação de novos recursos on-line."
+        `Sua assinatura ou suporte técnico para novas atualizações expirou (Versão do Servidor: ${latestVersion} / Licenciada: ${currentVersion}).`,
+        "Entre em contato com a AF TECNOLOGIA para renovar seu plano e liberar os novos recursos.",
+        supportLineText,
+        "💡 Informação: Você pode continuar utilizando o sistema apenas na versão offline para que suas atividades não fiquem paradas."
       ]);
       return;
     }
 
-    setIsCheckingUpdates(true);
-    setUpdateStatus('checking');
-    setUpdateLogLines([
-      "Conectando ao SaaS Central da Synclayers...",
-    ]);
-
-    const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
-
-    await sleep(700);
     setUpdateLogLines(prev => [...prev, "✓ Conexão Handshake SSL estabelecida com sucesso."]);
     setUpdateLogLines(prev => [...prev, "Sincronizando assinatura digital de licenciamento..."]);
     
-    await sleep(900);
+    await sleep(700);
     setUpdateLogLines(prev => [...prev, "✓ Licenciamento verificado para: " + (currentCompany?.name || "Sua Empresa") + "."]);
     setUpdateLogLines(prev => [...prev, "Analisando manifestos de patches e arquivos operacionais locais disponíveis..."]);
     
-    await sleep(1000);
-    const currentVersion = currentCompany?.version || 'v4.8.2';
+    await sleep(800);
     setUpdateLogLines(prev => [...prev, `• Versão Atual: ${currentVersion}`]);
     setUpdateLogLines(prev => [...prev, "• Modo Técnico: " + (currentCompany?.dbMode === 'local' ? "Híbrido Offline Sandbox" : "Nuvem Real Cloud")]);
     setUpdateLogLines(prev => [...prev, "Buscando catálogo de atualizações publicadas no SaaS Central..."]);
 
-    await sleep(1100);
+    await sleep(900);
     try {
       const globalDoc = await getDoc(doc(db, 'saas_settings', 'global'));
       if (globalDoc.exists()) {
@@ -11579,8 +11722,7 @@ function SettingsManager({
           setUpdateLogLines(prev => [
             ...prev,
             `🎁 NOVA ATUALIZAÇÃO ENCONTRADA: ${latestVersion}`,
-            `📝 Notas da Versão: ${latestNotes}`,
-            latestFileUrl ? `📦 Local do Arquivo de Patch: ${latestFileUrl}` : `📦 Arquivo: Repositório Base Mestre`
+            `📝 Notas da Versão: ${latestNotes}`
           ]);
           setFoundUpdateInfo({ version: latestVersion, notes: latestNotes, fileUrl: latestFileUrl });
           setUpdateStatus('update-available');
@@ -11623,7 +11765,7 @@ function SettingsManager({
     await sleep(700);
     setUpdateLogLines(prev => [...prev, "• Baixando manifesto de compilações..."]);
     if (foundUpdateInfo.fileUrl) {
-      setUpdateLogLines(prev => [...prev, `• Iniciando redirecionamento para download: ${foundUpdateInfo.fileUrl}...`]);
+      setUpdateLogLines(prev => [...prev, `• Iniciando redirecionamento para download seguro...`]);
     } else {
       setUpdateLogLines(prev => [...prev, "• Obtendo pacotes de compilação do repositório mestre..."]);
     }
@@ -12547,7 +12689,6 @@ function SettingsManager({
                         </p>
                         {foundUpdateInfo?.fileUrl && (
                           <div className="pt-1.5 flex flex-col gap-1">
-                            <span className="text-[9px] font-mono text-neutral-500 truncate max-w-full">Link do pacote: {foundUpdateInfo.fileUrl}</span>
                             <a href={foundUpdateInfo.fileUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-400 hover:underline flex items-center gap-1 shrink-0">
                               Baixar Novamente <ExternalLink size={12} className="ml-1" />
                             </a>
@@ -13858,7 +13999,15 @@ function ReportsManager({
 
 // --- Dashboard Component ---
 
-function VisitsChart({ data, onBarClick }: { data: any[], onBarClick?: (date: Date) => void }) {
+function VisitsChart({ 
+  data, 
+  onBarClick, 
+  type = 'bar-vertical' 
+}: { 
+  data: any[], 
+  onBarClick?: (date: Date) => void, 
+  type?: string 
+}) {
   const [isClient, setIsClient] = useState(false);
   
   useEffect(() => {
@@ -13870,51 +14019,266 @@ function VisitsChart({ data, onBarClick }: { data: any[], onBarClick?: (date: Da
     return <div className="h-full w-full bg-[#1a1d23]/50 animate-pulse flex items-center justify-center text-[#71717a] text-xs">Carregando gráfico...</div>;
   }
 
+  const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6'];
+
+  const renderChart = () => {
+    switch (type) {
+      case 'pie': {
+        const activeData = data.filter(item => item.visitas > 0);
+        if (activeData.length === 0) {
+          return (
+            <div className="h-full w-full flex items-center justify-center text-[#71717a] text-xs py-10 italic">
+              Nenhuma visita programada para esta semana.
+            </div>
+          );
+        }
+        return (
+          <PieChart>
+            <Pie
+              data={activeData}
+              dataKey="visitas"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              outerRadius={70}
+              label={({ name, value }) => `${name}: ${value}`}
+            >
+              {activeData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip 
+              contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
+              itemStyle={{ color: '#fff' }}
+            />
+            <Legend />
+          </PieChart>
+        );
+      }
+      case 'doughnut': {
+        const activeData = data.filter(item => item.visitas > 0);
+        if (activeData.length === 0) {
+          return (
+            <div className="h-full w-full flex items-center justify-center text-[#71717a] text-xs py-10 italic">
+              Nenhuma visita programada para esta semana.
+            </div>
+          );
+        }
+        return (
+          <PieChart>
+            <Pie
+              data={activeData}
+              dataKey="visitas"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              innerRadius={50}
+              outerRadius={70}
+              label={({ name, value }) => `${name}: ${value}`}
+            >
+              {activeData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip 
+              contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
+              itemStyle={{ color: '#fff' }}
+            />
+            <Legend />
+          </PieChart>
+        );
+      }
+      case 'bar-horizontal': {
+        return (
+          <BarChart 
+            data={data}
+            layout="vertical"
+            className="cursor-pointer"
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" horizontal={false} />
+            <XAxis 
+              type="number"
+              stroke="#71717a" 
+              fontSize={11} 
+              tickLine={false} 
+              axisLine={false} 
+            />
+            <YAxis 
+              dataKey="name"
+              type="category"
+              stroke="#71717a" 
+              fontSize={11} 
+              tickLine={false} 
+              axisLine={false}
+              width={35}
+            />
+            <Tooltip 
+              cursor={{fill: '#25282e'}}
+              contentStyle={{ 
+                backgroundColor: '#1a1d23', 
+                border: '1px solid #2d3139',
+                borderRadius: '8px',
+                color: '#fff'
+              }}
+              itemStyle={{ color: '#3b82f6' }}
+            />
+            <Bar 
+              dataKey="visitas" 
+              fill="#3b82f6" 
+              radius={[0, 4, 4, 0]} 
+              barSize={18}
+              style={{ cursor: 'pointer' }}
+              onClick={(props: any) => {
+                if (onBarClick && props && props.fullDate) {
+                  onBarClick(props.fullDate);
+                }
+              }}
+            />
+          </BarChart>
+        );
+      }
+      case 'area': {
+        return (
+          <AreaChart data={data}>
+            <defs>
+              <linearGradient id="visitsAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
+            <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+            <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+            <Tooltip 
+              contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
+              itemStyle={{ color: '#3b82f6' }}
+            />
+            <Area type="monotone" dataKey="visitas" name="Visitas" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#visitsAreaGrad)" />
+          </AreaChart>
+        );
+      }
+      case 'pos-neg': {
+        const avgVal = data.reduce((sum, item) => sum + (Number(item.visitas) || 0), 0) / (data.length || 1);
+        const devData = data.map(item => ({
+          ...item,
+          deviation: Number((item.visitas - avgVal).toFixed(1)),
+          originalValue: item.visitas
+        }));
+        return (
+          <BarChart data={devData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
+            <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+            <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+            <Tooltip 
+              contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
+              itemStyle={{ color: '#fff' }}
+              formatter={(value: any, name: any, props: any) => [
+                `Desvio: ${value > 0 ? '+' : ''}${value} (Visitas: ${props.payload.originalValue})`, 
+                'Desempenho'
+              ]}
+            />
+            <Bar dataKey="deviation">
+              {devData.map((entry, index) => (
+                <Cell 
+                  key={`cell-${index}`} 
+                  fill={entry.deviation >= 0 ? '#10b981' : '#ef4444'} 
+                />
+              ))}
+            </Bar>
+          </BarChart>
+        );
+      }
+      case 'bar-vertical':
+      default:
+        return (
+          <BarChart 
+            data={data}
+            className="cursor-pointer"
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
+            <XAxis 
+              dataKey="name" 
+              stroke="#71717a" 
+              fontSize={12} 
+              tickLine={false} 
+              axisLine={false} 
+            />
+            <YAxis 
+              stroke="#71717a" 
+              fontSize={12} 
+              tickLine={false} 
+              axisLine={false}
+            />
+            <Tooltip 
+              cursor={{fill: '#25282e'}}
+              contentStyle={{ 
+                backgroundColor: '#1a1d23', 
+                border: '1px solid #2d3139',
+                borderRadius: '8px',
+                color: '#fff'
+              }}
+              itemStyle={{ color: '#3b82f6' }}
+            />
+            <Bar 
+              dataKey="visitas" 
+              fill="#3b82f6" 
+              radius={[4, 4, 0, 0]} 
+              barSize={40}
+              style={{ cursor: 'pointer' }}
+              onClick={(props: any) => {
+                if (onBarClick && props && props.fullDate) {
+                  onBarClick(props.fullDate);
+                }
+              }}
+            />
+          </BarChart>
+        );
+    }
+  };
+
   return (
     <div style={{ width: '100%', height: '100%', minHeight: '200px' }}>
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart 
-          data={data}
-          className="cursor-pointer"
-        >
-          <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
-          <XAxis 
-            dataKey="name" 
-            stroke="#71717a" 
-            fontSize={12} 
-            tickLine={false} 
-            axisLine={false} 
-          />
-          <YAxis 
-            stroke="#71717a" 
-            fontSize={12} 
-            tickLine={false} 
-            axisLine={false}
-          />
-          <Tooltip 
-            cursor={{fill: '#25282e'}}
-            contentStyle={{ 
-              backgroundColor: '#1a1d23', 
-              border: '1px solid #2d3139',
-              borderRadius: '8px',
-              color: '#fff'
-            }}
-            itemStyle={{ color: '#3b82f6' }}
-          />
-          <Bar 
-            dataKey="visitas" 
-            fill="#3b82f6" 
-            radius={[4, 4, 0, 0]} 
-            barSize={40}
-            style={{ cursor: 'pointer' }}
-            onClick={(props: any) => {
-              if (onBarClick && props && props.fullDate) {
-                onBarClick(props.fullDate);
-              }
-            }}
-          />
-        </BarChart>
+        {renderChart()}
       </ResponsiveContainer>
+    </div>
+  );
+}
+
+function ChartTypeSelector({ 
+  current, 
+  onChange,
+  className
+}: { 
+  current: string, 
+  onChange: (type: string) => void,
+  className?: string
+}) {
+  const options = [
+    { value: 'pizza', label: 'Pizza' },
+    { value: 'bar-horizontal', label: 'Barra Horiz.' },
+    { value: 'bar-vertical', label: 'Barra Vert.' },
+    { value: 'doughnut', label: 'Círculo' },
+    { value: 'area', label: 'Ondas' },
+    { value: 'pos-neg', label: 'Pos./Neg.' }
+  ];
+
+  return (
+    <div className="flex flex-wrap items-center gap-1 bg-[#0f1115] p-1 rounded-lg border border-[#2d3139] text-[9px] md:text-[10px] shrink-0">
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          onClick={() => onChange(opt.value)}
+          className={cn(
+            "px-1.5 py-0.5 rounded transition-all font-bold uppercase tracking-wider text-[9px]",
+            current === opt.value 
+              ? "bg-blue-600 text-white shadow-sm" 
+              : "text-zinc-400 hover:text-white hover:bg-[#1a1d23]"
+          )}
+        >
+          {opt.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -13949,6 +14313,27 @@ function Dashboard({
   saasSettings?: any
 }) {
   const [weekOffset, setWeekOffset] = useState(0);
+  const [visitsChartType, setVisitsChartType] = useState(() => localStorage.getItem('dashboard_visits_chart_type') || 'bar-vertical');
+  const [typesChartType, setTypesChartType] = useState(() => localStorage.getItem('dashboard_types_chart_type') || 'doughnut');
+  const [fluxoChartType, setFluxoChartType] = useState(() => localStorage.getItem('dashboard_fluxo_chart_type') || 'area');
+  const [forecastChartType, setForecastChartType] = useState(() => localStorage.getItem('dashboard_forecast_chart_type') || 'area');
+
+  const handleVisitsChartTypeChange = (type: string) => {
+    setVisitsChartType(type);
+    localStorage.setItem('dashboard_visits_chart_type', type);
+  };
+  const handleTypesChartTypeChange = (type: string) => {
+    setTypesChartType(type);
+    localStorage.setItem('dashboard_types_chart_type', type);
+  };
+  const handleFluxoChartTypeChange = (type: string) => {
+    setFluxoChartType(type);
+    localStorage.setItem('dashboard_fluxo_chart_type', type);
+  };
+  const handleForecastChartTypeChange = (type: string) => {
+    setForecastChartType(type);
+    localStorage.setItem('dashboard_forecast_chart_type', type);
+  };
   const [selectedForecastMonth, setSelectedForecastMonth] = useState<number>(() => {
     const today = new Date();
     return (today.getMonth() + 1) % 12;
@@ -14059,11 +14444,19 @@ function Dashboard({
 
     // Pending Payables (Contas a Pagar Pendentes)
     const pendingPayablesCount = (payables || []).filter(p => p.status !== 'Pago').length;
-    const pendingPayablesTotal = (payables || []).filter(p => p.status !== 'Pago').reduce((acc, p) => acc + (Number(p.value) || 0), 0);
+    const pendingPayablesTotal = (payables || []).filter(p => p.status !== 'Pago').reduce((acc, p) => {
+      const partialSum = (p.partialPayments || []).reduce((sum: number, pay: any) => sum + Number(pay?.value || 0), 0);
+      const remainingVal = Math.max(0, (Number(p.value) || 0) - partialSum);
+      return acc + remainingVal;
+    }, 0);
 
     // Pending Receivables (Contas a Receber Pendentes)
     const pendingReceivablesCount = (receivables || []).filter(r => r.status !== 'Pago').length;
-    const pendingReceivablesTotal = (receivables || []).filter(r => r.status !== 'Pago').reduce((acc, r) => acc + (Number(r.value) || 0), 0);
+    const pendingReceivablesTotal = (receivables || []).filter(r => r.status !== 'Pago').reduce((acc, r) => {
+      const partialSum = (r.partialPayments || []).reduce((sum: number, pay: any) => sum + Number(pay?.value || 0), 0);
+      const remainingVal = Math.max(0, (Number(r.value) || 0) - partialSum);
+      return acc + remainingVal;
+    }, 0);
 
     return { 
       income, 
@@ -14166,11 +14559,19 @@ function Dashboard({
       });
 
       // Income = directly launched receivables + contract-based dynamic predictions for selected month
-      const receitaReal = dayReceivables.reduce((acc, r) => acc + (Number(r.value) || 0), 0);
+      const receitaReal = dayReceivables.reduce((acc, r) => {
+        const partialSum = (r.partialPayments || []).reduce((sum: number, pay: any) => sum + Number(pay?.value || 0), 0);
+        const remainingVal = Math.max(0, (Number(r.value) || 0) - partialSum);
+        return acc + remainingVal;
+      }, 0);
       const contractIncome = contractProjections.filter(p => p.day === day).reduce((acc, p) => acc + p.value, 0);
       
       const receita = receitaReal + contractIncome;
-      const despesa = dayPayables.reduce((acc, p) => acc + (Number(p.value) || 0), 0);
+      const despesa = dayPayables.reduce((acc, p) => {
+        const partialSum = (p.partialPayments || []).reduce((sum: number, pay: any) => sum + Number(pay?.value || 0), 0);
+        const remainingVal = Math.max(0, (Number(p.value) || 0) - partialSum);
+        return acc + remainingVal;
+      }, 0);
 
       forecast.push({
         name: String(day),
@@ -14337,7 +14738,7 @@ function Dashboard({
       <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-8">
         {canAccess('visits') ? (
           <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden h-[400px]">
-            <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-row items-center justify-between">
+            <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="flex flex-col">
                 <CardTitle className="text-[15px] font-semibold text-white">Cronograma de Visitas</CardTitle>
                 <div className="flex items-center gap-2 mt-1">
@@ -14370,17 +14771,21 @@ function Dashboard({
                   )}
                 </div>
               </div>
-              <span 
-                className="text-[12px] text-[#3b82f6] cursor-pointer hover:underline"
-                onClick={() => onNavigate('visits')}
-              >
-                Ver Todas
-              </span>
+              <div className="flex flex-wrap items-center gap-3">
+                <ChartTypeSelector current={visitsChartType} onChange={handleVisitsChartTypeChange} />
+                <span 
+                  className="text-[12px] text-[#3b82f6] cursor-pointer hover:underline"
+                  onClick={() => onNavigate('visits')}
+                >
+                  Ver Todas
+                </span>
+              </div>
             </CardHeader>
             <CardContent className="p-6 h-[320px]">
               <VisitsChart 
                 data={visitsByDay.data} 
                 onBarClick={(date) => onNavigate('visits', { date })}
+                type={visitsChartType}
               />
             </CardContent>
           </Card>
@@ -14388,32 +14793,127 @@ function Dashboard({
 
         {canAccess('visits') ? (
           <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden h-[400px]">
-            <CardHeader className="border-b border-[#2d3139] px-6 py-4">
+            <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
               <CardTitle className="text-[15px] font-semibold text-white">Distribuição por Tipo de Serviço</CardTitle>
+              <ChartTypeSelector current={typesChartType} onChange={handleTypesChartTypeChange} />
             </CardHeader>
             <CardContent className="p-6 flex flex-col items-center justify-center h-[320px]">
               <div className="h-full w-full min-h-[250px]">
                 <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                  <PieChart>
-                    <Pie
-                      data={typeData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {typeData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
-                      itemStyle={{ color: '#fff' }}
-                    />
-                    <Legend />
-                  </PieChart>
+                  {(() => {
+                    switch (typesChartType) {
+                      case 'pizza':
+                        return (
+                          <PieChart>
+                            <Pie
+                              data={typeData}
+                              cx="50%"
+                              cy="50%"
+                              outerRadius={80}
+                              dataKey="value"
+                              label={({ name, percent }) => percent > 0 ? `${name} (${(percent * 100).toFixed(0)}%)` : ''}
+                            >
+                              {typeData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                              ))}
+                            </Pie>
+                            <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} />
+                            <Legend />
+                          </PieChart>
+                        );
+                      case 'bar-vertical':
+                        return (
+                          <BarChart data={typeData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
+                            <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                            <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                            <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} />
+                            <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={25}>
+                              {typeData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        );
+                      case 'bar-horizontal':
+                        return (
+                          <BarChart data={typeData} layout="vertical">
+                            <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" horizontal={false} />
+                            <XAxis type="number" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                            <YAxis dataKey="name" type="category" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} width={80} />
+                            <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} />
+                            <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={18}>
+                              {typeData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        );
+                      case 'area':
+                        return (
+                          <AreaChart data={typeData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
+                            <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                            <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                            <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} />
+                            <Area type="monotone" dataKey="value" stroke="#10b981" strokeWidth={2} fillOpacity={0.25} fill="#10b981" />
+                          </AreaChart>
+                        );
+                      case 'pos-neg': {
+                        const avgVal = typeData.reduce((sum, item) => sum + (Number(item.value) || 0), 0) / (typeData.length || 1);
+                        const devData = typeData.map(item => ({
+                          ...item,
+                          deviation: Number((item.value - avgVal).toFixed(1)),
+                          originalValue: item.value
+                        }));
+                        return (
+                          <BarChart data={devData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
+                            <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                            <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                            <Tooltip 
+                              contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} 
+                              itemStyle={{ color: '#fff' }}
+                              formatter={(value: any, name: any, props: any) => [
+                                `Desvio: ${value > 0 ? '+' : ''}${value} (Registros: ${props.payload.originalValue})`, 
+                                'Desvio Desempenho'
+                              ]}
+                            />
+                            <Bar dataKey="deviation">
+                              {devData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.deviation >= 0 ? '#10b981' : '#ef4444'} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        );
+                      }
+                      case 'doughnut':
+                      default:
+                        return (
+                          <PieChart>
+                            <Pie
+                              data={typeData}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={60}
+                              outerRadius={80}
+                              paddingAngle={5}
+                              dataKey="value"
+                              label={({ name, percent }) => percent > 0 ? `${name} (${(percent * 100).toFixed(0)}%)` : ''}
+                            >
+                              {typeData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                              ))}
+                            </Pie>
+                            <Tooltip 
+                              contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
+                              itemStyle={{ color: '#fff' }}
+                            />
+                            <Legend />
+                          </PieChart>
+                        );
+                    }
+                  })()}
                 </ResponsiveContainer>
               </div>
             </CardContent>
@@ -14422,32 +14922,155 @@ function Dashboard({
 
         {canAccess('financial') ? (
           <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden col-span-full h-[400px]">
-            <CardHeader className="border-b border-[#2d3139] px-6 py-4">
+            <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
               <CardTitle className="text-[15px] font-semibold text-white">Fluxo Financeiro (Últimos 7 dias)</CardTitle>
+              <ChartTypeSelector current={fluxoChartType} onChange={handleFluxoChartTypeChange} />
             </CardHeader>
             <CardContent className="p-6 h-[320px]">
               <div className="h-full w-full min-h-[250px]">
                 <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                  <AreaChart data={chartData}>
-                    <defs>
-                      <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                      </linearGradient>
-                      <linearGradient id="colorExpense" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <XAxis dataKey="name" stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
-                    <YAxis stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `R$ ${value}`} />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
-                      itemStyle={{ color: '#fff' }}
-                    />
-                    <Area type="monotone" dataKey="receita" stroke="#10b981" fillOpacity={1} fill="url(#colorIncome)" />
-                    <Area type="monotone" dataKey="despesa" stroke="#ef4444" fillOpacity={1} fill="url(#colorExpense)" />
-                  </AreaChart>
+                  {(() => {
+                    switch (fluxoChartType) {
+                      case 'pizza': {
+                        const totalReceita = chartData.reduce((acc, d) => acc + d.receita, 0);
+                        const totalDespesa = chartData.reduce((acc, d) => acc + d.despesa, 0);
+                        const pieData = [
+                          { name: 'Receita', value: totalReceita, color: '#10b981' },
+                          { name: 'Despesa', value: totalDespesa, color: '#ef4444' }
+                        ].filter(item => item.value > 0);
+                        if (pieData.length === 0) {
+                          return (
+                            <div className="h-full w-full flex items-center justify-center text-[#71717a] text-xs py-10 italic">
+                              Sem lançamentos financeiros no período.
+                            </div>
+                          );
+                        }
+                        return (
+                          <PieChart>
+                            <Pie
+                              data={pieData}
+                              cx="50%"
+                              cy="50%"
+                              outerRadius={80}
+                              dataKey="value"
+                              label={({ name, percent, value }) => percent > 0 ? `${name}: R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${(percent * 100).toFixed(0)}%)` : ''}
+                            >
+                              {pieData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} formatter={(val: any) => `R$ ${val.toLocaleString('pt-BR')}`} />
+                            <Legend />
+                          </PieChart>
+                        );
+                      }
+                      case 'doughnut': {
+                        const totalReceita = chartData.reduce((acc, d) => acc + d.receita, 0);
+                        const totalDespesa = chartData.reduce((acc, d) => acc + d.despesa, 0);
+                        const pieData = [
+                          { name: 'Receita', value: totalReceita, color: '#10b981' },
+                          { name: 'Despesa', value: totalDespesa, color: '#ef4444' }
+                        ].filter(item => item.value > 0);
+                        if (pieData.length === 0) {
+                          return (
+                            <div className="h-full w-full flex items-center justify-center text-[#71717a] text-xs py-10 italic">
+                              Sem lançamentos financeiros no período.
+                            </div>
+                          );
+                        }
+                        return (
+                          <PieChart>
+                            <Pie
+                              data={pieData}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={60}
+                              outerRadius={80}
+                              dataKey="value"
+                              label={({ name, percent, value }) => percent > 0 ? `${name}: R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${(percent * 100).toFixed(0)}%)` : ''}
+                            >
+                              {pieData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} formatter={(val: any) => `R$ ${val.toLocaleString('pt-BR')}`} />
+                            <Legend />
+                          </PieChart>
+                        );
+                      }
+                      case 'bar-vertical':
+                        return (
+                          <BarChart data={chartData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
+                            <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                            <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(value) => `R$ ${value}`} />
+                            <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} formatter={(val: any) => `R$ ${val.toLocaleString('pt-BR')}`} />
+                            <Bar dataKey="receita" fill="#10b981" radius={[4, 4, 0, 0]} barSize={25} name="Receita" />
+                            <Bar dataKey="despesa" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={25} name="Despesa" />
+                            <Legend />
+                          </BarChart>
+                        );
+                      case 'bar-horizontal':
+                        return (
+                          <BarChart data={chartData} layout="vertical">
+                            <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" horizontal={false} />
+                            <XAxis type="number" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                            <YAxis dataKey="name" type="category" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} width={45} />
+                            <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} formatter={(val: any) => `R$ ${val.toLocaleString('pt-BR')}`} />
+                            <Bar dataKey="receita" fill="#10b981" radius={[0, 4, 4, 0]} barSize={12} name="Receita" />
+                            <Bar dataKey="despesa" fill="#ef4444" radius={[0, 4, 4, 0]} barSize={12} name="Despesa" />
+                            <Legend />
+                          </BarChart>
+                        );
+                      case 'pos-neg': {
+                        const netData = chartData.map(item => ({
+                          ...item,
+                          saldo: item.receita - item.despesa
+                        }));
+                        return (
+                          <BarChart data={netData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
+                            <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                            <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(value) => `R$ ${value}`} />
+                            <Tooltip 
+                              contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} 
+                              itemStyle={{ color: '#fff' }}
+                              formatter={(value: any) => [`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Saldo Líquido Diário']}
+                            />
+                            <Bar dataKey="saldo" name="Saldo Líquido">
+                              {netData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.saldo >= 0 ? '#10b981' : '#ef4444'} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        );
+                      }
+                      case 'area':
+                      default:
+                        return (
+                          <AreaChart data={chartData}>
+                            <defs>
+                              <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                                <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                              </linearGradient>
+                              <linearGradient id="colorExpense" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
+                                <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                              </linearGradient>
+                            </defs>
+                            <XAxis dataKey="name" stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
+                            <YAxis stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `R$ ${value}`} />
+                            <Tooltip 
+                              contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
+                              itemStyle={{ color: '#fff' }}
+                            />
+                            <Area type="monotone" dataKey="receita" stroke="#10b981" fillOpacity={1} fill="url(#colorIncome)" name="Receita" />
+                            <Area type="monotone" dataKey="despesa" stroke="#ef4444" fillOpacity={1} fill="url(#colorExpense)" name="Despesa" />
+                          </AreaChart>
+                        );
+                    }
+                  })()}
                 </ResponsiveContainer>
               </div>
             </CardContent>
@@ -14456,9 +15079,12 @@ function Dashboard({
 
         {canAccess('financial') ? (
           <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden col-span-full min-h-[470px] flex flex-col">
-            <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div>
-                <CardTitle className="text-[15px] font-semibold text-white">Previsão Financeira Dupla de Vencimentos ({nextMonthForecastData.monthLabel})</CardTitle>
+            <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+              <div className="flex-1">
+                <CardTitle className="text-[15px] font-semibold text-white flex flex-col md:flex-row md:items-center md:gap-4 gap-2">
+                  <span>Previsão Financeira Dupla de Vencimentos ({nextMonthForecastData.monthLabel})</span>
+                  <ChartTypeSelector current={forecastChartType} onChange={handleForecastChartTypeChange} />
+                </CardTitle>
                 <p className="text-[11px] text-[#71717a] mt-0.5">Visão unificada dia a dia das contas a pagar e receber agendadas para o mês selecionado.</p>
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-mono">
@@ -14475,28 +15101,151 @@ function Dashboard({
             <CardContent className="p-6 flex-1 flex flex-col gap-5">
               <div className="h-full w-full min-h-[220px] flex-1">
                 <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                  <AreaChart data={nextMonthForecastData.data}>
-                    <defs>
-                      <linearGradient id="colorForecastIncome" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.25}/>
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                      </linearGradient>
-                      <linearGradient id="colorForecastExpense" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.25}/>
-                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} label={{ value: 'Dia do Mês', position: 'insideBottom', offset: -5, fill: '#71717a', fontSize: 10 }} />
-                    <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(value) => `R$ ${value}`} />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
-                      itemStyle={{ color: '#fff' }}
-                      formatter={(value: any) => [`R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]}
-                      labelFormatter={(label) => `Dia ${label} de ${nextMonthForecastData.monthLabel}`}
-                    />
-                    <Area type="monotone" dataKey="receita" name="A Receber" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorForecastIncome)" />
-                    <Area type="monotone" dataKey="despesa" name="A Pagar" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorForecastExpense)" />
-                  </AreaChart>
+                  {(() => {
+                    switch (forecastChartType) {
+                      case 'pizza': {
+                        const totalReceita = nextMonthForecastData.data.reduce((acc, d) => acc + d.receita, 0);
+                        const totalDespesa = nextMonthForecastData.data.reduce((acc, d) => acc + d.despesa, 0);
+                        const pieData = [
+                          { name: 'A Receber', value: totalReceita, color: '#10b981' },
+                          { name: 'A Pagar', value: totalDespesa, color: '#ef4444' }
+                        ].filter(item => item.value > 0);
+                        if (pieData.length === 0) {
+                          return (
+                            <div className="h-full w-full flex items-center justify-center text-[#71717a] text-xs py-10 italic">
+                              Sem lançamentos previstos para este mês.
+                            </div>
+                          );
+                        }
+                        return (
+                          <PieChart>
+                            <Pie
+                              data={pieData}
+                              cx="50%"
+                              cy="50%"
+                              outerRadius={80}
+                              dataKey="value"
+                              label={({ name, percent, value }) => percent > 0 ? `${name}: R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${(percent * 100).toFixed(0)}%)` : ''}
+                            >
+                              {pieData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} formatter={(val: any) => `R$ ${val.toLocaleString('pt-BR')}`} />
+                            <Legend />
+                          </PieChart>
+                        );
+                      }
+                      case 'doughnut': {
+                        const totalReceita = nextMonthForecastData.data.reduce((acc, d) => acc + d.receita, 0);
+                        const totalDespesa = nextMonthForecastData.data.reduce((acc, d) => acc + d.despesa, 0);
+                        const pieData = [
+                          { name: 'A Receber', value: totalReceita, color: '#10b981' },
+                          { name: 'A Pagar', value: totalDespesa, color: '#ef4444' }
+                        ].filter(item => item.value > 0);
+                        if (pieData.length === 0) {
+                          return (
+                            <div className="h-full w-full flex items-center justify-center text-[#71717a] text-xs py-10 italic">
+                              Sem lançamentos previstos para este mês.
+                            </div>
+                          );
+                        }
+                        return (
+                          <PieChart>
+                            <Pie
+                              data={pieData}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={60}
+                              outerRadius={80}
+                              dataKey="value"
+                              label={({ name, percent, value }) => percent > 0 ? `${name}: R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${(percent * 100).toFixed(0)}%)` : ''}
+                            >
+                              {pieData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} formatter={(val: any) => `R$ ${val.toLocaleString('pt-BR')}`} />
+                            <Legend />
+                          </PieChart>
+                        );
+                      }
+                      case 'bar-vertical':
+                        return (
+                          <BarChart data={nextMonthForecastData.data}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
+                            <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                            <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(value) => `R$ ${value}`} />
+                            <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} formatter={(val: any) => `R$ ${val.toLocaleString('pt-BR')}`} />
+                            <Bar dataKey="receita" fill="#10b981" radius={[4, 4, 0, 0]} barSize={10} name="A Receber" />
+                            <Bar dataKey="despesa" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={10} name="A Pagar" />
+                            <Legend />
+                          </BarChart>
+                        );
+                      case 'bar-horizontal':
+                        return (
+                          <BarChart data={nextMonthForecastData.data} layout="vertical">
+                            <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" horizontal={false} />
+                            <XAxis type="number" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                            <YAxis dataKey="name" type="category" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} width={30} />
+                            <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} formatter={(val: any) => `R$ ${val.toLocaleString('pt-BR')}`} />
+                            <Bar dataKey="receita" fill="#10b981" radius={[0, 4, 4, 0]} barSize={6} name="A Receber" />
+                            <Bar dataKey="despesa" fill="#ef4444" radius={[0, 4, 4, 0]} barSize={6} name="A Pagar" />
+                            <Legend />
+                          </BarChart>
+                        );
+                      case 'pos-neg': {
+                        const netData = nextMonthForecastData.data.map(item => ({
+                          ...item,
+                          saldo: item.receita - item.despesa
+                        }));
+                        return (
+                          <BarChart data={netData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
+                            <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                            <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(value) => `R$ ${value}`} />
+                            <Tooltip 
+                              contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} 
+                              itemStyle={{ color: '#fff' }}
+                              formatter={(value: any) => [`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Saldo Previsto Líquido']}
+                              labelFormatter={(label) => `Dia ${label} de ${nextMonthForecastData.monthLabel}`}
+                            />
+                            <Bar dataKey="saldo" name="Saldo Previsto">
+                              {netData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.saldo >= 0 ? '#10b981' : '#ef4444'} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        );
+                      }
+                      case 'area':
+                      default:
+                        return (
+                          <AreaChart data={nextMonthForecastData.data}>
+                            <defs>
+                              <linearGradient id="colorForecastIncome" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.25}/>
+                                <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                              </linearGradient>
+                              <linearGradient id="colorForecastExpense" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#ef4444" stopOpacity={0.25}/>
+                                <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                              </linearGradient>
+                            </defs>
+                            <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} label={{ value: 'Dia do Mês', position: 'insideBottom', offset: -5, fill: '#71717a', fontSize: 10 }} />
+                            <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(value) => `R$ ${value}`} />
+                            <Tooltip 
+                              contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
+                              itemStyle={{ color: '#fff' }}
+                              formatter={(value: any) => [`R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]}
+                              labelFormatter={(label) => `Dia ${label} de ${nextMonthForecastData.monthLabel}`}
+                            />
+                            <Area type="monotone" dataKey="receita" name="A Receber" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorForecastIncome)" />
+                            <Area type="monotone" dataKey="despesa" name="A Pagar" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorForecastExpense)" />
+                          </AreaChart>
+                        );
+                    }
+                  })()}
                 </ResponsiveContainer>
               </div>
 
