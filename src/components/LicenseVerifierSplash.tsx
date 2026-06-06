@@ -42,7 +42,7 @@ export default function LicenseVerifierSplash({
     { name: 'Autenticação de Usuário', desc: `Vínculo ativo: ${user?.email}` },
     { name: 'Sincronização de Assinatura', desc: company?.isExempt ? 'Licença Isenta / Cortesia de Parceria' : `Licença SaaS Ativa (Ciclo: ${company?.billingCycle || 'Mensal'})` },
     { name: 'Verificação de Recursos', desc: `${company?.enabledMenus?.length || 14} menus operacionais liberados` },
-    { name: 'Status de Atualizações', desc: company?.receivesUpdates === false ? 'Versão Estática (Novas atualizações travadas)' : 'Recebendo novos recursos e patches' },
+    { name: 'Status de Atualizações', desc: company?.receivesUpdates === false ? 'Licença sem direito a atualizações' : 'Recebendo novos recursos e patches' },
     { name: 'Banco de Dados do Cliente', desc: company?.dbMode === 'local' ? 'Servidor Local (SQLite / JSON no Windows %Appdata%)' : 'Modo Cloud Firebase (100% em Nuvem)' }
   ];
 
@@ -219,9 +219,9 @@ export default function LicenseVerifierSplash({
               >
                 <AlertTriangle className="h-5 w-5 text-orange-400 shrink-0" />
                 <div>
-                  <h4 className="text-orange-400 font-black text-xs uppercase italic tracking-tighter">VERSÃO EM MODO ESTÁTICO (ATUALIZAÇÕES BLOQUEADAS)</h4>
+                  <h4 className="text-orange-400 font-black text-xs uppercase italic tracking-tighter">LICENÇA SEM DIREITO A ATUALIZAÇÕES</h4>
                   <p className="text-[#a0a0a0] text-[10px] leading-relaxed mt-0.5">
-                    Seu administrador travou os updates automáticos para esta licença. O sistema continuará operacional em ambiente local estável.
+                    Sua licença não lhe dá direito a atualizações automáticas ( Update ). Se a sua licença for Web/Local o sistema continuará funcionando em ambiente local ( Desktop ), para mais informações contacte o suporte.
                   </p>
                 </div>
               </motion.div>
@@ -258,7 +258,7 @@ export default function LicenseVerifierSplash({
             ) : (
               <span className="flex items-center gap-2">
                 <Unlock size={14} />
-                Iniciar Terminal de Segurança
+                Iniciar o Sistema
               </span>
             )}
           </Button>

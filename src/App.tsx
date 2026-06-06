@@ -163,6 +163,7 @@ import {
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
 import LicenseVerifierSplash from './components/LicenseVerifierSplash';
+import IntroSplashScreen from './components/IntroSplashScreen';
 
 const SUPER_ADMIN_EMAILS = ['emailparasiteslixo@gmail.com', 'alffonseca42@gmail.com'];
 import { LaudosManager, LaudoTecnico } from './components/LaudosManager';
@@ -2274,6 +2275,7 @@ interface AppSettings {
   signatureUrl?: string;
   installmentPlans?: { id: string, brand: 'VISA' | 'MASTERCARD' | 'AMERICA' | 'ELO', type: 'DÉBITO' | 'CRÉDITO', installments: number, interestRate: number }[];
   serviceTypes?: string[];
+  introVideoUrl?: string;
 }
 
 interface LogRecord {
@@ -3011,10 +3013,13 @@ const initialAppSettings: AppSettings = {
   document: '',
   signatureUrl: '',
   serviceTypes: ['CFTV', 'Alarme', 'Cerca Elétrica', 'Motor de Portão', 'Redes', 'Outros'],
-  installmentPlans: []
+  installmentPlans: [],
+  introVideoUrl: ''
 };
 
 export default function MainApp() {
+  const [showIntro, setShowIntro] = useState(false);
+  const hasPlayedIntro = useRef(false);
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -3406,6 +3411,17 @@ export default function MainApp() {
     };
   }, []);
 
+  // Play brand intro animation when the system (company, user, configuration, license) is fully loaded & verified
+  useEffect(() => {
+    const isSystemReady = !!(user && currentUserData?.companyId && currentCompany);
+    const isLicensePass = !isLicenseVerifying || isSuperAdmin;
+    
+    if (isSystemReady && isLicensePass && !hasPlayedIntro.current) {
+      hasPlayedIntro.current = true;
+      setShowIntro(true);
+    }
+  }, [user, currentUserData?.companyId, currentCompany, isLicenseVerifying, isSuperAdmin]);
+
   useEffect(() => {
     if (activeTab && user && currentUserData) {
       logAction('page_view', 'menu', `Acessou menu: ${activeTab}`);
@@ -3691,7 +3707,8 @@ export default function MainApp() {
           city: prev.city || currentCompany.city || currentCompany.companyCity || currentCompany.municipio || '',
           cep: prev.cep || currentCompany.cep || currentCompany.companyCep || '',
           neighborhood: prev.neighborhood || currentCompany.neighborhood || currentCompany.companyNeighborhood || currentCompany.bairro || '',
-          signatureUrl: prev.signatureUrl || currentCompany.signatureUrl || ''
+          signatureUrl: prev.signatureUrl || currentCompany.signatureUrl || '',
+          introVideoUrl: prev.introVideoUrl || currentCompany.introVideoUrl || ''
         };
         if (JSON.stringify(prev) !== JSON.stringify(updated)) {
           return updated;
@@ -4392,6 +4409,7 @@ export default function MainApp() {
 
   const handleLogout = async () => {
     try {
+      hasPlayedIntro.current = false;
       exitFullscreen();
       await signOut(auth);
       // Clean URL parameters upon logout to ensure a clean login screen without breaking sandboxed environment
@@ -4848,6 +4866,15 @@ export default function MainApp() {
   return (
     <div className="flex h-screen bg-[#0f1115] text-[#e0e0e0] overflow-hidden">
       <Toaster position="top-right" theme="dark" />
+      
+      {showIntro && (
+        <IntroSplashScreen 
+          onComplete={() => setShowIntro(false)}
+          logoUrl={appSettings.logoUrl}
+          companyName={appSettings.companyName || 'SegurTec-Pro Gestão'}
+          videoUrl={appSettings.introVideoUrl}
+        />
+      )}
       
       {/* Sidebar - Desktop */}
       <aside className="hidden flex-col border-r border-[#2d3139] bg-[#1a1d23]">
@@ -12897,6 +12924,17 @@ function SettingsManager({
                       className="bg-[#0f1115] border-[#2d3139] text-white file:bg-[#3b82f6] file:text-white file:border-none file:px-4 file:py-1 file:rounded-md file:mr-4 file:cursor-pointer" 
                     />
                   </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="introVideoUrl" className="text-[#a0a0a0]">Vídeo de Abertura (Opcional - MP4 de 5 segundos)</Label>
+                  <Input 
+                    id="introVideoUrl" 
+                    value={localApp.introVideoUrl || ''} 
+                    onChange={e => setLocalApp({ ...localApp, introVideoUrl: e.target.value })} 
+                    placeholder="Ex: https://dominio.com/logo_animada.mp4 (Deixe vazio para o loading padrão)"
+                    className="bg-[#0f1115] border-[#2d3139] text-white" 
+                  />
+                  <p className="text-[9px] text-[#71717a] italic">Iniciará uma animação em tela cheia de 5 segundos antes de abrir a tela de login/empresa.</p>
                 </div>
                 <div className="space-y-4 pt-4 border-t border-[#2d3139]">
                   <Label className="text-[#a0a0a0]">Assinatura Digital</Label>
