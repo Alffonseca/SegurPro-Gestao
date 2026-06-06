@@ -14094,6 +14094,7 @@ function VisitsChart({
             data={data}
             layout="vertical"
             className="cursor-pointer"
+            margin={{ top: 10, right: 15, left: -10, bottom: 0 }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" horizontal={false} />
             <XAxis 
@@ -14139,7 +14140,7 @@ function VisitsChart({
       }
       case 'area': {
         return (
-          <AreaChart data={data}>
+          <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
             <defs>
               <linearGradient id="visitsAreaGrad" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
@@ -14165,7 +14166,7 @@ function VisitsChart({
           originalValue: item.visitas
         }));
         return (
-          <BarChart data={devData}>
+          <BarChart data={devData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
             <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
             <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
@@ -14194,6 +14195,7 @@ function VisitsChart({
           <BarChart 
             data={data}
             className="cursor-pointer"
+            margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
             <XAxis 
@@ -14735,53 +14737,56 @@ function Dashboard({
             </Card>
           </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {canAccess('visits') ? (
-          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden h-[400px]">
-            <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="flex flex-col">
-                <CardTitle className="text-[15px] font-semibold text-white">Cronograma de Visitas</CardTitle>
-                <div className="flex items-center gap-2 mt-1">
+          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden min-h-[440px] flex flex-col">
+            <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col gap-3">
+              <div className="flex flex-row items-center justify-between w-full gap-2">
+                <CardTitle className="text-[15px] font-semibold text-white whitespace-nowrap">Cronograma de Visitas</CardTitle>
+                
+                {/* Week Offset Selection placed exactly between title and "Ver Todas" */}
+                <div className="flex items-center gap-1 bg-[#0f1115] px-1.5 py-0.5 rounded-lg border border-[#2d3139] text-xs">
                   <Button 
                     variant="ghost" 
                     size="icon" 
-                    className="h-6 w-6 text-[#71717a] hover:text-white" 
+                    className="h-5 w-5 text-[#71717a] hover:text-white" 
                     onClick={() => setWeekOffset(prev => prev - 1)}
                   >
-                    <ChevronLeft size={14} />
+                    <ChevronLeft size={12} />
                   </Button>
-                  <span className="text-[10px] text-[#71717a] font-mono uppercase tracking-wider">{visitsByDay.range}</span>
+                  <span className="text-[9px] text-zinc-300 font-mono font-bold uppercase tracking-wider">{visitsByDay.range}</span>
                   <Button 
                     variant="ghost" 
                     size="icon" 
-                    className="h-6 w-6 text-[#71717a] hover:text-white" 
+                    className="h-5 w-5 text-[#71717a] hover:text-white" 
                     onClick={() => setWeekOffset(prev => prev + 1)}
                   >
-                    <ChevronRight size={14} />
+                    <ChevronRight size={12} />
                   </Button>
                   {weekOffset !== 0 && (
                     <Button 
                       variant="ghost" 
                       size="sm" 
-                      className="h-6 px-2 text-[9px] text-[#3b82f6] hover:bg-[#3b82f6]/10" 
+                      className="h-5 px-1 text-[8px] font-bold text-[#3b82f6] hover:bg-[#3b82f6]/10 uppercase" 
                       onClick={() => setWeekOffset(0)}
                     >
                       Hoje
                     </Button>
                   )}
                 </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <ChartTypeSelector current={visitsChartType} onChange={handleVisitsChartTypeChange} />
+
                 <span 
-                  className="text-[12px] text-[#3b82f6] cursor-pointer hover:underline"
+                  className="text-[12px] text-[#3b82f6] cursor-pointer hover:underline font-bold shrink-0"
                   onClick={() => onNavigate('visits')}
                 >
                   Ver Todas
                 </span>
               </div>
+              <div className="w-full pt-1.5 border-t border-[#2d3139]/30">
+                <ChartTypeSelector current={visitsChartType} onChange={handleVisitsChartTypeChange} />
+              </div>
             </CardHeader>
-            <CardContent className="p-6 h-[320px]">
+            <CardContent className="p-6 flex-1 min-h-[300px]">
               <VisitsChart 
                 data={visitsByDay.data} 
                 onBarClick={(date) => onNavigate('visits', { date })}
@@ -14792,13 +14797,13 @@ function Dashboard({
         ) : null}
 
         {canAccess('visits') ? (
-          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden h-[400px]">
-            <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden min-h-[440px] flex flex-col">
+            <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col items-start gap-2.5">
               <CardTitle className="text-[15px] font-semibold text-white">Distribuição por Tipo de Serviço</CardTitle>
               <ChartTypeSelector current={typesChartType} onChange={handleTypesChartTypeChange} />
             </CardHeader>
-            <CardContent className="p-6 flex flex-col items-center justify-center h-[320px]">
-              <div className="h-full w-full min-h-[250px]">
+            <CardContent className="p-6 flex-1 min-h-[300px] flex flex-col items-center justify-center">
+              <div className="h-full w-full min-h-[250px] flex-1">
                 <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                   {(() => {
                     switch (typesChartType) {
@@ -14922,7 +14927,7 @@ function Dashboard({
 
         {canAccess('financial') ? (
           <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden col-span-full h-[400px]">
-            <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col items-start gap-2.5">
               <CardTitle className="text-[15px] font-semibold text-white">Fluxo Financeiro (Últimos 7 dias)</CardTitle>
               <ChartTypeSelector current={fluxoChartType} onChange={handleFluxoChartTypeChange} />
             </CardHeader>
@@ -15079,23 +15084,25 @@ function Dashboard({
 
         {canAccess('financial') ? (
           <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden col-span-full min-h-[470px] flex flex-col">
-            <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-              <div className="flex-1">
-                <CardTitle className="text-[15px] font-semibold text-white flex flex-col md:flex-row md:items-center md:gap-4 gap-2">
-                  <span>Previsão Financeira Dupla de Vencimentos ({nextMonthForecastData.monthLabel})</span>
-                  <ChartTypeSelector current={forecastChartType} onChange={handleForecastChartTypeChange} />
+            <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col gap-4">
+              <div className="w-full flex flex-col gap-1">
+                <CardTitle className="text-[15px] font-semibold text-white">
+                  Previsão Financeira Dupla de Vencimentos ({nextMonthForecastData.monthLabel})
                 </CardTitle>
-                <p className="text-[11px] text-[#71717a] mt-0.5">Visão unificada dia a dia das contas a pagar e receber agendadas para o mês selecionado.</p>
+                <p className="text-[11px] text-[#71717a]">Visão unificada dia a dia das contas a pagar e receber agendadas para o mês selecionado.</p>
               </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-mono">
-                <span className="flex items-center gap-1.5 text-emerald-400">
-                  <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block"></span>
-                  Total a Receber: R$ {nextMonthForecastData.data.reduce((acc, item) => acc + item.receita, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-                <span className="flex items-center gap-1.5 text-red-500">
-                  <span className="w-2.5 h-2.5 rounded-sm bg-red-500 inline-block"></span>
-                  Total a Pagar: R$ {nextMonthForecastData.data.reduce((acc, item) => acc + item.despesa, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 w-full border-t border-[#2d3139]/30 pt-2.5">
+                <ChartTypeSelector current={forecastChartType} onChange={handleForecastChartTypeChange} />
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-mono">
+                  <span className="flex items-center gap-1.5 text-emerald-400">
+                    <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block"></span>
+                    Total a Receber: R$ {nextMonthForecastData.data.reduce((acc, item) => acc + item.receita, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="flex items-center gap-1.5 text-red-500">
+                    <span className="w-2.5 h-2.5 rounded-sm bg-red-500 inline-block"></span>
+                    Total a Pagar: R$ {nextMonthForecastData.data.reduce((acc, item) => acc + item.despesa, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="p-6 flex-1 flex flex-col gap-5">
