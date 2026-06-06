@@ -21,7 +21,29 @@ export default function IntroSplashScreen({
 
   // Default fallback premium high-tech motion/abstract video CDNs
   const defaultVideoUrl = 'https://player.vimeo.com/external/371433846.sd.mp4?s=236da2f3c054273b16f90da2e54e11fa2c2fe39a&profile_id=139&oauth2_token_id=57447761';
-  const activeVideoUrl = videoUrl && videoUrl.trim() !== '' ? videoUrl : defaultVideoUrl;
+  
+  // Helper to transform Google Drive and Dropbox URLs into raw streaming sources
+  const resolveDirectVideoUrl = (url: string): string => {
+    if (!url) return '';
+    const trimmed = url.trim();
+
+    // Google Drive direct link conversion
+    if (trimmed.includes('drive.google.com')) {
+      const fileIdMatch = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+      if (fileIdMatch && fileIdMatch[1]) {
+        return `https://docs.google.com/uc?export=download&id=${fileIdMatch[1]}`;
+      }
+    }
+
+    // Dropbox direct link conversion
+    if (trimmed.includes('dropbox.com')) {
+      return trimmed.replace('?dl=0', '?raw=1').replace('&dl=0', '&raw=1');
+    }
+
+    return trimmed;
+  };
+
+  const activeVideoUrl = videoUrl && videoUrl.trim() !== '' ? resolveDirectVideoUrl(videoUrl) : defaultVideoUrl;
 
   useEffect(() => {
     // 5 seconds total video intro context before launching system checks
