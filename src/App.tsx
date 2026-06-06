@@ -4721,7 +4721,7 @@ export default function MainApp() {
                       Área de Assinatura do Cliente
                     </a>
 
-                    {((import.meta as any).env.VITE_LOCAL_DB === 'true') && (
+                    {((import.meta as any).env.VITE_LOCAL_DB === 'true' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && (
                       <Button 
                         onClick={async () => {
                           try {
@@ -4999,7 +4999,7 @@ export default function MainApp() {
               <LogOut size={18} />
               Logout
             </div>
-            <span className="text-[10px] opacity-60">Ver. 1.5</span>
+            <span className="text-[10px] opacity-60">Ver. {currentCompany?.version || 'v4.8.2'}</span>
           </Button>
         </div>
       </aside>
@@ -5188,7 +5188,7 @@ export default function MainApp() {
                 <LogOut size={18} />
                 Logout
               </div>
-              <span className="text-[10px] opacity-60">Ver. 1.5</span>
+              <span className="text-[10px] opacity-60">Ver. {currentCompany?.version || 'v4.8.2'}</span>
             </Button>
           </div>
         </div>
@@ -5212,6 +5212,9 @@ export default function MainApp() {
               </span>
               <span className="text-[9px] text-[#71717a] uppercase tracking-widest leading-none">
                 {format(new Date(), "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })}
+              </span>
+              <span className="text-[9px] text-[#3b82f6] font-mono font-bold tracking-wider leading-none mt-1">
+                VERSÃO ATUAL: {currentCompany?.version || 'v4.8.2'}
               </span>
             </div>
           </div>
@@ -5467,6 +5470,9 @@ export default function MainApp() {
               clients={clients} 
               payables={payables}
               receivables={receivables} 
+              sales={sales}
+              canAccess={canAccess}
+              saasSettings={saasSettings}
               onNavigate={(tab, filter) => {
                 if (tab === 'visits' && filter) {
                   setVisitsFilter(filter);
@@ -5946,6 +5952,7 @@ export default function MainApp() {
               companyId={effectiveCompanyId || ''} 
               clients={clients}
               pixSettings={pixSettings}
+              appSettings={appSettings}
             />
           )}
           {activeTab === 'vendas-historico' && (
@@ -13579,13 +13586,32 @@ function ReportsManager({
         const totalValue = combined.reduce((sum, item) => sum + (Number(item.value) || 0), 0);
 
         const headers = ['Vencimento', 'Cliente', 'Descrição', 'Valor', 'Status'];
-        const rows = combined.map(item => [
-          item.dueDate ? format(safeParseDate(item.dueDate), 'dd/MM/yyyy') : 'N/A',
-          item.clientName || 'N/A',
-          item.description || '',
-          `R$ ${(item.value || 0).toFixed(2)}`,
-          item.status || 'Pendente'
-        ]);
+        const rows = combined.map(item => {
+          let desc = item.description || '';
+          if (item.partialPayments && item.partialPayments.length > 0) {
+            const historyText = item.partialPayments.map((p: any) => {
+              const pDate = p.date ? format(safeParseDate(p.date), 'dd/MM/yy') : 'N/A';
+              return `${pDate}: R$ ${Number(p.value).toFixed(2)} (${p.paymentMethod || 'Outro'})`;
+            }).join(' | ');
+            desc += ` (Histórico de Baixas: ${historyText})`;
+          }
+
+          let statusText = item.status || 'Pendente';
+          if (item.status === 'Parcial') {
+            const paidSum = (item.partialPayments || []).reduce((acc: number, p: any) => acc + Number(p.value || 0), 0);
+            statusText = `Parcial (Pago R$ ${paidSum.toFixed(2)})`;
+          } else if (item.status === 'Pago') {
+            statusText = 'Pago / Liquidado';
+          }
+
+          return [
+            item.dueDate ? format(safeParseDate(item.dueDate), 'dd/MM/yyyy') : 'N/A',
+            item.clientName || 'N/A',
+            desc,
+            `R$ ${(item.value || 0).toFixed(2)}`,
+            statusText
+          ];
+        });
 
         if (rows.length === 0) {
           toast.error(`Nenhum registro de Contas a Receber ou Contrato ativo encontrado para este período.`);
@@ -13625,13 +13651,32 @@ function ReportsManager({
         const totalValue = filtered.reduce((sum, item) => sum + (Number(item.value) || 0), 0);
 
         const headers = ['Vencimento', 'Fornecedor', 'Descrição', 'Valor', 'Status'];
-        const rows = filtered.map(item => [
-          item.dueDate ? format(safeParseDate(item.dueDate), 'dd/MM/yyyy') : 'N/A',
-          item.supplierName || 'N/A',
-          item.category || item.description || '',
-          `R$ ${(item.value || 0).toFixed(2)}`,
-          item.status || 'Pendente'
-        ]);
+        const rows = filtered.map(item => {
+          let desc = item.category || item.description || '';
+          if (item.partialPayments && item.partialPayments.length > 0) {
+            const historyText = item.partialPayments.map((p: any) => {
+              const pDate = p.date ? format(safeParseDate(p.date), 'dd/MM/yy') : 'N/A';
+              return `${pDate}: R$ ${Number(p.value).toFixed(2)} (${p.paymentMethod || 'Outro'})`;
+            }).join(' | ');
+            desc += ` (Histórico de Baixas: ${historyText})`;
+          }
+
+          let statusText = item.status || 'Pendente';
+          if (item.status === 'Parcial') {
+            const paidSum = (item.partialPayments || []).reduce((acc: number, p: any) => acc + Number(p.value || 0), 0);
+            statusText = `Parcial (Pago R$ ${paidSum.toFixed(2)})`;
+          } else if (item.status === 'Pago') {
+            statusText = 'Pago / Liquidado';
+          }
+
+          return [
+            item.dueDate ? format(safeParseDate(item.dueDate), 'dd/MM/yyyy') : 'N/A',
+            item.supplierName || 'N/A',
+            desc,
+            `R$ ${(item.value || 0).toFixed(2)}`,
+            statusText
+          ];
+        });
 
         if (rows.length === 0) {
           toast.error(`Nenhum registro de Contas a Pagar encontrado para este período.`);
@@ -13884,7 +13929,10 @@ function Dashboard({
   companyId, 
   showList,
   payables = [],
-  receivables = []
+  receivables = [],
+  sales = [],
+  canAccess = () => true,
+  saasSettings
 }: { 
   visits: TechnicalVisit[], 
   serviceOrders: ServiceOrder[], 
@@ -13895,7 +13943,10 @@ function Dashboard({
   companyId: string, 
   showList: boolean,
   payables?: any[],
-  receivables?: any[]
+  receivables?: any[],
+  sales?: any[],
+  canAccess?: (tab: string) => boolean,
+  saasSettings?: any
 }) {
   const [weekOffset, setWeekOffset] = useState(0);
   const [selectedForecastMonth, setSelectedForecastMonth] = useState<number>(() => {
@@ -13997,8 +14048,42 @@ function Dashboard({
       return format(d, 'yyyy-MM-dd') === todayStr;
     }).sort((a, b) => (a.scheduledTime || '').localeCompare(b.scheduledTime || ''));
 
-    return { income, expense, balance: income - expense, todayBalance, pendingVisits, completedVisits, pendingBudgets, pendingOS, totalClients, todayVisits };
-  }, [visits, serviceOrders, financials, budgets, clients]);
+    // Today's PDV Sales
+    const todaySales = (sales || []).filter(s => {
+      if (!s.createdAt) return false;
+      const d = s.createdAt.toDate ? s.createdAt.toDate() : new Date(s.createdAt);
+      return format(d, 'yyyy-MM-dd') === todayStr;
+    });
+    const todaySalesCount = todaySales.length;
+    const todaySalesTotal = todaySales.reduce((acc, s) => acc + (Number(s.total) || 0), 0);
+
+    // Pending Payables (Contas a Pagar Pendentes)
+    const pendingPayablesCount = (payables || []).filter(p => p.status !== 'Pago').length;
+    const pendingPayablesTotal = (payables || []).filter(p => p.status !== 'Pago').reduce((acc, p) => acc + (Number(p.value) || 0), 0);
+
+    // Pending Receivables (Contas a Receber Pendentes)
+    const pendingReceivablesCount = (receivables || []).filter(r => r.status !== 'Pago').length;
+    const pendingReceivablesTotal = (receivables || []).filter(r => r.status !== 'Pago').reduce((acc, r) => acc + (Number(r.value) || 0), 0);
+
+    return { 
+      income, 
+      expense, 
+      balance: income - expense, 
+      todayBalance, 
+      pendingVisits, 
+      completedVisits, 
+      pendingBudgets, 
+      pendingOS, 
+      totalClients, 
+      todayVisits,
+      todaySalesCount,
+      todaySalesTotal,
+      pendingPayablesCount,
+      pendingPayablesTotal,
+      pendingReceivablesCount,
+      pendingReceivablesTotal
+    };
+  }, [visits, serviceOrders, financials, budgets, clients, sales, payables, receivables]);
 
   const chartData = useMemo(() => {
     const last7Days = Array.from({ length: 7 }, (_, i) => {
@@ -14122,259 +14207,350 @@ function Dashboard({
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard 
-          title="Visitas Agendadas" 
-          value={stats.pendingVisits} 
-          icon={<CalendarIcon className="text-[#3b82f6]" />} 
-          trend={`${stats.completedVisits} concluídas`} 
-          isCount 
-          onClick={() => onNavigate('visits')}
-        />
-        <StatCard 
-          title="O.S. Ativas" 
-          value={stats.pendingOS} 
-          icon={<CheckCircle2 className="text-[#10b981]" />} 
-          trend="Em andamento/Aberto" 
-          isCount 
-          onClick={() => onNavigate('service-orders')}
-        />
-        <StatCard 
-          title="Orçamentos Pendentes" 
-          value={stats.pendingBudgets} 
-          icon={<FileText className="text-[#f59e0b]" />} 
-          trend="Aguardando aprovação" 
-          isCount 
-          onClick={() => onNavigate('budgets')}
-        />
-        <Card 
-          className={cn(
-            "border-[#2d3139] p-6 rounded-xl cursor-pointer hover:border-[#3b82f6]/40 transition-all",
-            stats.todayBalance >= 0 ? "bg-emerald-500/10 border-emerald-500/20" : "bg-red-500/10 border-red-500/20"
-          )}
-          onClick={() => onNavigate('financial')}
-        >
-          <div className="text-[12px] text-[#71717a] mb-2 font-medium">Saldo do Dia</div>
-          <div className={cn(
-            "text-[22px] font-bold tracking-tight",
-            stats.todayBalance >= 0 ? "text-emerald-500" : "text-red-500"
-          )}>
-            R$ {stats.todayBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-          </div>
-          <div className="text-[11px] mt-2 text-[#71717a]">
-            Fluxo de caixa hoje
-          </div>
-        </Card>
-      </div>
+            {/* CARD 1: Scheduled Visits OR Accounts Payable Fallback */}
+            {canAccess('visits') ? (
+              <StatCard 
+                title="Visitas Agendadas" 
+                value={stats.pendingVisits} 
+                icon={<CalendarIcon className="text-[#3b82f6]" />} 
+                trend={`${stats.completedVisits} concluídas`} 
+                isCount 
+                onClick={() => onNavigate('visits')}
+              />
+            ) : (
+              <Card 
+                className="border-[#2d3139] p-6 rounded-xl cursor-pointer hover:border-red-500/40 bg-red-500/5 transition-all text-left flex flex-col justify-between"
+                onClick={() => onNavigate('financial')}
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="text-[12px] text-[#71717a] mb-2 font-medium">Contas a Pagar (Pendentes)</div>
+                    <div className="text-[22px] font-bold tracking-tight text-red-500">
+                      R$ {stats.pendingPayablesTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                  <div className="p-2 bg-red-500/10 rounded-lg text-red-400">
+                    <ArrowUpRight size={20} className="transform rotate-180" />
+                  </div>
+                </div>
+                <div className="text-[11px] mt-2 text-[#71717a]">
+                  {stats.pendingPayablesCount} lançamentos em aberto
+                </div>
+              </Card>
+            )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-8">
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden h-[400px]">
-          <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-row items-center justify-between">
-            <div className="flex flex-col">
-              <CardTitle className="text-[15px] font-semibold text-white">Cronograma de Visitas</CardTitle>
-              <div className="flex items-center gap-2 mt-1">
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-6 w-6 text-[#71717a] hover:text-white" 
-                  onClick={() => setWeekOffset(prev => prev - 1)}
-                >
-                  <ChevronLeft size={14} />
-                </Button>
-                <span className="text-[10px] text-[#71717a] font-mono uppercase tracking-wider">{visitsByDay.range}</span>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-6 w-6 text-[#71717a] hover:text-white" 
-                  onClick={() => setWeekOffset(prev => prev + 1)}
-                >
-                  <ChevronRight size={14} />
-                </Button>
-                {weekOffset !== 0 && (
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="h-6 px-2 text-[9px] text-[#3b82f6] hover:bg-[#3b82f6]/10" 
-                    onClick={() => setWeekOffset(0)}
-                  >
-                    Hoje
-                  </Button>
-                )}
-              </div>
-            </div>
-            <span 
-              className="text-[12px] text-[#3b82f6] cursor-pointer hover:underline"
-              onClick={() => onNavigate('visits')}
+            {/* CARD 2: Active Service Orders OR Daily PDV Vendas Fallback */}
+            {canAccess('service-orders') ? (
+              <StatCard 
+                title="O.S. Ativas" 
+                value={stats.pendingOS} 
+                icon={<CheckCircle2 className="text-[#10b981]" />} 
+                trend="Em andamento/Aberto" 
+                isCount 
+                onClick={() => onNavigate('service-orders')}
+              />
+            ) : (
+              <Card 
+                className="border-[#2d3139] p-6 rounded-xl cursor-pointer hover:border-indigo-500/40 bg-indigo-500/5 transition-all text-left flex flex-col justify-between"
+                onClick={() => onNavigate('pdv')}
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="text-[12px] text-[#71717a] mb-2 font-medium">Vendas no PDV (Hoje)</div>
+                    <div className="text-[22px] font-bold tracking-tight text-indigo-400">
+                      {stats.todaySalesCount} {stats.todaySalesCount === 1 ? 'venda' : 'vendas'}
+                    </div>
+                  </div>
+                  <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-400">
+                    <ShoppingCart size={20} />
+                  </div>
+                </div>
+                <div className="text-[11px] mt-2 text-[#71717a]">
+                  Total hoje: R$ {stats.todaySalesTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </div>
+              </Card>
+            )}
+
+            {/* CARD 3: Pending Budgets OR Accounts Receivable Fallback */}
+            {canAccess('budgets') ? (
+              <StatCard 
+                title="Orçamentos Pendentes" 
+                value={stats.pendingBudgets} 
+                icon={<FileText className="text-[#f59e0b]" />} 
+                trend="Aguardando aprovação" 
+                isCount 
+                onClick={() => onNavigate('budgets')}
+              />
+            ) : (
+              <Card 
+                className="border-[#2d3139] p-6 rounded-xl cursor-pointer hover:border-emerald-500/40 bg-emerald-500/5 transition-all text-left flex flex-col justify-between"
+                onClick={() => onNavigate('financial')}
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="text-[12px] text-[#71717a] mb-2 font-medium">Contas a Receber (Pendentes)</div>
+                    <div className="text-[22px] font-bold tracking-tight text-emerald-500">
+                      R$ {stats.pendingReceivablesTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                  <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-400">
+                    <ArrowUpRight size={20} />
+                  </div>
+                </div>
+                <div className="text-[11px] mt-2 text-[#71717a]">
+                  {stats.pendingReceivablesCount} lançamentos em aberto
+                </div>
+              </Card>
+            )}
+
+            {/* CARD 4: Day Balance (Saldo do Dia) */}
+            <Card 
+              className={cn(
+                "border-[#2d3139] p-6 rounded-xl cursor-pointer hover:border-[#3b82f6]/40 transition-all text-left flex flex-col justify-between",
+                stats.todayBalance >= 0 ? "bg-emerald-500/10 border-emerald-500/20" : "bg-red-500/10 border-red-500/20"
+              )}
+              onClick={() => onNavigate('financial')}
             >
-              Ver Todas
-            </span>
-          </CardHeader>
-          <CardContent className="p-6 h-[320px]">
-            <VisitsChart 
-              data={visitsByDay.data} 
-              onBarClick={(date) => onNavigate('visits', { date })}
-            />
-          </CardContent>
-        </Card>
-
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden h-[400px]">
-          <CardHeader className="border-b border-[#2d3139] px-6 py-4">
-            <CardTitle className="text-[15px] font-semibold text-white">Distribuição por Tipo de Serviço</CardTitle>
-          </CardHeader>
-          <CardContent className="p-6 flex flex-col items-center justify-center h-[320px]">
-            <div className="h-full w-full min-h-[250px]">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                <PieChart>
-                  <Pie
-                    data={typeData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {typeData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
-                    itemStyle={{ color: '#fff' }}
-                  />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden col-span-full h-[400px]">
-          <CardHeader className="border-b border-[#2d3139] px-6 py-4">
-            <CardTitle className="text-[15px] font-semibold text-white">Fluxo Financeiro (Últimos 7 dias)</CardTitle>
-          </CardHeader>
-          <CardContent className="p-6 h-[320px]">
-            <div className="h-full w-full min-h-[250px]">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                <AreaChart data={chartData}>
-                  <defs>
-                    <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorExpense" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <XAxis dataKey="name" stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `R$ ${value}`} />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
-                    itemStyle={{ color: '#fff' }}
-                  />
-                  <Area type="monotone" dataKey="receita" stroke="#10b981" fillOpacity={1} fill="url(#colorIncome)" />
-                  <Area type="monotone" dataKey="despesa" stroke="#ef4444" fillOpacity={1} fill="url(#colorExpense)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden col-span-full min-h-[470px] flex flex-col">
-          <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div>
-              <CardTitle className="text-[15px] font-semibold text-white">Previsão Financeira Dupla de Vencimentos ({nextMonthForecastData.monthLabel})</CardTitle>
-              <p className="text-[11px] text-[#71717a] mt-0.5">Visão unificada dia a dia das contas a pagar e receber agendadas para o mês selecionado.</p>
-            </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-mono">
-              <span className="flex items-center gap-1.5 text-emerald-400">
-                <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block"></span>
-                Total a Receber: R$ {nextMonthForecastData.data.reduce((acc, item) => acc + item.receita, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-              <span className="flex items-center gap-1.5 text-red-500">
-                <span className="w-2.5 h-2.5 rounded-sm bg-red-500 inline-block"></span>
-                Total a Pagar: R$ {nextMonthForecastData.data.reduce((acc, item) => acc + item.despesa, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-            </div>
-          </CardHeader>
-          <CardContent className="p-6 flex-1 flex flex-col gap-5">
-            <div className="h-full w-full min-h-[220px] flex-1">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                <AreaChart data={nextMonthForecastData.data}>
-                  <defs>
-                    <linearGradient id="colorForecastIncome" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.25}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorForecastExpense" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#ef4444" stopOpacity={0.25}/>
-                      <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} label={{ value: 'Dia do Mês', position: 'insideBottom', offset: -5, fill: '#71717a', fontSize: 10 }} />
-                  <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(value) => `R$ ${value}`} />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
-                    itemStyle={{ color: '#fff' }}
-                    formatter={(value: any) => [`R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]}
-                    labelFormatter={(label) => `Dia ${label} de ${nextMonthForecastData.monthLabel}`}
-                  />
-                  <Area type="monotone" dataKey="receita" name="A Receber" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorForecastIncome)" />
-                  <Area type="monotone" dataKey="despesa" name="A Pagar" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorForecastExpense)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* Months Selector Bar below the chart */}
-            <div className="flex flex-col md:flex-row items-center justify-between gap-3 bg-[#15171c]/50 p-2.5 rounded-lg border border-[#2d3139]/50 mt-1">
-              <div className="flex items-center gap-1.5 bg-[#0f1115] p-1 rounded-lg border border-[#2d3139] shrink-0">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-[#71717a] hover:text-white hover:bg-[#1a1d23]"
-                  onClick={() => setSelectedForecastYear(prev => prev - 1)}
-                >
-                  <ChevronLeft size={14} />
-                </Button>
-                <span className="text-xs font-bold text-white px-2 font-mono">{selectedForecastYear}</span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-[#71717a] hover:text-white hover:bg-[#1a1d23]"
-                  onClick={() => setSelectedForecastYear(prev => prev + 1)}
-                >
-                  <ChevronRight size={14} />
-                </Button>
-              </div>
-
-              <div className="flex-1 flex justify-center overflow-x-auto max-w-full no-scrollbar py-0.5">
-                <div className="flex items-center gap-1 justify-center shrink-0">
-                  {monthsList.map((m) => {
-                    const isSelected = selectedForecastMonth === m.index;
-                    return (
-                      <Button
-                        key={m.index}
-                        variant={isSelected ? "default" : "ghost"}
-                        size="sm"
-                        className={cn(
-                          "h-7 px-2.5 text-xs font-semibold rounded-md transition-all shrink-0",
-                          isSelected 
-                            ? "bg-blue-600 text-white shadow-sm hover:bg-blue-700" 
-                            : "text-[#a0a0a0] hover:text-white hover:bg-[#25282e]/50"
-                        )}
-                        onClick={() => setSelectedForecastMonth(m.index)}
-                      >
-                        {m.label}
-                      </Button>
-                    );
-                  })}
+              <div className="flex justify-between items-start">
+                <div>
+                  <div className="text-[12px] text-[#71717a] mb-2 font-medium">Saldo do Dia</div>
+                  <div className={cn(
+                    "text-[22px] font-bold tracking-tight",
+                    stats.todayBalance >= 0 ? "text-emerald-500" : "text-red-500"
+                  )}>
+                    R$ {stats.todayBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </div>
+                </div>
+                <div className={cn(
+                  "p-2 rounded-lg",
+                  stats.todayBalance >= 0 ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"
+                )}>
+                  <DollarSign size={20} />
                 </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+              <div className="text-[11px] mt-2 text-[#71717a]">
+                Fluxo de caixa hoje
+              </div>
+            </Card>
+          </div>
 
-        {stats.todayVisits.length > 0 && (
+      <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-8">
+        {canAccess('visits') ? (
+          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden h-[400px]">
+            <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-row items-center justify-between">
+              <div className="flex flex-col">
+                <CardTitle className="text-[15px] font-semibold text-white">Cronograma de Visitas</CardTitle>
+                <div className="flex items-center gap-2 mt-1">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-6 w-6 text-[#71717a] hover:text-white" 
+                    onClick={() => setWeekOffset(prev => prev - 1)}
+                  >
+                    <ChevronLeft size={14} />
+                  </Button>
+                  <span className="text-[10px] text-[#71717a] font-mono uppercase tracking-wider">{visitsByDay.range}</span>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-6 w-6 text-[#71717a] hover:text-white" 
+                    onClick={() => setWeekOffset(prev => prev + 1)}
+                  >
+                    <ChevronRight size={14} />
+                  </Button>
+                  {weekOffset !== 0 && (
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-6 px-2 text-[9px] text-[#3b82f6] hover:bg-[#3b82f6]/10" 
+                      onClick={() => setWeekOffset(0)}
+                    >
+                      Hoje
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <span 
+                className="text-[12px] text-[#3b82f6] cursor-pointer hover:underline"
+                onClick={() => onNavigate('visits')}
+              >
+                Ver Todas
+              </span>
+            </CardHeader>
+            <CardContent className="p-6 h-[320px]">
+              <VisitsChart 
+                data={visitsByDay.data} 
+                onBarClick={(date) => onNavigate('visits', { date })}
+              />
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {canAccess('visits') ? (
+          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden h-[400px]">
+            <CardHeader className="border-b border-[#2d3139] px-6 py-4">
+              <CardTitle className="text-[15px] font-semibold text-white">Distribuição por Tipo de Serviço</CardTitle>
+            </CardHeader>
+            <CardContent className="p-6 flex flex-col items-center justify-center h-[320px]">
+              <div className="h-full w-full min-h-[250px]">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                  <PieChart>
+                    <Pie
+                      data={typeData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                      {typeData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
+                      itemStyle={{ color: '#fff' }}
+                    />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {canAccess('financial') ? (
+          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden col-span-full h-[400px]">
+            <CardHeader className="border-b border-[#2d3139] px-6 py-4">
+              <CardTitle className="text-[15px] font-semibold text-white">Fluxo Financeiro (Últimos 7 dias)</CardTitle>
+            </CardHeader>
+            <CardContent className="p-6 h-[320px]">
+              <div className="h-full w-full min-h-[250px]">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                  <AreaChart data={chartData}>
+                    <defs>
+                      <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorExpense" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="name" stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
+                    <YAxis stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `R$ ${value}`} />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
+                      itemStyle={{ color: '#fff' }}
+                    />
+                    <Area type="monotone" dataKey="receita" stroke="#10b981" fillOpacity={1} fill="url(#colorIncome)" />
+                    <Area type="monotone" dataKey="despesa" stroke="#ef4444" fillOpacity={1} fill="url(#colorExpense)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {canAccess('financial') ? (
+          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden col-span-full min-h-[470px] flex flex-col">
+            <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <CardTitle className="text-[15px] font-semibold text-white">Previsão Financeira Dupla de Vencimentos ({nextMonthForecastData.monthLabel})</CardTitle>
+                <p className="text-[11px] text-[#71717a] mt-0.5">Visão unificada dia a dia das contas a pagar e receber agendadas para o mês selecionado.</p>
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-mono">
+                <span className="flex items-center gap-1.5 text-emerald-400">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block"></span>
+                  Total a Receber: R$ {nextMonthForecastData.data.reduce((acc, item) => acc + item.receita, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className="flex items-center gap-1.5 text-red-500">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-red-500 inline-block"></span>
+                  Total a Pagar: R$ {nextMonthForecastData.data.reduce((acc, item) => acc + item.despesa, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6 flex-1 flex flex-col gap-5">
+              <div className="h-full w-full min-h-[220px] flex-1">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                  <AreaChart data={nextMonthForecastData.data}>
+                    <defs>
+                      <linearGradient id="colorForecastIncome" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.25}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorForecastExpense" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.25}/>
+                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} label={{ value: 'Dia do Mês', position: 'insideBottom', offset: -5, fill: '#71717a', fontSize: 10 }} />
+                    <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(value) => `R$ ${value}`} />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
+                      itemStyle={{ color: '#fff' }}
+                      formatter={(value: any) => [`R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]}
+                      labelFormatter={(label) => `Dia ${label} de ${nextMonthForecastData.monthLabel}`}
+                    />
+                    <Area type="monotone" dataKey="receita" name="A Receber" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorForecastIncome)" />
+                    <Area type="monotone" dataKey="despesa" name="A Pagar" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorForecastExpense)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Months Selector Bar below the chart */}
+              <div className="flex flex-col md:flex-row items-center justify-between gap-3 bg-[#15171c]/50 p-2.5 rounded-lg border border-[#2d3139]/50 mt-1">
+                <div className="flex items-center gap-1.5 bg-[#0f1115] p-1 rounded-lg border border-[#2d3139] shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-[#71717a] hover:text-white hover:bg-[#1a1d23]"
+                    onClick={() => setSelectedForecastYear(prev => prev - 1)}
+                  >
+                    <ChevronLeft size={14} />
+                  </Button>
+                  <span className="text-xs font-bold text-white px-2 font-mono">{selectedForecastYear}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-[#71717a] hover:text-white hover:bg-[#1a1d23]"
+                    onClick={() => setSelectedForecastYear(prev => prev + 1)}
+                  >
+                    <ChevronRight size={14} />
+                  </Button>
+                </div>
+
+                <div className="flex-1 flex justify-center overflow-x-auto max-w-full no-scrollbar py-0.5">
+                  <div className="flex items-center gap-1 justify-center shrink-0">
+                    {monthsList.map((m) => {
+                      const isSelected = selectedForecastMonth === m.index;
+                      return (
+                        <Button
+                          key={m.index}
+                          variant={isSelected ? "default" : "ghost"}
+                          size="sm"
+                          className={cn(
+                            "h-7 px-2.5 text-xs font-semibold rounded-md transition-all shrink-0",
+                            isSelected 
+                              ? "bg-blue-600 text-white shadow-sm hover:bg-blue-700" 
+                              : "text-[#a0a0a0] hover:text-white hover:bg-[#25282e]/50"
+                          )}
+                          onClick={() => setSelectedForecastMonth(m.index)}
+                        >
+                          {m.label}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {stats.todayVisits.length > 0 && canAccess('visits') && (
           <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden col-span-full">
             <CardHeader className="border-b border-[#2d3139] px-6 py-4">
               <CardTitle className="text-[15px] font-semibold text-white">Visitas para Hoje ({stats.todayVisits.length})</CardTitle>

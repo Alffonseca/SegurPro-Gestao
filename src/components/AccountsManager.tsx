@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { jsPDF } from 'jspdf';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -141,6 +142,263 @@ const safeParseDate = (date: any): Date => {
 };
 
 // ----------------------------------------------------
+// Helper to calculate payment stats for partial/installment payments
+// ----------------------------------------------------
+const getRecordPaymentsInfo = (r: any) => {
+  const partialSum = (r?.partialPayments || []).reduce((acc: number, pay: any) => acc + Number(pay?.value || 0), 0);
+  if (r?.status === 'Pago') {
+    return {
+      paid: Number(r?.value || 0),
+      remaining: 0,
+      isFullyPaid: true
+    };
+  }
+  return {
+    paid: partialSum,
+    remaining: Math.max(0, Number(r?.value || 0) - partialSum),
+    isFullyPaid: false
+  };
+};
+
+// ----------------------------------------------------
+// Helper to print partial and full payment receipts with discrimination of values
+// ----------------------------------------------------
+const printRecordReceipt = (r: any, isPayable: boolean, currentPayment: { date: string, value: number, paymentMethod: string }, appSettings?: any) => {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  const title = 'R  E  C  I  B  O';
+  const personLabel = isPayable ? 'Favorecido (Fornecedor):' : 'Pagador (Cliente):';
+  const personName = isPayable ? (r.supplierName || 'Fornecedor N/A') : (r.clientName || r.clientNameInput || r.client?.name || 'Cliente N/A');
+
+  const totalValue = Number(r.value || 0);
+  const originalDateStr = r.dueDate ? format(safeParseDate(r.dueDate), 'dd/MM/yyyy') : (r.date ? format(safeParseDate(r.date), 'dd/MM/yyyy') : 'N/A');
+
+  // Build the complete list of payments to show, ensuring we capture all historic partialPayments 
+  // along with the current payment we just registered.
+  const paymentsList = [...(r.partialPayments || [])];
+  const currentExists = paymentsList.some(p => p.date === currentPayment.date && Math.abs(Number(p.value) - currentPayment.value) < 0.01 && p.paymentMethod === currentPayment.paymentMethod);
+  if (!currentExists) {
+    paymentsList.push(currentPayment);
+  }
+
+  // Calculate remaining balance dynamically
+  const totalPaid = paymentsList.reduce((sum, p) => sum + Number(p.value || 0), 0);
+  const remainingValue = Math.max(0, totalValue - totalPaid);
+
+  const latestPaymentDateStr = currentPayment.date ? format(safeParseDate(currentPayment.date), 'dd/MM/yyyy') : format(new Date(), 'dd/MM/yyyy');
+
+  // Set margins and positions
+  const margin = 20;
+  const contentWidth = 170; // 210 - 40
+  let y = 25;
+
+  // Title / Accent header
+  doc.setFillColor(15, 23, 42); // Primary dark slate
+  doc.rect(margin, y, contentWidth, 18, 'F');
+  
+  doc.setFont('Helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(255, 255, 255);
+  doc.text(title, 105, y + 11, { align: 'center' });
+  y += 26;
+
+  // Document Info Table
+  const tableHeight = 50;
+  doc.setFillColor(248, 250, 252); // Light background grey for details table
+  doc.rect(margin, y, contentWidth, tableHeight, 'F');
+  doc.setDrawColor(203, 213, 225); // Slightly stronger border
+  doc.setLineWidth(0.3);
+  doc.rect(margin, y, contentWidth, tableHeight, 'S');
+
+  doc.setFont('Helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(47, 55, 70); // Darker gray Slate-800 for high readability
+
+  // Column Labels
+  doc.text('DESCRICAO:', margin + 6, y + 8);
+  doc.text(personLabel.toUpperCase(), margin + 6, y + 16);
+  doc.text('CATEGORIA:', margin + 6, y + 24);
+  doc.text('MEIO UTILIZADO / DATA:', margin + 6, y + 32);
+  
+  // Bold contrast for paid value label
+  doc.setTextColor(15, 23, 42); 
+  doc.text('VALOR PAGO:', margin + 6, y + 40);
+  
+  doc.setTextColor(47, 55, 70);
+  doc.text('DOC ID:', margin + 6, y + 46);
+
+  // Column Values
+  doc.setFont('Helvetica', 'normal');
+  doc.setTextColor(15, 23, 42);
+  
+  doc.text(String(r.description || 'N/A').toUpperCase(), margin + 65, y + 8);
+  doc.text(String(personName || 'N/A').toUpperCase(), margin + 65, y + 16);
+  doc.text(String(r.category || 'N/A').toUpperCase(), margin + 65, y + 24);
+  doc.text(`${currentPayment.paymentMethod.toUpperCase()} em ${latestPaymentDateStr}`, margin + 65, y + 32);
+  
+  // Highlighted bold value in dark text for maximal contrast
+  doc.setFont('Helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`R$ ${Number(currentPayment.value).toFixed(2).replace('.', ',')}`, margin + 65, y + 40);
+  
+  doc.setFont('Courier', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text(String(r.id ? r.id.toUpperCase() : 'N/A'), margin + 65, y + 46);
+
+  y += tableHeight + 10;
+
+  // Discrimination of Values Section
+  doc.setFont('Helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text('DISCRIMINACAO DE VALORES', margin, y);
+  y += 6;
+
+  // Let's draw horizontal line
+  doc.setDrawColor(15, 23, 42);
+  doc.setLineWidth(0.8);
+  doc.line(margin, y, margin + contentWidth, y);
+  y += 8;
+
+  // Item list header
+  doc.setFont('Helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(47, 55, 70); // Darker contrast
+  doc.text('DESCRICAO', margin + 4, y);
+  doc.text('VALOR', 125, y, { align: 'right' });
+  doc.text('DATA', 170, y, { align: 'right' });
+  y += 4;
+
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.3);
+  doc.line(margin, y, margin + contentWidth, y);
+  y += 8;
+
+  doc.setFont('Courier', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(15, 23, 42); // High-contrast text
+
+  // Item 1: Valor Total do Servico
+  doc.text('Valor Total do Servico', margin + 4, y);
+  doc.text(`R$ ${totalValue.toFixed(2).replace('.', ',')}`, 125, y, { align: 'right' });
+  doc.text(originalDateStr, 170, y, { align: 'right' });
+  y += 8;
+
+  // Draw dashed line
+  doc.setDrawColor(226, 232, 240);
+  doc.line(margin, y - 2, margin + contentWidth, y - 2);
+
+  // Items: Historic Payments
+  paymentsList.forEach((p, idx) => {
+    const payDateStr = p.date ? format(safeParseDate(p.date), 'dd/MM/yyyy') : 'N/A';
+    const label = `Valor Pago${paymentsList.length > 1 ? ` #${idx + 1}` : ''}`;
+    
+    doc.setFont('Courier', 'bold'); // Change from normal to bold for maximum reading comfort
+    doc.text(label, margin + 4, y);
+    doc.text(`R$ ${Number(p.value).toFixed(2).replace('.', ',')}`, 125, y, { align: 'right' });
+    doc.text(payDateStr, 170, y, { align: 'right' });
+    y += 8;
+
+    doc.line(margin, y - 2, margin + contentWidth, y - 2);
+  });
+
+  // Saldo Restante
+  y += 2;
+  doc.setDrawColor(15, 23, 42);
+  doc.setLineWidth(0.6);
+  doc.line(margin, y, margin + contentWidth, y);
+  y += 6;
+
+  doc.setFont('Courier', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Saldo Restante', margin + 4, y);
+  doc.text(`R$ ${remainingValue.toFixed(2).replace('.', ',')}`, 125, y, { align: 'right' });
+  doc.text(latestPaymentDateStr, 170, y, { align: 'right' });
+
+  y += 15;
+
+  // Observacao/Aviso
+  doc.setFont('Helvetica', 'italic');
+  doc.setFontSize(8.5);
+  doc.setTextColor(100, 116, 139);
+  const textNote = '* Este recibo comprova a transacao financeira realizada. O saldo devedor restante e atualizado dinamicamente a cada baixa efetuada.';
+  const wrappedLines = doc.splitTextToSize(textNote, contentWidth);
+  wrappedLines.forEach((line: string) => {
+    doc.text(line, margin, y);
+    y += 4;
+  });
+
+  y += 10;
+
+  // City, Date and Address string
+  const formatReceiptFullDate = (date: Date) => {
+    const day = String(date.getDate()).padStart(2, '0');
+    const months = [
+      'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+    ];
+    const month = months[date.getMonth()];
+    const year = date.getFullYear();
+    return `${day} de ${month} de ${year}`;
+  };
+
+  const city = appSettings?.city || 'Belém/PA';
+  const paymentDateObj = currentPayment.date ? safeParseDate(currentPayment.date) : new Date();
+  const dateString = `${city}, ${formatReceiptFullDate(paymentDateObj)}`;
+
+  doc.setFont('Helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(15, 23, 42);
+  doc.text(dateString, 105, y, { align: 'center' });
+
+  const sigY = y + 22;
+
+  // Draw signature image if present in appSettings
+  if (appSettings?.signatureUrl) {
+    try {
+      doc.addImage(appSettings.signatureUrl, 'PNG', 105 - 25, sigY - 14, 50, 13);
+    } catch (imgErr) {
+      console.warn('Could not draw signature image:', imgErr);
+    }
+  }
+
+  // Draw signature line
+  doc.setDrawColor(15, 23, 42);
+  doc.setLineWidth(0.4);
+  doc.line(105 - 45, sigY, 105 + 45, sigY);
+
+  // Under signature line text
+  doc.setFont('Helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text(String(appSettings?.companyName || 'SEGURPRO').toUpperCase(), 105, sigY + 5, { align: 'center' });
+  doc.setFont('Helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.text(String(appSettings?.responsible || 'André').toUpperCase(), 105, sigY + 10, { align: 'center' });
+  if (appSettings?.document) {
+    doc.text(`CNPJ/CPF: ${appSettings.document}`, 105, sigY + 14, { align: 'center' });
+  }
+
+  y = sigY + 22;
+
+  // Footer text
+  doc.setFont('Helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(148, 163, 184);
+  doc.text('Comprovante emitido eletronicamente via Sistema Integrado SegurPro.', 105, y, { align: 'center' });
+
+  // Save the receipt PDF
+  const filename = `recibo_${String(personName).replace(/\s+/g, '_').toLowerCase()}_${format(new Date(), 'yyyyMMdd_HHmmss')}.pdf`;
+  doc.save(filename);
+};
+
+// ----------------------------------------------------
 // 1. ACCOUNTS PAYABLE (CONTAS A PAGAR REAL)
 // ----------------------------------------------------
 interface PayableManagerProps {
@@ -158,6 +416,9 @@ export function PayableManager({ companyId, suppliers = [], pixSettings, appSett
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isPayOpen, setIsPayOpen] = useState(false);
   const [selectedPayable, setSelectedPayable] = useState<PayableRecord | null>(null);
+  const [payType, setPayType] = useState<'total' | 'partial'>('total');
+  const [payAmount, setPayAmount] = useState<string>('');
+  const [generateReceiptOnPay, setGenerateReceiptOnPay] = useState<boolean>(true);
 
   // Reference Period States for Contas a Pagar
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
@@ -331,13 +592,34 @@ export function PayableManager({ companyId, suppliers = [], pixSettings, appSett
   const handleMarkAsPaid = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPayable) return;
+    const info = getRecordPaymentsInfo(selectedPayable);
+    const finalAmount = payType === 'total' ? info.remaining : Number(payAmount);
+    if (isNaN(finalAmount) || finalAmount <= 0) {
+      toast.error('Por favor, insira um valor válido para a baixa.');
+      return;
+    }
+    const currentPaidSum = info.paid;
+    const newPaidSum = currentPaidSum + finalAmount;
+    const finalStatus = newPaidSum >= Number(selectedPayable.value) - 0.01 ? 'Pago' : 'Parcial';
+
     try {
+      const newPayment = {
+        date: payDate,
+        value: finalAmount,
+        paymentMethod,
+        pixAccountId: paymentMethod === 'PIX' ? pixAccountId : '',
+        notes: payType === 'partial' ? 'Baixa parcial' : 'Baixa de saldo integral'
+      };
+      
+      const updatedPayments = [...(selectedPayable.partialPayments || []), newPayment];
+
       // 1. Update status in payables
       await updateDoc(doc(db, 'payables', selectedPayable.id), {
-        status: 'Pago',
+        status: finalStatus,
         paymentDate: payDate,
         paymentMethod,
-        pixAccountId: paymentMethod === 'PIX' ? pixAccountId : ''
+        pixAccountId: paymentMethod === 'PIX' ? pixAccountId : '',
+        partialPayments: updatedPayments
       });
 
       // 2. Add despesa to cash flow (financial)
@@ -345,8 +627,10 @@ export function PayableManager({ companyId, suppliers = [], pixSettings, appSett
         companyId,
         type: 'Despesa',
         category: selectedPayable.category || 'Contas a Pagar',
-        description: `Inclusão de Baixa: ${selectedPayable.description} (${selectedPayable.supplierName})`,
-        value: Number(selectedPayable.value),
+        description: payType === 'partial' 
+          ? `Baixa Parcial: ${selectedPayable.description} (${selectedPayable.supplierName})`
+          : `Baixa Integral: ${selectedPayable.description} (${selectedPayable.supplierName})`,
+        value: finalAmount,
         date: payDate,
         origin: 'Contas a Pagar',
         paymentMethod,
@@ -354,7 +638,17 @@ export function PayableManager({ companyId, suppliers = [], pixSettings, appSett
         createdAt: Timestamp.now()
       });
 
-      toast.success('Pagamento baixado e lançado no caixa!');
+      toast.success(finalStatus === 'Pago' ? 'Pagamento liquidado e lançado no caixa!' : 'Baixa parcial registrada com sucesso!');
+      
+      // Print dynamic installment receipt if requested
+      if (generateReceiptOnPay) {
+        try {
+          printRecordReceipt(selectedPayable, true, newPayment, appSettings);
+        } catch (printErr) {
+          console.error('Error printing receipt:', printErr);
+        }
+      }
+      
       setIsPayOpen(false);
     } catch (err) {
       toast.error('Erro ao pagar.');
@@ -392,17 +686,24 @@ export function PayableManager({ companyId, suppliers = [], pixSettings, appSett
         (p.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (p.supplierName || '').toLowerCase().includes(searchTerm.toLowerCase());
       
-      const matchesStatus = statusFilter === 'Todos' || p.status === statusFilter;
+      const matchesStatus = statusFilter === 'Todos' || p.status === statusFilter || (statusFilter === 'Pendente' && p.status === 'Parcial');
       return matchesSearch && matchesStatus;
     });
   }, [filteredPayablesByPeriod, searchTerm, statusFilter]);
 
   // Dash details
   const stats = useMemo(() => {
-    const totalMonth = filteredPayablesByPeriod.reduce((acc, p) => acc + (p.status === 'Pago' ? 0 : Number(p.value || 0)), 0);
-    const totalPaid = filteredPayablesByPeriod.reduce((acc, p) => acc + (p.status === 'Pago' ? Number(p.value || 0) : 0), 0);
-    const totalPendingCount = filteredPayablesByPeriod.filter(p => p.status === 'Pendente').length;
-    return { totalMonth, totalPaid, totalPendingCount };
+    const totals = filteredPayablesByPeriod.reduce((acc, p) => {
+      const info = getRecordPaymentsInfo(p);
+      acc.totalMonth += info.remaining;
+      acc.totalPaid += info.paid;
+      if (info.remaining > 0) {
+        acc.totalPendingCount += 1;
+      }
+      return acc;
+    }, { totalMonth: 0, totalPaid: 0, totalPendingCount: 0 });
+    
+    return totals;
   }, [filteredPayablesByPeriod]);
 
   return (
@@ -604,63 +905,102 @@ export function PayableManager({ companyId, suppliers = [], pixSettings, appSett
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#2d3139]/40">
-                  {filteredPayables.map((p) => (
-                    <tr key={p.id} className="hover:bg-[#2d3139]/10 transition-colors">
-                      <td className="p-4 font-semibold text-white flex items-center gap-2">
-                        <Building2 size={12} className="text-gray-400" />
-                        {p.supplierName}
-                      </td>
-                      <td className="p-4 text-gray-300">
-                        <div>{p.description}</div>
-                        {p.notes && <p className="text-[10px] text-gray-500 font-mono mt-0.5">{p.notes}</p>}
-                      </td>
-                      <td className="p-4">
-                        <Badge className="bg-red-400/5 text-red-400 border border-red-500/10 text-[9px] uppercase">{p.category}</Badge>
-                      </td>
-                      <td className="p-4 text-gray-400">
-                        {p.dueDate ? format(safeParseDate(p.dueDate), 'dd/MM/yyyy') : 'N/A'}
-                      </td>
-                      <td className="p-4 font-mono font-bold text-red-400">
-                        R$ {Number(p.value).toFixed(2)}
-                      </td>
-                      <td className="p-4">
-                        {p.status === 'Pago' ? (
-                          <Badge className="bg-green-500/15 text-green-400 border border-green-500/20 uppercase text-[9px]">PAGO ({p.paymentDate ? format(safeParseDate(p.paymentDate), 'dd/MM') : ''})</Badge>
-                        ) : (
-                          <Badge className="bg-yellow-500/15 text-yellow-500 border border-yellow-500/20 uppercase text-[9px]">PENDENTE</Badge>
-                        )}
-                      </td>
-                      <td className="p-4">
-                        {(() => {
-                          const state = getDueDaysInfoPayable(p.dueDate, p.status);
-                          return (
-                            <span className={`text-[10px] font-bold px-2 py-1 rounded uppercase ${state.color}`}>
-                              {state.label}
-                            </span>
-                          );
-                        })()}
-                      </td>
-                      <td className="p-4 text-right">
-                        <div className="flex justify-end gap-1.5 matches-box">
-                          {p.status === 'Pendente' && (
-                            <Button
-                              onClick={() => {
-                                setSelectedPayable(p);
-                                setPayDate(format(new Date(), 'yyyy-MM-dd'));
-                                if (pixSettings?.accounts?.length > 0) {
-                                  setPixAccountId(pixSettings.accounts[0].id);
-                                } else {
-                                  setPixAccountId('');
-                                }
-                                setIsPayOpen(true);
-                              }}
-                              className="bg-green-500 hover:bg-green-600 text-white font-bold h-7 px-2.5 text-[10px] uppercase.tracking-wider"
-                              title="Dar Baixa (Pago)"
-                            >
-                              <Check size={12} className="mr-1" />
-                              Baixar
-                            </Button>
-                          )}
+                   {filteredPayables.map((p) => {
+                     const recInfo = getRecordPaymentsInfo(p);
+                     return (
+                       <tr key={p.id} className="hover:bg-[#2d3139]/10 transition-colors">
+                         <td className="p-4 font-semibold text-white flex items-center gap-2">
+                           <Building2 size={12} className="text-gray-400" />
+                           {p.supplierName}
+                         </td>
+                         <td className="p-4 text-gray-300">
+                           <div>{p.description}</div>
+                           {p.notes && <p className="text-[10px] text-gray-500 font-mono mt-0.5">{p.notes}</p>}
+                           
+                           {p.partialPayments && p.partialPayments.length > 0 && (
+                             <div className="text-[10px] text-zinc-500 mt-2 space-y-1 bg-[#0f1115]/50 p-2.5 rounded-lg border border-[#2d3139]/30 max-w-[320px]">
+                               <span className="text-[9px] uppercase tracking-wider font-extrabold text-amber-400 font-mono block">Histórico de Baixas Parciais:</span>
+                               {p.partialPayments.map((pay: any, idx: number) => (
+                                 <div key={idx} className="flex justify-between items-center font-mono">
+                                   <span>{idx + 1}. {pay.date ? format(safeParseDate(pay.date), 'dd/MM/yyyy') : 'N/A'} ({pay.paymentMethod}):</span>
+                                   <span className="text-red-400 font-bold ml-2">R$ {Number(pay.value).toFixed(2)}</span>
+                                 </div>
+                               ))}
+                             </div>
+                           )}
+                         </td>
+                         <td className="p-4">
+                           <Badge className="bg-red-400/5 text-red-400 border border-red-500/10 text-[9px] uppercase">{p.category}</Badge>
+                         </td>
+                         <td className="p-4 text-gray-400">
+                           {p.dueDate ? format(safeParseDate(p.dueDate), 'dd/MM/yyyy') : 'N/A'}
+                         </td>
+                         <td className="p-4 font-mono font-bold text-red-400">
+                           R$ {Number(p.value).toFixed(2)}
+                         </td>
+                         <td className="p-4">
+                           {p.status === 'Pago' ? (
+                             <Badge className="bg-green-500/15 text-green-400 border border-green-500/20 uppercase text-[9px]">PAGO ({p.paymentDate ? format(safeParseDate(p.paymentDate), 'dd/MM') : ''})</Badge>
+                           ) : p.status === 'Parcial' ? (
+                             <div className="flex flex-col gap-1 items-start">
+                               <Badge className="bg-amber-500/15 text-amber-400 border border-amber-500/20 uppercase text-[9px]">PAGO PARCIAL</Badge>
+                               <span className="text-[10px] text-gray-500 font-mono">Resta R$ {recInfo.remaining.toFixed(2)}</span>
+                             </div>
+                           ) : (
+                             <Badge className="bg-yellow-500/15 text-yellow-500 border border-yellow-500/20 uppercase text-[9px]">PENDENTE</Badge>
+                           )}
+                         </td>
+                         <td className="p-4">
+                           {(() => {
+                             const state = getDueDaysInfoPayable(p.dueDate, p.status);
+                             return (
+                               <span className={`text-[10px] font-bold px-2 py-1 rounded uppercase ${state.color}`}>
+                                 {state.label}
+                               </span>
+                             );
+                           })()}
+                         </td>
+                         <td className="p-4 text-right">
+                           <div className="flex justify-end gap-1.5 matches-box">
+                             {p.status !== 'Pago' && (
+                               <Button
+                                 onClick={() => {
+                                   setSelectedPayable(p);
+                                   setPayDate(format(new Date(), 'yyyy-MM-dd'));
+                                   setPayType('total');
+                                   setPayAmount(recInfo.remaining.toFixed(2));
+                                   if (pixSettings?.accounts?.length > 0) {
+                                     setPixAccountId(pixSettings.accounts[0].id);
+                                   } else {
+                                     setPixAccountId('');
+                                   }
+                                   setIsPayOpen(true);
+                                 }}
+                                 className="bg-green-500 hover:bg-green-600 text-white font-bold h-7 px-2.5 text-[10px] uppercase tracking-wider"
+                                 title="Dar Baixa"
+                               >
+                                 <Check size={12} className="mr-1" />
+                                 Baixar
+                               </Button>
+                             )}
+                             {(p.status === 'Pago' || p.status === 'Parcial' || (p.partialPayments && p.partialPayments.length > 0)) && (
+                               <Button
+                                 onClick={() => {
+                                   const lastPayment = p.partialPayments?.[p.partialPayments.length - 1] || {
+                                     date: p.paymentDate || p.dueDate || p.date || format(new Date(), 'yyyy-MM-dd'),
+                                     value: Number(p.value),
+                                     paymentMethod: p.paymentMethod || 'Outro',
+                                   };
+                                   printRecordReceipt(p, true, lastPayment, appSettings);
+                                 }}
+                                 variant="ghost"
+                                 size="icon"
+                                 className="h-7 w-7 text-green-400 hover:text-green-300 hover:bg-green-500/10 border border-green-500/20 mr-1"
+                                 title="Reimprimir Comprovante"
+                               >
+                                 <Printer size={12} />
+                               </Button>
+                             )}
                           <Button
                             onClick={() => {
                               setSelectedPayable(p);
@@ -691,8 +1031,9 @@ export function PayableManager({ companyId, suppliers = [], pixSettings, appSett
                         </div>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
+                  );
+                })}
+              </tbody>
               </table>
             </div>
           )}
@@ -762,56 +1103,126 @@ export function PayableManager({ companyId, suppliers = [], pixSettings, appSett
 
       {/* Mark As Paid Dialog */}
       <Dialog open={isPayOpen} onOpenChange={setIsPayOpen}>
-        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-sm">
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-sm max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-md font-black uppercase text-green-400 italic">Quitar Documento</DialogTitle>
             <DialogDescription className="text-xs text-[#a0a0a0]">Confirme os dados de fechamento financeiro.</DialogDescription>
           </DialogHeader>
-          {selectedPayable && (
-            <form onSubmit={handleMarkAsPaid} className="space-y-4 pt-2">
-              <div className="p-3.5 bg-[#0f1115] border border-[#2d3139] rounded-xl">
-                <p className="text-[10px] text-gray-400 font-bold uppercase">Favorecido</p>
-                <p className="text-sm font-semibold text-white mt-0.5">{selectedPayable.supplierName}</p>
-                <p className="text-[10px] text-gray-400 font-bold uppercase mt-2">Valor de Desembolso</p>
-                <p className="text-lg font-black text-red-400 mt-0.5 font-mono">R$ {Number(selectedPayable.value).toFixed(2)}</p>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Data do Pagamento</Label>
-                <Input type="date" value={payDate} onChange={e => setPayDate(e.target.value)} className="bg-[#0f1115] border-[#2d3139]" />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Forma de Pagamento</Label>
-                <Select value={paymentMethod} onValueChange={(val: any) => setPaymentMethod(val)}>
-                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                    <SelectItem value="PIX">PIX (Transferência)</SelectItem>
-                    <SelectItem value="Dinheiro">Dinheiro Físico</SelectItem>
-                    <SelectItem value="Cartão">Cartão de Débito/Crédito</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {paymentMethod === 'PIX' && pixSettings?.accounts?.length > 0 && (
+          {selectedPayable && (() => {
+            const info = getRecordPaymentsInfo(selectedPayable);
+            return (
+              <form onSubmit={handleMarkAsPaid} className="space-y-4 pt-2">
+                <div className="p-3.5 bg-[#0f1115] border border-[#2d3139] rounded-xl space-y-2">
+                  <div>
+                    <p className="text-[10px] text-gray-400 font-bold uppercase">Favorecido</p>
+                    <p className="text-sm font-semibold text-white mt-0.5">{selectedPayable.supplierName}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-[#2d3139]/30 mt-1">
+                    <div>
+                      <p className="text-[10px] text-zinc-500 font-bold uppercase">Valor Total</p>
+                      <p className="text-xs font-bold text-gray-300 font-mono">R$ {Number(selectedPayable.value).toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-zinc-500 font-bold uppercase">Já Pago</p>
+                      <p className="text-xs font-bold text-green-400 font-mono">R$ {info.paid.toFixed(2)}</p>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-[#2d3139]/40 mt-1">
+                    <p className="text-[10px] text-gray-400 font-bold uppercase">Saldo devedor restante</p>
+                    <p className="text-lg font-black text-red-400 mt-0.5 font-mono">R$ {info.remaining.toFixed(2)}</p>
+                  </div>
+                </div>
+
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Conta Pix Origem</Label>
-                  <Select value={pixAccountId} onValueChange={setPixAccountId}>
+                  <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Tipo da Baixa</Label>
+                  <Select value={payType} onValueChange={(val: any) => {
+                    setPayType(val);
+                    if (val === 'total') {
+                      setPayAmount(info.remaining.toFixed(2));
+                    } else {
+                      setPayAmount('');
+                    }
+                  }}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
-                      <SelectValue placeholder="Selecione a conta..." />
+                      <SelectValue placeholder={payType === 'total' ? 'Integral' : 'Parcelado'}>
+                        {payType === 'total' ? 'Integral' : 'Parcelado'}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      {pixSettings.accounts.map((acc: any) => (
-                        <SelectItem key={acc.id} value={acc.id}>{acc.bank} - {acc.label}</SelectItem>
-                      ))}
+                      <SelectItem value="total">Integral</SelectItem>
+                      <SelectItem value="partial">Parcelado</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-              )}
-              <DialogFooter>
-                <Button type="submit" className="bg-green-500 hover:bg-green-600 font-mono font-bold w-full uppercase text-xs">REGISTRAR BAIXA</Button>
-              </DialogFooter>
-            </form>
-          )}
+
+                {payType === 'partial' && (
+                  <div className="space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                    <Label className="text-xs text-amber-400 font-bold uppercase tracking-wider">Valor Pago / Baixado Agorinha (R$)</Label>
+                    <Input 
+                      type="number" 
+                      step="0.01" 
+                      max={info.remaining}
+                      placeholder="Ex: 150.00" 
+                      value={payAmount} 
+                      onChange={e => setPayAmount(e.target.value)} 
+                      className="bg-[#0f1115] border-amber-500/40 text-amber-400" 
+                    />
+                    <span className="text-[10px] text-zinc-500 font-mono block">Resta após pagamento: R$ {Math.max(0, info.remaining - (Number(payAmount) || 0)).toFixed(2)}</span>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Data do Pagamento</Label>
+                  <Input type="date" value={payDate} onChange={e => setPayDate(e.target.value)} className="bg-[#0f1115] border-[#2d3139]" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Forma de Pagamento</Label>
+                  <Select value={paymentMethod} onValueChange={(val: any) => setPaymentMethod(val)}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="PIX">PIX (Transferência)</SelectItem>
+                      <SelectItem value="Dinheiro">Dinheiro Físico</SelectItem>
+                      <SelectItem value="Cartão">Cartão de Débito/Crédito</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {paymentMethod === 'PIX' && pixSettings?.accounts?.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Conta Pix Origem</Label>
+                    <Select value={pixAccountId} onValueChange={setPixAccountId}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
+                        <SelectValue placeholder="Selecione a conta..." />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        {pixSettings.accounts.map((acc: any) => (
+                          <SelectItem key={acc.id} value={acc.id}>{acc.bank} - {acc.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 p-2.5 bg-green-500/10 border border-green-500/20 rounded-xl mt-3 text-white">
+                  <input 
+                    type="checkbox" 
+                    id="generateReceiptOnPay" 
+                    checked={generateReceiptOnPay} 
+                    onChange={e => setGenerateReceiptOnPay(e.target.checked)} 
+                    className="w-4 h-4 accent-green-500 cursor-pointer rounded"
+                  />
+                  <Label htmlFor="generateReceiptOnPay" className="text-xs font-semibold cursor-pointer select-none text-zinc-300">
+                    Gerar recibo com discriminação de saldos?
+                  </Label>
+                </div>
+
+                <DialogFooter>
+                  <Button type="submit" className="bg-green-500 hover:bg-green-600 font-mono font-bold w-full uppercase text-xs">REGISTRAR BAIXA</Button>
+                </DialogFooter>
+              </form>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>
@@ -825,9 +1236,10 @@ interface ReceivableManagerProps {
   companyId: string;
   clients: any[];
   pixSettings: any;
+  appSettings?: any;
 }
 
-export function ReceivableManager({ companyId, clients = [], pixSettings }: ReceivableManagerProps) {
+export function ReceivableManager({ companyId, clients = [], pixSettings, appSettings }: ReceivableManagerProps) {
   const [receivables, setReceivables] = useState<ReceivableRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'Todos' | 'Pendente' | 'Pago'>('Todos');
@@ -840,6 +1252,9 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isPayOpen, setIsPayOpen] = useState(false);
   const [selectedReceivable, setSelectedReceivable] = useState<ReceivableRecord | null>(null);
+  const [payType, setPayType] = useState<'total' | 'partial'>('total');
+  const [payAmount, setPayAmount] = useState<string>('');
+  const [generateReceiptOnPay, setGenerateReceiptOnPay] = useState<boolean>(true);
 
   // Form states
   const [description, setDescription] = useState('');
@@ -957,13 +1372,34 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
   const handleMarkAsReceived = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedReceivable) return;
+    const info = getRecordPaymentsInfo(selectedReceivable);
+    const finalAmount = payType === 'total' ? info.remaining : Number(payAmount);
+    if (isNaN(finalAmount) || finalAmount <= 0) {
+      toast.error('Por favor, insira um valor válido para a baixa.');
+      return;
+    }
+    const currentPaidSum = info.paid;
+    const newPaidSum = currentPaidSum + finalAmount;
+    const finalStatus = newPaidSum >= Number(selectedReceivable.value) - 0.01 ? 'Pago' : 'Parcial';
+
     try {
+      const newPayment = {
+        date: payDate,
+        value: finalAmount,
+        paymentMethod,
+        pixAccountId: paymentMethod === 'PIX' ? pixAccountId : '',
+        notes: payType === 'partial' ? 'Baixa parcial' : 'Baixa de saldo integral'
+      };
+      
+      const updatedPayments = [...(selectedReceivable.partialPayments || []), newPayment];
+
       // 1. Update receivables state inside firebase
       await updateDoc(doc(db, 'receivables', selectedReceivable.id), {
-        status: 'Pago',
+        status: finalStatus,
         paymentDate: payDate,
         paymentMethod,
-        pixAccountId: paymentMethod === 'PIX' ? pixAccountId : ''
+        pixAccountId: paymentMethod === 'PIX' ? pixAccountId : '',
+        partialPayments: updatedPayments
       });
 
       // 2. Add receipt/revenue entry inside our cash-book (financials)
@@ -971,8 +1407,10 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
         companyId,
         type: 'Receita',
         category: selectedReceivable.category || 'Contas a Receber',
-        description: `Recebimento Pago: ${selectedReceivable.description} (${selectedReceivable.clientName})`,
-        value: Number(selectedReceivable.value),
+        description: payType === 'partial'
+          ? `Baixa Parcial: ${selectedReceivable.description} (${selectedReceivable.clientName})`
+          : `Recebimento Pago: ${selectedReceivable.description} (${selectedReceivable.clientName})`,
+        value: finalAmount,
         date: payDate,
         origin: 'Contas a Receber',
         paymentMethod,
@@ -980,7 +1418,17 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
         createdAt: Timestamp.now()
       });
 
-      toast.success('Recebimento liquidado e registrado no fluxo de caixa!');
+      toast.success(finalStatus === 'Pago' ? 'Recebimento liquidado e registrado no fluxo de caixa!' : 'Baixa parcial de receita registrada!');
+      
+      // Print dynamic installment receipt if requested
+      if (generateReceiptOnPay) {
+        try {
+          printRecordReceipt(selectedReceivable, false, newPayment, appSettings);
+        } catch (printErr) {
+          console.error('Error printing receipt:', printErr);
+        }
+      }
+
       setIsPayOpen(false);
     } catch (err) {
       toast.error('Erro ao processar recebimento.');
@@ -1232,7 +1680,7 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
       } else if (statusFilter === 'Pago') {
         return r.status === 'Pago' && !r.isVirtual;
       } else if (statusFilter === 'Pendente') {
-        return r.status === 'Pendente';
+        return r.status === 'Pendente' || r.status === 'Parcial';
       }
       return true;
     });
@@ -1240,17 +1688,17 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
 
   // General dashboard stats inside receivables page - based on dynamically combined list for accurate totals
   const stats = useMemo(() => {
-    const pendingItems = combinedReceivables.filter(r => r.status === 'Pendente');
-    const totalMonth = pendingItems.reduce((acc, r) => acc + Number(r.value || 0), 0);
-    const totalReceived = combinedReceivables
-      .filter(r => r.status === 'Pago')
-      .reduce((acc, r) => acc + Number(r.value || 0), 0);
+    const totals = combinedReceivables.reduce((acc, r) => {
+      const info = getRecordPaymentsInfo(r);
+      acc.totalMonth += info.remaining;
+      acc.totalReceived += info.paid;
+      if (info.remaining > 0) {
+        acc.totalPendingCount += 1;
+      }
+      return acc;
+    }, { totalMonth: 0, totalReceived: 0, totalPendingCount: 0 });
     
-    return {
-      totalMonth,
-      totalReceived,
-      totalPendingCount: pendingItems.length
-    };
+    return totals;
   }, [combinedReceivables]);
 
   // Unprovisioned contracts sum
@@ -1376,8 +1824,7 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
                     <Input id="rec_due" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="bg-[#0f1115] border-[#2d3139]" />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
+                 <div className="space-y-1.5">
                     <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Nome de Cliente</Label>
                     <Select value={clientNameInput} onValueChange={setClientNameInput}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
@@ -1405,7 +1852,6 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
                       </SelectContent>
                     </Select>
                   </div>
-                </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="rec_notes" className="text-xs text-gray-400 font-bold uppercase tracking-wider">Notas opcionais</Label>
                   <Textarea id="rec_notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Anotações internas." className="bg-[#0f1115] border-[#2d3139] h-16 min-h-16" />
@@ -1533,7 +1979,12 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
                   <tbody className="divide-y divide-[#2d3139]/40">
                     {filteredCombinedReceivables.map((r) => {
                       const typeLabel = getClientType(r.clientName, r.clientId);
+                      const isContractCategory = 
+                        (r.category || '').toLowerCase().includes('mensalidade') || 
+                        (r.category || '').toLowerCase().includes('contrato');
+                      const isRealContract = typeLabel === 'Contrato' && isContractCategory;
                       const dayInfo = getDueDaysInfo(r.dueDate, r.status);
+                      const recInfo = getRecordPaymentsInfo(r);
                       return (
                         <tr key={r.id} className="hover:bg-[#2d3139]/10 transition-colors">
                           <td className="p-4">
@@ -1542,11 +1993,11 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
                               <span className="uppercase">{r.clientName}</span>
                             </div>
                             <span className={`text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded border mt-1 inline-block ${
-                              typeLabel === 'Contrato' 
+                              isRealContract 
                                 ? 'bg-blue-500/10 text-blue-400 border-blue-500/25' 
                                 : 'bg-zinc-500/10 text-zinc-400 border-zinc-500/25'
                             }`}>
-                              {typeLabel === 'Contrato' ? 'CONTRATO MENSAL' : 'SERVIÇO / AVULSO'}
+                              {isRealContract ? 'CONTRATO MENSAL' : 'SERVIÇO / AVULSO'}
                             </span>
                           </td>
                           <td className="p-4 text-gray-300">
@@ -1556,6 +2007,18 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
                               {r.referenceMonth && <span className="text-[8px] text-blue-300 font-extrabold bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded font-mono">Ref: {r.referenceMonth}</span>}
                             </div>
                             {r.notes && <p className="text-[10px] text-gray-500 font-mono mt-1 italic">{r.notes}</p>}
+
+                            {r.partialPayments && r.partialPayments.length > 0 && (
+                              <div className="text-[10px] text-zinc-500 mt-2 space-y-1 bg-[#0f1115]/50 p-2.5 rounded-lg border border-[#2d3139]/30 max-w-[320px]">
+                                <span className="text-[9px] uppercase tracking-wider font-extrabold text-amber-500 font-mono block">Histórico de Baixas Parciais:</span>
+                                {r.partialPayments.map((pay: any, idx: number) => (
+                                  <div key={idx} className="flex justify-between items-center font-mono">
+                                    <span>{idx + 1}. {pay.date ? format(safeParseDate(pay.date), 'dd/MM/yyyy') : 'N/A'} ({pay.paymentMethod}):</span>
+                                    <span className="text-emerald-400 font-bold ml-2">R$ {Number(pay.value).toFixed(2)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </td>
                           <td className="p-4 font-mono font-bold text-green-400 text-sm">
                             R$ {Number(r.value).toFixed(2)}
@@ -1564,9 +2027,21 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
                             {r.dueDate ? format(safeParseDate(r.dueDate), 'dd/MM/yyyy') : 'N/A'}
                           </td>
                           <td className="p-4">
-                            <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded border inline-block ${dayInfo.color}`}>
-                              {dayInfo.label}
-                            </span>
+                            <div className="flex flex-col gap-1.5 items-start">
+                              {r.status === 'Pago' ? (
+                                <Badge className="bg-green-500/15 text-green-400 border border-green-500/20 uppercase text-[9px] font-bold">PAGO</Badge>
+                              ) : r.status === 'Parcial' ? (
+                                <Badge className="bg-amber-500/15 text-amber-400 border border-amber-500/20 uppercase text-[9px] font-bold">PARCIAL</Badge>
+                              ) : (
+                                <Badge className="bg-yellow-500/15 text-yellow-500 border border-yellow-500/20 uppercase text-[9px] font-bold">PENDENTE</Badge>
+                              )}
+                              <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border inline-block ${dayInfo.color}`}>
+                                {dayInfo.label}
+                              </span>
+                              {r.status === 'Parcial' && (
+                                <span className="text-[10px] text-gray-400 font-mono block">Resta R$ {recInfo.remaining.toFixed(2)}</span>
+                              )}
+                            </div>
                           </td>
                           <td className="p-4 text-right">
                             <div className="flex justify-end gap-1.5 actions-div">
@@ -1601,11 +2076,13 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
                                 </div>
                               ) : (
                                 <>
-                                  {r.status === 'Pendente' && (
+                                  {r.status !== 'Pago' && (
                                     <Button
                                       onClick={() => {
                                         setSelectedReceivable(r);
                                         setPayDate(format(new Date(), 'yyyy-MM-dd'));
+                                        setPayType('total');
+                                        setPayAmount(recInfo.remaining.toFixed(2));
                                         if (pixSettings?.accounts?.length > 0) {
                                           setPixAccountId(pixSettings.accounts[0].id);
                                         } else {
@@ -1617,6 +2094,24 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
                                     >
                                       <Check size={12} className="mr-1" />
                                       Receber
+                                    </Button>
+                                  )}
+                                  {(r.status === 'Pago' || r.status === 'Parcial' || (r.partialPayments && r.partialPayments.length > 0)) && (
+                                    <Button
+                                      onClick={() => {
+                                        const lastPayment = r.partialPayments?.[r.partialPayments.length - 1] || {
+                                          date: r.paymentDate || r.dueDate || r.date || format(new Date(), 'yyyy-MM-dd'),
+                                          value: Number(r.value),
+                                          paymentMethod: r.paymentMethod || 'Outro',
+                                        };
+                                        printRecordReceipt(r, false, lastPayment, appSettings);
+                                      }}
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 text-green-400 hover:text-green-300 hover:bg-green-500/10 border border-green-500/20 mr-1"
+                                      title="Reimprimir Recibo"
+                                    >
+                                      <Printer size={12} />
                                     </Button>
                                   )}
                                   <Button
@@ -1777,35 +2272,35 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
                 <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="bg-[#0f1115] border-[#2d3139]" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Devedor (Cliente)</Label>
-                <Select value={clientNameInput} onValueChange={setClientNameInput}>
-                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                    {clients.map(c => (
-                      <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Categoria</Label>
-                <Select value={category} onValueChange={setCategory}>
-                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                    <SelectItem value="Mensalidade">Mensalidade / Contrato</SelectItem>
-                    <SelectItem value="Instalação">Instalação CFTV</SelectItem>
-                    <SelectItem value="Venda Balcão">Comércio</SelectItem>
-                    <SelectItem value="Laudo Técnico">Laudo de Alarmes</SelectItem>
-                    <SelectItem value="Outros">Outras Fontes</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Devedor (Cliente)</Label>
+              <Select value={clientNameInput} onValueChange={setClientNameInput}>
+                <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                  {clients.map(c => (
+                    <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Categoria</Label>
+              <Select value={category} onValueChange={setCategory}>
+                <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                  <SelectItem value="Mensalidade">Mensalidade / Contrato</SelectItem>
+                  <SelectItem value="Instalação">Instalação CFTV</SelectItem>
+                  <SelectItem value="Venda Balcão">Comércio</SelectItem>
+                  <SelectItem value="Laudo Técnico">Laudo de Alarmes</SelectItem>
+                  <SelectItem value="Outros">Outras Fontes</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider font-mono text-gray-500">Anotações</Label>
@@ -1820,56 +2315,126 @@ export function ReceivableManager({ companyId, clients = [], pixSettings }: Rece
 
       {/* Mark As Paid (Dar Baixa) Dialog */}
       <Dialog open={isPayOpen} onOpenChange={setIsPayOpen}>
-        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-sm">
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-sm max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-md font-black uppercase text-green-400 italic">Registrar Recebimento</DialogTitle>
             <DialogDescription className="text-xs text-[#a0a0a0]">Confirme os dados de entrada de caixa.</DialogDescription>
           </DialogHeader>
-          {selectedReceivable && (
-            <form onSubmit={handleMarkAsReceived} className="space-y-4 pt-2">
-              <div className="p-3.5 bg-[#0f1115] border border-[#2d3139] rounded-xl">
-                <p className="text-[10px] text-gray-400 font-bold uppercase">Devedor (Cliente)</p>
-                <p className="text-sm font-semibold text-white mt-0.5">{selectedReceivable.clientName}</p>
-                <p className="text-[10px] text-gray-400 font-bold uppercase mt-2">Valor de Entrada</p>
-                <p className="text-lg font-black text-green-400 mt-0.5 font-mono">R$ {Number(selectedReceivable.value).toFixed(2)}</p>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Data do Recebimento</Label>
-                <Input type="date" value={payDate} onChange={e => setPayDate(e.target.value)} className="bg-[#0f1115] border-[#2d3139]" />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Forma de Recebimento</Label>
-                <Select value={paymentMethod} onValueChange={(val: any) => setPaymentMethod(val)}>
-                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                    <SelectItem value="PIX">PIX (Chave Bancária)</SelectItem>
-                    <SelectItem value="Dinheiro">Dinheiro Físico</SelectItem>
-                    <SelectItem value="Cartão">Cartão de Débito/Crédito</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {paymentMethod === 'PIX' && pixSettings?.accounts?.length > 0 && (
+          {selectedReceivable && (() => {
+            const info = getRecordPaymentsInfo(selectedReceivable);
+            return (
+              <form onSubmit={handleMarkAsReceived} className="space-y-4 pt-2">
+                <div className="p-3.5 bg-[#0f1115] border border-[#2d3139] rounded-xl space-y-2">
+                  <div>
+                    <p className="text-[10px] text-gray-400 font-bold uppercase">Devedor (Cliente)</p>
+                    <p className="text-sm font-semibold text-white mt-0.5">{selectedReceivable.clientName}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-[#2d3139]/30 mt-1">
+                    <div>
+                      <p className="text-[10px] text-zinc-500 font-bold uppercase">Valor Original</p>
+                      <p className="text-xs font-bold text-gray-300 font-mono">R$ {Number(selectedReceivable.value).toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-zinc-500 font-bold uppercase">Já Recebido</p>
+                      <p className="text-xs font-bold text-green-400 font-mono">R$ {info.paid.toFixed(2)}</p>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-[#2d3139]/40 mt-1">
+                    <p className="text-[10px] text-gray-400 font-bold uppercase">Saldo de Entrada Pendente</p>
+                    <p className="text-lg font-black text-green-400 mt-0.5 font-mono">R$ {info.remaining.toFixed(2)}</p>
+                  </div>
+                </div>
+
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Conta Pix Destino</Label>
-                  <Select value={pixAccountId} onValueChange={setPixAccountId}>
+                  <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider font-sans">Tipo do Recebimento</Label>
+                  <Select value={payType} onValueChange={(val: any) => {
+                    setPayType(val);
+                    if (val === 'total') {
+                      setPayAmount(info.remaining.toFixed(2));
+                    } else {
+                      setPayAmount('');
+                    }
+                  }}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
-                      <SelectValue placeholder="Selecione a conta..." />
+                      <SelectValue placeholder={payType === 'total' ? 'Integral' : 'Parcelado'}>
+                        {payType === 'total' ? 'Integral' : 'Parcelado'}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      {pixSettings.accounts.map((acc: any) => (
-                        <SelectItem key={acc.id} value={acc.id}>{acc.bank} - {acc.label}</SelectItem>
-                      ))}
+                      <SelectItem value="total">Integral</SelectItem>
+                      <SelectItem value="partial">Parcelado</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-              )}
-              <DialogFooter>
-                <Button type="submit" className="bg-green-500 hover:bg-green-600 font-mono font-bold w-full uppercase text-xs">CONFIRMAR RECEBIMENTO</Button>
-              </DialogFooter>
-            </form>
-          )}
+
+                {payType === 'partial' && (
+                  <div className="space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                    <Label className="text-xs text-amber-400 font-bold uppercase tracking-wider">Valor Recebido Agora (R$)</Label>
+                    <Input 
+                      type="number" 
+                      step="0.01" 
+                      max={info.remaining}
+                      placeholder="Ex: 150.00" 
+                      value={payAmount} 
+                      onChange={e => setPayAmount(e.target.value)} 
+                      className="bg-[#0f1115] border-amber-500/40 text-amber-400 font-mono" 
+                    />
+                    <span className="text-[10px] text-zinc-500 font-mono block">Resta no final: R$ {Math.max(0, info.remaining - (Number(payAmount) || 0)).toFixed(2)}</span>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Data do Recebimento</Label>
+                  <Input type="date" value={payDate} onChange={e => setPayDate(e.target.value)} className="bg-[#0f1115] border-[#2d3139]" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Forma de Recebimento</Label>
+                  <Select value={paymentMethod} onValueChange={(val: any) => setPaymentMethod(val)}>
+                    <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                      <SelectItem value="PIX">PIX (Chave Bancária)</SelectItem>
+                      <SelectItem value="Dinheiro">Dinheiro Físico</SelectItem>
+                      <SelectItem value="Cartão">Cartão de Débito/Crédito</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {paymentMethod === 'PIX' && pixSettings?.accounts?.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Conta Pix Destino</Label>
+                    <Select value={pixAccountId} onValueChange={setPixAccountId}>
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
+                        <SelectValue placeholder="Selecione a conta..." />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        {pixSettings.accounts.map((acc: any) => (
+                          <SelectItem key={acc.id} value={acc.id}>{acc.bank} - {acc.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 p-2.5 bg-green-500/10 border border-green-500/20 rounded-xl mt-3 text-white">
+                  <input 
+                    type="checkbox" 
+                    id="generateReceiptOnReceive" 
+                    checked={generateReceiptOnPay} 
+                    onChange={e => setGenerateReceiptOnPay(e.target.checked)} 
+                    className="w-4 h-4 accent-green-500 cursor-pointer rounded"
+                  />
+                  <Label htmlFor="generateReceiptOnReceive" className="text-xs font-semibold cursor-pointer select-none text-zinc-300">
+                    Gerar recibo com discriminação de saldos?
+                  </Label>
+                </div>
+
+                <DialogFooter>
+                  <Button type="submit" className="bg-green-500 hover:bg-green-600 font-mono font-bold w-full uppercase text-xs">CONFIRMAR RECEBIMENTO</Button>
+                </DialogFooter>
+              </form>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>
