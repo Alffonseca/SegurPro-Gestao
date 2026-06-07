@@ -5283,8 +5283,8 @@ export default function MainApp() {
                activeTab === 'inventory' ? 'Controle de Estoque' :
                activeTab === 'pdv' ? 'Abertura de PDV' :
                activeTab === 'backup-restore' ? 'Backup e Restauração' :
-               activeTab === 'payable' ? 'Contas a Pagar (Em Breve)' :
-               activeTab === 'receivable' ? 'Contas a Receber (Em Breve)' :
+               activeTab === 'payable' ? 'Contas a Pagar' :
+               activeTab === 'receivable' ? 'Contas a Receber' :
                activeTab === 'vendas-historico' ? 'Histórico de Vendas PDV' :
                activeTab.replace('-', ' ')}
             </h2>

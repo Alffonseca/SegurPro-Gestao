@@ -253,89 +253,127 @@ const printRecordReceipt = (r: any, isPayable: boolean, currentPayment: { date: 
 
   y += tableHeight + 10;
 
-  // Discrimination of Values Section
-  doc.setFont('Helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.setTextColor(15, 23, 42);
-  doc.text('DISCRIMINACAO DE VALORES', margin, y);
-  y += 6;
+  // Discrimination of Values Section - Standard Receipt vs. Recibo com Histórico (Parcelado)
+  const isParcelado = paymentsList.length > 1 || r.status === 'Parcial';
 
-  // Let's draw horizontal line
-  doc.setDrawColor(15, 23, 42);
-  doc.setLineWidth(0.8);
-  doc.line(margin, y, margin + contentWidth, y);
-  y += 8;
+  if (isParcelado) {
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text('DISCRIMINACAO DE VALORES', margin, y);
+    y += 6;
 
-  // Item list header
-  doc.setFont('Helvetica', 'bold');
-  doc.setFontSize(9.5);
-  doc.setTextColor(47, 55, 70); // Darker contrast
-  doc.text('DESCRICAO', margin + 4, y);
-  doc.text('VALOR', 125, y, { align: 'right' });
-  doc.text('DATA', 170, y, { align: 'right' });
-  y += 4;
-
-  doc.setDrawColor(226, 232, 240);
-  doc.setLineWidth(0.3);
-  doc.line(margin, y, margin + contentWidth, y);
-  y += 8;
-
-  doc.setFont('Courier', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(15, 23, 42); // High-contrast text
-
-  // Item 1: Valor Total do Servico
-  doc.text('Valor Total do Servico', margin + 4, y);
-  doc.text(`R$ ${totalValue.toFixed(2).replace('.', ',')}`, 125, y, { align: 'right' });
-  doc.text(originalDateStr, 170, y, { align: 'right' });
-  y += 8;
-
-  // Draw dashed line
-  doc.setDrawColor(226, 232, 240);
-  doc.line(margin, y - 2, margin + contentWidth, y - 2);
-
-  // Items: Historic Payments
-  paymentsList.forEach((p, idx) => {
-    const payDateStr = p.date ? format(safeParseDate(p.date), 'dd/MM/yyyy') : 'N/A';
-    const label = `Valor Pago${paymentsList.length > 1 ? ` #${idx + 1}` : ''}`;
-    
-    doc.setFont('Courier', 'bold'); // Change from normal to bold for maximum reading comfort
-    doc.text(label, margin + 4, y);
-    doc.text(`R$ ${Number(p.value).toFixed(2).replace('.', ',')}`, 125, y, { align: 'right' });
-    doc.text(payDateStr, 170, y, { align: 'right' });
+    // Let's draw horizontal line
+    doc.setDrawColor(15, 23, 42);
+    doc.setLineWidth(0.8);
+    doc.line(margin, y, margin + contentWidth, y);
     y += 8;
 
-    doc.line(margin, y - 2, margin + contentWidth, y - 2);
-  });
-
-  // Saldo Restante
-  y += 2;
-  doc.setDrawColor(15, 23, 42);
-  doc.setLineWidth(0.6);
-  doc.line(margin, y, margin + contentWidth, y);
-  y += 6;
-
-  doc.setFont('Courier', 'bold');
-  doc.setFontSize(11);
-  doc.setTextColor(15, 23, 42);
-  doc.text('Saldo Restante', margin + 4, y);
-  doc.text(`R$ ${remainingValue.toFixed(2).replace('.', ',')}`, 125, y, { align: 'right' });
-  doc.text(latestPaymentDateStr, 170, y, { align: 'right' });
-
-  y += 15;
-
-  // Observacao/Aviso
-  doc.setFont('Helvetica', 'italic');
-  doc.setFontSize(8.5);
-  doc.setTextColor(100, 116, 139);
-  const textNote = '* Este recibo comprova a transacao financeira realizada. O saldo devedor restante e atualizado dinamicamente a cada baixa efetuada.';
-  const wrappedLines = doc.splitTextToSize(textNote, contentWidth);
-  wrappedLines.forEach((line: string) => {
-    doc.text(line, margin, y);
+    // Item list header
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(47, 55, 70); // Darker contrast
+    doc.text('DESCRICAO', margin + 4, y);
+    doc.text('VALOR', 125, y, { align: 'right' });
+    doc.text('DATA', 170, y, { align: 'right' });
     y += 4;
-  });
 
-  y += 10;
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.3);
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 8;
+
+    doc.setFont('Courier', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(15, 23, 42); // High-contrast text
+
+    // Item 1: Valor Total do Servico
+    doc.text('Valor Total do Servico', margin + 4, y);
+    doc.text(`R$ ${totalValue.toFixed(2).replace('.', ',')}`, 125, y, { align: 'right' });
+    doc.text(originalDateStr, 170, y, { align: 'right' });
+    y += 8;
+
+    // Draw dashed line
+    doc.setDrawColor(226, 232, 240);
+    doc.line(margin, y - 2, margin + contentWidth, y - 2);
+
+    // Items: Historic Payments
+    paymentsList.forEach((p, idx) => {
+      const payDateStr = p.date ? format(safeParseDate(p.date), 'dd/MM/yyyy') : 'N/A';
+      const label = `Valor Pago${paymentsList.length > 1 ? ` #${idx + 1}` : ''}`;
+      
+      doc.setFont('Courier', 'bold'); // Change from normal to bold for maximum reading comfort
+      doc.text(label, margin + 4, y);
+      doc.text(`R$ ${Number(p.value).toFixed(2).replace('.', ',')}`, 125, y, { align: 'right' });
+      doc.text(payDateStr, 170, y, { align: 'right' });
+      y += 8;
+
+      doc.line(margin, y - 2, margin + contentWidth, y - 2);
+    });
+
+    // Saldo Restante
+    y += 2;
+    doc.setDrawColor(15, 23, 42);
+    doc.setLineWidth(0.6);
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 6;
+
+    doc.setFont('Courier', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text('Saldo Restante', margin + 4, y);
+    doc.text(`R$ ${remainingValue.toFixed(2).replace('.', ',')}`, 125, y, { align: 'right' });
+    doc.text(latestPaymentDateStr, 170, y, { align: 'right' });
+
+    y += 15;
+
+    // Observacao/Aviso
+    doc.setFont('Helvetica', 'italic');
+    doc.setFontSize(8.5);
+    doc.setTextColor(100, 116, 139);
+    const textNote = '* Este recibo comprova a transacao financeira realizada. O saldo devedor restante e atualizado dinamicamente a cada baixa efetuada.';
+    const wrappedLines = doc.splitTextToSize(textNote, contentWidth);
+    wrappedLines.forEach((line: string) => {
+      doc.text(line, margin, y);
+      y += 4;
+    });
+
+    y += 10;
+  } else {
+    // Standard default receipt: "Recibo Padrão" without separate installment breakdown lines & without balance remaining
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text('DECLARACAO DE QUITACAO', margin, y);
+    y += 6;
+
+    doc.setDrawColor(15, 23, 42);
+    doc.setLineWidth(0.8);
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 10;
+
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(10.5);
+    doc.setTextColor(30, 41, 59); // Slate-800
+
+    const valorExtenso = `R$ ${Number(currentPayment.value).toFixed(2).replace('.', ',')}`;
+    const pNameUpper = String(personName || 'N/A').toUpperCase();
+    const actionPhrase = isPayable 
+      ? `foi integralmente pago pela empresa ${String(appSettings?.companyName || 'SEGURTEC-PRO').toUpperCase()} ao favorecido ${pNameUpper}`
+      : `foi recebido de ${pNameUpper} por ${String(appSettings?.companyName || 'SEGURTEC-PRO').toUpperCase()}`;
+
+    const statementText = `Declaramos para os devidos fins e efeitos de direito que o valor de ${valorExtenso} (${actionPhrase}) no dia ${latestPaymentDateStr} via ${currentPayment.paymentMethod.toUpperCase()}, referente ao pagamento de: "${String(r.description || 'N/A').toUpperCase()}".
+
+Por se tratar da liquidacao integral deste documento, damos por este meio a plena, geral e irrevogavel quitacao do valor recebido, para nada mais haver a pleitear ou reclamar sobre o objeto deste recibo.`;
+
+    const wrappedStatement = doc.splitTextToSize(statementText, contentWidth);
+    wrappedStatement.forEach((line: string) => {
+      doc.text(line, margin, y);
+      y += 5.5;
+    });
+
+    y += 15;
+  }
 
   // City, Date and Address string
   const formatReceiptFullDate = (date: Date) => {
