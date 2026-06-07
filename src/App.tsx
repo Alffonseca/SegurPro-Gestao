@@ -4871,8 +4871,18 @@ export default function MainApp() {
     );
   }
 
-  // Show brand/intro video screen as soon as they log in, preventing the main menu from flashing first
-  const isSystemReady = !!(user && currentUserData?.companyId && currentCompany);
+  // Show brand/intro video screen ONLY when login, license verification, and terminal registration (if required) are 100% complete
+  const isSystemReady = !!(
+    user && 
+    currentUserData?.companyId && 
+    currentCompany && 
+    (isSuperAdmin || (
+      currentCompany.status !== 'blocked' &&
+      !(currentCompany.dbMode === 'local' && (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' && !/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname))) &&
+      !isLicenseVerifying &&
+      (currentCompany.dbMode === 'online' || currentTerminal)
+    ))
+  );
   const isIntroPending = isSystemReady && !hasPlayedIntro.current;
 
   if (showIntro || isIntroPending) {
@@ -5004,8 +5014,8 @@ export default function MainApp() {
     );
   }
 
-  // Workstation Terminal license validation - Super Admin bypasses this
-  if (user && currentUserData?.companyId && currentCompany && !isLicenseVerifying && !currentTerminal && !isSuperAdmin) {
+  // Workstation Terminal license validation - Super Admin and pure Web companies bypass this
+  if (user && currentUserData?.companyId && currentCompany && !isLicenseVerifying && !currentTerminal && !isSuperAdmin && currentCompany?.dbMode !== 'online') {
     return (
       <TerminalRegistrationScreen 
         company={currentCompany}
