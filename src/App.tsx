@@ -4112,6 +4112,12 @@ export default function MainApp() {
         toast.error('Domínio não autorizado no Firebase. Adicione este domínio nas configurações do Firebase.');
       } else if (error.code === 'auth/operation-not-allowed') {
         toast.error('O login com Google não está ativado no console do Firebase.');
+      } else if (error.code === 'auth/cancelled-popup-request' || error.message?.includes('cancelled-popup-request')) {
+        toast.error('O processo de login anterior foi interrompido ou reaberto. Tente novamente.');
+      } else if (error.code === 'auth/popup-closed-by-user' || error.message?.includes('popup-closed-by-user')) {
+        toast.error('A janela de login do Google foi fechada antes do término do processo.');
+      } else if (error.code === 'auth/popup-blocked' || error.message?.includes('popup-blocked')) {
+        toast.error('A janela popup foi bloqueada pelo navegador. Permita popups para este site.');
       } else {
         toast.error(`Erro ao fazer login: ${error.message}`);
       }
@@ -4865,7 +4871,7 @@ export default function MainApp() {
 
           </div>
 
-          <p className="text-center text-xs text-[#71717a] font-medium uppercase tracking-wider pt-4">
+          <p className="text-center text-xs text-[#71717a] font-medium tracking-wider pt-4">
             Sistema desenvolvido por AF TECNOLOGIA. Todos os direitos reservados.
           </p>
         </div>
@@ -4898,6 +4904,7 @@ export default function MainApp() {
           }}
           logoUrl={appSettings.logoUrl}
           companyName={appSettings.companyName || 'SegurTec-Pro Gestão'}
+          businessActivity={currentCompany?.businessActivity || ''}
           videoUrl={appSettings.introVideoUrl}
         />
       </div>
@@ -5077,6 +5084,7 @@ export default function MainApp() {
           onComplete={() => setShowIntro(false)}
           logoUrl={appSettings.logoUrl}
           companyName={appSettings.companyName || 'SegurTec-Pro Gestão'}
+          businessActivity={currentCompany?.businessActivity || ''}
           videoUrl={appSettings.introVideoUrl}
         />
       )}
@@ -10249,6 +10257,7 @@ function SuperAdminPanel({
         receivesUpdates: editingCompany.receivesUpdates ?? true,
         isExempt: editingCompany.isExempt || false,
         dbMode: editingCompany.dbMode || 'default',
+        businessActivity: editingCompany.businessActivity || '',
         maxStationsLimit: Number(editingCompany.maxStationsLimit) || 3,
         supportChannels: editingCompany.supportChannels || ['whatsapp', 'email'],
         enabledMenus: editingCompany.enabledMenus || [
@@ -10912,6 +10921,7 @@ function SuperAdminPanel({
                         billingCycle: company.billingCycle || saasSettings?.billingCycle || 'mensal',
                         customPrice: company.customPrice !== undefined ? company.customPrice : (saasSettings?.price || 0),
                         receivesUpdates: company.receivesUpdates ?? true,
+                        businessActivity: company.businessActivity || '',
                         supportChannels: company.supportChannels || ['whatsapp', 'email']
                       });
                       setIsEditCompanyOpen(true);
@@ -10984,7 +10994,7 @@ function SuperAdminPanel({
           </DialogHeader>
           <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2 custom-scrollbar">
             <div className="space-y-4 py-4 text-white">
-                {/* Proprietor Info */}
+                {/* Proprietor Info & Business Activity */}
                 <div className="space-y-4 pt-2">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -11002,6 +11012,15 @@ function SuperAdminPanel({
                         value={editingCompany?.ownerEmail || (editingCompanyOwner?.email || '')} 
                         onChange={e => setEditingCompany({...editingCompany, ownerEmail: e.target.value})} 
                         placeholder="email@exemplo.com"
+                        className="bg-[#0f1115] border-[#2d3139] text-white h-9 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-2 col-span-2">
+                      <Label className="text-[#a0a0a0] text-[10px] uppercase font-bold">Ramo de Atividade (Aparece na Animação Inicial)</Label>
+                      <Input 
+                        value={editingCompany?.businessActivity || ''} 
+                        onChange={e => setEditingCompany({...editingCompany, businessActivity: e.target.value})} 
+                        placeholder="Ex: SISTEMA DE GESTÃO AUTOMOTIVA, CLÍNICA MÉDICA, OFICINA MECÂNICA, etc."
                         className="bg-[#0f1115] border-[#2d3139] text-white h-9 text-xs"
                       />
                     </div>

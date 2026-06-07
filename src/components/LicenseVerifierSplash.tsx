@@ -240,7 +240,7 @@ export default function LicenseVerifierSplash({
           </CardContent>
         </Card>
 
-        <p className="text-center text-xs text-[#71717a] py-1 font-medium uppercase tracking-wider">
+        <p className="text-center text-xs text-[#71717a] py-1 font-medium tracking-wider">
           Sistema desenvolvido por AF TECNOLOGIA. Todos os direitos reservados.
         </p>
 

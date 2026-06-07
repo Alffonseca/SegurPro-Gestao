@@ -6,13 +6,15 @@ interface IntroSplashScreenProps {
   onComplete: () => void;
   logoUrl?: string;
   companyName?: string;
+  businessActivity?: string;
   videoUrl?: string; // Left in interface to maintain compatibility with App.tsx prop signature
 }
 
 export default function IntroSplashScreen({
   onComplete,
   logoUrl,
-  companyName = 'SegurTec-Pro Gestão'
+  companyName = 'SegurTec-Pro Gestão',
+  businessActivity
 }: IntroSplashScreenProps) {
   const [fadeOut, setFadeOut] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -104,7 +106,7 @@ export default function IntroSplashScreen({
                   transition={{ delay: 0.4, duration: 0.8 }}
                   className="text-[11px] md:text-xs font-mono font-bold tracking-[0.3em] text-blue-400/80 uppercase"
                 >
-                  SISTEMA DE GESTÃO AUTOMOTIVA
+                  {businessActivity ? businessActivity.toUpperCase() : 'SISTEMA DE GESTÃO INTEGRADA'}
                 </motion.p>
               </div>
             </motion.div>
@@ -144,7 +146,7 @@ export default function IntroSplashScreen({
             </div>
           </div>
 
-          <div className="absolute bottom-8 text-center w-full text-xs text-[#71717a] font-medium uppercase tracking-wider">
+          <div className="absolute bottom-8 text-center w-full text-xs text-[#71717a] font-medium tracking-wider">
             <span>Sistema desenvolvido por AF TECNOLOGIA. Todos os direitos reservados.</span>
           </div>
         </motion.div>

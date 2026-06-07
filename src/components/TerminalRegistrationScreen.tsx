@@ -420,7 +420,7 @@ export default function TerminalRegistrationScreen({
 
         </div>
 
-        <p className="text-center text-xs text-[#71717a] font-medium uppercase tracking-wider pt-2">
+        <p className="text-center text-xs text-[#71717a] font-medium tracking-wider pt-2">
           Sistema desenvolvido por AF TECNOLOGIA. Todos os direitos reservados.
         </p>
 
