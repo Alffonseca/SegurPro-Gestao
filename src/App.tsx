@@ -70,7 +70,11 @@ import {
   AlertTriangle,
   QrCode,
   Handshake,
-  Power
+  Power,
+  Monitor,
+  Cpu,
+  Network,
+  Server
 } from 'lucide-react';
 import { 
   collection, 
@@ -163,6 +167,7 @@ import {
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
 import LicenseVerifierSplash from './components/LicenseVerifierSplash';
+import TerminalRegistrationScreen from './components/TerminalRegistrationScreen';
 import IntroSplashScreen from './components/IntroSplashScreen';
 
 const SUPER_ADMIN_EMAILS = ['emailparasiteslixo@gmail.com', 'alffonseca42@gmail.com'];
@@ -412,7 +417,7 @@ const originalSave = jsPDF.prototype.save;
         setTimeout(() => {
           const wantsToMemorize = window.confirm(
             `PDF de "${category.label}" salvo com sucesso!\n\n` +
-            `Deseja selecionar e MEMORIZAR uma pasta padrão específica no seu computador para novos PDFs dessa mesma categoria do SegurPro?\n` +
+            `Deseja selecionar e MEMORIZAR uma pasta padrão específica no seu computador para novos PDFs dessa mesma categoria do SegurTec-Pro?\n` +
             `Exemplo: Uma pasta chamada "PDFs de OS" ou "Visitas Tecnicas", assim o sistema iniciará sempre na pasta certa!`
           );
           
@@ -3017,8 +3022,37 @@ const initialAppSettings: AppSettings = {
   introVideoUrl: ''
 };
 
+// PDF interception state
+let globalSetPdfPreviewData: ((data: { blobUrl: string; filename: string } | null) => void) | null = null;
+const originalJsPdfSave = jsPDF.prototype.save;
+jsPDF.prototype.save = function (filename?: string, options?: any) {
+  const result = originalJsPdfSave.apply(this, arguments as any);
+  try {
+    const finalName = filename || 'documento.pdf';
+    const blob = this.output('blob');
+    if (blob) {
+      const blobUrl = URL.createObjectURL(blob);
+      if (globalSetPdfPreviewData) {
+        globalSetPdfPreviewData({ blobUrl, filename: finalName });
+      }
+    }
+  } catch (error) {
+    console.error('[pdf-save-patch] Error generating blob URL:', error);
+  }
+  return result;
+};
+
 export default function MainApp() {
   const [showIntro, setShowIntro] = useState(false);
+  const [pdfPreviewData, setPdfPreviewData] = useState<{ blobUrl: string; filename: string } | null>(null);
+
+  useEffect(() => {
+    globalSetPdfPreviewData = setPdfPreviewData;
+    return () => {
+      globalSetPdfPreviewData = null;
+    };
+  }, []);
+
   const hasPlayedIntro = useRef(false);
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
@@ -3142,6 +3176,8 @@ export default function MainApp() {
   });
   const [currentUserData, setCurrentUserData] = useState<any>(null);
   const [currentCompany, setCurrentCompany] = useState<any>(null);
+  const [companyTerminals, setCompanyTerminals] = useState<any[]>([]);
+  const [currentTerminal, setCurrentTerminal] = useState<any>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [userPhotoError, setUserPhotoError] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>(inviteCodeUrl ? 'register' : 'login');
@@ -3402,6 +3438,10 @@ export default function MainApp() {
         setCurrentCompany(null);
         setLoading(false);
         clearTimeout(loadingTimeout);
+      } else {
+        // Force loading state to true when logging in, so that company & user loaders
+        // can finish loading their snapshot data before the main screen is allowed to render.
+        setLoading(true);
       }
     });
 
@@ -3411,16 +3451,15 @@ export default function MainApp() {
     };
   }, []);
 
-  // Play brand intro animation when the system (company, user, configuration, license) is fully loaded & verified
+  // Play brand intro animation immediately after successful login when user and company data are loaded
   useEffect(() => {
     const isSystemReady = !!(user && currentUserData?.companyId && currentCompany);
-    const isLicensePass = !isLicenseVerifying || isSuperAdmin;
     
-    if (isSystemReady && isLicensePass && !hasPlayedIntro.current) {
+    if (isSystemReady && !hasPlayedIntro.current) {
       hasPlayedIntro.current = true;
       setShowIntro(true);
     }
-  }, [user, currentUserData?.companyId, currentCompany, isLicenseVerifying, isSuperAdmin]);
+  }, [user, currentUserData?.companyId, currentCompany]);
 
   useEffect(() => {
     if (activeTab && user && currentUserData) {
@@ -3536,9 +3575,30 @@ export default function MainApp() {
       console.error("Erro no listener de papéis customizados:", error);
     });
 
+    const terminalsRef = collection(db, 'companies', effectiveCompanyId, 'terminals');
+    const unsubscribeTerminals = onSnapshot(terminalsRef, (snap) => {
+      const list = snap.docs.map(tDoc => ({ id: tDoc.id, ...tDoc.data() }));
+      setCompanyTerminals(list);
+      
+      const localId = localStorage.getItem('TERMINAL_ID');
+      if (localId) {
+        const found = list.find(t => t.id === localId);
+        if (found) {
+          setCurrentTerminal(found);
+        } else {
+          setCurrentTerminal(null);
+        }
+      } else {
+        setCurrentTerminal(null);
+      }
+    }, (error) => {
+      console.error("Erro no listener de terminais:", error);
+    });
+
     return () => {
       unsubscribeCompany();
       unsubRoles();
+      unsubscribeTerminals();
     };
   }, [currentUserData?.companyId, selectedCompanyId, isSuperAdmin]);
 
@@ -4802,6 +4862,26 @@ export default function MainApp() {
     );
   }
 
+  // Show brand/intro video screen as soon as they log in, preventing the main menu from flashing first
+  const isSystemReady = !!(user && currentUserData?.companyId && currentCompany);
+  const isIntroPending = isSystemReady && !hasPlayedIntro.current;
+
+  if (showIntro || isIntroPending) {
+    return (
+      <div className="fixed inset-0 z-[99999] bg-[#0c0f13] select-none">
+        <IntroSplashScreen 
+          onComplete={() => {
+            hasPlayedIntro.current = true;
+            setShowIntro(false);
+          }}
+          logoUrl={appSettings.logoUrl}
+          companyName={appSettings.companyName || 'SegurTec-Pro Gestão'}
+          videoUrl={appSettings.introVideoUrl}
+        />
+      </div>
+    );
+  }
+
   // Multi-tenancy check
   if (!currentUserData?.companyId && !isSuperAdmin) {
     return (
@@ -4847,6 +4927,58 @@ export default function MainApp() {
     );
   }
 
+  // Verification if company dbMode is strictly Local Only and user is accessing through standard Web (Cloud Website)
+  if (currentCompany && currentCompany.dbMode === 'local' && !isSuperAdmin) {
+    const isWeb = window.location.hostname !== 'localhost' && 
+                  window.location.hostname !== '127.0.0.1' && 
+                  !/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname);
+    
+    if (isWeb) {
+      return (
+        <div className="min-h-screen bg-[#0f1115] flex items-center justify-center p-4 font-sans select-none">
+          <Card className="max-w-md w-full bg-[#16191f] border border-[#2d3139] text-center p-8 rounded-2xl shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-red-500 via-amber-500 to-indigo-500"></div>
+            
+            <div className="flex justify-center mb-6">
+              <div className="w-16 h-16 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center justify-center">
+                <AlertCircle size={32} className="text-red-500" />
+              </div>
+            </div>
+
+            <h2 className="text-xl font-black uppercase tracking-tight text-white mb-1 leading-normal italic">
+              Licença Somente Local
+            </h2>
+            <p className="text-indigo-400 text-[10px] font-black uppercase tracking-[0.2em] mb-4">
+              Acesso Web Bloqueado
+            </p>
+
+            <div className="text-zinc-300 text-[11px] leading-relaxed mb-6 text-left p-4 bg-[#0f1115]/80 border border-[#2d3139]/50 rounded-xl space-y-2">
+              <p>Prezado(a) cliente da <b>{currentCompany.name}</b>,</p>
+              <p>Sua licença comercial do sistema está parametrizada em <strong className="text-indigo-400">Modo Local (Servidor & Estações)</strong>.</p>
+              <p>Por restrição de segurança e conformidade, o login via navegador Web Cloud padrão está desabilitado para o seu plano.</p>
+            </div>
+
+            <div className="bg-[#0f1115] border border-[#2d3139]/40 rounded-xl p-4 text-left space-y-2 mb-6">
+              <h4 className="text-[9px] font-black uppercase tracking-widest text-zinc-400">Como acessar o sistema:</h4>
+              <ul className="text-[10px] text-zinc-400 space-y-1 list-disc list-inside">
+                <li>Abra o aplicativo em seu computador terminal local.</li>
+                <li>Conecte-se na rede local do seu servidor principal.</li>
+                <li>Para migrar/habilitar acesso Cloud Web, contate o administrador SaaS para requerer a licença <strong className="text-indigo-400">Híbrida Web/Local</strong>.</li>
+              </ul>
+            </div>
+
+            <Button 
+              onClick={() => signOut(auth)}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold h-10 rounded-xl"
+            >
+              Retornar ao Login
+            </Button>
+          </Card>
+        </div>
+      );
+    }
+  }
+
   // Live SaaS Contract/License verification after login - Super Admin bypasses this
   if (user && currentUserData?.companyId && currentCompany && isLicenseVerifying && !isSuperAdmin) {
     return (
@@ -4863,10 +4995,60 @@ export default function MainApp() {
     );
   }
 
+  // Workstation Terminal license validation - Super Admin bypasses this
+  if (user && currentUserData?.companyId && currentCompany && !isLicenseVerifying && !currentTerminal && !isSuperAdmin) {
+    return (
+      <TerminalRegistrationScreen 
+        company={currentCompany}
+        terminals={companyTerminals}
+        user={user}
+        onRegisterSuccess={(term) => setCurrentTerminal(term)}
+        onSignOut={() => {
+          signOut(auth);
+          setIsLicenseVerifying(true);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="flex h-screen bg-[#0f1115] text-[#e0e0e0] overflow-hidden">
       <Toaster position="top-right" theme="dark" />
       
+      {pdfPreviewData && (
+        <Dialog open={!!pdfPreviewData} onOpenChange={(open) => { if (!open) setPdfPreviewData(null); }}>
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-sm text-center">
+            <DialogHeader className="pt-4">
+              <div className="mx-auto w-12 h-12 bg-blue-500/15 border border-blue-500/30 text-blue-400 rounded-full flex items-center justify-center mb-2">
+                <FileText size={24} />
+              </div>
+              <DialogTitle className="text-xl font-black uppercase tracking-tighter text-center">PDF Gerado com Sucesso!</DialogTitle>
+              <DialogDescription className="text-neutral-400 text-xs text-center leading-relaxed">
+                O arquivo <strong className="text-blue-300 font-bold">{pdfPreviewData.filename}</strong> foi baixado. Deseja abrir o documento agora para visualização em tela cheia?
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="grid grid-cols-2 gap-2 mt-4 pb-2">
+              <Button 
+                variant="outline" 
+                onClick={() => setPdfPreviewData(null)}
+                className="border-[#2d3139] text-neutral-400 hover:text-white hover:bg-neutral-800 text-xs font-bold"
+              >
+                Não, Fechar
+              </Button>
+              <Button 
+                onClick={() => {
+                  window.open(pdfPreviewData.blobUrl, '_blank');
+                  setPdfPreviewData(null);
+                }}
+                className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-extrabold uppercase tracking-wide"
+              >
+                Sim, Abrir PDF
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
       {showIntro && (
         <IntroSplashScreen 
           onComplete={() => setShowIntro(false)}
@@ -5954,6 +6136,9 @@ export default function MainApp() {
                currentCompany={currentCompany}
                customRoles={customRoles}
                userRoles={userRoles}
+               companyTerminals={companyTerminals}
+               currentTerminal={currentTerminal}
+               setCurrentTerminal={setCurrentTerminal}
                mode="general"
              />
            )}
@@ -10041,6 +10226,7 @@ function SuperAdminPanel({
         receivesUpdates: editingCompany.receivesUpdates ?? true,
         isExempt: editingCompany.isExempt || false,
         dbMode: editingCompany.dbMode || 'default',
+        maxStationsLimit: Number(editingCompany.maxStationsLimit) || 3,
         supportChannels: editingCompany.supportChannels || ['whatsapp', 'email'],
         enabledMenus: editingCompany.enabledMenus || [
           'dashboard', 'visits', 'service-orders', 'laudos', 'clients',
@@ -10988,18 +11174,37 @@ function SuperAdminPanel({
 
             {/* Database operational mode for this client company */}
             <div className="space-y-2 p-4 bg-[#0f1115]/50 border border-[#2d3139] rounded-lg">
-              <Label className="text-[#a0a0a0] text-[10px] font-bold uppercase tracking-widest">Modo de Banco de Dados de Licença</Label>
+              <Label className="text-[#a0a0a0] text-[10px] font-bold uppercase tracking-widest text-[#3b82f6]">Modalidade de Licença & Conectividade</Label>
               <select 
                 className="w-full h-10 bg-[#0f1115] border-[#2d3139] rounded-md px-3 text-xs font-bold text-white uppercase tracking-wider"
                 value={editingCompany?.dbMode || 'default'}
                 onChange={(e) => setEditingCompany({...editingCompany, dbMode: e.target.value})}
               >
-                <option value="default">Padrão do Sistema (Firebase / Offline se local)</option>
-                <option value="online">Firebase Cloud (Sempre Online em Nuvem)</option>
-                <option value="local">Local Server (Sempre Offline via Arquivo JSON)</option>
+                <option value="default">Híbrido Web/Local (Acesso por Navegador e Executável)</option>
+                <option value="online">Somente Web Nuvem (Navegador e Firebase - Sem local)</option>
+                <option value="local">Somente Local Offline (Executável Local - Bloqueado na Web)</option>
               </select>
-              <p className="text-[9px] text-[#71717a] uppercase font-semibold leading-normal mt-1 tracking-tight">
-                Instrui o terminal desse cliente a forçar o banco escolhido. Se alterado, a sessão sincronizará e reiniciará.
+              <p className="text-[9px] text-[#71717a] uppercase font-semibold leading-normal mt-1 tracking-tight mb-2">
+                Define onde o cliente pode operar. Se selecionado 'Somente Local Offline', o login no site da Web Cloud padrão será bloqueado por segurança, exigindo o executável local do terminal.
+              </p>
+            </div>
+
+            {/* Station / Terminal Limit configuration inside license */}
+            <div className="space-y-2 p-4 bg-[#0f1115]/50 border border-[#2d3139] rounded-lg">
+              <Label className="text-[#3b82f6] text-[10px] font-black uppercase tracking-widest">Limite de Estações & Terminais SaaS</Label>
+              <div className="flex gap-2 items-center">
+                <Input 
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={editingCompany?.maxStationsLimit !== undefined ? editingCompany.maxStationsLimit : 3}
+                  onChange={(e) => setEditingCompany({...editingCompany, maxStationsLimit: parseInt(e.target.value) || 1})}
+                  className="bg-[#0f1115] border-[#2d3139] text-white w-24 h-9 text-xs font-bold"
+                />
+                <span className="text-[11px] text-zinc-400">estações de trabalho adicionais inclusas no plano.</span>
+              </div>
+              <p className="text-[9px] text-[#71717a] uppercase font-semibold leading-normal tracking-tight">
+                Controla o número máximo de computadores/estações que o cliente pode registrar simultaneamente sob esta licença.
               </p>
             </div>
 
@@ -11631,6 +11836,9 @@ function SettingsManager({
   currentCompany,
   customRoles,
   userRoles,
+  companyTerminals = [],
+  currentTerminal,
+  setCurrentTerminal,
   mode = 'general'
 }: { 
   pixSettings: PixSettings, 
@@ -11645,6 +11853,9 @@ function SettingsManager({
   currentCompany?: any,
   customRoles: UserRole[],
   userRoles: UserRole[],
+  companyTerminals?: any[],
+  currentTerminal?: any,
+  setCurrentTerminal?: (term: any) => void,
   key?: any,
   mode?: 'general' | 'financial'
 }) {
@@ -11652,6 +11863,22 @@ function SettingsManager({
   const [dbMode, setDbMode] = useState<'default' | 'local' | 'online'>(
     () => (localStorage.getItem('DB_MODE_OVERRIDE') as 'default' | 'local' | 'online') || 'default'
   );
+  const [activeSupportChannelModal, setActiveSupportChannelModal] = useState<string | null>(null);
+  const [saasGlobal, setSaasGlobal] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchGlobal = async () => {
+      try {
+        const globalDoc = await getDoc(doc(db, 'saas_settings', 'global'));
+        if (globalDoc.exists()) {
+          setSaasGlobal(globalDoc.data());
+        }
+      } catch (err) {
+        console.warn("Could not fetch remote version at startup of settings:", err);
+      }
+    };
+    fetchGlobal();
+  }, []);
   const [localDbUrl, setLocalDbUrl] = useState(
     () => localStorage.getItem('LOCAL_DB_SERVER_URL') || ''
   );
@@ -12497,15 +12724,55 @@ function SettingsManager({
 
                       <div className="flex justify-between items-center py-1.5 border-b border-[#2d3139]/30">
                         <span className="text-[11px] text-[#71717a] uppercase font-bold tracking-wider">Suporte Técnico:</span>
-                        <div className="flex flex-wrap gap-1 justify-end max-w-[200px]">
+                        <div className="flex flex-wrap gap-1.5 justify-end max-w-[220px]">
                           {(() => {
                             const channels = currentCompany?.supportChannels || ['whatsapp', 'email'];
                             if (channels.length === 0) return <span className="text-xs text-red-400 font-bold">NÃO INCLUSO</span>;
                             return channels.map((ch: string) => {
-                              if (ch === 'whatsapp') return <span key={ch} className="text-[9px] font-black tracking-widest px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase font-sans">WhatsApp</span>;
-                              if (ch === 'telefone') return <span key={ch} className="text-[9px] font-black tracking-widest px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20 uppercase font-sans">Telefone</span>;
-                              if (ch === 'email') return <span key={ch} className="text-[9px] font-black tracking-widest px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase font-sans">E-mail</span>;
-                              if (ch === 'acesso_remoto' || ch === 'acesso-remoto') return <span key={ch} className="text-[9px] font-black tracking-widest px-1.5 py-0.5 rounded bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/20 uppercase font-sans">Remoto</span>;
+                              if (ch === 'whatsapp') return (
+                                <button 
+                                  key={ch} 
+                                  type="button"
+                                  onClick={() => setActiveSupportChannelModal('whatsapp')}
+                                  className="text-[9px] font-black tracking-widest px-2.5 py-1.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 transition cursor-pointer uppercase font-sans flex items-center gap-1 active:scale-95"
+                                >
+                                  <span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse"></span>
+                                  WhatsApp
+                                </button>
+                              );
+                              if (ch === 'telefone') return (
+                                <button 
+                                  key={ch} 
+                                  type="button"
+                                  onClick={() => setActiveSupportChannelModal('telefone')}
+                                  className="text-[9px] font-black tracking-widest px-2.5 py-1.5 rounded bg-sky-500/15 text-sky-400 border border-sky-500/30 hover:bg-sky-500/25 transition cursor-pointer uppercase font-sans flex items-center gap-1 active:scale-95"
+                                >
+                                  <span className="w-1 h-1 rounded-full bg-sky-400"></span>
+                                  Telefone
+                                </button>
+                              );
+                              if (ch === 'email') return (
+                                <button 
+                                  key={ch} 
+                                  type="button"
+                                  onClick={() => setActiveSupportChannelModal('email')}
+                                  className="text-[9px] font-black tracking-widest px-2.5 py-1.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 transition cursor-pointer uppercase font-sans flex items-center gap-1 active:scale-95"
+                                >
+                                  <span className="w-1 h-1 rounded-full bg-amber-400 animate-pulse"></span>
+                                  E-mail
+                                </button>
+                              );
+                              if (ch === 'acesso_remoto' || ch === 'acesso-remoto') return (
+                                <button 
+                                  key={ch} 
+                                  type="button"
+                                  onClick={() => setActiveSupportChannelModal('acesso_remoto')}
+                                  className="text-[9px] font-black tracking-widest px-2.5 py-1.5 rounded bg-fuchsia-500/15 text-fuchsia-400 border border-fuchsia-500/30 hover:bg-fuchsia-500/25 transition cursor-pointer uppercase font-sans flex items-center gap-1 active:scale-95"
+                                >
+                                  <span className="w-1 h-1 rounded-full bg-fuchsia-400"></span>
+                                  Remoto
+                                </button>
+                              );
                               return null;
                             });
                           })()}
@@ -12623,60 +12890,83 @@ function SettingsManager({
                     )}
                   </div>
 
-                  <div className="space-y-2.5 pt-3">
-                    <Label className="text-xs text-[#a0a0a0] font-bold uppercase tracking-wider block">
-                      Telas e Recursos Liberados nesta Licença
-                    </Label>
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        { id: 'dashboard', label: 'Painel Geral' },
-                        { id: 'visits', label: 'Visitas Técnicas' },
-                        { id: 'service-orders', label: 'Ordens de Serviço' },
-                        { id: 'laudos', label: 'Laudos Técnicos' },
-                        { id: 'inventory', label: 'Estoque' },
-                        { id: 'pdv', label: 'PDV (Vendas)' },
-                        { id: 'vendas-historico', label: 'Histórico de Vendas' },
-                        { id: 'budgets', label: 'Orçamentos' },
-                        { id: 'financial', label: 'Financeiro (Lançamentos)' },
-                        { id: 'payable', label: 'Contas a Pagar' },
-                        { id: 'receivable', label: 'Contas a Receber' },
-                        { id: 'receipts', label: 'Recibos' },
-                        { id: 'clients', label: 'Clientes' },
-                        { id: 'suppliers', label: 'Fornecedores' },
-                        { id: 'reports', label: 'Relatórios Gerenciais' },
-                        { id: 'users', label: 'Equipe' },
-                        { id: 'logs', label: 'Logs do Sistema' },
-                        { id: 'settings', label: 'Configurações' },
-                        { id: 'financial-settings', label: 'Config. Financeiras' },
-                        { id: 'backup-restore', label: 'Backup/Restauração' }
-                      ].map((menu) => {
-                        let regId = menu.id;
-                        if (menu.id === 'vendas-historico') regId = 'pdv';
-                        if (menu.id === 'payable' || menu.id === 'receivable') regId = 'financial';
-                        if (menu.id === 'financial-settings' || menu.id === 'backup-restore') regId = 'settings';
+                  {(() => {
+                    const allMenuItems = [
+                      { id: 'dashboard', label: 'Painel Geral' },
+                      { id: 'visits', label: 'Visitas Técnicas' },
+                      { id: 'service-orders', label: 'Ordens de Serviço' },
+                      { id: 'laudos', label: 'Laudos Técnicos' },
+                      { id: 'inventory', label: 'Estoque' },
+                      { id: 'pdv', label: 'PDV (Vendas)' },
+                      { id: 'vendas-historico', label: 'Histórico de Vendas' },
+                      { id: 'budgets', label: 'Orçamentos' },
+                      { id: 'financial', label: 'Financeiro (Lançamentos)' },
+                      { id: 'payable', label: 'Contas a Pagar' },
+                      { id: 'receivable', label: 'Contas a Receber' },
+                      { id: 'receipts', label: 'Recibos' },
+                      { id: 'clients', label: 'Clientes' },
+                      { id: 'suppliers', label: 'Fornecedores' },
+                      { id: 'reports', label: 'Relatórios Gerenciais' },
+                      { id: 'users', label: 'Equipe' },
+                      { id: 'logs', label: 'Logs do Sistema' },
+                      { id: 'settings', label: 'Configurações' },
+                      { id: 'financial-settings', label: 'Config. Financeiras' },
+                      { id: 'backup-restore', label: 'Backup/Restauração' }
+                    ];
 
-                        const isAllowed = currentCompany?.enabledMenus 
-                          ? (currentCompany.enabledMenus.includes(regId) || 
-                             (regId === 'dashboard' && currentCompany.enabledMenus.includes('resumo')) ||
-                             (regId === 'service-orders' && currentCompany.enabledMenus.includes('os')))
-                          : true;
+                    const allowedCount = allMenuItems.filter(menu => {
+                      let regId = menu.id;
+                      if (menu.id === 'vendas-historico') regId = 'pdv';
+                      if (menu.id === 'payable' || menu.id === 'receivable') regId = 'financial';
+                      if (menu.id === 'financial-settings' || menu.id === 'backup-restore') regId = 'settings';
 
-                        return (
-                          <span 
-                            key={menu.id} 
-                            className={`text-[10px] font-bold px-2.5 py-1 rounded-md flex items-center gap-1.5 border transition-all ${
-                              isAllowed 
-                                ? 'bg-[#3b82f6]/10 text-blue-300 border-[#3b82f6]/30' 
-                                : 'bg-neutral-950/40 text-red-500 border-red-940/40 line-through opacity-50'
-                            }`}
-                          >
-                            {!isAllowed && <Lock size={10} className="shrink-0 text-red-500" />}
-                            {menu.label}
+                      const isAllowed = currentCompany?.enabledMenus 
+                        ? (currentCompany.enabledMenus.includes(regId) || 
+                           (regId === 'dashboard' && currentCompany.enabledMenus.includes('resumo')) ||
+                           (regId === 'service-orders' && currentCompany.enabledMenus.includes('os')))
+                        : true;
+                      return isAllowed;
+                    }).length;
+
+                    return (
+                      <div className="space-y-2.5 pt-3">
+                        <Label className="text-xs text-[#a0a0a0] font-bold uppercase tracking-wider flex items-center justify-between">
+                          <span>Telas e Recursos Liberados nesta Licença</span>
+                          <span className="text-blue-400 font-mono text-xs bg-blue-500/10 px-2.5 py-0.5 rounded-md border border-blue-500/25 font-black">
+                            {allowedCount} / {allMenuItems.length}
                           </span>
-                        );
-                      })}
-                    </div>
-                  </div>
+                        </Label>
+                        <div className="flex flex-wrap gap-2">
+                          {allMenuItems.map((menu) => {
+                            let regId = menu.id;
+                            if (menu.id === 'vendas-historico') regId = 'pdv';
+                            if (menu.id === 'payable' || menu.id === 'receivable') regId = 'financial';
+                            if (menu.id === 'financial-settings' || menu.id === 'backup-restore') regId = 'settings';
+
+                            const isAllowed = currentCompany?.enabledMenus 
+                              ? (currentCompany.enabledMenus.includes(regId) || 
+                                 (regId === 'dashboard' && currentCompany.enabledMenus.includes('resumo')) ||
+                                 (regId === 'service-orders' && currentCompany.enabledMenus.includes('os')))
+                              : true;
+
+                            return (
+                              <span 
+                                key={menu.id} 
+                                className={`text-[10px] font-bold px-2.5 py-1 rounded-md flex items-center gap-1.5 border transition-all ${
+                                  isAllowed 
+                                    ? 'bg-[#3b82f6]/10 text-blue-300 border-[#3b82f6]/30' 
+                                    : 'bg-neutral-950/40 text-red-500 border-red-940/40 line-through opacity-50'
+                                }`}
+                              >
+                                {!isAllowed && <Lock size={10} className="shrink-0 text-red-500" />}
+                                {menu.label}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                     {currentCompany?.receivesUpdates === false && (
                       <div className="bg-orange-500/10 border border-orange-500/20 p-3 rounded-lg flex items-center gap-3 mt-4">
@@ -12691,6 +12981,417 @@ function SettingsManager({
                     )}
                   </CardContent>
                 </Card>
+
+                {/* Terminais e Rede Local (Estações) */}
+                <Card className="bg-[#1a1d23] border-[#2d3139] text-white overflow-hidden relative mb-8">
+                  <CardHeader className="border-b border-[#2d3139]/30 bg-[#16191f]/40 p-5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <Monitor className="text-indigo-400" size={18} />
+                          Terminais & Rede Local (Estações)
+                        </CardTitle>
+                        <CardDescription className="text-[#71717a] text-[11px] uppercase tracking-wider font-semibold">
+                          Controle de Computadores Autorizados e Rede Local.
+                        </CardDescription>
+                      </div>
+                      <span className="text-xs font-mono font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2.5 py-1 rounded">
+                        {companyTerminals.filter(t => t.role === 'estacao').length} / {currentCompany?.maxStationsLimit !== undefined ? currentCompany.maxStationsLimit : 3} Estações
+                      </span>
+                    </div>
+                  </CardHeader>
+
+                  <CardContent className="p-5 text-left space-y-6">
+                    {/* Info about this machine */}
+                    <div className="p-4 bg-[#0f1115]/80 border border-[#2d3139] rounded-xl">
+                      <h4 className="text-xs font-black uppercase tracking-wider text-indigo-400 flex items-center gap-2 mb-3">
+                        <Cpu size={14} />
+                        Este Dispositivo Local
+                      </h4>
+                      
+                      {currentTerminal ? (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div className="space-y-1">
+                            <p className="text-[10px] text-zinc-500 uppercase font-black">Identificação do Terminal</p>
+                            <p className="text-xs font-bold text-white">{currentTerminal.name}</p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[10px] text-zinc-500 uppercase font-black">Papel na Rede</p>
+                            <p className="text-xs font-bold text-indigo-300 uppercase">
+                              {currentTerminal.role === 'servidor' ? '★ Servidor Principal' : 'Estação de Trabalho'}
+                            </p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[10px] text-zinc-500 uppercase font-black">Destino do Banco de Dados (IP)</p>
+                            <p className="text-xs font-mono text-zinc-300">
+                              {currentTerminal.role === 'servidor' ? 'Servidor Local (localhost / 127.0.0.1)' : `${currentTerminal.serverIp}`}
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-red-400 font-bold">⚠️ Este dispositivo ainda não está registrado como terminal desta licença.</p>
+                      )}
+
+                      <div className="mt-4 pt-4 border-t border-[#2d3139]/40 flex flex-wrap gap-2 justify-end">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const confirm = window.confirm("Deseja realmente reconfigurar este terminal? Você retornará ao fluxo de registro.");
+                            if (confirm) {
+                              localStorage.removeItem('TERMINAL_ID');
+                              localStorage.removeItem('TERMINAL_NAME');
+                              localStorage.removeItem('TERMINAL_ROLE');
+                              localStorage.removeItem('TERMINAL_SERVER_IP');
+                              if (setCurrentTerminal) setCurrentTerminal(null);
+                              window.location.reload();
+                            }
+                          }}
+                          className="border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#1a1d23] text-xs font-bold h-8"
+                        >
+                          <Settings size={12} className="mr-1.5" />
+                          Reconfigurar Máquina Local
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Network Guide block if in Local / Hybrid Mode */}
+                    <div className="p-4 bg-indigo-950/10 border border-indigo-500/20 rounded-xl space-y-2">
+                      <h4 className="text-xs font-black uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
+                        <Network size={14} />
+                        Instruções para Conexão de Múltiplas Máginas
+                      </h4>
+                      <p className="text-zinc-300 text-xs leading-normal">
+                        Para que as estações adicionais trabalhem integradas, elas devem "enxergar" o Servidor Principal na mesma rede local:
+                      </p>
+                      <ul className="text-zinc-400 text-[11px] list-disc list-inside space-y-1 pl-1">
+                        <li>Certifique-se de que todos os computadores estão no mesmo roteador / Wi-Fi da empresa.</li>
+                        <li>No computador configurado como <b>Servidor Main</b>, abra o CMD e digite <code className="text-indigo-300 font-mono">ipconfig</code> para obter o <code className="text-white font-mono">IPv4</code> (Ex: <code className="text-indigo-400">192.168.1.100</code>).</li>
+                        <li>Nas outras máquinas (<b>Estações</b>), quando solicitado no início ou nas configurações, insira este endereço IP no campo do servidor.</li>
+                        <li>O sistema roteará as conexões para trabalharem unificadas no banco de dados do Servidor Central.</li>
+                      </ul>
+                    </div>
+
+                    {/* Monitor All terminals */}
+                    <div className="space-y-3">
+                      <p className="text-zinc-400 text-[10px] font-black uppercase tracking-wider pl-1 font-bold">
+                        Terminais Ativos Registrados sob esta Licença
+                      </p>
+
+                      {companyTerminals.length === 0 ? (
+                        <p className="text-xs text-zinc-500 italic pl-1">Nenhum terminal cadastrado ainda.</p>
+                      ) : (
+                        <div className="grid grid-cols-1 gap-2.5">
+                          {companyTerminals.map((term) => {
+                            const isActive = term.id === currentTerminal?.id;
+                            return (
+                              <div 
+                                key={term.id}
+                                className={`p-3 border rounded-xl flex items-center justify-between transition-all ${
+                                  isActive 
+                                    ? 'bg-indigo-500/5 border-indigo-500/30' 
+                                    : 'bg-[#0f1115]/50 border-[#2d3139]/50 hover:border-[#2d3139]'
+                                }`}
+                              >
+                                <div className="flex items-center gap-3 text-left">
+                                  <div className={`p-2 rounded-lg ${term.role === 'servidor' ? 'bg-indigo-500/15 text-indigo-400' : 'bg-zinc-500/10 text-zinc-400'}`}>
+                                    {term.role === 'servidor' ? <Server size={14} className="shrink-0" /> : <Monitor size={14} className="shrink-0" />}
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs font-bold text-white leading-none">{term.name}</span>
+                                      {isActive && (
+                                        <span className="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-indigo-500 text-white leading-none">
+                                          ESTA MÁQUINA
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-[10px] text-zinc-500 font-semibold uppercase tracking-wider mt-1 flex items-center gap-1">
+                                      <span>{term.role === 'servidor' ? 'SERVIDOR CENTRAL' : 'ESTAÇÃO'}</span>
+                                      {term.role === 'estacao' && term.serverIp && (
+                                        <span className="bg-neutral-900 border border-[#2d3139] font-mono text-[9px] px-1 rounded lowercase text-zinc-400">
+                                          Server: {term.serverIp}
+                                        </span>
+                                      )}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={async () => {
+                                      const confirm = window.confirm(`Deseja realmente revogar a licença do terminal "${term.name}"? Isso liberará uma contagem contratada.`);
+                                      if (!confirm) return;
+                                      try {
+                                        await deleteDoc(doc(db, 'companies', companyId, 'terminals', term.id));
+                                        toast.success(`Slot liberado: terminal "${term.name}" removido.`);
+                                        if (isActive) {
+                                          localStorage.clear();
+                                          window.location.reload();
+                                        }
+                                      } catch (err) {
+                                        toast.error("Erro ao revogar.");
+                                      }
+                                    }}
+                                    className="h-8 w-8 text-zinc-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg"
+                                  >
+                                    <Trash2 size={13} />
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Modal dinâmico de Suporte Técnico */}
+                <Dialog 
+                  open={activeSupportChannelModal !== null} 
+                  onOpenChange={(open) => !open && setActiveSupportChannelModal(null)}
+                >
+                  <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[460px] p-0 overflow-hidden shadow-2xl">
+                    {activeSupportChannelModal === 'whatsapp' && (
+                      <>
+                        <DialogHeader className="p-6 pb-4 text-left bg-[#161a20]/45 border-b border-[#2d3139]/30 bg-gradient-to-b from-emerald-950/20 to-transparent">
+                          <DialogTitle className="flex items-center gap-2 text-emerald-400 font-black uppercase italic tracking-tighter text-lg">
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            Suporte via WhatsApp
+                          </DialogTitle>
+                          <DialogDescription className="text-zinc-400 text-xs mt-1">
+                            Atendimento rápido para dúvidas, chamados e auxílio operacional.
+                          </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="p-6 pt-4 space-y-4">
+                          <div className="bg-[#0f1115] p-4 rounded-xl border border-emerald-500/15 text-left space-y-2">
+                            <span className="text-[10px] uppercase font-extrabold tracking-widest text-[#71717a]">Número de Contato:</span>
+                            <div className="text-lg font-mono font-black text-white flex items-center justify-between">
+                              <span>{(saasGlobal?.supportWhatsapp || '+55 (83) 98132-7204')}</span>
+                              <span className="text-[10px] text-[#10b981] font-sans font-extrabold uppercase tracking-wider bg-emerald-500/10 px-2 py-0.5 border border-emerald-500/20 rounded-md">Ativo</span>
+                            </div>
+                          </div>
+
+                          <div className="text-xs text-zinc-400 text-left leading-relaxed py-1 space-y-1">
+                            <p className="font-semibold text-zinc-300">📅 Horário de Atendimento:</p>
+                            <p>Segunda a Sexta-feira: 08:00 às 18:00 (Horário de Brasília).</p>
+                            <p className="text-[11px] text-zinc-500 italic mt-1">* Respostas geralmente em menos de 15 minutos durante o horário comercial.</p>
+                          </div>
+
+                          <div className="flex gap-2 pt-2 pb-2">
+                            <Button 
+                              variant="outline" 
+                              onClick={() => setActiveSupportChannelModal(null)}
+                              className="flex-1 border-[#2d3139] hover:bg-neutral-800 text-zinc-400 font-bold uppercase text-xs"
+                            >
+                              Voltar
+                            </Button>
+                            <Button 
+                              onClick={() => {
+                                const num = (saasGlobal?.supportWhatsapp || '5583981327204').replace(/\D/g, '');
+                                window.open(`https://wa.me/${num}`, '_blank');
+                              }}
+                              className="flex-[1.5] bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold uppercase text-xs tracking-wider flex items-center justify-center gap-2"
+                            >
+                              Iniciar Conversa
+                            </Button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {activeSupportChannelModal === 'telefone' && (
+                      <>
+                        <DialogHeader className="p-6 pb-4 text-left bg-[#161a20]/45 border-b border-[#2d3139]/30 bg-gradient-to-b from-sky-950/20 to-transparent">
+                          <DialogTitle className="flex items-center gap-2 text-sky-400 font-black uppercase italic tracking-tighter text-lg">
+                            <span className="w-2.5 h-2.5 rounded-full bg-sky-500"></span>
+                            Suporte por Telefone
+                          </DialogTitle>
+                          <DialogDescription className="text-zinc-400 text-xs mt-1">
+                            Fale diretamente com nossa Central de Atendimento Técnico SegurTec-Pro.
+                          </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="p-6 pt-4 space-y-4">
+                          <div className="bg-[#0f1115] p-4 rounded-xl border border-sky-500/15 text-left space-y-2">
+                            <span className="text-[10px] uppercase font-extrabold tracking-widest text-[#71717a]">Central de Voz:</span>
+                            <div className="text-lg font-mono font-black text-white flex items-center justify-between">
+                              <span>{(saasGlobal?.supportPhone || '(83) 98132-7204')}</span>
+                              <span className="text-[10px] text-sky-400 font-sans font-extrabold uppercase tracking-wider bg-sky-500/10 px-2 py-0.5 border border-sky-500/20 rounded-md">Ativa</span>
+                            </div>
+                          </div>
+
+                          <div className="text-xs text-zinc-400 text-left leading-relaxed py-1 space-y-1">
+                            <p className="font-semibold text-zinc-300">📅 Horário Comercial:</p>
+                            <p>Segunda a Sexta-feira: 08:00 às 18:00.</p>
+                            <p className="text-[11px] text-zinc-500 italic mt-1">* Chamadas de voz para suporte emergencial ou técnico operacional.</p>
+                          </div>
+
+                          <div className="flex gap-2 pt-2 pb-2">
+                            <Button 
+                              variant="outline" 
+                              onClick={() => setActiveSupportChannelModal(null)}
+                              className="flex-1 border-[#2d3139] hover:bg-neutral-800 text-zinc-400 font-bold uppercase text-xs"
+                            >
+                              Voltar
+                            </Button>
+                            <Button 
+                              onClick={() => {
+                                const phoneNum = (saasGlobal?.supportPhone || '83981327204').replace(/\D/g, '');
+                                window.location.href = `tel:${phoneNum}`;
+                              }}
+                              className="flex-[1.5] bg-sky-600 hover:bg-sky-500 text-white font-extrabold uppercase text-xs tracking-wider flex items-center justify-center gap-2"
+                            >
+                              Ligar Agora
+                            </Button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {activeSupportChannelModal === 'email' && (
+                      <>
+                        <DialogHeader className="p-6 pb-4 text-left bg-[#161a20]/45 border-b border-[#2d3139]/30 bg-gradient-to-b from-amber-950/20 to-transparent">
+                          <DialogTitle className="flex items-center gap-2 text-amber-500 font-black uppercase italic tracking-tighter text-lg">
+                            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                            Suporte via E-mail
+                          </DialogTitle>
+                          <DialogDescription className="text-zinc-400 text-xs mt-1">
+                            Envie sua dúvida, sugestão ou abra um chamado de atendimento técnico formal.
+                          </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="p-6 pt-4 space-y-4">
+                          <div className="bg-[#0f1115] p-3 rounded-xl border border-amber-500/15 text-left space-y-2">
+                            <span className="text-[10px] uppercase font-extrabold tracking-widest text-[#71717a]">Endereço de E-mail de Suporte:</span>
+                            <div className="text-xs font-mono font-bold text-white flex items-center justify-between p-2.5 bg-[#161a22] rounded border border-[#2d3139]/50 select-all">
+                              <span>{(saasGlobal?.supportEmail || 'suporte@segurtecpro.com.br')}</span>
+                              <span className="text-[9px] text-[#71717a] font-sans font-normal uppercase tracking-wider bg-zinc-800 px-1.5 py-0.5 rounded">Copiar</span>
+                            </div>
+                          </div>
+
+                          <div className="text-xs text-zinc-400 text-left leading-relaxed py-1 space-y-1">
+                            <p className="font-semibold text-zinc-300">📋 Recomendações:</p>
+                            <p>Anexe capturas de tela (prints) ou detalhes específicos do erro para que possamos solucionar o seu caso com maior rapidez e assertitividade.</p>
+                            <p className="text-[11px] text-zinc-500 italic mt-1">* Prazo de resposta: Até 24 horas úteis.</p>
+                          </div>
+
+                          <div className="flex gap-2 pt-2 pb-2">
+                            <Button 
+                              variant="outline" 
+                              onClick={() => setActiveSupportChannelModal(null)}
+                              className="flex-1 border-[#2d3139] hover:bg-neutral-800 text-zinc-400 font-bold uppercase text-xs"
+                            >
+                              Voltar
+                            </Button>
+                            <Button 
+                              onClick={() => {
+                                const emailAddr = (saasGlobal?.supportEmail || 'suporte@segurtecpro.com.br');
+                                window.location.href = `mailto:${emailAddr}?subject=Suporte Técnico SegurTec-Pro`;
+                              }}
+                              className="flex-[1.5] bg-amber-600 hover:bg-amber-500 text-white font-extrabold uppercase text-xs tracking-wider flex items-center justify-center gap-2"
+                            >
+                              Escrever E-mail
+                            </Button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {activeSupportChannelModal === 'acesso_remoto' && (
+                      <>
+                        <DialogHeader className="p-6 pb-4 text-left bg-[#161a20]/45 border-b border-[#2d3139]/30 bg-gradient-to-b from-fuchsia-950/20 to-transparent">
+                          <DialogTitle className="flex items-center gap-2 text-fuchsia-400 font-black uppercase italic tracking-tighter text-lg">
+                            <span className="w-2.5 h-2.5 rounded-full bg-fuchsia-500"></span>
+                            Acesso Remoto Rápido
+                          </DialogTitle>
+                          <DialogDescription className="text-zinc-400 text-xs mt-1">
+                            Permita que nosso atendente acesse seu computador de forma segura em tempo real.
+                          </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="p-6 pt-4 space-y-4 max-h-[380px] overflow-y-auto">
+                          <div className="space-y-3 font-medium">
+                            <h4 className="text-[10px] uppercase font-black tracking-wider text-fuchsia-400 text-left">Como Iniciar o Acesso:</h4>
+                            
+                            <div className="space-y-3 text-left">
+                              <div className="flex gap-3">
+                                <div className="flex-shrink-0 h-5 w-5 rounded-full bg-fuchsia-500/10 border border-fuchsia-500/30 text-[10px] font-black flex items-center justify-center text-fuchsia-400">
+                                  1
+                                </div>
+                                <div className="space-y-0.5">
+                                  <p className="text-xs font-bold text-white">Baixe e Abra o AnyDesk</p>
+                                  <p className="text-[11px] text-zinc-400 leading-normal">
+                                    Baixe o programa oficial de suporte AnyDesk clicando no botão verde abaixo e execute-o. Não precisa instalar.
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex gap-3">
+                                <div className="flex-shrink-0 h-5 w-5 rounded-full bg-fuchsia-500/10 border border-fuchsia-500/30 text-[10px] font-black flex items-center justify-center text-fuchsia-400">
+                                  2
+                                </div>
+                                <div className="space-y-0.5">
+                                  <p className="text-xs font-bold text-white">Localize o Número de Acesso</p>
+                                  <p className="text-[11px] text-zinc-400 leading-normal">
+                                    Na tela inicial do AnyDesk, você verá o campo <span className="font-bold text-zinc-200">"Este Computador"</span> ou <span className="font-bold text-zinc-200">"Seu Endereço"</span> contendo 9 dígitos (ex: <code className="font-mono bg-[#0f1115] px-1.5 py-0.5 rounded text-fuchsia-300 border border-[#2d3139]/40">123 456 789</code>).
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex gap-3">
+                                <div className="flex-shrink-0 h-5 w-5 rounded-full bg-fuchsia-500/10 border border-fuchsia-500/30 text-[10px] font-black flex items-center justify-center text-fuchsia-400">
+                                  3
+                                </div>
+                                <div className="space-y-0.5">
+                                  <p className="text-xs font-bold text-white">Forneça o Número ao Suporte</p>
+                                  <p className="text-[11px] text-zinc-400 leading-normal">
+                                    Copie ou digite esses 9 dígitos e informe-os ao nosso analista de suporte técnico (através do WhatsApp ou do canal aberto).
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex gap-3">
+                                <div className="flex-shrink-0 h-5 w-5 rounded-full bg-fuchsia-500/10 border border-fuchsia-500/30 text-[10px] font-black flex items-center justify-center text-fuchsia-400">
+                                  4
+                                </div>
+                                <div className="space-y-0.5">
+                                  <p className="text-xs font-bold text-slate-200">Aceite a Conexão Segura</p>
+                                  <p className="text-[11px] text-[#ef4444] font-bold leading-normal">
+                                    Uma janela solicitará sua permissão de conexão no computador. Clique em <span className="font-extrabold uppercase text-green-400">"Aceitar"</span> ou <span className="font-extrabold uppercase text-green-400">"Autorizar"</span> para liberar a tela.
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2 pt-2 pb-2">
+                            <Button 
+                              variant="outline" 
+                              onClick={() => setActiveSupportChannelModal(null)}
+                              className="flex-1 border-[#2d3139] hover:bg-neutral-800 text-zinc-400 font-bold uppercase text-xs"
+                            >
+                              Voltar
+                            </Button>
+                            <Button 
+                              onClick={() => {
+                                window.open('https://anydesk.com/pt/downloads/windows', '_blank');
+                              }}
+                              className="flex-[1.5] bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-extrabold uppercase text-xs tracking-wider flex items-center justify-center gap-2"
+                            >
+                              Baixar AnyDesk
+                            </Button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </DialogContent>
+                </Dialog>
 
                 {/* Centered Instructions Modal for System Update (Method 1) */}
                 <Dialog open={showInstallerInstructionsModal} onOpenChange={setShowInstallerInstructionsModal}>

@@ -166,3 +166,22 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   background-image: linear-gradient(90deg, #60a5fa, #93c5fd) !important;
 }
 
+/* Animated Sci-Fi Digital Cyber Grid and Radar Effects */
+@keyframes moveCyberGrid {
+  0% {
+    transform: translateY(0);
+  }
+  100% {
+    transform: translateY(40px);
+  }
+}
+
+.animate-cyber-grid {
+  background-image: 
+    linear-gradient(to right, rgba(59, 130, 246, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(59, 130, 246, 0.08) 1px, transparent 1px);
+  background-size: 40px 40px;
+  animation: moveCyberGrid 8s linear infinite;
+}
+
+

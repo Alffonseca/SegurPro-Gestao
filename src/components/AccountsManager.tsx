@@ -161,6 +161,100 @@ const getRecordPaymentsInfo = (r: any) => {
 };
 
 // ----------------------------------------------------
+// Helper to convert real currency to words (por extenso)
+// ----------------------------------------------------
+function valorPorExtenso(valor: number): string {
+  if (valor === 0) return 'zero reais';
+
+  const unidades = ['', 'um', 'dois', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove'];
+  const dezenas10_19 = ['dez', 'onze', 'doze', 'treze', 'quatorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove'];
+  const dezenas = ['', '', 'vinte', 'trinta', 'quarenta', 'cinquenta', 'sessenta', 'setenta', 'oitenta', 'noventa'];
+  const centenas = ['', 'cento', 'duzentos', 'trezentos', 'quatrocentos', 'quinhentos', 'seiscentos', 'setecentos', 'oitocentos', 'novecentos'];
+
+  const escreverGrupo = (n: number): string => {
+    if (n === 0) return '';
+    if (n === 100) return 'cem';
+    
+    let str = '';
+    const c = Math.floor(n / 100);
+    const d = Math.floor((n % 100) / 10);
+    const u = n % 10;
+
+    if (c > 0) {
+      str += centenas[c];
+    }
+
+    if (d > 0 || u > 0) {
+      if (str !== '') str += ' e ';
+      if (d === 1) {
+        str += dezenas10_19[u];
+      } else {
+        if (d > 1) {
+          str += dezenas[d];
+          if (u > 0) str += ' e ' + unidades[u];
+        } else if (u > 0) {
+          str += unidades[u];
+        }
+      }
+    }
+    return str;
+  };
+
+  const parteInteira = Math.floor(valor);
+  const centavos = Math.round((valor - parteInteira) * 100);
+
+  let resultado = '';
+
+  if (parteInteira > 0) {
+    const milhoes = Math.floor(parteInteira / 1000000) % 1000;
+    const milhares = Math.floor(parteInteira / 1000) % 1000;
+    const unidadesSimples = parteInteira % 1000;
+
+    const grupos: string[] = [];
+
+    if (milhoes > 0) {
+      grupos.push(escreverGrupo(milhoes) + (milhoes === 1 ? ' milhão' : ' milhões'));
+    }
+    if (milhares > 0) {
+      if (milhares === 1) {
+        grupos.push('mil');
+      } else {
+        grupos.push(escreverGrupo(milhares) + ' mil');
+      }
+    }
+    if (unidadesSimples > 0) {
+      grupos.push(escreverGrupo(unidadesSimples));
+    }
+
+    if (grupos.length > 1) {
+      const lastGroupVal = unidadesSimples;
+      if (lastGroupVal > 0 && (lastGroupVal < 100 || lastGroupVal % 100 === 0)) {
+        const lastPart = grupos.pop();
+        resultado = grupos.join(', ') + ' e ' + lastPart;
+      } else {
+        resultado = grupos.join(' ');
+      }
+    } else {
+      resultado = grupos[0];
+    }
+
+    resultado += (parteInteira === 1 ? ' real' : ' reais');
+  }
+
+  if (centavos > 0) {
+    const centavosTexto = escreverGrupo(centavos) + (centavos === 1 ? ' centavo' : ' centavos');
+    if (resultado !== '') {
+      resultado += ' e ' + centavosTexto;
+    } else {
+      resultado = centavosTexto;
+    }
+  }
+
+  // Capitalize first characters of major words for elegant Brazilian standard
+  return resultado.charAt(0).toUpperCase() + resultado.slice(1);
+}
+
+// ----------------------------------------------------
 // Helper to print partial and full payment receipts with discrimination of values
 // ----------------------------------------------------
 const printRecordReceipt = (r: any, isPayable: boolean, currentPayment: { date: string, value: number, paymentMethod: string }, appSettings?: any) => {
@@ -356,15 +450,21 @@ const printRecordReceipt = (r: any, isPayable: boolean, currentPayment: { date: 
     doc.setFontSize(10.5);
     doc.setTextColor(30, 41, 59); // Slate-800
 
-    const valorExtenso = `R$ ${Number(currentPayment.value).toFixed(2).replace('.', ',')}`;
+    const valorExtensoStr = valorPorExtenso(Number(currentPayment.value));
+    const valueFormatted = Number(currentPayment.value).toFixed(2).replace('.', ',');
+    const valorComExtenso = `R$ ${valueFormatted} (${valorExtensoStr})`;
+    
     const pNameUpper = String(personName || 'N/A').toUpperCase();
-    const actionPhrase = isPayable 
-      ? `foi integralmente pago pela empresa ${String(appSettings?.companyName || 'SEGURTEC-PRO').toUpperCase()} ao favorecido ${pNameUpper}`
-      : `foi recebido de ${pNameUpper} por ${String(appSettings?.companyName || 'SEGURTEC-PRO').toUpperCase()}`;
+    const cNameUpper = String(appSettings?.companyName || 'AF SUPORTE TECNICO EM SEG. E INF.').toUpperCase();
 
-    const statementText = `Declaramos para os devidos fins e efeitos de direito que o valor de ${valorExtenso} (${actionPhrase}) no dia ${latestPaymentDateStr} via ${currentPayment.paymentMethod.toUpperCase()}, referente ao pagamento de: "${String(r.description || 'N/A').toUpperCase()}".
+    let statementText = '';
+    if (isPayable) {
+      statementText = `Declaramos para os devidos fins e efeitos de direito que o valor de ${valorComExtenso} foi integralmente pago pela empresa ${cNameUpper} ao favorecido ${pNameUpper} via ${currentPayment.paymentMethod.toUpperCase()}.`;
+    } else {
+      statementText = `Declaramos para os devidos fins e efeitos de direito que o valor de ${valorComExtenso} foi recebido de ${pNameUpper} por ${cNameUpper} via ${currentPayment.paymentMethod.toUpperCase()}, referente ao pagamento de: "${String(r.description || 'N/A').toUpperCase()}".`;
+    }
 
-Por se tratar da liquidacao integral deste documento, damos por este meio a plena, geral e irrevogavel quitacao do valor recebido, para nada mais haver a pleitear ou reclamar sobre o objeto deste recibo.`;
+    statementText += `\n\nPor se tratar da liquidacao integral deste documento, damos por este meio a plena, geral e irrevogavel quitacao do valor recebido, para nada mais haver a pleitear ou reclamar sobre o objeto deste recibo.`;
 
     const wrappedStatement = doc.splitTextToSize(statementText, contentWidth);
     wrappedStatement.forEach((line: string) => {
@@ -398,29 +498,47 @@ Por se tratar da liquidacao integral deste documento, damos por este meio a plen
 
   const sigY = y + 22;
 
-  // Draw signature image if present in appSettings
-  if (appSettings?.signatureUrl) {
-    try {
-      doc.addImage(appSettings.signatureUrl, 'PNG', 105 - 25, sigY - 14, 50, 13);
-    } catch (imgErr) {
-      console.warn('Could not draw signature image:', imgErr);
+  if (isPayable) {
+    // For Contas a Pagar: The Favored/Supplier signs the receipt proving they received the payment.
+    // Ensure we do NOT draw our own company's digital signature image here!
+    
+    // Draw signature line
+    doc.setDrawColor(15, 23, 42);
+    doc.setLineWidth(0.4);
+    doc.line(105 - 45, sigY, 105 + 45, sigY);
+
+    // Under signature line text - displays recipient / supplier details
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text(String(personName).toUpperCase(), 105, sigY + 5, { align: 'center' });
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.text('FAVORECIDO / RECEBEDOR', 105, sigY + 10, { align: 'center' });
+  } else {
+    // For Contas a Receber: Our company receives money from client, so our company signs.
+    if (appSettings?.signatureUrl) {
+      try {
+        doc.addImage(appSettings.signatureUrl, 'PNG', 105 - 25, sigY - 14, 50, 13);
+      } catch (imgErr) {
+        console.warn('Could not draw signature image:', imgErr);
+      }
     }
-  }
 
-  // Draw signature line
-  doc.setDrawColor(15, 23, 42);
-  doc.setLineWidth(0.4);
-  doc.line(105 - 45, sigY, 105 + 45, sigY);
+    // Draw signature line
+    doc.setDrawColor(15, 23, 42);
+    doc.setLineWidth(0.4);
+    doc.line(105 - 45, sigY, 105 + 45, sigY);
 
-  // Under signature line text
-  doc.setFont('Helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text(String(appSettings?.companyName || 'SEGURTEC-PRO').toUpperCase(), 105, sigY + 5, { align: 'center' });
-  doc.setFont('Helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.text(String(appSettings?.responsible || 'André').toUpperCase(), 105, sigY + 10, { align: 'center' });
-  if (appSettings?.document) {
-    doc.text(`CNPJ/CPF: ${appSettings.document}`, 105, sigY + 14, { align: 'center' });
+    // Under signature line text
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text(String(appSettings?.companyName || 'SEGURTEC-PRO').toUpperCase(), 105, sigY + 5, { align: 'center' });
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.text(String(appSettings?.responsible || 'André').toUpperCase(), 105, sigY + 10, { align: 'center' });
+    if (appSettings?.document) {
+      doc.text(`CNPJ/CPF: ${appSettings.document}`, 105, sigY + 14, { align: 'center' });
+    }
   }
 
   y = sigY + 22;
@@ -429,7 +547,7 @@ Por se tratar da liquidacao integral deste documento, damos por este meio a plen
   doc.setFont('Helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(148, 163, 184);
-  doc.text('Comprovante emitido eletronicamente via Sistema Integrado SegurPro.', 105, y, { align: 'center' });
+  doc.text('Comprovante emitido eletronicamente via Sistema Integrado SegurTec-Pro.', 105, y, { align: 'center' });
 
   // Save the receipt PDF
   const filename = `recibo_${String(personName).replace(/\s+/g, '_').toLowerCase()}_${format(new Date(), 'yyyyMMdd_HHmmss')}.pdf`;
@@ -955,7 +1073,7 @@ export function PayableManager({ companyId, suppliers = [], pixSettings, appSett
                            <div>{p.description}</div>
                            {p.notes && <p className="text-[10px] text-gray-500 font-mono mt-0.5">{p.notes}</p>}
                            
-                           {p.partialPayments && p.partialPayments.length > 0 && (
+                           {p.partialPayments && (p.status === 'Parcial' || p.partialPayments.length > 1) && (
                              <div className="text-[10px] text-zinc-500 mt-2 space-y-1 bg-[#0f1115]/50 p-2.5 rounded-lg border border-[#2d3139]/30 max-w-[320px]">
                                <span className="text-[9px] uppercase tracking-wider font-extrabold text-amber-400 font-mono block">Histórico de Baixas Parciais:</span>
                                {p.partialPayments.map((pay: any, idx: number) => (
@@ -2046,7 +2164,7 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
                             </div>
                             {r.notes && <p className="text-[10px] text-gray-500 font-mono mt-1 italic">{r.notes}</p>}
 
-                            {r.partialPayments && r.partialPayments.length > 0 && (
+                            {r.partialPayments && (r.status === 'Parcial' || r.partialPayments.length > 1) && (
                               <div className="text-[10px] text-zinc-500 mt-2 space-y-1 bg-[#0f1115]/50 p-2.5 rounded-lg border border-[#2d3139]/30 max-w-[320px]">
                                 <span className="text-[9px] uppercase tracking-wider font-extrabold text-amber-500 font-mono block">Histórico de Baixas Parciais:</span>
                                 {r.partialPayments.map((pay: any, idx: number) => (

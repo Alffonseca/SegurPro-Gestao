@@ -86,7 +86,7 @@ export default function LicenseVerifierSplash({
             Validação de Licenciamento
           </h1>
           <p className="text-[#a0a0a0] text-xs font-semibold uppercase tracking-[0.25em]">
-            {company?.name || appSettings?.companyName || 'SegurPro SaaS Client'}
+            {company?.name || appSettings?.companyName || 'SegurTec-Pro SaaS Client'}
           </p>
         </div>
 
@@ -265,7 +265,7 @@ export default function LicenseVerifierSplash({
         </div>
 
         <p className="text-center text-[10px] text-[#555] uppercase font-semibold tracking-widest pt-2">
-          ® Autenticação Encriptada SegurPro - Certificado SSL / TLS Ativo
+          ® Autenticação Encriptada SegurTec-Pro - Certificado SSL / TLS Ativo
         </p>
 
       </div>
