@@ -132,7 +132,7 @@ import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
 import autoTable from 'jspdf-autotable';
 
-import { db, auth, handleFirestoreError, OperationType, firebaseConfig } from './firebase';
+import { db, auth, handleFirestoreError, OperationType, firebaseConfig, isLocalDb } from './firebase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -11920,6 +11920,11 @@ function SettingsManager({
   const [foundUpdateInfo, setFoundUpdateInfo] = useState<{ version: string; notes: string; fileUrl: string } | null>(null);
   const [showInstallerInstructionsModal, setShowInstallerInstructionsModal] = useState(false);
 
+  const isHostLocal = window.location.hostname === 'localhost' || 
+                      window.location.hostname === '127.0.0.1' || 
+                      /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname) || 
+                      (typeof isLocalDb !== 'undefined' && isLocalDb);
+
   const handleCheckUpdates = async () => {
     setIsCheckingUpdates(true);
     setUpdateStatus('checking');
@@ -12802,8 +12807,22 @@ function SettingsManager({
                     <div className="space-y-3">
                       <div className="flex justify-between items-center py-1.5 border-b border-[#2d3139]/30">
                         <span className="text-[11px] text-[#71717a] uppercase font-bold tracking-wider">Atualizações On-line:</span>
-                        <span className={`text-xs font-bold ${currentCompany?.receivesUpdates === false ? 'text-orange-400' : 'text-blue-400'}`}>
-                          {currentCompany?.receivesUpdates === false ? 'TRAVADA (Bloqueado)' : 'HABILITADA (Recebendo Recursos)'}
+                        <span className={`text-xs font-bold ${
+                          currentCompany?.dbMode === 'online'
+                            ? 'text-blue-300'
+                            : (currentCompany?.dbMode === 'default' && !isHostLocal)
+                            ? 'text-blue-300'
+                            : currentCompany?.receivesUpdates === false
+                            ? 'text-orange-400'
+                            : 'text-blue-300'
+                        }`}>
+                          {currentCompany?.dbMode === 'online'
+                            ? 'HABILITADA (Plano Web Cloud)'
+                            : (currentCompany?.dbMode === 'default' && !isHostLocal)
+                            ? 'HABILITADA (Plano Web Cloud)'
+                            : currentCompany?.receivesUpdates === false
+                            ? 'TRAVADA (Bloqueado)'
+                            : 'HABILITADA (Recebendo Recursos)'}
                         </span>
                       </div>
 
@@ -12987,187 +13006,189 @@ function SettingsManager({
                     );
                   })()}
 
-                    {currentCompany?.receivesUpdates === false && (
-                      <div className="bg-orange-500/10 border border-orange-500/20 p-3 rounded-lg flex items-center gap-3 mt-4">
-                        <AlertTriangle className="h-5 w-5 text-orange-400 shrink-0" />
-                        <div>
-                          <h4 className="text-orange-400 font-bold text-xs uppercase italic tracking-wider">Atenção: Licença em Versão Estática</h4>
-                          <p className="text-[#a0a0a0] text-[10px] leading-relaxed">
-                            Esta empresa não possui direito a novas atualizações de recursos. Solicite a liberação técnica com o administrador SaaS.
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* Terminais e Rede Local (Estações) */}
-                <Card className="bg-[#1a1d23] border-[#2d3139] text-white overflow-hidden relative mb-8">
-                  <CardHeader className="border-b border-[#2d3139]/30 bg-[#16191f]/40 p-5">
-                    <div className="flex items-center justify-between">
+                  {currentCompany?.receivesUpdates === false && currentCompany?.dbMode !== 'online' && (currentCompany?.dbMode !== 'default' || isHostLocal) && (
+                    <div className="bg-orange-500/10 border border-orange-500/20 p-3 rounded-lg flex items-center gap-3 mt-4">
+                      <AlertTriangle className="h-5 w-5 text-orange-400 shrink-0" />
                       <div>
-                        <CardTitle className="text-base flex items-center gap-2">
-                          <Monitor className="text-indigo-400" size={18} />
-                          Terminais & Rede Local (Estações)
-                        </CardTitle>
-                        <CardDescription className="text-[#71717a] text-[11px] uppercase tracking-wider font-semibold">
-                          Controle de Computadores Autorizados e Rede Local.
-                        </CardDescription>
+                        <h4 className="text-orange-400 font-bold text-xs uppercase italic tracking-wider">Atenção: Licença em Versão Estática</h4>
+                        <p className="text-[#a0a0a0] text-[10px] leading-relaxed">
+                          Esta empresa não possui direito a novas atualizações de recursos. Solicite a liberação técnica com o administrador SaaS.
+                        </p>
                       </div>
-                      <span className="text-xs font-mono font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2.5 py-1 rounded">
-                        {companyTerminals.filter(t => t.role === 'estacao').length} / {currentCompany?.maxStationsLimit !== undefined ? currentCompany.maxStationsLimit : 3} Estações
-                      </span>
                     </div>
-                  </CardHeader>
+                  )}
+                </CardContent>
+              </Card>
 
-                  <CardContent className="p-5 text-left space-y-6">
-                    {/* Info about this machine */}
-                    <div className="p-4 bg-[#0f1115]/80 border border-[#2d3139] rounded-xl">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-indigo-400 flex items-center gap-2 mb-3">
-                        <Cpu size={14} />
-                        Este Dispositivo Local
-                      </h4>
-                      
-                      {currentTerminal ? (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div className="space-y-1">
-                            <p className="text-[10px] text-zinc-500 uppercase font-black">Identificação do Terminal</p>
-                            <p className="text-xs font-bold text-white">{currentTerminal.name}</p>
-                          </div>
-                          <div className="space-y-1">
-                            <p className="text-[10px] text-zinc-500 uppercase font-black">Papel na Rede</p>
-                            <p className="text-xs font-bold text-indigo-300 uppercase">
-                              {currentTerminal.role === 'servidor' ? '★ Servidor Principal' : 'Estação de Trabalho'}
-                            </p>
-                          </div>
-                          <div className="space-y-1">
-                            <p className="text-[10px] text-zinc-500 uppercase font-black">Destino do Banco de Dados (IP)</p>
-                            <p className="text-xs font-mono text-zinc-300">
-                              {currentTerminal.role === 'servidor' ? 'Servidor Local (localhost / 127.0.0.1)' : `${currentTerminal.serverIp}`}
-                            </p>
-                          </div>
+              {/* Terminais e Rede Local (Estações) */}
+              {currentCompany?.dbMode !== 'online' && (
+                <Card className="bg-[#1a1d23] border-[#2d3139] text-white overflow-hidden relative mb-8">
+                    <CardHeader className="border-b border-[#2d3139]/30 bg-[#16191f]/40 p-5">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle className="text-base flex items-center gap-2">
+                            <Monitor className="text-indigo-400" size={18} />
+                            Terminais & Rede Local (Estações)
+                          </CardTitle>
+                          <CardDescription className="text-[#71717a] text-[11px] uppercase tracking-wider font-semibold">
+                            Controle de Computadores Autorizados e Rede Local.
+                          </CardDescription>
                         </div>
-                      ) : (
-                        <p className="text-xs text-red-400 font-bold">⚠️ Este dispositivo ainda não está registrado como terminal desta licença.</p>
-                      )}
-
-                      <div className="mt-4 pt-4 border-t border-[#2d3139]/40 flex flex-wrap gap-2 justify-end">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            const confirm = window.confirm("Deseja realmente reconfigurar este terminal? Você retornará ao fluxo de registro.");
-                            if (confirm) {
-                              localStorage.removeItem('TERMINAL_ID');
-                              localStorage.removeItem('TERMINAL_NAME');
-                              localStorage.removeItem('TERMINAL_ROLE');
-                              localStorage.removeItem('TERMINAL_SERVER_IP');
-                              if (setCurrentTerminal) setCurrentTerminal(null);
-                              window.location.reload();
-                            }
-                          }}
-                          className="border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#1a1d23] text-xs font-bold h-8"
-                        >
-                          <Settings size={12} className="mr-1.5" />
-                          Reconfigurar Máquina Local
-                        </Button>
+                        <span className="text-xs font-mono font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2.5 py-1 rounded">
+                          {companyTerminals.filter(t => t.role === 'estacao').length} / {currentCompany?.maxStationsLimit !== undefined ? currentCompany.maxStationsLimit : 3} Estações
+                        </span>
                       </div>
-                    </div>
+                    </CardHeader>
 
-                    {/* Network Guide block if in Local / Hybrid Mode */}
-                    <div className="p-4 bg-indigo-950/10 border border-indigo-500/20 rounded-xl space-y-2">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
-                        <Network size={14} />
-                        Instruções para Conexão de Múltiplas Máginas
-                      </h4>
-                      <p className="text-zinc-300 text-xs leading-normal">
-                        Para que as estações adicionais trabalhem integradas, elas devem "enxergar" o Servidor Principal na mesma rede local:
-                      </p>
-                      <ul className="text-zinc-400 text-[11px] list-disc list-inside space-y-1 pl-1">
-                        <li>Certifique-se de que todos os computadores estão no mesmo roteador / Wi-Fi da empresa.</li>
-                        <li>No computador configurado como <b>Servidor Main</b>, abra o CMD e digite <code className="text-indigo-300 font-mono">ipconfig</code> para obter o <code className="text-white font-mono">IPv4</code> (Ex: <code className="text-indigo-400">192.168.1.100</code>).</li>
-                        <li>Nas outras máquinas (<b>Estações</b>), quando solicitado no início ou nas configurações, insira este endereço IP no campo do servidor.</li>
-                        <li>O sistema roteará as conexões para trabalharem unificadas no banco de dados do Servidor Central.</li>
-                      </ul>
-                    </div>
+                    <CardContent className="p-5 text-left space-y-6">
+                      {/* Info about this machine */}
+                      <div className="p-4 bg-[#0f1115]/80 border border-[#2d3139] rounded-xl">
+                        <h4 className="text-xs font-black uppercase tracking-wider text-indigo-400 flex items-center gap-2 mb-3">
+                          <Cpu size={14} />
+                          Este Dispositivo Local
+                        </h4>
+                        
+                        {currentTerminal ? (
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="space-y-1">
+                              <p className="text-[10px] text-zinc-500 uppercase font-black">Identificação do Terminal</p>
+                              <p className="text-xs font-bold text-white">{currentTerminal.name}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[10px] text-zinc-500 uppercase font-black">Papel na Rede</p>
+                              <p className="text-xs font-bold text-indigo-300 uppercase">
+                                {currentTerminal.role === 'servidor' ? '★ Servidor Principal' : 'Estação de Trabalho'}
+                              </p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[10px] text-zinc-500 uppercase font-black">Destino do Banco de Dados (IP)</p>
+                              <p className="text-xs font-mono text-zinc-300">
+                                {currentTerminal.role === 'servidor' ? 'Servidor Local (localhost / 127.0.0.1)' : `${currentTerminal.serverIp}`}
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-red-400 font-bold">⚠️ Este dispositivo ainda não está registrado como terminal desta licença.</p>
+                        )}
 
-                    {/* Monitor All terminals */}
-                    <div className="space-y-3">
-                      <p className="text-zinc-400 text-[10px] font-black uppercase tracking-wider pl-1 font-bold">
-                        Terminais Ativos Registrados sob esta Licença
-                      </p>
+                        <div className="mt-4 pt-4 border-t border-[#2d3139]/40 flex flex-wrap gap-2 justify-end">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              const confirm = window.confirm("Deseja realmente reconfigurar este terminal? Você retornará ao fluxo de registro.");
+                              if (confirm) {
+                                localStorage.removeItem('TERMINAL_ID');
+                                localStorage.removeItem('TERMINAL_NAME');
+                                localStorage.removeItem('TERMINAL_ROLE');
+                                localStorage.removeItem('TERMINAL_SERVER_IP');
+                                if (setCurrentTerminal) setCurrentTerminal(null);
+                                window.location.reload();
+                              }
+                            }}
+                            className="border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#1a1d23] text-xs font-bold h-8"
+                          >
+                            <Settings size={12} className="mr-1.5" />
+                            Reconfigurar Máquina Local
+                          </Button>
+                        </div>
+                      </div>
 
-                      {companyTerminals.length === 0 ? (
-                        <p className="text-xs text-zinc-500 italic pl-1">Nenhum terminal cadastrado ainda.</p>
-                      ) : (
-                        <div className="grid grid-cols-1 gap-2.5">
-                          {companyTerminals.map((term) => {
-                            const isActive = term.id === currentTerminal?.id;
-                            return (
-                              <div 
-                                key={term.id}
-                                className={`p-3 border rounded-xl flex items-center justify-between transition-all ${
-                                  isActive 
-                                    ? 'bg-indigo-500/5 border-indigo-500/30' 
-                                    : 'bg-[#0f1115]/50 border-[#2d3139]/50 hover:border-[#2d3139]'
-                                }`}
-                              >
-                                <div className="flex items-center gap-3 text-left">
-                                  <div className={`p-2 rounded-lg ${term.role === 'servidor' ? 'bg-indigo-500/15 text-indigo-400' : 'bg-zinc-500/10 text-zinc-400'}`}>
-                                    {term.role === 'servidor' ? <Server size={14} className="shrink-0" /> : <Monitor size={14} className="shrink-0" />}
-                                  </div>
-                                  <div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-xs font-bold text-white leading-none">{term.name}</span>
-                                      {isActive && (
-                                        <span className="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-indigo-500 text-white leading-none">
-                                          ESTA MÁQUINA
-                                        </span>
-                                      )}
+                      {/* Network Guide block if in Local / Hybrid Mode */}
+                      <div className="p-4 bg-indigo-950/10 border border-indigo-500/20 rounded-xl space-y-2">
+                        <h4 className="text-xs font-black uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
+                          <Network size={14} />
+                          Instruções para Conexão de Múltiplas Máginas
+                        </h4>
+                        <p className="text-zinc-300 text-xs leading-normal">
+                          Para que as estações adicionais trabalhem integradas, elas devem "enxergar" o Servidor Principal na mesma rede local:
+                        </p>
+                        <ul className="text-zinc-400 text-[11px] list-disc list-inside space-y-1 pl-1">
+                          <li>Certifique-se de que todos os computadores estão no mesmo roteador / Wi-Fi da empresa.</li>
+                          <li>No computador configurado como <b>Servidor Main</b>, abra o CMD e digite <code className="text-indigo-300 font-mono">ipconfig</code> para obter o <code className="text-white font-mono">IPv4</code> (Ex: <code className="text-indigo-400">192.168.1.100</code>).</li>
+                          <li>Nas outras máquinas (<b>Estações</b>), quando solicitado no início ou nas configurações, insira este endereço IP no campo do servidor.</li>
+                          <li>O sistema roteará as conexões para trabalharem unificadas no banco de dados do Servidor Central.</li>
+                        </ul>
+                      </div>
+
+                      {/* Monitor All terminals */}
+                      <div className="space-y-3">
+                        <p className="text-zinc-400 text-[10px] font-black uppercase tracking-wider pl-1 font-bold">
+                          Terminais Ativos Registrados sob esta Licença
+                        </p>
+
+                        {companyTerminals.length === 0 ? (
+                          <p className="text-xs text-zinc-500 italic pl-1">Nenhum terminal cadastrado ainda.</p>
+                        ) : (
+                          <div className="grid grid-cols-1 gap-2.5">
+                            {companyTerminals.map((term) => {
+                              const isActive = term.id === currentTerminal?.id;
+                              return (
+                                <div 
+                                  key={term.id}
+                                  className={`p-3 border rounded-xl flex items-center justify-between transition-all ${
+                                    isActive 
+                                      ? 'bg-indigo-500/5 border-indigo-500/30' 
+                                      : 'bg-[#0f1115]/50 border-[#2d3139]/50 hover:border-[#2d3139]'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3 text-left">
+                                    <div className={`p-2 rounded-lg ${term.role === 'servidor' ? 'bg-indigo-500/15 text-indigo-400' : 'bg-zinc-500/10 text-zinc-400'}`}>
+                                      {term.role === 'servidor' ? <Server size={14} className="shrink-0" /> : <Monitor size={14} className="shrink-0" />}
                                     </div>
-                                    <p className="text-[10px] text-zinc-500 font-semibold uppercase tracking-wider mt-1 flex items-center gap-1">
-                                      <span>{term.role === 'servidor' ? 'SERVIDOR CENTRAL' : 'ESTAÇÃO'}</span>
-                                      {term.role === 'estacao' && term.serverIp && (
-                                        <span className="bg-neutral-900 border border-[#2d3139] font-mono text-[9px] px-1 rounded lowercase text-zinc-400">
-                                          Server: {term.serverIp}
-                                        </span>
-                                      )}
-                                    </p>
+                                    <div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs font-bold text-white leading-none">{term.name}</span>
+                                        {isActive && (
+                                          <span className="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-indigo-500 text-white leading-none">
+                                            ESTA MÁQUINA
+                                          </span>
+                                        )}
+                                      </div>
+                                      <p className="text-[10px] text-zinc-500 font-semibold uppercase tracking-wider mt-1 flex items-center gap-1">
+                                        <span>{term.role === 'servidor' ? 'SERVIDOR CENTRAL' : 'ESTAÇÃO'}</span>
+                                        {term.role === 'estacao' && term.serverIp && (
+                                          <span className="bg-neutral-900 border border-[#2d3139] font-mono text-[9px] px-1 rounded lowercase text-zinc-400">
+                                            Server: {term.serverIp}
+                                          </span>
+                                        )}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-2">
+                                    <Button
+                                      type="button"
+                                      size="icon"
+                                      variant="ghost"
+                                      onClick={async () => {
+                                        const confirm = window.confirm(`Deseja realmente revogar a licença do terminal "${term.name}"? Isso liberará uma contagem contratada.`);
+                                        if (!confirm) return;
+                                        try {
+                                          await deleteDoc(doc(db, 'companies', companyId, 'terminals', term.id));
+                                          toast.success(`Slot liberado: terminal "${term.name}" removido.`);
+                                          if (isActive) {
+                                            localStorage.clear();
+                                            window.location.reload();
+                                          }
+                                        } catch (err) {
+                                          toast.error("Erro ao revogar.");
+                                        }
+                                      }}
+                                      className="h-8 w-8 text-zinc-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg"
+                                    >
+                                      <Trash2 size={13} />
+                                    </Button>
                                   </div>
                                 </div>
-
-                                <div className="flex items-center gap-2">
-                                  <Button
-                                    type="button"
-                                    size="icon"
-                                    variant="ghost"
-                                    onClick={async () => {
-                                      const confirm = window.confirm(`Deseja realmente revogar a licença do terminal "${term.name}"? Isso liberará uma contagem contratada.`);
-                                      if (!confirm) return;
-                                      try {
-                                        await deleteDoc(doc(db, 'companies', companyId, 'terminals', term.id));
-                                        toast.success(`Slot liberado: terminal "${term.name}" removido.`);
-                                        if (isActive) {
-                                          localStorage.clear();
-                                          window.location.reload();
-                                        }
-                                      } catch (err) {
-                                        toast.error("Erro ao revogar.");
-                                      }
-                                    }}
-                                    className="h-8 w-8 text-zinc-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg"
-                                  >
-                                    <Trash2 size={13} />
-                                  </Button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
 
                 {/* Modal dinâmico de Suporte Técnico */}
                 <Dialog 
