@@ -41,6 +41,16 @@ export { firebaseConfig };
 // Dynamic mode toggle
 export const isLocalDb = (() => {
   const override = localStorage.getItem('DB_MODE_OVERRIDE');
+  const isWebLoc = typeof window !== 'undefined' && 
+                    window.location.hostname !== 'localhost' && 
+                    window.location.hostname !== '127.0.0.1' && 
+                    !/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname);
+
+  if (isWebLoc && override === 'local') {
+    localStorage.removeItem('DB_MODE_OVERRIDE');
+    return false;
+  }
+
   if (override === 'local') return true;
   if (override === 'online') return false;
   return (import.meta as any).env.VITE_LOCAL_DB === 'true';

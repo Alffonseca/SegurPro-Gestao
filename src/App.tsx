@@ -3548,9 +3548,18 @@ export default function MainApp() {
         // Auto synchronization with dbMode setting from license management
         const savedCompanyDbMode = compData.dbMode || 'default';
         const currentSavedMode = localStorage.getItem('DB_MODE_OVERRIDE') || 'default';
-        if (savedCompanyDbMode !== currentSavedMode) {
-          localStorage.setItem('DB_MODE_OVERRIDE', savedCompanyDbMode);
-          console.log(`[Database Sync] Switched from ${currentSavedMode} to ${savedCompanyDbMode} based on company's license settings.`);
+        const isHostWeb = window.location.hostname !== 'localhost' && 
+                           window.location.hostname !== '127.0.0.1' && 
+                           !/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname);
+        
+        // If the company is strictly local-only and we are on the cloud website,
+        // we must NOT toggle DB_MODE_OVERRIDE to 'local' (otherwise it breaks Cloud Firebase Auth/session and kicks the user out).
+        // Instead, keep DB_MODE_OVERRIDE as default/online so they remain signed in, and render the lock screen.
+        const targetSavedMode = (savedCompanyDbMode === 'local' && isHostWeb) ? 'default' : savedCompanyDbMode;
+
+        if (targetSavedMode !== currentSavedMode) {
+          localStorage.setItem('DB_MODE_OVERRIDE', targetSavedMode);
+          console.log(`[Database Sync] Switched from ${currentSavedMode} to ${targetSavedMode} based on company's license settings.`);
           toast.info("Ajustando banco de dados com base na licença da empresa...", { duration: 1500 });
           setTimeout(() => {
             window.location.reload();
