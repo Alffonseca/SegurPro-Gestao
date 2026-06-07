@@ -4865,13 +4865,16 @@ export default function MainApp() {
 
           </div>
 
-          <p className="text-center text-xs text-[#555] pt-4">© 2026 {appSettings.companyName || 'SegurTec-Pro Gestão'}. Todos os direitos reservados.</p>
+          <p className="text-center text-xs text-[#71717a] font-medium uppercase tracking-wider pt-4">
+            Sistema desenvolvido por AF TECNOLOGIA. Todos os direitos reservados.
+          </p>
         </div>
       </div>
     );
   }
 
   // Show brand/intro video screen ONLY when login, license verification, and terminal registration (if required) are 100% complete
+  const maxStationsLimit = currentCompany?.maxStationsLimit !== undefined ? Number(currentCompany.maxStationsLimit) : 3;
   const isSystemReady = !!(
     user && 
     currentUserData?.companyId && 
@@ -4880,7 +4883,7 @@ export default function MainApp() {
       currentCompany.status !== 'blocked' &&
       !(currentCompany.dbMode === 'local' && (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' && !/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname))) &&
       !isLicenseVerifying &&
-      (currentCompany.dbMode === 'online' || currentTerminal)
+      (currentCompany.dbMode === 'online' || maxStationsLimit <= 1 || currentTerminal)
     ))
   );
   const isIntroPending = isSystemReady && !hasPlayedIntro.current;
@@ -5015,7 +5018,8 @@ export default function MainApp() {
   }
 
   // Workstation Terminal license validation - Super Admin and pure Web companies bypass this
-  if (user && currentUserData?.companyId && currentCompany && !isLicenseVerifying && !currentTerminal && !isSuperAdmin && currentCompany?.dbMode !== 'online') {
+  // Only display if maxStationsLimit is greater than 1 (meaning more than 1 station configured in SaaS menu)
+  if (user && currentUserData?.companyId && currentCompany && !isLicenseVerifying && !currentTerminal && !isSuperAdmin && currentCompany?.dbMode !== 'online' && maxStationsLimit > 1) {
     return (
       <TerminalRegistrationScreen 
         company={currentCompany}

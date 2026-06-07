@@ -144,8 +144,8 @@ export default function IntroSplashScreen({
             </div>
           </div>
 
-          <div className="absolute bottom-8 text-center w-full font-mono text-[9px] text-zinc-600">
-            <span>TECNOLOGIA DE PONTA © {new Date().getFullYear()}</span>
+          <div className="absolute bottom-8 text-center w-full text-xs text-[#71717a] font-medium uppercase tracking-wider">
+            <span>Sistema desenvolvido por AF TECNOLOGIA. Todos os direitos reservados.</span>
           </div>
         </motion.div>
       )}

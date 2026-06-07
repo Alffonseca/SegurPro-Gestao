@@ -38,34 +38,44 @@ export default function LicenseVerifierSplash({
   const [progress, setProgress] = useState(0);
   const [isScanning, setIsScanning] = useState(true);
 
+  const isWebMode = company?.dbMode === 'online';
+  const receivesUpdatesStatus = isWebMode ? true : (company?.receivesUpdates !== false);
+
   const steps = [
     { name: 'Autenticação de Usuário', desc: `Vínculo ativo: ${user?.email}` },
     { name: 'Sincronização de Assinatura', desc: company?.isExempt ? 'Licença Isenta / Cortesia de Parceria' : `Licença SaaS Ativa (Ciclo: ${company?.billingCycle || 'Mensal'})` },
     { name: 'Verificação de Recursos', desc: `${company?.enabledMenus?.length || 14} menus operacionais liberados` },
-    { name: 'Status de Atualizações', desc: company?.receivesUpdates === false ? 'Licença sem direito a atualizações' : 'Recebendo novos recursos e patches' },
+    { name: 'Status de Atualizações', desc: !receivesUpdatesStatus ? 'Licença sem direito a atualizações' : 'Recebendo novos recursos e patches' },
     { name: 'Banco de Dados do Cliente', desc: company?.dbMode === 'local' ? 'Servidor Local (SQLite / JSON no Windows %Appdata%)' : 'Modo Cloud Firebase (100% em Nuvem)' }
   ];
 
   useEffect(() => {
-    // Progress bar and steps simulation
+    const duration = 10000; // Exact 10 seconds tracking
+    const intervalTime = 100; // Update every 100ms
+    const start = Date.now();
+
     const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsScanning(false);
-          return 100;
-        }
-        
-        const nextProgress = prev + Math.floor(Math.random() * 8) + 4;
-        const currentStep = Math.min(Math.floor((nextProgress / 100) * steps.length), steps.length - 1);
-        setStep(currentStep);
-        
-        return Math.min(nextProgress, 100);
-      });
-    }, 120);
+      const elapsed = Date.now() - start;
+      const calculatedProgress = Math.min((elapsed / duration) * 100, 100);
+
+      setProgress(Math.round(calculatedProgress));
+
+      const currentStep = Math.min(
+        Math.floor((calculatedProgress / 100) * steps.length),
+        steps.length - 1
+      );
+      setStep(currentStep);
+
+      if (calculatedProgress >= 100) {
+        clearInterval(interval);
+        setIsScanning(false);
+        // Stated requirement: Automatic transition after 10 seconds!
+        onVerified();
+      }
+    }, intervalTime);
 
     return () => clearInterval(interval);
-  }, [steps.length]);
+  }, [onVerified, steps.length]);
 
   const dbModeLabel = company?.dbMode === 'local' ? 'Local Server (%AppData% JSON)' : company?.dbMode === 'online' ? 'Nuvem Cloud (Firebase)' : 'Híbrido Padrão';
   const customPriceFormatted = company?.customPrice && parseFloat(company.customPrice) > 0 
@@ -140,8 +150,8 @@ export default function LicenseVerifierSplash({
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-[#a0a0a0] font-medium">Recebe Atualizações:</span>
-                  <span className={`text-xs font-bold ${company?.receivesUpdates === false ? 'text-orange-400 bg-orange-500/10 border-orange-500/20' : 'text-blue-400 bg-blue-500/10 border-blue-500/20'} border px-2 py-0.5 rounded uppercase`}>
-                    {company?.receivesUpdates === false ? 'Bloqueada' : 'Liberadas'}
+                  <span className={`text-xs font-bold ${(!receivesUpdatesStatus) ? 'text-orange-400 bg-orange-500/10 border-orange-500/20' : 'text-blue-400 bg-blue-500/10 border-blue-500/20'} border px-2 py-0.5 rounded uppercase`}>
+                    {(!receivesUpdatesStatus) ? 'Bloqueada' : 'Liberadas'}
                   </span>
                 </div>
               </div>
@@ -211,7 +221,7 @@ export default function LicenseVerifierSplash({
             </div>
 
             {/* Warning if updates are locked */}
-            {company?.receivesUpdates === false && !isScanning && (
+            {(!receivesUpdatesStatus) && !isScanning && (
               <motion.div 
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -230,42 +240,8 @@ export default function LicenseVerifierSplash({
           </CardContent>
         </Card>
 
-        {/* Footer Actions */}
-        <div className="flex flex-col sm:flex-row gap-3">
-          <Button 
-            onClick={onSignOut}
-            variant="outline"
-            className="flex-1 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#1a1d23] h-11 text-xs uppercase font-extrabold tracking-wider"
-          >
-            <LogOut size={14} className="mr-2" />
-            Desconectar Usuário
-          </Button>
-
-          <Button 
-            disabled={isScanning}
-            onClick={onVerified}
-            className={`flex-[2] text-white font-bold h-11 text-xs uppercase tracking-widest ${
-              isScanning 
-                ? 'bg-neutral-800 border-neutral-700 cursor-not-allowed opacity-50' 
-                : 'bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-950/40'
-            }`}
-          >
-            {isScanning ? (
-              <span className="flex items-center gap-2">
-                <RefreshCw className="h-4 w-4 animate-spin" />
-                Validando Segurança...
-              </span>
-            ) : (
-              <span className="flex items-center gap-2">
-                <Unlock size={14} />
-                Iniciar o Sistema
-              </span>
-            )}
-          </Button>
-        </div>
-
-        <p className="text-center text-[10px] text-[#555] uppercase font-semibold tracking-widest pt-2">
-          ® Autenticação Encriptada SegurTec-Pro - Certificado SSL / TLS Ativo
+        <p className="text-center text-xs text-[#71717a] py-1 font-medium uppercase tracking-wider">
+          Sistema desenvolvido por AF TECNOLOGIA. Todos os direitos reservados.
         </p>
 
       </div>
