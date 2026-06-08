@@ -169,14 +169,14 @@ import { toast } from 'sonner';
 import LicenseVerifierSplash from './components/LicenseVerifierSplash';
 import TerminalRegistrationScreen from './components/TerminalRegistrationScreen';
 import IntroSplashScreen from './components/IntroSplashScreen';
-import packageJson from '../package.json';
-
-const LOCAL_VERSION = (!packageJson.version || packageJson.version === '0.0.0') ? 'v4.8.2' : packageJson.version;
+// VERSÃO DE CONSTRUÇÃO DO EXECUTÁVEL DESTE CLIENTE (Sincroniza automaticamente com o Firestore SaaS ao iniciar)
+const LOCAL_VERSION = '1.1.6';
 
 const SUPER_ADMIN_EMAILS = ['emailparasiteslixo@gmail.com', 'alffonseca42@gmail.com'];
 import { LaudosManager, LaudoTecnico } from './components/LaudosManager';
 import { BackupRestoreManager } from './components/BackupRestoreManager';
 import { PayableManager, ReceivableManager, SalesHistoryManager } from './components/AccountsManager';
+import DashboardDisplayConfig from './components/DashboardDisplayConfig';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Calendar } from '@/components/ui/calendar';
@@ -5387,6 +5387,7 @@ export default function MainApp() {
                 show: canAccess('settings') || isSuperAdmin,
                 items: [
                   { id: 'settings', label: 'Configurações', icon: <Settings size={16} />, show: canAccess('settings') },
+                  { id: 'dashboard-display-config', label: 'Conf. Exibição PG', icon: <LayoutGrid size={16} />, show: canAccess('dashboard') },
                   { id: 'network-config', label: 'Config. Rede', icon: <Network size={16} />, show: canAccess('network-config') },
                   { id: 'license-updates', label: 'Licença e Atualizações', icon: <Shield size={16} />, show: canAccess('license-updates') },
                   { id: 'financial-settings', label: 'Config. Financeiras', icon: <DollarSign size={16} />, show: canAccess('financial-settings') },
@@ -5419,7 +5420,7 @@ export default function MainApp() {
                       (cat.id === 'financial' && ['financial', 'receipts', 'payable', 'receivable'].includes(activeTab)) ||
                       (cat.id === 'vendas' && ['pdv', 'budgets', 'vendas-historico'].includes(activeTab)) ||
                       (cat.id === 'relatorio' && ['reports', 'logs'].includes(activeTab)) ||
-                      (cat.id === 'sistema' && ['settings', 'financial-settings', 'backup-restore', 'super-admin', 'network-config', 'license-updates'].includes(activeTab)))
+                      (cat.id === 'sistema' && ['settings', 'dashboard-display-config', 'financial-settings', 'backup-restore', 'super-admin', 'network-config', 'license-updates'].includes(activeTab)))
                         ? "bg-blue-500/10 text-blue-400 border-blue-500/30 font-extrabold"
                         : "bg-[#16191f]/50 border-transparent text-[#71717a] hover:text-white"
                     )}
@@ -5515,6 +5516,7 @@ export default function MainApp() {
                activeTab === 'users' ? 'Controle de Equipe' :
                activeTab === 'logs' ? 'Logs do Sistema' :
                activeTab === 'settings' ? 'Configurações do Sistema' :
+               activeTab === 'dashboard-display-config' ? 'Exibição do Painel Geral' :
                activeTab === 'network-config' ? 'Configurações de Rede Local' :
                activeTab === 'license-updates' ? 'Licença e Atualizações do Sistema' :
                activeTab === 'financial-settings' ? 'Configurações Financeiras' :
@@ -5658,6 +5660,7 @@ export default function MainApp() {
                   show: canAccess('settings') || isSuperAdmin,
                   items: [
                     { id: 'settings', label: 'Configurações', icon: <Settings size={12} />, show: canAccess('settings') },
+                    { id: 'dashboard-display-config', label: 'Conf. Exibição PG', icon: <LayoutGrid size={12} />, show: canAccess('dashboard') },
                     { id: 'network-config', label: 'Config. Rede', icon: <Network size={12} />, show: canAccess('network-config') },
                     { id: 'license-updates', label: 'Licença e Atualizações', icon: <Shield size={12} />, show: canAccess('license-updates') },
                     { id: 'financial-settings', label: 'Config. Financeiras', icon: <DollarSign size={12} />, show: canAccess('financial-settings') },
@@ -5673,7 +5676,7 @@ export default function MainApp() {
                   (cat.id === 'financial' && ['financial', 'receipts', 'payable', 'receivable'].includes(activeTab)) ||
                   (cat.id === 'vendas' && ['pdv', 'budgets', 'vendas-historico'].includes(activeTab)) ||
                   (cat.id === 'relatorio' && ['reports', 'logs'].includes(activeTab)) ||
-                  (cat.id === 'sistema' && ['settings', 'financial-settings', 'backup-restore', 'super-admin', 'network-config', 'license-updates'].includes(activeTab));
+                  (cat.id === 'sistema' && ['settings', 'dashboard-display-config', 'financial-settings', 'backup-restore', 'super-admin', 'network-config', 'license-updates'].includes(activeTab));
 
                 const hasDropdown = !!cat.items;
 
@@ -6267,6 +6270,12 @@ export default function MainApp() {
               companyId={effectiveCompanyId || ''} 
               isSuperAdmin={isSuperAdmin}
               currentUserData={currentUserData}
+            />
+          )}
+          {activeTab === 'dashboard-display-config' && (
+            <DashboardDisplayConfig 
+              canAccess={canAccess} 
+              onBack={() => setActiveTab('dashboard')}
             />
           )}
           {activeTab === 'payable' && (
@@ -15378,6 +15387,38 @@ function Dashboard({
   saasSettings?: any
 }) {
   const [weekOffset, setWeekOffset] = useState(0);
+  
+  // Dashboard display configurations
+  const showVisitsCard = localStorage.getItem('dashboard_show_visits_card') !== 'false';
+  const showOsCard = localStorage.getItem('dashboard_show_os_card') !== 'false';
+  const showBudgetsCard = localStorage.getItem('dashboard_show_budgets_card') !== 'false';
+  const showBalanceCard = localStorage.getItem('dashboard_show_balance_card') !== 'false';
+  const showPdvSalesCard = localStorage.getItem('dashboard_show_pdv_sales_card') !== 'false';
+  const showPayablesCard = localStorage.getItem('dashboard_show_payables_card') !== 'false';
+  const showReceivablesCard = localStorage.getItem('dashboard_show_receivables_card') !== 'false';
+
+  const showVisitsChart = localStorage.getItem('dashboard_show_visits_chart') !== 'false';
+  const showTypesChart = localStorage.getItem('dashboard_show_types_chart') !== 'false';
+  const showFluxoChart = localStorage.getItem('dashboard_show_fluxo_chart') !== 'false';
+  const showForecastChart = localStorage.getItem('dashboard_show_forecast_chart') !== 'false';
+  const showTodayVisitsList = localStorage.getItem('dashboard_show_today_visits') !== 'false';
+  
+  // Custom card positions preferences
+  const cardsOrder = useMemo<string[]>(() => {
+    const saved = localStorage.getItem('dashboard_cards_order');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch (e) {
+        // Fallback below
+      }
+    }
+    return ['showVisitsCard', 'showPayablesCard', 'showOsCard', 'showPdvSalesCard', 'showBudgetsCard', 'showReceivablesCard', 'showBalanceCard'];
+  }, []);
+
   const [visitsChartType, setVisitsChartType] = useState(() => localStorage.getItem('dashboard_visits_chart_type') || 'bar-vertical');
   const [typesChartType, setTypesChartType] = useState(() => localStorage.getItem('dashboard_types_chart_type') || 'doughnut');
   const [fluxoChartType, setFluxoChartType] = useState(() => localStorage.getItem('dashboard_fluxo_chart_type') || 'area');
@@ -15657,9 +15698,20 @@ function Dashboard({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
-        <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest text-[#3b82f6]">Painel de Controle</h2>
-        <p className="text-[#a0a0a0] text-sm">Visão geral das atividades e performance da sua empresa.</p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 border-b border-[#2d3139]/30 pb-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest text-[#3b82f6]">Painel de Controle</h2>
+          <p className="text-[#a0a0a0] text-sm">Visão geral das atividades e performance da sua empresa.</p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onNavigate('dashboard-display-config')}
+          className="md:self-end border-[#2d3139] hover:bg-[#25282e]/50 text-[#a0a0a0] hover:text-white flex items-center gap-2"
+        >
+          <LayoutGrid size={14} />
+          Configurar Exibição
+        </Button>
       </div>
 
       {!showList ? (
@@ -15673,135 +15725,167 @@ function Dashboard({
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {/* CARD 1: Scheduled Visits OR Accounts Payable Fallback */}
-            {canAccess('visits') ? (
-              <StatCard 
-                title="Visitas Agendadas" 
-                value={stats.pendingVisits} 
-                icon={<CalendarIcon className="text-[#3b82f6]" />} 
-                trend={`${stats.completedVisits} concluídas`} 
-                isCount 
-                onClick={() => onNavigate('visits')}
-              />
-            ) : (
-              <Card 
-                className="border-[#2d3139] p-6 rounded-xl cursor-pointer hover:border-red-500/40 bg-red-500/5 transition-all text-left flex flex-col justify-between"
-                onClick={() => onNavigate('financial')}
-              >
-                <div className="flex justify-between items-start">
-                  <div>
-                    <div className="text-[12px] text-[#71717a] mb-2 font-medium">Contas a Pagar (Pendentes)</div>
-                    <div className="text-[22px] font-bold tracking-tight text-red-500">
-                      R$ {stats.pendingPayablesTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </div>
-                  </div>
-                  <div className="p-2 bg-red-500/10 rounded-lg text-red-400">
-                    <ArrowUpRight size={20} className="transform rotate-180" />
-                  </div>
-                </div>
-                <div className="text-[11px] mt-2 text-[#71717a]">
-                  {stats.pendingPayablesCount} lançamentos em aberto
-                </div>
-              </Card>
-            )}
+            {cardsOrder.map((cardKey) => {
+              switch (cardKey) {
+                case 'showVisitsCard':
+                  return canAccess('visits') && showVisitsCard ? (
+                    <React.Fragment key="visits">
+                      <StatCard 
+                        title="Visitas Agendadas" 
+                        value={stats.pendingVisits} 
+                        icon={<CalendarIcon className="text-[#3b82f6]" />} 
+                        trend={`${stats.completedVisits} concluídas`} 
+                        isCount 
+                        onClick={() => onNavigate('visits')}
+                      />
+                    </React.Fragment>
+                  ) : null;
 
-            {/* CARD 2: Active Service Orders OR Daily PDV Vendas Fallback */}
-            {canAccess('service-orders') ? (
-              <StatCard 
-                title="O.S. Ativas" 
-                value={stats.pendingOS} 
-                icon={<CheckCircle2 className="text-[#10b981]" />} 
-                trend="Em andamento/Aberto" 
-                isCount 
-                onClick={() => onNavigate('service-orders')}
-              />
-            ) : (
-              <Card 
-                className="border-[#2d3139] p-6 rounded-xl cursor-pointer hover:border-indigo-500/40 bg-indigo-500/5 transition-all text-left flex flex-col justify-between"
-                onClick={() => onNavigate('pdv')}
-              >
-                <div className="flex justify-between items-start">
-                  <div>
-                    <div className="text-[12px] text-[#71717a] mb-2 font-medium">Vendas no PDV (Hoje)</div>
-                    <div className="text-[22px] font-bold tracking-tight text-indigo-400">
-                      {stats.todaySalesCount} {stats.todaySalesCount === 1 ? 'venda' : 'vendas'}
-                    </div>
-                  </div>
-                  <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-400">
-                    <ShoppingCart size={20} />
-                  </div>
-                </div>
-                <div className="text-[11px] mt-2 text-[#71717a]">
-                  Total hoje: R$ {stats.todaySalesTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </div>
-              </Card>
-            )}
+                case 'showPayablesCard':
+                  return showPayablesCard && (canAccess('payable') || canAccess('financial')) ? (
+                    <React.Fragment key="payables">
+                      <Card 
+                        className="border-[#2d3139] p-6 rounded-xl cursor-pointer hover:border-red-500/40 bg-red-500/5 transition-all text-left flex flex-col justify-between"
+                        onClick={() => onNavigate('financial')}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="text-[12px] text-[#71717a] mb-2 font-medium">Contas a Pagar (Pendentes)</div>
+                            <div className="text-[22px] font-bold tracking-tight text-red-500">
+                              R$ {stats.pendingPayablesTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </div>
+                          </div>
+                          <div className="p-2 bg-red-500/10 rounded-lg text-red-400">
+                            <ArrowUpRight size={20} className="transform rotate-180" />
+                          </div>
+                        </div>
+                        <div className="text-[11px] mt-2 text-[#71717a]">
+                          {stats.pendingPayablesCount} lançamentos em aberto
+                        </div>
+                      </Card>
+                    </React.Fragment>
+                  ) : null;
 
-            {/* CARD 3: Pending Budgets OR Accounts Receivable Fallback */}
-            {canAccess('budgets') ? (
-              <StatCard 
-                title="Orçamentos Pendentes" 
-                value={stats.pendingBudgets} 
-                icon={<FileText className="text-[#f59e0b]" />} 
-                trend="Aguardando aprovação" 
-                isCount 
-                onClick={() => onNavigate('budgets')}
-              />
-            ) : (
-              <Card 
-                className="border-[#2d3139] p-6 rounded-xl cursor-pointer hover:border-emerald-500/40 bg-emerald-500/5 transition-all text-left flex flex-col justify-between"
-                onClick={() => onNavigate('financial')}
-              >
-                <div className="flex justify-between items-start">
-                  <div>
-                    <div className="text-[12px] text-[#71717a] mb-2 font-medium">Contas a Receber (Pendentes)</div>
-                    <div className="text-[22px] font-bold tracking-tight text-emerald-500">
-                      R$ {stats.pendingReceivablesTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </div>
-                  </div>
-                  <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-400">
-                    <ArrowUpRight size={20} />
-                  </div>
-                </div>
-                <div className="text-[11px] mt-2 text-[#71717a]">
-                  {stats.pendingReceivablesCount} lançamentos em aberto
-                </div>
-              </Card>
-            )}
+                case 'showOsCard':
+                  return canAccess('service-orders') && showOsCard ? (
+                    <React.Fragment key="os">
+                      <StatCard 
+                        title="O.S. Ativas" 
+                        value={stats.pendingOS} 
+                        icon={<CheckCircle2 className="text-[#10b981]" />} 
+                        trend="Em andamento/Aberto" 
+                        isCount 
+                        onClick={() => onNavigate('service-orders')}
+                      />
+                    </React.Fragment>
+                  ) : null;
 
-            {/* CARD 4: Day Balance (Saldo do Dia) */}
-            <Card 
-              className={cn(
-                "border-[#2d3139] p-6 rounded-xl cursor-pointer hover:border-[#3b82f6]/40 transition-all text-left flex flex-col justify-between",
-                stats.todayBalance >= 0 ? "bg-emerald-500/10 border-emerald-500/20" : "bg-red-500/10 border-red-500/20"
-              )}
-              onClick={() => onNavigate('financial')}
-            >
-              <div className="flex justify-between items-start">
-                <div>
-                  <div className="text-[12px] text-[#71717a] mb-2 font-medium">Saldo do Dia</div>
-                  <div className={cn(
-                    "text-[22px] font-bold tracking-tight",
-                    stats.todayBalance >= 0 ? "text-emerald-500" : "text-red-500"
-                  )}>
-                    R$ {stats.todayBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                  </div>
-                </div>
-                <div className={cn(
-                  "p-2 rounded-lg",
-                  stats.todayBalance >= 0 ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"
-                )}>
-                  <DollarSign size={20} />
-                </div>
-              </div>
-              <div className="text-[11px] mt-2 text-[#71717a]">
-                Fluxo de caixa hoje
-              </div>
-            </Card>
+                case 'showPdvSalesCard':
+                  return showPdvSalesCard && canAccess('pdv') ? (
+                    <React.Fragment key="pdv">
+                      <Card 
+                        className="border-[#2d3139] p-6 rounded-xl cursor-pointer hover:border-indigo-500/40 bg-indigo-500/5 transition-all text-left flex flex-col justify-between"
+                        onClick={() => onNavigate('pdv')}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="text-[12px] text-[#71717a] mb-2 font-medium">Vendas no PDV (Hoje)</div>
+                            <div className="text-[22px] font-bold tracking-tight text-indigo-400">
+                              {stats.todaySalesCount} {stats.todaySalesCount === 1 ? 'venda' : 'vendas'}
+                            </div>
+                          </div>
+                          <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-400">
+                            <ShoppingCart size={20} />
+                          </div>
+                        </div>
+                        <div className="text-[11px] mt-2 text-[#71717a]">
+                          Total hoje: R$ {stats.todaySalesTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </div>
+                      </Card>
+                    </React.Fragment>
+                  ) : null;
+
+                case 'showBudgetsCard':
+                  return canAccess('budgets') && showBudgetsCard ? (
+                    <React.Fragment key="budgets">
+                      <StatCard 
+                        title="Orçamentos Pendentes" 
+                        value={stats.pendingBudgets} 
+                        icon={<FileText className="text-[#f59e0b]" />} 
+                        trend="Aguardando aprovação" 
+                        isCount 
+                        onClick={() => onNavigate('budgets')}
+                      />
+                    </React.Fragment>
+                  ) : null;
+
+                case 'showReceivablesCard':
+                  return showReceivablesCard && (canAccess('receivable') || canAccess('financial')) ? (
+                    <React.Fragment key="receivables">
+                      <Card 
+                        className="border-[#2d3139] p-6 rounded-xl cursor-pointer hover:border-emerald-500/40 bg-emerald-500/5 transition-all text-left flex flex-col justify-between"
+                        onClick={() => onNavigate('financial')}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="text-[12px] text-[#71717a] mb-2 font-medium">Contas a Receber (Pendentes)</div>
+                            <div className="text-[22px] font-bold tracking-tight text-emerald-500">
+                              R$ {stats.pendingReceivablesTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </div>
+                          </div>
+                          <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-400">
+                            <ArrowUpRight size={20} />
+                          </div>
+                        </div>
+                        <div className="text-[11px] mt-2 text-[#71717a]">
+                          {stats.pendingReceivablesCount} lançamentos em aberto
+                        </div>
+                      </Card>
+                    </React.Fragment>
+                  ) : null;
+
+                case 'showBalanceCard':
+                  return showBalanceCard && canAccess('financial') ? (
+                    <React.Fragment key="balance">
+                      <Card 
+                        className={cn(
+                          "border-[#2d3139] p-6 rounded-xl cursor-pointer hover:border-[#3b82f6]/40 transition-all text-left flex flex-col justify-between",
+                          stats.todayBalance >= 0 ? "bg-emerald-500/10 border-emerald-500/20" : "bg-red-500/10 border-red-500/20"
+                        )}
+                        onClick={() => onNavigate('financial')}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="text-[12px] text-[#71717a] mb-2 font-medium">Saldo do Dia</div>
+                            <div className={cn(
+                              "text-[22px] font-bold tracking-tight",
+                              stats.todayBalance >= 0 ? "text-emerald-500" : "text-red-500"
+                            )}>
+                              R$ {stats.todayBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </div>
+                          </div>
+                          <div className={cn(
+                            "p-2 rounded-lg",
+                            stats.todayBalance >= 0 ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"
+                          )}>
+                            <DollarSign size={20} />
+                          </div>
+                        </div>
+                        <div className="text-[11px] mt-2 text-[#71717a]">
+                          Fluxo de caixa hoje
+                        </div>
+                      </Card>
+                    </React.Fragment>
+                  ) : null;
+
+                default:
+                  return null;
+              }
+            })}
           </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {canAccess('visits') ? (
+        {canAccess('visits') && showVisitsChart ? (
           <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden min-h-[440px] flex flex-col">
             <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col gap-3">
               <div className="flex flex-row items-center justify-between w-full gap-2">
@@ -15859,7 +15943,7 @@ function Dashboard({
           </Card>
         ) : null}
 
-        {canAccess('visits') ? (
+        {canAccess('visits') && showTypesChart ? (
           <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden min-h-[440px] flex flex-col">
             <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col items-start gap-2.5">
               <CardTitle className="text-[15px] font-semibold text-white">Distribuição por Tipo de Serviço</CardTitle>
@@ -15988,7 +16072,7 @@ function Dashboard({
           </Card>
         ) : null}
 
-        {canAccess('financial') ? (
+        {canAccess('financial') && showFluxoChart ? (
           <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden col-span-full h-[400px]">
             <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col items-start gap-2.5">
               <CardTitle className="text-[15px] font-semibold text-white">Fluxo Financeiro (Últimos 7 dias)</CardTitle>
@@ -16145,7 +16229,7 @@ function Dashboard({
           </Card>
         ) : null}
 
-        {canAccess('financial') ? (
+        {canAccess('financial') && showForecastChart ? (
           <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden col-span-full min-h-[470px] flex flex-col">
             <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col gap-4">
               <div className="w-full flex flex-col gap-1">
@@ -16369,7 +16453,7 @@ function Dashboard({
           </Card>
         ) : null}
 
-        {stats.todayVisits.length > 0 && canAccess('visits') && (
+        {stats.todayVisits.length > 0 && canAccess('visits') && showTodayVisitsList && (
           <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden col-span-full">
             <CardHeader className="border-b border-[#2d3139] px-6 py-4">
               <CardTitle className="text-[15px] font-semibold text-white">Visitas para Hoje ({stats.todayVisits.length})</CardTitle>
