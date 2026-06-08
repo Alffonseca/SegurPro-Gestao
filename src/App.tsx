@@ -169,6 +169,9 @@ import { toast } from 'sonner';
 import LicenseVerifierSplash from './components/LicenseVerifierSplash';
 import TerminalRegistrationScreen from './components/TerminalRegistrationScreen';
 import IntroSplashScreen from './components/IntroSplashScreen';
+import packageJson from '../package.json';
+
+const LOCAL_VERSION = (!packageJson.version || packageJson.version === '0.0.0') ? 'v4.8.2' : packageJson.version;
 
 const SUPER_ADMIN_EMAILS = ['emailparasiteslixo@gmail.com', 'alffonseca42@gmail.com'];
 import { LaudosManager, LaudoTecnico } from './components/LaudosManager';
@@ -3544,6 +3547,15 @@ export default function MainApp() {
       if (compSnap.exists()) {
         const compData = compSnap.data() || {};
         setCurrentCompany({ id: compSnap.id, ...compData });
+
+        // Auto synchronization of the company's registered version with the actual executing client build version (from package.json)
+        const dbVersion = compData.version || '';
+        if (dbVersion !== LOCAL_VERSION) {
+          updateDoc(doc(db, 'companies', compSnap.id), {
+            version: LOCAL_VERSION,
+            updatedAt: Timestamp.now()
+          }).catch(err => console.warn("[Version Auto-Sync] Failed updating company version to Firestore:", err));
+        }
         
         // Auto synchronization with dbMode setting from license management
         const savedCompanyDbMode = compData.dbMode || 'default';
@@ -5266,7 +5278,7 @@ export default function MainApp() {
               <LogOut size={18} />
               Logout
             </div>
-            <span className="text-[10px] opacity-60">Ver. {currentCompany?.version || 'v4.8.2'}</span>
+            <span className="text-[10px] opacity-60">Ver. {LOCAL_VERSION}</span>
           </Button>
         </div>
       </aside>
@@ -5457,7 +5469,7 @@ export default function MainApp() {
                 <LogOut size={18} />
                 Logout
               </div>
-              <span className="text-[10px] opacity-60">Ver. {currentCompany?.version || 'v4.8.2'}</span>
+              <span className="text-[10px] opacity-60">Ver. {LOCAL_VERSION}</span>
             </Button>
           </div>
         </div>
@@ -5483,7 +5495,7 @@ export default function MainApp() {
                 {format(new Date(), "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })}
               </span>
               <span className="text-[9px] text-[#3b82f6] font-mono font-bold tracking-wider leading-none mt-1">
-                VERSÃO ATUAL: {currentCompany?.version || 'v4.8.2'}
+                VERSÃO ATUAL: {LOCAL_VERSION}
               </span>
             </div>
           </div>
@@ -9704,7 +9716,7 @@ function SuperAdminPanel({
   const [isClearingUserHistory, setIsClearingUserHistory] = useState(false);
 
   // Global Core Updates state
-  const [publishingVersion, setPublishingVersion] = useState(saasSettings?.latestVersion || 'v4.8.2');
+  const [publishingVersion, setPublishingVersion] = useState(saasSettings?.latestVersion || LOCAL_VERSION);
   const [publishingNotes, setPublishingNotes] = useState(saasSettings?.latestNotes || 'Melhorias de desempenho e correções visuais.');
   const [publishingFileUrl, setPublishingFileUrl] = useState(saasSettings?.latestFileUrl || '');
   const [supportPhone, setSupportPhone] = useState(saasSettings?.supportPhone || '');
@@ -10318,6 +10330,7 @@ function SuperAdminPanel({
         businessActivity: editingCompany.businessActivity || '',
         maxStationsLimit: Number(editingCompany.maxStationsLimit) || 3,
         supportChannels: editingCompany.supportChannels || ['whatsapp', 'email'],
+        version: editingCompany.version || LOCAL_VERSION,
         enabledMenus: editingCompany.enabledMenus || [
           'dashboard', 'visits', 'service-orders', 'laudos', 'clients',
           'suppliers', 'budgets', 'pdv', 'vendas-historico', 'inventory',
@@ -12099,7 +12112,7 @@ function SettingsManager({
     const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
     await sleep(400);
 
-    let latestVersion = 'v4.8.2';
+    let latestVersion = LOCAL_VERSION;
     let supportPhoneStr = '';
     let supportWhatsappStr = '';
     let supportEmailStr = '';
@@ -12107,7 +12120,7 @@ function SettingsManager({
       const globalDoc = await getDoc(doc(db, 'saas_settings', 'global'));
       if (globalDoc.exists()) {
         const latestData = globalDoc.data();
-        latestVersion = latestData?.latestVersion || 'v4.8.2';
+        latestVersion = latestData?.latestVersion || LOCAL_VERSION;
         supportPhoneStr = latestData?.supportPhone || '';
         supportWhatsappStr = latestData?.supportWhatsapp || '';
         supportEmailStr = latestData?.supportEmail || '';
@@ -12116,7 +12129,7 @@ function SettingsManager({
       console.warn("Could not fetch remote version at beginning of check:", err);
     }
 
-    const currentVersion = currentCompany?.version || 'v4.8.2';
+    const currentVersion = LOCAL_VERSION;
 
     if (currentCompany?.receivesUpdates === false) {
       setUpdateStatus('error');
@@ -12156,11 +12169,11 @@ function SettingsManager({
       const globalDoc = await getDoc(doc(db, 'saas_settings', 'global'));
       if (globalDoc.exists()) {
         const latestData = globalDoc.data();
-        const latestVersion = latestData?.latestVersion || 'v4.8.2';
+        const latestVersion = latestData?.latestVersion || LOCAL_VERSION;
         const latestNotes = latestData?.latestNotes || 'Melhorias de desempenho e correções visuais.';
         const latestFileUrl = latestData?.latestFileUrl || '';
 
-        if (latestVersion !== currentVersion && latestVersion !== 'v4.8.2') {
+        if (latestVersion !== currentVersion && latestVersion !== LOCAL_VERSION) {
           setUpdateLogLines(prev => [
             ...prev,
             `🎁 NOVA ATUALIZAÇÃO ENCONTRADA: ${latestVersion}`,
@@ -12180,7 +12193,7 @@ function SettingsManager({
         setUpdateLogLines(prev => [
           ...prev,
           "✓ Banco de dados e estrutura local estão otimizados e em perfeita conformidade.",
-          `🎉 Seu sistema já está rodando a última versão estável recomendada (v4.8.2)!`
+          `🎉 Seu sistema já está rodando a última versão estável recomendada (${LOCAL_VERSION})!`
         ]);
         setUpdateStatus('up-to-date');
       }
@@ -12189,7 +12202,7 @@ function SettingsManager({
       setUpdateLogLines(prev => [
         ...prev,
         "✓ Banco de dados e estrutura local estão em conformidade.",
-        `🎉 Seu sistema já está rodando a última versão estável recomendada (v4.8.2-local)!`
+        `🎉 Seu sistema já está rodando a última versão estável recomendada (${LOCAL_VERSION}-local)!`
       ]);
       setUpdateStatus('up-to-date');
     }
