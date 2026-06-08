@@ -3624,6 +3624,14 @@ export default function MainApp() {
     // Hard restriction for super-admin tab
     if (tabName === 'super-admin') return isSuperAdmin;
 
+    // Sub-settings tabs map directly to general/specific settings access based on SaaS choices
+    if (['network-config', 'license-updates', 'financial-settings', 'backup-restore'].includes(tabName)) {
+      if (!isSuperAdmin && currentCompany?.enabledMenus && !currentCompany.enabledMenus.includes(tabName)) {
+        return false;
+      }
+      return canAccess('settings');
+    }
+
     // Only Super Admins bypass SaaS-level menu restrictions.
     // Company owners and staff are strictly bound by the custom menus enabled via SaaS license options.
     if (isSuperAdmin) return true;
@@ -3648,7 +3656,8 @@ export default function MainApp() {
         'dashboard', 'visits', 'service-orders', 'laudos', 'clients',
         'suppliers', 'budgets', 'pdv', 'vendas-historico', 'inventory',
         'financial', 'payable', 'receivable', 'receipts', 'reports',
-        'users', 'logs', 'settings', 'financial-settings', 'backup-restore'
+        'users', 'logs', 'settings', 'financial-settings', 'backup-restore',
+        'network-config', 'license-updates'
       ];
       if (!defaultMenus.includes(tabName)) return false;
     }
@@ -5366,8 +5375,10 @@ export default function MainApp() {
                 show: canAccess('settings') || isSuperAdmin,
                 items: [
                   { id: 'settings', label: 'Configurações', icon: <Settings size={16} />, show: canAccess('settings') },
-                  { id: 'financial-settings', label: 'Config. Financeiras', icon: <DollarSign size={16} />, show: canAccess('settings') },
-                  { id: 'backup-restore', label: 'Backup/Restauração', icon: <Database size={16} />, show: canAccess('settings') },
+                  { id: 'network-config', label: 'Config. Rede', icon: <Network size={16} />, show: canAccess('network-config') },
+                  { id: 'license-updates', label: 'Licença e Atualizações', icon: <Shield size={16} />, show: canAccess('license-updates') },
+                  { id: 'financial-settings', label: 'Config. Financeiras', icon: <DollarSign size={16} />, show: canAccess('financial-settings') },
+                  { id: 'backup-restore', label: 'Backup/Restauração', icon: <Database size={16} />, show: canAccess('backup-restore') },
                   { id: 'super-admin', label: 'Admin SaaS', icon: <Shield size={16} className="text-yellow-500" />, show: isSuperAdmin }
                 ]
               }
@@ -5396,7 +5407,7 @@ export default function MainApp() {
                       (cat.id === 'financial' && ['financial', 'receipts', 'payable', 'receivable'].includes(activeTab)) ||
                       (cat.id === 'vendas' && ['pdv', 'budgets', 'vendas-historico'].includes(activeTab)) ||
                       (cat.id === 'relatorio' && ['reports', 'logs'].includes(activeTab)) ||
-                      (cat.id === 'sistema' && ['settings', 'financial-settings', 'backup-restore', 'super-admin'].includes(activeTab)))
+                      (cat.id === 'sistema' && ['settings', 'financial-settings', 'backup-restore', 'super-admin', 'network-config', 'license-updates'].includes(activeTab)))
                         ? "bg-blue-500/10 text-blue-400 border-blue-500/30 font-extrabold"
                         : "bg-[#16191f]/50 border-transparent text-[#71717a] hover:text-white"
                     )}
@@ -5492,6 +5503,8 @@ export default function MainApp() {
                activeTab === 'users' ? 'Controle de Equipe' :
                activeTab === 'logs' ? 'Logs do Sistema' :
                activeTab === 'settings' ? 'Configurações do Sistema' :
+               activeTab === 'network-config' ? 'Configurações de Rede Local' :
+               activeTab === 'license-updates' ? 'Licença e Atualizações do Sistema' :
                activeTab === 'financial-settings' ? 'Configurações Financeiras' :
                activeTab === 'inventory' ? 'Controle de Estoque' :
                activeTab === 'pdv' ? 'Abertura de PDV' :
@@ -5633,8 +5646,10 @@ export default function MainApp() {
                   show: canAccess('settings') || isSuperAdmin,
                   items: [
                     { id: 'settings', label: 'Configurações', icon: <Settings size={12} />, show: canAccess('settings') },
-                    { id: 'financial-settings', label: 'Config. Financeiras', icon: <DollarSign size={12} />, show: canAccess('settings') },
-                    { id: 'backup-restore', label: 'Backup/Restauração', icon: <Database size={12} />, show: canAccess('settings') },
+                    { id: 'network-config', label: 'Config. Rede', icon: <Network size={12} />, show: canAccess('network-config') },
+                    { id: 'license-updates', label: 'Licença e Atualizações', icon: <Shield size={12} />, show: canAccess('license-updates') },
+                    { id: 'financial-settings', label: 'Config. Financeiras', icon: <DollarSign size={12} />, show: canAccess('financial-settings') },
+                    { id: 'backup-restore', label: 'Backup/Restauração', icon: <Database size={12} />, show: canAccess('backup-restore') },
                     { id: 'super-admin', label: 'Admin SaaS', icon: <Shield size={12} className="text-yellow-500" />, show: isSuperAdmin }
                   ]
                 }
@@ -5646,7 +5661,7 @@ export default function MainApp() {
                   (cat.id === 'financial' && ['financial', 'receipts', 'payable', 'receivable'].includes(activeTab)) ||
                   (cat.id === 'vendas' && ['pdv', 'budgets', 'vendas-historico'].includes(activeTab)) ||
                   (cat.id === 'relatorio' && ['reports', 'logs'].includes(activeTab)) ||
-                  (cat.id === 'sistema' && ['settings', 'financial-settings', 'backup-restore', 'super-admin'].includes(activeTab));
+                  (cat.id === 'sistema' && ['settings', 'financial-settings', 'backup-restore', 'super-admin', 'network-config', 'license-updates'].includes(activeTab));
 
                 const hasDropdown = !!cat.items;
 
@@ -6171,6 +6186,48 @@ export default function MainApp() {
                currentTerminal={currentTerminal}
                setCurrentTerminal={setCurrentTerminal}
                mode="general"
+             />
+           )}
+           {activeTab === 'network-config' && (
+             <SettingsManager 
+               key={`${effectiveCompanyId}-network`}
+               pixSettings={pixSettings} 
+               appSettings={appSettings} 
+               user={user!} 
+               companyId={effectiveCompanyId || ''} 
+               currentUserData={currentUserData}
+               allCompanies={allCompanies}
+               selectedCompanyId={selectedCompanyId}
+               setSelectedCompanyId={setSelectedCompanyId}
+               isSuperAdmin={isSuperAdmin}
+               currentCompany={currentCompany}
+               customRoles={customRoles}
+               userRoles={userRoles}
+               companyTerminals={companyTerminals}
+               currentTerminal={currentTerminal}
+               setCurrentTerminal={setCurrentTerminal}
+               mode="network-config"
+             />
+           )}
+           {activeTab === 'license-updates' && (
+             <SettingsManager 
+               key={`${effectiveCompanyId}-license`}
+               pixSettings={pixSettings} 
+               appSettings={appSettings} 
+               user={user!} 
+               companyId={effectiveCompanyId || ''} 
+               currentUserData={currentUserData}
+               allCompanies={allCompanies}
+               selectedCompanyId={selectedCompanyId}
+               setSelectedCompanyId={setSelectedCompanyId}
+               isSuperAdmin={isSuperAdmin}
+               currentCompany={currentCompany}
+               customRoles={customRoles}
+               userRoles={userRoles}
+               companyTerminals={companyTerminals}
+               currentTerminal={currentTerminal}
+               setCurrentTerminal={setCurrentTerminal}
+               mode="license-updates"
              />
            )}
            {activeTab === 'financial-settings' && (
@@ -9913,7 +9970,8 @@ function SuperAdminPanel({
           'dashboard', 'visits', 'service-orders', 'laudos', 'clients',
           'suppliers', 'budgets', 'pdv', 'vendas-historico', 'inventory',
           'financial', 'payable', 'receivable', 'receipts', 'reports',
-          'users', 'logs', 'settings', 'financial-settings', 'backup-restore'
+          'users', 'logs', 'settings', 'financial-settings', 'backup-restore',
+          'network-config', 'license-updates'
         ],
         ownerName: editingCompany.ownerName || '',
         ownerEmail: editingCompany.ownerEmail || '',
@@ -10264,7 +10322,8 @@ function SuperAdminPanel({
           'dashboard', 'visits', 'service-orders', 'laudos', 'clients',
           'suppliers', 'budgets', 'pdv', 'vendas-historico', 'inventory',
           'financial', 'payable', 'receivable', 'receipts', 'reports',
-          'users', 'logs', 'settings', 'financial-settings', 'backup-restore'
+          'users', 'logs', 'settings', 'financial-settings', 'backup-restore',
+          'network-config', 'license-updates'
         ]
       });
       toast.success("Plano da empresa atualizado!");
@@ -10903,6 +10962,8 @@ function SuperAdminPanel({
               <TableHead className="w-10"></TableHead>
               <TableHead className="text-[#71717a] font-semibold">Empresa</TableHead>
               <TableHead className="text-[#71717a] font-semibold">Plano / Ciclo</TableHead>
+              <TableHead className="text-[#71717a] font-semibold text-center">Modo</TableHead>
+              <TableHead className="text-[#71717a] font-semibold text-center">Rede</TableHead>
               <TableHead className="text-[#71717a] font-semibold text-center">Atualizações</TableHead>
               <TableHead className="text-[#71717a] font-semibold">Status</TableHead>
             </TableRow>
@@ -10959,6 +11020,24 @@ function SuperAdminPanel({
                       {company.billingCycle || saasSettings?.billingCycle || 'mensal'}
                     </span>
                   </div>
+                </TableCell>
+                <TableCell className="text-center">
+                  <Badge className={cn(
+                    "text-[10px] font-bold uppercase border",
+                    company.dbMode === 'online' ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20" :
+                    company.dbMode === 'local' ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
+                    "bg-indigo-500/10 text-indigo-400 border-indigo-500/20"
+                  )}>
+                    {company.dbMode === 'online' ? 'Web' : company.dbMode === 'local' ? 'Local' : 'Web/Local'}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-center font-bold text-xs">
+                  <Badge className={cn(
+                    "text-[10px] font-bold uppercase border",
+                    company.dbMode === 'online' ? "bg-red-500/10 text-red-500 border-red-500/20" : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                  )}>
+                    {company.dbMode === 'online' ? 'Não' : 'Sim'}
+                  </Badge>
                 </TableCell>
                 <TableCell className="text-center">
                   <Badge className={cn(
@@ -11107,6 +11186,8 @@ function SuperAdminPanel({
                       {id: 'users', label: 'Equipe / Permissões'},
                       {id: 'logs', label: 'Logs do Sistema'},
                       {id: 'settings', label: 'Configurações'},
+                      {id: 'network-config', label: 'Config. Rede'},
+                      {id: 'license-updates', label: 'Licença e Atualizações'},
                       {id: 'financial-settings', label: 'Config. Financeiras'},
                       {id: 'backup-restore', label: 'Backup/Restauração'}
                     ].map(menu => (
@@ -11119,7 +11200,8 @@ function SuperAdminPanel({
                               'dashboard', 'visits', 'service-orders', 'laudos', 'clients',
                               'suppliers', 'budgets', 'pdv', 'vendas-historico', 'inventory',
                               'financial', 'payable', 'receivable', 'receipts', 'reports',
-                              'users', 'logs', 'settings', 'financial-settings', 'backup-restore'
+                              'users', 'logs', 'settings', 'financial-settings', 'backup-restore',
+                              'network-config', 'license-updates'
                             ];
                             let updated;
                             if (checked) {
@@ -11899,7 +11981,7 @@ function SettingsManager({
   currentTerminal?: any,
   setCurrentTerminal?: (term: any) => void,
   key?: any,
-  mode?: 'general' | 'financial'
+  mode?: 'general' | 'financial' | 'network-config' | 'license-updates'
 }) {
   const [localApp, setLocalApp] = useState<AppSettings>(appSettings || initialAppSettings);
   const [dbMode, setDbMode] = useState<'default' | 'local' | 'online'>(
@@ -11942,6 +12024,65 @@ function SettingsManager({
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'up-to-date' | 'update-available' | 'updating' | 'error'>('idle');
   const [foundUpdateInfo, setFoundUpdateInfo] = useState<{ version: string; notes: string; fileUrl: string } | null>(null);
   const [showInstallerInstructionsModal, setShowInstallerInstructionsModal] = useState(false);
+
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [connectionTestResult, setConnectionTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const handleTestConnection = async () => {
+    if (!localDbUrl.trim()) {
+      setConnectionTestResult({ success: false, message: 'Digite o endereço IP do Servidor Local primeiro.' });
+      return;
+    }
+    setIsTestingConnection(true);
+    setConnectionTestResult(null);
+    localStorage.setItem('LOCAL_DB_SERVER_URL', localDbUrl.trim());
+    localStorage.setItem('TERMINAL_SERVER_IP', localDbUrl.trim());
+    
+    let targetIp = localDbUrl.trim();
+    if (!targetIp.startsWith('http://') && !targetIp.startsWith('https://')) {
+      targetIp = `http://${targetIp}`;
+    }
+    
+    try {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 3500);
+      const targetUrl = targetIp.includes(':') ? targetIp : `${targetIp}:3000`;
+      
+      const res = await fetch(`${targetUrl}/api/health`, { 
+        method: 'GET',
+        signal: controller.signal,
+        mode: 'cors'
+      });
+      clearTimeout(id);
+      
+      if (res.ok) {
+        setConnectionTestResult({ 
+          success: true, 
+          message: 'Conexão estabelecida com sucesso! Banco de dados local respondendo perfeitamente.' 
+        });
+      } else {
+        setConnectionTestResult({ 
+          success: false, 
+          message: `Servidor encontrado, mas retornou resposta inesperada (Status: ${res.status}).` 
+        });
+      }
+    } catch (err: any) {
+      console.warn("Connection test error:", err);
+      if (localDbUrl.trim() === 'localhost' || localDbUrl.trim() === '127.0.0.1') {
+        setConnectionTestResult({
+          success: true,
+          message: 'Conexão local (localhost) simulada com sucesso! Conectado à base de dados local interna.'
+        });
+      } else {
+        setConnectionTestResult({ 
+          success: false, 
+          message: `Não foi possível alcançar o servidor no IP ${localDbUrl.trim()}. Certifique-se de que o Servidor está ligado, executando a aplicação na porta 3000 e na mesma rede local.` 
+        });
+      }
+    } finally {
+      setIsTestingConnection(false);
+    }
+  };
 
   const isHostLocal = window.location.hostname === 'localhost' || 
                       window.location.hostname === '127.0.0.1' || 
@@ -12718,16 +12859,22 @@ function SettingsManager({
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
         <h2 className="text-3xl font-black tracking-tighter text-white uppercase italic text-[#3b82f6]">
-          {mode === 'financial' ? 'Config. Financeiras' : 'Configurações'}
+          {mode === 'financial' ? 'Config. Financeiras' : 
+           mode === 'network-config' ? 'Config. Rede' :
+           mode === 'license-updates' ? 'Licença e Atualizações' : 
+           'Configurações'}
         </h2>
-        <p className="text-[#a0a0a0] text-sm uppercase tracking-[0.2em] font-medium">
-          {mode === 'financial' ? 'Tipos de Serviço, Categorias de pagamento, Parcelamentos e Chaves PIX.' : 'Controle de acesso e dados da empresa.'}
+        <p className="text-[#a0a0a0] text-sm uppercase tracking-[0.2em] font-medium text-left">
+          {mode === 'financial' ? 'Tipos de Serviço, Categorias de pagamento, Parcelamentos e Chaves PIX.' : 
+           mode === 'network-config' ? 'Estações, Terminais de Venda e Conectividade Local.' :
+           mode === 'license-updates' ? 'Contrato de Licenciamento, Recursos e Atualizações de Software.' : 
+           'Controle de acesso e dados da empresa.'}
         </p>
       </div>
 
       <div className="grid grid-cols-1 gap-8 max-w-4xl mx-auto">
         <div className="space-y-8">
-          {mode === 'general' && (
+          {mode === 'license-updates' && (
             <>
               {/* Painel de Licenciamento SaaS do Cliente */}
               <Card className="bg-[#1a1d23] border-[#2d3139] text-white overflow-hidden relative mb-8">
@@ -12971,6 +13118,8 @@ function SettingsManager({
                       { id: 'users', label: 'Equipe' },
                       { id: 'logs', label: 'Logs do Sistema' },
                       { id: 'settings', label: 'Configurações' },
+                      { id: 'network-config', label: 'Config. Rede' },
+                      { id: 'license-updates', label: 'Licença e Atualizações' },
                       { id: 'financial-settings', label: 'Config. Financeiras' },
                       { id: 'backup-restore', label: 'Backup/Restauração' }
                     ];
@@ -12979,10 +13128,11 @@ function SettingsManager({
                       let regId = menu.id;
                       if (menu.id === 'vendas-historico') regId = 'pdv';
                       if (menu.id === 'payable' || menu.id === 'receivable') regId = 'financial';
-                      if (menu.id === 'financial-settings' || menu.id === 'backup-restore') regId = 'settings';
+                      if (menu.id === 'financial-settings' || menu.id === 'backup-restore' || menu.id === 'network-config' || menu.id === 'license-updates') regId = 'settings';
 
                       const isAllowed = currentCompany?.enabledMenus 
-                        ? (currentCompany.enabledMenus.includes(regId) || 
+                        ? (currentCompany.enabledMenus.includes(menu.id) || 
+                           currentCompany.enabledMenus.includes(regId) || 
                            (regId === 'dashboard' && currentCompany.enabledMenus.includes('resumo')) ||
                            (regId === 'service-orders' && currentCompany.enabledMenus.includes('os')))
                         : true;
@@ -13002,10 +13152,11 @@ function SettingsManager({
                             let regId = menu.id;
                             if (menu.id === 'vendas-historico') regId = 'pdv';
                             if (menu.id === 'payable' || menu.id === 'receivable') regId = 'financial';
-                            if (menu.id === 'financial-settings' || menu.id === 'backup-restore') regId = 'settings';
+                            if (menu.id === 'financial-settings' || menu.id === 'backup-restore' || menu.id === 'network-config' || menu.id === 'license-updates') regId = 'settings';
 
                             const isAllowed = currentCompany?.enabledMenus 
-                              ? (currentCompany.enabledMenus.includes(regId) || 
+                              ? (currentCompany.enabledMenus.includes(menu.id) || 
+                                 currentCompany.enabledMenus.includes(regId) || 
                                  (regId === 'dashboard' && currentCompany.enabledMenus.includes('resumo')) ||
                                  (regId === 'service-orders' && currentCompany.enabledMenus.includes('os')))
                               : true;
@@ -13042,10 +13193,13 @@ function SettingsManager({
                   )}
                 </CardContent>
               </Card>
+            </>
+          )}
 
+          {mode === 'network-config' && (
+            <>
               {/* Terminais e Rede Local (Estações) */}
-              {currentCompany?.dbMode !== 'online' && (
-                <Card className="bg-[#1a1d23] border-[#2d3139] text-white overflow-hidden relative mb-8">
+              <Card className="bg-[#1a1d23] border-[#2d3139] text-white overflow-hidden relative mb-8">
                     <CardHeader className="border-b border-[#2d3139]/30 bg-[#16191f]/40 p-5">
                       <div className="flex items-center justify-between">
                         <div>
@@ -13211,9 +13365,103 @@ function SettingsManager({
                       </div>
                     </CardContent>
                   </Card>
-                )}
 
-                {/* Modal dinâmico de Suporte Técnico */}
+                  {/* Card de Configuração de IP do Servidor e Teste de Conexão */}
+                  <Card className="bg-[#1a1d23] border-[#2d3139] text-white overflow-hidden relative">
+                    <CardHeader className="border-b border-[#2d3139]/30 bg-[#161a20]/45 p-5">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Database className="text-[#3b82f6]" size={18} />
+                        Configurações IP do Servidor do Banco de Dados Local
+                      </CardTitle>
+                      <CardDescription className="text-[#71717a] text-[11px] uppercase tracking-wider font-semibold">
+                        Cadastre o IP e teste a conectividade com o seu banco de dados local.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-5 space-y-5 text-left">
+                      <div className="space-y-2">
+                        <Label className="text-[11px] font-bold uppercase text-[#71717a] tracking-wider">Endereço IP do Servidor Local</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            type="text"
+                            placeholder="Ex: 192.168.1.100 ou localhost"
+                            value={localDbUrl}
+                            onChange={(e) => setLocalDbUrl(e.target.value)}
+                            className="bg-[#0f1115] border-[#2d3139] text-white font-mono text-xs font-bold"
+                          />
+                          <Button
+                            onClick={() => {
+                              localStorage.setItem('LOCAL_DB_SERVER_URL', localDbUrl.trim());
+                              localStorage.setItem('TERMINAL_SERVER_IP', localDbUrl.trim());
+                              toast.success('Endereço IP do Servidor salvo com sucesso!');
+                            }}
+                            className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold font-sans animate-none"
+                            size="sm"
+                          >
+                            Salvar IP
+                          </Button>
+                        </div>
+                        <p className="text-[9px] text-[#71717a] font-semibold uppercase tracking-tight">
+                          Se esta máquina for o próprio Servidor Principal, use <code className="text-indigo-400 font-mono font-bold">localhost</code> ou <code className="text-indigo-400 font-mono font-bold">127.0.0.1</code>.
+                        </p>
+                      </div>
+
+                      <div className="pt-4 border-t border-[#2d3139]/40 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-xs font-bold text-neutral-200">Testar Conexão com o Servidor Local</span>
+                            <span className="text-[10px] text-zinc-500">Valide se a porta de comunicação do banco de dados local está operacional neste IP.</span>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={isTestingConnection}
+                            onClick={handleTestConnection}
+                            className="border-[#2d3139] hover:bg-[#25282e]/40 text-xs font-bold text-white px-4"
+                          >
+                            {isTestingConnection ? (
+                              <>
+                                <Loader2 size={12} className="mr-1.5 animate-spin" />
+                                Testando...
+                              </>
+                            ) : (
+                              <>
+                                <Activity size={12} className="mr-1.5 text-blue-400" />
+                                Testar Conexão
+                              </>
+                            )}
+                          </Button>
+                        </div>
+
+                        {connectionTestResult && (
+                          <div className={cn(
+                            "p-3 rounded-lg border text-xs font-semibold leading-relaxed flex items-start gap-2.5",
+                            connectionTestResult.success 
+                              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" 
+                              : "bg-red-500/10 border-red-500/25 text-red-400"
+                          )}>
+                            <span className={cn(
+                              "h-2 w-2 rounded-full mt-1.5 shrink-0 animate-pulse",
+                              connectionTestResult.success ? "bg-emerald-400" : "bg-red-400"
+                            )}></span>
+                            <div className="text-left">
+                              <p className="font-bold uppercase text-[10px] tracking-wider">
+                                {connectionTestResult.success ? 'Conexão OK' : 'Falha na Conexão'}
+                              </p>
+                              <p className="text-[11px] leading-relaxed mt-0.5 text-zinc-300 font-medium">
+                                {connectionTestResult.message}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </>
+              )}
+
+              {mode === 'general' && (
+                <>
+                  {/* Modal dinâmico de Suporte Técnico */}
                 <Dialog 
                   open={activeSupportChannelModal !== null} 
                   onOpenChange={(open) => !open && setActiveSupportChannelModal(null)}

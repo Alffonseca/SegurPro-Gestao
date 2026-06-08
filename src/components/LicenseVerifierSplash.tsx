@@ -70,12 +70,14 @@ export default function LicenseVerifierSplash({
         clearInterval(interval);
         setIsScanning(false);
         // Stated requirement: Automatic transition after 10 seconds!
-        onVerified();
+        if (company?.status !== 'blocked') {
+          onVerified();
+        }
       }
     }, intervalTime);
 
     return () => clearInterval(interval);
-  }, [onVerified, steps.length]);
+  }, [onVerified, steps.length, company?.status]);
 
   const dbModeLabel = company?.dbMode === 'local' ? 'Local Server (%AppData% JSON)' : company?.dbMode === 'online' ? 'Nuvem Cloud (Firebase)' : 'Híbrido Padrão';
   const customPriceFormatted = company?.customPrice && parseFloat(company.customPrice) > 0 
@@ -221,7 +223,7 @@ export default function LicenseVerifierSplash({
             </div>
 
             {/* Warning if updates are locked */}
-            {(!receivesUpdatesStatus) && !isScanning && (
+            {(!receivesUpdatesStatus) && !isScanning && company?.status !== 'blocked' && (
               <motion.div 
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -233,6 +235,35 @@ export default function LicenseVerifierSplash({
                   <p className="text-[#a0a0a0] text-[10px] leading-relaxed mt-0.5">
                     Sua licença não lhe dá direito a atualizações automáticas ( Update ). Se a sua licença for Web/Local o sistema continuará funcionando em ambiente local ( Desktop ), para mais informações contacte o suporte.
                   </p>
+                </div>
+              </motion.div>
+            )}
+
+            {company?.status === 'blocked' && !isScanning && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-red-500/10 border border-red-500/25 p-4 rounded-xl flex flex-col gap-3 text-left w-full"
+              >
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-red-500 font-black text-xs uppercase italic tracking-tighter">LICENÇA SUSPENSA / IMPEDIMENTO DETECTADO</h4>
+                    <p className="text-[#a0a0a0] text-[11px] leading-relaxed mt-1">
+                      Identificamos um impedimento ativo em seu contrato de licenciamento SaaS. Por motivos de conformidade, o acesso ao sistema foi suspenso. Por favor, entre em contato com a <b>AF TECNOLOGIA</b> para regularizar e liberar o sistema.
+                    </p>
+                  </div>
+                </div>
+                <div className="pt-3 border-t border-red-500/20 flex justify-end">
+                  <Button 
+                    onClick={onSignOut}
+                    variant="destructive"
+                    size="sm"
+                    className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs h-8 px-4"
+                  >
+                    <LogOut size={12} className="mr-1.5" />
+                    Sair da Conta / Retornar
+                  </Button>
                 </div>
               </motion.div>
             )}
