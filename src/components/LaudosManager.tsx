@@ -96,6 +96,118 @@ const formatRecordNumber = (number?: number | string) => {
   return String(number).padStart(5, '0');
 };
 
+const DoubleScrollContainer = ({ children }: { children: React.ReactNode }) => {
+  const topScrollRef = React.useRef<HTMLDivElement>(null);
+  const bottomScrollRef = React.useRef<HTMLDivElement>(null);
+  const isScrollingTop = React.useRef(false);
+  const isScrollingBottom = React.useRef(false);
+  const [showTopScroll, setShowTopScroll] = React.useState(false);
+  const [scrollWidth, setScrollWidth] = React.useState(0);
+
+  const handleTopScroll = () => {
+    if (isScrollingBottom.current) return;
+    if (topScrollRef.current && bottomScrollRef.current) {
+      isScrollingTop.current = true;
+      bottomScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+      setTimeout(() => { isScrollingTop.current = false; }, 50);
+    }
+  };
+
+  const handleBottomScroll = (e: any) => {
+    if (isScrollingTop.current) return;
+    if (topScrollRef.current && e.target) {
+      isScrollingBottom.current = true;
+      topScrollRef.current.scrollLeft = e.target.scrollLeft;
+      setTimeout(() => { isScrollingBottom.current = false; }, 50);
+    }
+  };
+
+  React.useEffect(() => {
+    const bottomWrapper = bottomScrollRef.current;
+    if (!bottomWrapper) return;
+
+    const syncWidth = () => {
+      if (bottomWrapper) {
+        const contentWidth = bottomWrapper.scrollWidth;
+        const containerWidth = bottomWrapper.clientWidth;
+        
+        setScrollWidth(contentWidth);
+        const shouldShow = contentWidth > containerWidth + 5;
+        setShowTopScroll(shouldShow);
+      }
+    };
+
+    syncWidth();
+    const t = setTimeout(syncWidth, 100);
+
+    const resizeObserver = new ResizeObserver(() => {
+      syncWidth();
+    });
+    resizeObserver.observe(bottomWrapper);
+
+    let observedElement: Element | null = null;
+    const updateObservation = () => {
+      if (observedElement) {
+        resizeObserver.unobserve(observedElement);
+      }
+      const newTarget = bottomWrapper.firstElementChild;
+      if (newTarget) {
+        resizeObserver.observe(newTarget);
+        observedElement = newTarget;
+      }
+      syncWidth();
+    };
+
+    updateObservation();
+
+    const mutationObserver = new MutationObserver(() => {
+      updateObservation();
+    });
+    mutationObserver.observe(bottomWrapper, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+
+    window.addEventListener('resize', syncWidth);
+    const syncInterval = setInterval(syncWidth, 1000);
+
+    return () => {
+      clearTimeout(t);
+      resizeObserver.disconnect();
+      mutationObserver.disconnect();
+      window.removeEventListener('resize', syncWidth);
+      clearInterval(syncInterval);
+    };
+  }, []);
+
+  return (
+    <div className="flex flex-col w-full relative group/scroll">
+      {scrollWidth > 0 && (
+        <div 
+          ref={topScrollRef} 
+          onScroll={handleTopScroll}
+          className="w-full overflow-x-auto overflow-y-hidden bg-[#0f1115] border-b border-[#2d3139]/30 rounded-t-lg transition-all hashScrollTop"
+          style={{ 
+            height: '14px', 
+            display: showTopScroll ? 'block' : 'none' 
+          }}
+        >
+          <div style={{ width: `${scrollWidth}px`, height: '1px' }} />
+        </div>
+      )}
+
+      <div 
+        ref={bottomScrollRef} 
+        onScroll={handleBottomScroll}
+        className="w-full overflow-x-auto border border-[#2d3139]/60 rounded-b-xl hashScrollBottom"
+      >
+        {children}
+      </div>
+    </div>
+  );
+};
+
 const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 600): Promise<string> => {
   return new Promise((resolve) => {
     const img = new Image();
@@ -193,7 +305,7 @@ function PhotoUploader({ photos = [], onChange }: PhotoUploaderProps) {
       <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
         {photos.map((photo, index) => (
           <div key={index} className="relative group aspect-video rounded-lg overflow-hidden border border-[#2d3139] bg-[#0f1115]">
-            <img src={photo} alt={`Foto do local ${index + 1}`} className="w-full h-full object-cover" referrerpolicy="no-referrer" />
+            <img src={photo} alt={`Foto do local ${index + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
             <button
               type="button"
               onClick={() => handleRemovePhoto(index)}
@@ -663,9 +775,15 @@ export function LaudosManager({
     
     docPdf.setFont('helvetica', 'normal');
     docPdf.setFontSize(8.5);
-    const cityDate = appSettings?.city 
-      ? `${appSettings.city}, ${dateStr}`
-      : `Emissão em ${dateStr}`;
+    const pdfDateObj = safeParseDate(laudo.date);
+    const pdfDay = pdfDateObj.getDate();
+    const pdfMonthsPt = [
+      'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+    ];
+    const pdfMonthName = pdfMonthsPt[pdfDateObj.getMonth()];
+    const pdfYear = pdfDateObj.getFullYear();
+    const cityDate = `Belém/Pa  ${pdfDay} de ${pdfMonthName} de ${pdfYear}.`;
     docPdf.text(cityDate, pageWidth / 2, currentY, { align: 'center' });
     
     currentY += 12;
@@ -901,7 +1019,8 @@ export function LaudosManager({
       {showList ? (
         viewMode === 'table' ? (
           <div className="bg-[#1a1d23] border border-[#2d3139] rounded-xl overflow-hidden shadow-xl">
-            <Table>
+            <DoubleScrollContainer>
+              <Table>
               <TableHeader className="bg-[#16191f]/50 border-b border-[#2d3139]">
                 <TableRow>
                   <TableHead className="text-white text-xs font-bold font-mono tracking-wider w-[120px]">LAUDO #</TableHead>
@@ -988,6 +1107,7 @@ export function LaudosManager({
                 )}
               </TableBody>
             </Table>
+            </DoubleScrollContainer>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[700px] overflow-y-auto custom-scrollbar p-1">

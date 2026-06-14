@@ -219,6 +219,16 @@ function ensureLocalDataSeeded() {
     writeJSONFile(companiesPath, companies);
   }
 
+  // ONLY auto-heal companyId for master admin accounts if missing
+  const masterEmails = ["emailparasiteslixo@gmail.com", "alffonseca42@gmail.com"];
+  for (let i = 0; i < users.length; i++) {
+    const userEmail = (users[i].email || "").toLowerCase().trim();
+    if (masterEmails.includes(userEmail) && (!users[i].companyId || users[i].companyId === "")) {
+      users[i].companyId = "default-company-id";
+      usersChanged = true;
+    }
+  }
+
   if (usersChanged) {
     writeJSONFile(usersPath, users);
     console.log("[Local Seeding] Core metadata profiles repaired successfully!");
@@ -252,7 +262,7 @@ async function startServer() {
   app.post("/api/localdb/auth/signin", (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) {
-      return res.status(400).json({ error: "E-mail e senha são obrigatórios." });
+      return res.status(400).json({ error: "Nome de usuário e senha são obrigatórios." });
     }
 
     // Ensure database is seeded
@@ -261,21 +271,52 @@ async function startServer() {
     const authUsersPath = getSafeFileName("auth_users");
     const authUsers = readJSONFile(authUsersPath);
 
-    const user = authUsers.find(
+    let foundAuth = authUsers.find(
       (u) =>
-        u.email.toLowerCase() === email.toLowerCase() &&
+        (u.email.toLowerCase() === email.toLowerCase() ||
+         u.displayName.toLowerCase().trim() === email.toLowerCase().trim() ||
+         u.email.toLowerCase().split('@')[0] === email.toLowerCase().trim()) &&
         String(u.password) === String(password)
     );
 
-    if (!user) {
-      return res.status(400).json({ error: "E-mail ou senha incorretos." });
+    let matchedUser = null;
+
+    if (foundAuth) {
+      matchedUser = {
+        uid: foundAuth.uid,
+        email: foundAuth.email,
+        displayName: foundAuth.displayName,
+      };
+    } else {
+      // Check the Equipe database (users.json) as requested
+      const usersPath = getSafeFileName("users");
+      const users = readJSONFile(usersPath);
+      const foundUserMeta = users.find(
+        (u: any) =>
+          u.password &&
+          String(u.password) === String(password) &&
+          ((u.email && u.email.toLowerCase() === email.toLowerCase()) ||
+           (u.displayName && u.displayName.toLowerCase().trim() === email.toLowerCase().trim()) ||
+           (u.email && u.email.toLowerCase().split('@')[0] === email.toLowerCase().trim()))
+      );
+
+      if (foundUserMeta) {
+        matchedUser = {
+          uid: foundUserMeta.id || foundUserMeta.uid,
+          email: foundUserMeta.email,
+          displayName: foundUserMeta.displayName,
+        };
+      }
     }
 
-    const { password: _, ...cleanUser } = user;
+    if (!matchedUser) {
+      return res.status(400).json({ error: "Usuário ou senha incorretos." });
+    }
+
     res.json({
-      uid: cleanUser.uid,
-      email: cleanUser.email,
-      displayName: cleanUser.displayName,
+      uid: matchedUser.uid,
+      email: matchedUser.email,
+      displayName: matchedUser.displayName,
       emailVerified: true,
     });
   });
@@ -325,6 +366,31 @@ async function startServer() {
       }
     } catch (err) {
       console.warn("Local flat file credentials check error:", err);
+    }
+
+    // Check local users metadata flat file (Equipe database)
+    if (!matchedUser) {
+      try {
+        const usersPath = getSafeFileName("users");
+        const users = readJSONFile(usersPath);
+        const localUserMeta = users.find(
+          (u: any) =>
+            u.password &&
+            String(u.password) === String(password) &&
+            ((u.email && emailCandidates.map(e => e.toLowerCase()).includes(u.email.toLowerCase())) ||
+             (u.displayName && emailCandidates.map(e => e.toLowerCase()).includes(u.displayName.toLowerCase().trim())) ||
+             (u.email && emailCandidates.map(e => e.toLowerCase()).includes(u.email.toLowerCase().split('@')[0])))
+        );
+        if (localUserMeta) {
+          matchedUser = {
+            uid: localUserMeta.id || localUserMeta.uid,
+            email: localUserMeta.email || `${localUserMeta.id || 'usr'}@segurtecpro.com`,
+            displayName: localUserMeta.displayName || "Usuário",
+          };
+        }
+      } catch (err) {
+        console.warn("Local users metadata credentials check error:", err);
+      }
     }
 
     // Check Cloud Firestore users collection
@@ -402,7 +468,9 @@ async function startServer() {
       id: uid,
       displayName: newUser.displayName,
       email: newUser.email,
+      password: newUser.password,
       role: "tecnico",
+      companyId: "default-company-id",
     });
     writeJSONFile(usersPath, users);
 

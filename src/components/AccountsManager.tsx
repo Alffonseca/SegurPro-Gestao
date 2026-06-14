@@ -100,6 +100,141 @@ interface ReceivableRecord {
 }
 
 // ----------------------------------------------------
+// Safe string normalization helper for accent-insensitive comparisons
+// ----------------------------------------------------
+const normalizeName = (name: string): string => {
+  if (!name) return '';
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ');
+};
+
+// ----------------------------------------------------
+// DoubleScrollContainer component for top + bottom scrollbars in listings
+// ----------------------------------------------------
+const DoubleScrollContainer = ({ children }: { children: React.ReactNode }) => {
+  const topScrollRef = React.useRef<HTMLDivElement>(null);
+  const bottomScrollRef = React.useRef<HTMLDivElement>(null);
+  const isScrollingTop = React.useRef(false);
+  const isScrollingBottom = React.useRef(false);
+  const [showTopScroll, setShowTopScroll] = React.useState(false);
+  const [scrollWidth, setScrollWidth] = React.useState(0);
+
+  const handleTopScroll = () => {
+    if (isScrollingBottom.current) return;
+    if (topScrollRef.current && bottomScrollRef.current) {
+      isScrollingTop.current = true;
+      bottomScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+      setTimeout(() => { isScrollingTop.current = false; }, 50);
+    }
+  };
+
+  const handleBottomScroll = (e: any) => {
+    if (isScrollingTop.current) return;
+    if (topScrollRef.current && e.target) {
+      isScrollingBottom.current = true;
+      topScrollRef.current.scrollLeft = e.target.scrollLeft;
+      setTimeout(() => { isScrollingBottom.current = false; }, 50);
+    }
+  };
+
+  React.useEffect(() => {
+    const bottomWrapper = bottomScrollRef.current;
+    if (!bottomWrapper) return;
+
+    const syncWidth = () => {
+      if (bottomWrapper) {
+        const contentWidth = bottomWrapper.scrollWidth;
+        const containerWidth = bottomWrapper.clientWidth;
+        
+        setScrollWidth(contentWidth);
+        const shouldShow = contentWidth > containerWidth + 5;
+        setShowTopScroll(shouldShow);
+      }
+    };
+
+    // Run synchronization initially
+    syncWidth();
+    const t = setTimeout(syncWidth, 100);
+
+    // Watch resize of bottom container
+    const resizeObserver = new ResizeObserver(() => {
+      syncWidth();
+    });
+    resizeObserver.observe(bottomWrapper);
+
+    // Watch resize of any nested first child inside bottomWrapper (the table)
+    let observedElement: Element | null = null;
+    const updateObservation = () => {
+      if (observedElement) {
+        resizeObserver.unobserve(observedElement);
+      }
+      const newTarget = bottomWrapper.firstElementChild;
+      if (newTarget) {
+        resizeObserver.observe(newTarget);
+        observedElement = newTarget;
+      }
+      syncWidth();
+    };
+
+    updateObservation();
+
+    // Setup mutation observer to watch inside the bottom scroll wrapper for row or list loads
+    const mutationObserver = new MutationObserver(() => {
+      updateObservation();
+    });
+    mutationObserver.observe(bottomWrapper, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+
+    // Handle window resize dynamically
+    window.addEventListener('resize', syncWidth);
+
+    // Bulletproof periodic synchronization container width fallback
+    const syncInterval = setInterval(syncWidth, 1000);
+
+    return () => {
+      clearTimeout(t);
+      resizeObserver.disconnect();
+      mutationObserver.disconnect();
+      window.removeEventListener('resize', syncWidth);
+      clearInterval(syncInterval);
+    };
+  }, []);
+
+  return (
+    <div className="flex flex-col w-full relative group/scroll">
+      {scrollWidth > 0 && (
+        <div 
+          ref={topScrollRef} 
+          onScroll={handleTopScroll}
+          className="w-full overflow-x-auto overflow-y-hidden bg-[#0f1115] border-b border-[#2d3139]/30 rounded-t-lg transition-all"
+          style={{ 
+            height: '14px', 
+            display: showTopScroll ? 'block' : 'none' 
+          }}
+        >
+          <div style={{ width: `${scrollWidth}px`, height: '1px' }} />
+        </div>
+      )}
+
+      <div 
+        ref={bottomScrollRef} 
+        onScroll={handleBottomScroll}
+        className="w-full overflow-x-auto max-h-[580px] overflow-y-auto border border-[#2d3139]/60 rounded-b-xl custom-scrollbar"
+      >
+        {children}
+      </div>
+    </div>
+  );
+};
+
+// ----------------------------------------------------
 // Safe parse date helper to avoid crashes
 // ----------------------------------------------------
 const safeParseDate = (date: any): Date => {
@@ -907,7 +1042,7 @@ export function PayableManager({ companyId, suppliers = [], pixSettings, appSett
                 Lançar Conta a Pagar
               </Button>
             </DialogTrigger>
-            <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-md">
+            <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-md max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="text-lg italic font-black uppercase text-red-400">Novo Lançamento</DialogTitle>
                 <DialogDescription className="text-gray-400 text-xs text-left">Cadastre um compromisso financeiro para pagamento futuro.</DialogDescription>
@@ -1046,7 +1181,7 @@ export function PayableManager({ companyId, suppliers = [], pixSettings, appSett
               <p className="text-[11px] text-[#71717a] mt-1">Crie listagens de despesas para acompanhar suas liquidações e caixa em {currentMonthYearStr}.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto border border-[#2d3139]/60 rounded-xl">
+            <DoubleScrollContainer>
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-[#0f1115] border-b border-[#2d3139] text-gray-400 uppercase tracking-widest text-[9px] font-bold">
@@ -1191,14 +1326,14 @@ export function PayableManager({ companyId, suppliers = [], pixSettings, appSett
                 })}
               </tbody>
               </table>
-            </div>
+            </DoubleScrollContainer>
           )}
         </CardContent>
       </Card>
 
       {/* Edit Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-md">
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-md italic font-black uppercase text-red-400">Editar Detalhes</DialogTitle>
           </DialogHeader>
@@ -1423,6 +1558,12 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
   const [paymentMethod, setPaymentMethod] = useState<'Dinheiro' | 'PIX' | 'Cartão'>('PIX');
   const [pixAccountId, setPixAccountId] = useState('');
 
+  // States for Editing details
+  const [editStatus, setEditStatus] = useState<'Pendente' | 'Pago' | 'Parcial'>('Pendente');
+  const [editPaymentDate, setEditPaymentDate] = useState('');
+  const [editPaymentMethod, setEditPaymentMethod] = useState<'Dinheiro' | 'PIX' | 'Cartão'>('PIX');
+  const [editPixAccountId, setEditPixAccountId] = useState('');
+
   // Year choices
   const years = [2024, 2025, 2026, 2027];
 
@@ -1498,13 +1639,18 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
       return;
     }
     try {
+      const isPaidOrPartial = editStatus === 'Pago' || editStatus === 'Parcial';
       await updateDoc(doc(db, 'receivables', selectedReceivable.id), {
         description,
         value: Number(value),
         dueDate,
         clientName: clientNameInput,
         category,
-        notes
+        notes,
+        status: editStatus,
+        paymentDate: isPaidOrPartial ? editPaymentDate : '',
+        paymentMethod: isPaidOrPartial ? editPaymentMethod : '',
+        pixAccountId: (isPaidOrPartial && editPaymentMethod === 'PIX') ? editPixAccountId : ''
       });
       toast.success('Lançamento atualizado!');
       setIsEditOpen(false);
@@ -1617,10 +1763,13 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
       const sanitizedDay = Math.min(paymentDay, 28); 
       const isoDueDate = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(sanitizedDay).padStart(2, '0')}`;
 
-      // Check if there is ALREADY a receivable in receivables for this client during this referenceMonth
+      // Check if there is ALREADY a contract receivable in receivables for this client during this referenceMonth
       const checkReceivable = receivables.find(r => 
-        (r.clientId === client.id || (r.clientName || '').toLowerCase() === (client.name || '').toLowerCase()) &&
-        r.referenceMonth === currentMonthYearStr
+        (r.clientId === client.id || normalizeName(r.clientName) === normalizeName(client.name)) &&
+        r.referenceMonth === currentMonthYearStr &&
+        (r.isContractPrediction === true || 
+         (r.category || '').toLowerCase().includes('contrato') || 
+         (r.category || '').toLowerCase().includes('mensalidade'))
       );
 
       return {
@@ -1630,7 +1779,8 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
         dueDate: isoDueDate,
         provisioned: !!checkReceivable,
         receivableRecordId: checkReceivable?.id,
-        isPaid: checkReceivable?.status === 'Pago'
+        isPaid: checkReceivable?.status === 'Pago',
+        paymentDate: checkReceivable?.paymentDate || checkReceivable?.date
       };
     });
   }, [clients, selectedMonth, selectedYear, receivables, currentMonthYearStr]);
@@ -1693,39 +1843,63 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
 
   const handleSingleProvisionContract = async (item: any) => {
     try {
-      const saveStatus = isCurrentOrPastMonth ? 'Pago' : 'Pendente';
-      const payDateVal = isCurrentOrPastMonth ? format(new Date(), 'yyyy-MM-dd') : '';
-
-      await addDoc(collection(db, 'receivables'), {
-        companyId,
-        clientId: item.client?.id || item.clientId || '',
-        clientName: item.client?.name || item.clientName,
-        description: `Mensalidade Contrato - Ref ${currentMonthYearStr}`,
-        value: Number(item.value || 0),
-        dueDate: item.dueDate,
-        category: 'Contrato',
-        status: saveStatus,
-        isContractPrediction: true,
-        referenceMonth: currentMonthYearStr,
-        paymentDate: payDateVal,
-        paymentMethod: isCurrentOrPastMonth ? 'PIX' : '',
-        createdAt: Timestamp.now()
-      });
-
       if (isCurrentOrPastMonth) {
-        await addDoc(collection(db, 'financial'), {
+        // If current or past, provision as "Pendente" first, then open standard Receive dialog
+        const docRef = await addDoc(collection(db, 'receivables'), {
           companyId,
-          type: 'Receita',
-          category: 'Contrato',
-          description: `Mensalidade Recebida (Auto): ${item.client?.name || item.clientName} - Ref ${currentMonthYearStr}`,
+          clientId: item.client?.id || item.clientId || '',
+          clientName: item.client?.name || item.clientName,
+          description: `Mensalidade Contrato - Ref ${currentMonthYearStr}`,
           value: Number(item.value || 0),
-          date: payDateVal,
-          origin: 'Contas a Receber',
-          paymentMethod: 'PIX',
+          dueDate: item.dueDate,
+          category: 'Contrato',
+          status: 'Pendente',
+          isContractPrediction: true,
+          referenceMonth: currentMonthYearStr,
           createdAt: Timestamp.now()
         });
-        toast.success(`Mensalidade de ${item.client?.name || item.clientName} lançada como PAGO e integrada ao fluxo de caixa!`);
+
+        const newRec: ReceivableRecord = {
+          id: docRef.id,
+          companyId,
+          clientId: item.client?.id || item.clientId || '',
+          clientName: item.client?.name || item.clientName,
+          description: `Mensalidade Contrato - Ref ${currentMonthYearStr}`,
+          value: Number(item.value || 0),
+          dueDate: item.dueDate,
+          category: 'Contrato',
+          status: 'Pendente',
+          isContractPrediction: true,
+          referenceMonth: currentMonthYearStr,
+          createdAt: new Date()
+        };
+
+        setSelectedReceivable(newRec);
+        setPayDate(format(new Date(), 'yyyy-MM-dd'));
+        setPayType('total');
+        setPayAmount(String(item.value));
+        if (pixSettings?.accounts?.length > 0) {
+          setPixAccountId(pixSettings.accounts[0].id);
+        } else {
+          setPixAccountId('');
+        }
+        setIsPayOpen(true);
+        toast.success(`Contrato de ${item.client?.name || item.clientName} lançado. Preencha os detalhes da baixa.`);
       } else {
+        // Future month: launch as open "Pendente"
+        await addDoc(collection(db, 'receivables'), {
+          companyId,
+          clientId: item.client?.id || item.clientId || '',
+          clientName: item.client?.name || item.clientName,
+          description: `Mensalidade Contrato - Ref ${currentMonthYearStr}`,
+          value: Number(item.value || 0),
+          dueDate: item.dueDate,
+          category: 'Contrato',
+          status: 'Pendente',
+          isContractPrediction: true,
+          referenceMonth: currentMonthYearStr,
+          createdAt: Timestamp.now()
+        });
         toast.success(`Mensalidade de ${item.client?.name || item.clientName} lançada como PENDENTE no contas a receber!`);
       }
     } catch (err) {
@@ -1736,8 +1910,8 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
 
   const handleDirectReceiveContractOnly = async (item: any) => {
     try {
-      // 1. Create a Paid Receivable object instantly inside receivables
-      await addDoc(collection(db, 'receivables'), {
+      // Create a Pendente receivable, then trigger the standard pay dialog where they can select PIX or Cash
+      const docRef = await addDoc(collection(db, 'receivables'), {
         companyId,
         clientId: item.client?.id || item.clientId || '',
         clientName: item.client?.name || item.clientName,
@@ -1745,27 +1919,39 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
         value: Number(item.value || 0),
         dueDate: item.dueDate,
         category: 'Contrato',
-        status: 'Pago',
-        paymentDate: format(new Date(), 'yyyy-MM-dd'),
+        status: 'Pendente',
         isContractPrediction: true,
         referenceMonth: currentMonthYearStr,
         createdAt: Timestamp.now()
       });
 
-      // 2. Launch in finances immediately as Revenue
-      await addDoc(collection(db, 'financial'), {
+      const newRec: ReceivableRecord = {
+        id: docRef.id,
         companyId,
-        type: 'Receita',
-        category: 'Contrato',
-        description: `Mensalidade Recebida: ${item.client?.name || item.clientName} - Ref ${currentMonthYearStr}`,
+        clientId: item.client?.id || item.clientId || '',
+        clientName: item.client?.name || item.clientName,
+        description: `Mensalidade Contrato - Ref ${currentMonthYearStr}`,
         value: Number(item.value || 0),
-        date: format(new Date(), 'yyyy-MM-dd'),
-        origin: 'Contas a Receber',
-        paymentMethod: 'PIX',
-        createdAt: Timestamp.now()
-      });
+        dueDate: item.dueDate,
+        category: 'Contrato',
+        status: 'Pendente',
+        isContractPrediction: true,
+        referenceMonth: currentMonthYearStr,
+        createdAt: new Date()
+      };
 
-      toast.success(`Baixa efetuada com sucesso! Recebimento do de ${item.client?.name || item.clientName} lançado no financeiro.`);
+      setSelectedReceivable(newRec);
+      setPayDate(format(new Date(), 'yyyy-MM-dd'));
+      setPayType('total');
+      setPayAmount(String(item.value));
+      if (pixSettings?.accounts?.length > 0) {
+        setPixAccountId(pixSettings.accounts[0].id);
+      } else {
+        setPixAccountId('');
+      }
+      setIsPayOpen(true);
+
+      toast.success(`Contrato de ${item.client?.name || item.clientName} lançado em aberto. Selecione a forma de pagamento abaixo para efetuar a baixa!`);
     } catch (err) {
       toast.error('Erro ao receber contrato.');
       console.error(err);
@@ -1912,7 +2098,7 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
   const getClientType = (clientName: string, clientId?: string) => {
     const matchingClient = clients.find(c => 
       (clientId && c.id === clientId) || 
-      (c.name || '').toLowerCase() === (clientName || '').toLowerCase()
+      normalizeName(c.name) === normalizeName(clientName)
     );
     return matchingClient?.type || 'Avulso';
   };
@@ -1960,7 +2146,7 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
                 Lançar Recebível
               </Button>
             </DialogTrigger>
-            <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-md">
+            <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-md max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="text-lg font-black uppercase text-green-400 italic">Novo Recebível Manual</DialogTitle>
                 <DialogDescription className="text-gray-400 text-xs">Lançar uma previsão ou direito de crédito avulso.</DialogDescription>
@@ -2120,7 +2306,7 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
                 <p className="text-[11px] text-[#71717a] mt-1">Nenhum direito a receber para os filtros selecionados.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto border border-[#2d3139]/60 rounded-xl">
+              <DoubleScrollContainer>
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-[#0f1115] border-b border-[#2d3139] text-gray-400 uppercase tracking-widest text-[9px] font-bold">
@@ -2279,6 +2465,10 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
                                       setClientNameInput(r.clientName || '');
                                       setCategory(r.category || 'Mensalidade');
                                       setNotes(r.notes || '');
+                                      setEditStatus(r.status || 'Pendente');
+                                      setEditPaymentDate(r.paymentDate || r.dueDate || format(new Date(), 'yyyy-MM-dd'));
+                                      setEditPaymentMethod(r.paymentMethod || 'PIX');
+                                      setEditPixAccountId(r.pixAccountId || '');
                                       setIsEditOpen(true);
                                     }}
                                     variant="ghost"
@@ -2306,7 +2496,7 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
                     })}
                   </tbody>
                 </table>
-              </div>
+              </DoubleScrollContainer>
             )}
           </CardContent>
         </Card>
@@ -2337,13 +2527,13 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
                 <p className="text-[11px] text-[#71717a] mt-1">Atribua o tipo "Contrato" com "Valor Mensal" e "Dia de Vencimento" para um ou mais clientes no cadastro de clientes.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto border border-[#2d3139]/60 rounded-xl">
+              <DoubleScrollContainer>
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-[#0f1115] border-b border-[#2d3139] text-gray-400 uppercase tracking-widest text-[9px] font-bold">
                       <th className="p-4">Cliente de Contrato</th>
                       <th className="p-4">Dia Preferível</th>
-                      <th className="p-4">Vencimento Planejado</th>
+                      <th className="p-4">Data da Baixa/Pagamento</th>
                       <th className="p-4">Valor Mensalidade</th>
                       <th className="p-4">Estado no Período</th>
                       <th className="p-4 text-right">Ação Rápida de Entrada</th>
@@ -2358,8 +2548,17 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
                         <td className="p-4 font-mono font-bold text-gray-400">
                           Dia {cp.paymentDay}
                         </td>
-                        <td className="p-4 text-gray-400 font-mono">
-                          {format(safeParseDate(cp.dueDate), 'dd/MM/yyyy')}
+                        <td className="p-4 font-mono">
+                          {cp.isPaid && cp.paymentDate ? (
+                            <span className="text-green-400 font-bold flex flex-col">
+                              <span>{format(safeParseDate(cp.paymentDate), 'dd/MM/yyyy')}</span>
+                              <span className="text-[9px] text-green-500/60 font-sans font-normal uppercase">Quitada</span>
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">
+                              {format(safeParseDate(cp.dueDate), 'dd/MM/yyyy')}
+                            </span>
+                          )}
                         </td>
                         <td className="p-4 font-mono font-bold text-green-400">
                           R$ {Number(cp.value).toFixed(2)}
@@ -2401,7 +2600,7 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </DoubleScrollContainer>
             )}
           </CardContent>
         </Card>
@@ -2409,7 +2608,7 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
 
       {/* Edit Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-md">
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-md font-black uppercase text-green-400 italic">Editar Recebível</DialogTitle>
           </DialogHeader>
@@ -2457,6 +2656,64 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
                   <SelectItem value="Outros">Outras Fontes</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="pt-2 border-t border-[#2d3139]/50 mt-2 space-y-3">
+              <span className="text-[10px] font-black uppercase text-green-400 block tracking-wider font-mono">Informações de Recebimento / Baixa</span>
+              
+              <div className="space-y-1.5">
+                <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Status do Recebível</Label>
+                <Select value={editStatus} onValueChange={(val: any) => setEditStatus(val)}>
+                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                    <SelectItem value="Pendente">Pendente</SelectItem>
+                    <SelectItem value="Pago">Pago</SelectItem>
+                    <SelectItem value="Parcial">Parcial</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {(editStatus === 'Pago' || editStatus === 'Parcial') && (
+                <div className="space-y-3 pt-1 border-t border-[#2d3139]/30">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Data do Recebimento</Label>
+                      <Input type="date" value={editPaymentDate} onChange={e => setEditPaymentDate(e.target.value)} className="bg-[#0f1115] border-[#2d3139]" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Forma de Recebimento</Label>
+                      <Select value={editPaymentMethod} onValueChange={(val: any) => setEditPaymentMethod(val)}>
+                        <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                          <SelectItem value="PIX">PIX</SelectItem>
+                          <SelectItem value="Dinheiro">Dinheiro</SelectItem>
+                          <SelectItem value="Cartão">Cartão</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {editPaymentMethod === 'PIX' && pixSettings?.accounts?.length > 0 && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider">Conta Pix Destino</Label>
+                      <Select value={editPixAccountId} onValueChange={setEditPixAccountId}>
+                        <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                          <SelectValue placeholder="Selecione a conta..." />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                          {pixSettings.accounts.map((acc: any) => (
+                            <SelectItem key={acc.id} value={acc.id}>{acc.bank} - {acc.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-400 font-bold uppercase tracking-wider font-mono text-gray-500">Anotações</Label>
@@ -2787,7 +3044,7 @@ export function SalesHistoryManager({ sales = [], clients = [], companyId }: Sal
               <p className="text-[11px] text-[#71717a] mt-1">Realize vendas rápidas no módulo PDV para povoar este histórico real.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto border border-[#2d3139]/60 rounded-xl">
+            <DoubleScrollContainer>
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-[#0f1115] border-b border-[#2d3139] text-gray-400 uppercase tracking-widest text-[10px]">
@@ -2838,7 +3095,7 @@ export function SalesHistoryManager({ sales = [], clients = [], companyId }: Sal
                   })}
                 </tbody>
               </table>
-            </div>
+            </DoubleScrollContainer>
           )}
         </CardContent>
       </Card>

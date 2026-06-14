@@ -755,24 +755,22 @@ function TableDoubleScroll({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex flex-col w-full relative group/scroll">
-      {scrollWidth > 0 && (
-        <div 
-          ref={topScrollRef} 
-          onScroll={handleTopScroll}
-          className="w-full overflow-x-auto overflow-y-hidden bg-[#0f1115] border-b border-[#2d3139]/30 rounded-t-lg transition-all"
-          style={{ 
-            height: '14px', 
-            display: showTopScroll ? 'block' : 'none' 
-          }}
-        >
-          <div style={{ width: `${scrollWidth}px`, height: '1px' }} />
-        </div>
-      )}
+      <div 
+        ref={topScrollRef} 
+        onScroll={handleTopScroll}
+        className="w-full overflow-x-auto overflow-y-hidden bg-[#0f1115] border-b border-[#2d3139]/30 rounded-t-lg transition-all custom-scrollbar"
+        style={{ 
+          height: '14px', 
+          display: showTopScroll ? 'block' : 'none' 
+        }}
+      >
+        <div style={{ width: `${scrollWidth}px`, height: '1px' }} />
+      </div>
 
       <div 
         ref={bottomScrollRef} 
         onScroll={handleBottomScroll}
-        className="w-full overflow-x-auto max-h-[580px] overflow-y-auto border border-[#2d3139]/60 rounded-b-xl custom-scrollbar"
+        className="w-full overflow-x-auto custom-scrollbar"
       >
         {children}
       </div>
@@ -3508,20 +3506,6 @@ export default function MainApp() {
     const unsubscribeUser = onSnapshot(userRef, async (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        
-        // Auto-heal empty or missing companyId in local DB/offline mode ONLY for Master admin accounts to default-company-id
-        const loggedEmail = (user.email || '').toLowerCase().trim();
-        const isMasterUser = loggedEmail === 'emailparasiteslixo@gmail.com' || loggedEmail === 'alffonseca42@gmail.com';
-        
-        if (isLocalDb && isMasterUser && (!data.companyId || data.companyId === '')) {
-          data.companyId = 'default-company-id';
-          try {
-            await updateDoc(userRef, { companyId: 'default-company-id' });
-          } catch (err) {
-            console.error("Erro ao sincronizar companyId local:", err);
-          }
-        }
-
         setCurrentUserData(data);
         
         // Sincroniza o nome de exibição do Auth com o Firestore se houver divergência
@@ -4388,17 +4372,10 @@ export default function MainApp() {
       return;
     }
 
-    const finalEmail = isLocalDb ? email.trim() : getFinalEmail(email);
-    if (!isLocalDb) {
-      if (!finalEmail || !finalEmail.includes('@')) {
-        toast.error('O formato do usuário ou e-mail é inválido.');
-        return;
-      }
-    } else {
-      if (!finalEmail) {
-        toast.error('O nome de usuário é obrigatório.');
-        return;
-      }
+    const finalEmail = getFinalEmail(email);
+    if (!finalEmail || !finalEmail.includes('@')) {
+      toast.error('O formato do usuário ou e-mail é inválido.');
+      return;
     }
     
     setIsAuthLoading(true);
@@ -4581,23 +4558,13 @@ export default function MainApp() {
   // If user is not logged in, show the standard login page.
   // The inviteCodeUrl will stay in the URL and be processed by the CompanyWizard after login.
   if (!user) {
-    const renderDbMode = (() => {
-      if (isLocalDb) return 'local';
-      const override = localStorage.getItem('DB_MODE_OVERRIDE');
-      if (override === 'online') return 'online';
-      return 'default'; // hybrid
-    })();
-
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-[#0f1115] p-3 md:p-6 overflow-y-auto">
-        <div className={cn(
-          "w-full space-y-4 py-2 animate-in fade-in duration-500",
-          renderDbMode === 'default' ? "max-w-4xl" : "max-w-md"
-        )}>
+        <div className="w-full max-w-4xl space-y-4 py-2 animate-in fade-in duration-500">
           
           {/* Logo with Company Name on Top */}
           <div className="text-center space-y-2">
-            {inviteCodeUrl && renderDbMode !== 'local' && (
+            {inviteCodeUrl && (
               <div className="max-w-md mx-auto bg-[#3b82f6]/10 border border-[#3b82f6]/30 p-3 rounded-lg flex items-center gap-3 mb-2 text-left animate-in slide-in-from-top duration-700">
                 <div className="p-1.5 bg-[#3b82f6] rounded text-white">
                   <Plus className="h-4 w-4" />
@@ -4620,354 +4587,340 @@ export default function MainApp() {
                 </div>
               )}
               <h1 className="text-xl md:text-2xl font-extrabold tracking-tight text-white bg-gradient-to-r from-white via-gray-200 to-gray-400 bg-clip-text text-transparent">
-                {inviteCodeUrl && renderDbMode !== 'local' ? 'Ativação de Cadastro' : (currentCompany?.name || appSettings.companyName || (renderDbMode === 'local' ? 'SegurTec-Pro Local' : 'SegurTec-Pro SaaS'))}
+                {inviteCodeUrl ? 'Ativação de Cadastro' : (currentCompany?.name || appSettings.companyName || 'SegurTec-Pro SaaS')}
               </h1>
               <p className="text-[#71717a] text-[11px] md:text-xs max-w-md">
-                {inviteCodeUrl && renderDbMode !== 'local'
+                {inviteCodeUrl 
                   ? 'Use o formulário abaixo para criar sua conta e ativar seu código de liberação.' 
-                  : (renderDbMode === 'local' ? 'Acesso ao Servidor Local Offline.' : 'Controle total para instaladores de segurança eletrônica.')}
+                  : 'Controle total para instaladores de segurança eletrônica.'}
               </p>
             </div>
           </div>
 
           {/* Two-Column Layout */}
-          <div className={cn(
-            "grid grid-cols-1 gap-4 items-stretch",
-            renderDbMode === 'default' ? "md:grid-cols-12" : "grid-cols-1"
-          )}>
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-stretch">
             
-            {/* Left Column: Email/Password Authentication */}
-            {(renderDbMode === 'default' || renderDbMode === 'local') && (
-              <div className={cn(
-                "flex flex-col",
-                renderDbMode === 'default' ? "md:col-span-7" : "col-span-1"
-              )}>
-                <Card className={`border-[#2d3139]/80 bg-[#1a1d23] h-full flex flex-col justify-between ${inviteCodeUrl && renderDbMode !== 'local' ? 'ring-2 ring-blue-500/30' : ''}`}>
-                  <CardHeader className="p-4 pb-2 space-y-1">
-                    <CardTitle className="text-white text-base flex items-center gap-2">
-                      <Shield size={16} className="text-[#3b82f6]" />
-                      {inviteCodeUrl && renderDbMode !== 'local'
-                        ? (authMode === 'login' ? 'Vincular Convite' : 'Criar Conta de Admin') 
-                        : (renderDbMode === 'local' ? 'Entrar com Usuário' : (authMode === 'login' ? 'Entrar com E-mail' : 'Criar Nova Conta'))}
-                    </CardTitle>
-                    <CardDescription className="text-[#71717a] text-[11px] leading-snug">
-                      {inviteCodeUrl && renderDbMode !== 'local' ? (
-                        <div className="bg-blue-500/10 border border-blue-500/20 p-2.5 rounded mb-1 text-left">
-                           <p className="text-blue-400 text-[9px] font-black uppercase tracking-[0.2em] flex items-center gap-1.5">
-                             <Shield size={12} /> Convite Mestre
-                           </p>
-                           <p className="text-white text-[11px] mt-0.5">
-                             Registrando convite mestre <span className="font-mono font-bold text-blue-300">{inviteCodeUrl}</span>.
-                           </p>
-                        </div>
-                      ) : (renderDbMode === 'local' ? 'Insira o nome de usuário e senha da equipe.' : (authMode === 'login' ? 'Insira suas credenciais de segurança cadastradas.' : 'Cadastre sua conta para começar imediatamente.'))}
-                    </CardDescription>
-                  </CardHeader>
+            {/* Left Column: Email/Password Authentication (spanning 7 columns on md) */}
+            <div className="md:col-span-7 flex flex-col">
+              <Card className={`border-[#2d3139]/80 bg-[#1a1d23] h-full flex flex-col justify-between ${inviteCodeUrl ? 'ring-2 ring-blue-500/30' : ''}`}>
+                <CardHeader className="p-4 pb-2 space-y-1">
+                  <CardTitle className="text-white text-base flex items-center gap-2">
+                    <Shield size={16} className="text-[#3b82f6]" />
+                    {inviteCodeUrl 
+                      ? (authMode === 'login' ? 'Vincular Convite' : 'Criar Conta de Admin') 
+                      : (authMode === 'login' ? 'Entrar com E-mail' : 'Criar Nova Conta')}
+                  </CardTitle>
+                  <CardDescription className="text-[#71717a] text-[11px] leading-snug">
+                    {inviteCodeUrl ? (
+                      <div className="bg-blue-500/10 border border-blue-500/20 p-2.5 rounded mb-1 text-left">
+                         <p className="text-blue-400 text-[9px] font-black uppercase tracking-[0.2em] flex items-center gap-1.5">
+                           <Shield size={12} /> Convite Mestre
+                         </p>
+                         <p className="text-white text-[11px] mt-0.5">
+                           Registrando convite mestre <span className="font-mono font-bold text-blue-300">{inviteCodeUrl}</span>.
+                         </p>
+                      </div>
+                    ) : (authMode === 'login' ? 'Insira suas credenciais de segurança cadastradas.' : 'Cadastre sua conta para começar imediatamente.')}
+                  </CardDescription>
+                </CardHeader>
 
-                  <CardContent className="p-4 pt-1 space-y-3 flex-1 flex flex-col justify-between">
-                    <div>
-                      {lastAuthError && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-                          <div className="bg-[#1a1d23] border border-[#2d3139] rounded-xl max-w-md w-full overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 text-left">
-                            {/* Header of Modal */}
-                            <div className="p-5 border-b border-[#2d3139] bg-[#1f232b] flex items-center gap-2.5">
-                              <div className="p-2 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400">
-                                <ShieldAlert size={20} />
-                              </div>
-                              <div>
-                                <h3 className="font-bold text-white text-sm md:text-base">
-                                  {lastAuthError === 'INVALID_CREDENTIALS' 
-                                    ? 'Credencial Inválida ou Não Encontrada' 
-                                    : lastAuthError === 'TIMEOUT' 
-                                      ? 'Tempo de Conexão Esgotado' 
-                                      : 'Problema na Autenticação'}
-                                </h3>
-                                <p className="text-[11px] text-gray-400 mt-0.5">Identificamos o seguinte detalhe:</p>
-                              </div>
-                            </div>
-                            
-                            {/* Content of Modal */}
-                            <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto text-xs md:text-sm text-gray-300">
-                              {lastAuthError === 'INVALID_CREDENTIALS' ? (
-                                <div className="space-y-3 leading-relaxed">
-                                  <p className="text-[#e2e8f0]">
-                                    A autenticação falhou. Se o login está falhando, considere as soluções mais comuns:
+                <CardContent className="p-4 pt-1 space-y-3 flex-1">
+                  {lastAuthError && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                      <div className="bg-[#1a1d23] border border-[#2d3139] rounded-xl max-w-md w-full overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 text-left">
+                        {/* Header of Modal */}
+                        <div className="p-5 border-b border-[#2d3139] bg-[#1f232b] flex items-center gap-2.5">
+                          <div className="p-2 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400">
+                            <ShieldAlert size={20} />
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-white text-sm md:text-base">
+                              {lastAuthError === 'INVALID_CREDENTIALS' 
+                                ? 'Credencial Inválida ou Não Encontrada' 
+                                : lastAuthError === 'TIMEOUT' 
+                                  ? 'Tempo de Conexão Esgotado' 
+                                  : 'Problema na Autenticação'}
+                            </h3>
+                            <p className="text-[11px] text-gray-400 mt-0.5">Identificamos o seguinte detalhe:</p>
+                          </div>
+                        </div>
+                        
+                        {/* Content of Modal */}
+                        <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto text-xs md:text-sm text-gray-300">
+                          {lastAuthError === 'INVALID_CREDENTIALS' ? (
+                            <div className="space-y-3 leading-relaxed">
+                              <p className="text-[#e2e8f0]">
+                                O Firebase retornou <span className="text-red-400 font-mono text-[11px] bg-[#0f1115] px-1.5 py-0.5 rounded border border-[#2d3139]">auth/invalid-credential</span>. Se o login está falhando, considere as soluções mais comuns:
+                              </p>
+                              <div className="bg-[#0f1115] rounded-lgs p-3.5 border border-[#2d3139]/55 space-y-3 rounded-lg text-xs">
+                                <div className="space-y-1">
+                                  <p className="font-bold text-white text-[11.5px] flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                    Fez o primeiro acesso via Google?
                                   </p>
-                                  <div className="bg-[#0f1115] rounded-lgs p-3.5 border border-[#2d3139]/55 space-y-3 rounded-lg text-xs">
-                                    {renderDbMode !== 'local' && (
-                                      <>
-                                        <div className="space-y-1">
-                                          <p className="font-bold text-white text-[11.5px] flex items-center gap-1.5">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                                            Fez o primeiro acesso via Google?
-                                          </p>
-                                          <p className="text-[#b0b0b0] text-[11px] pl-3">
-                                            Se você se cadastrou clicando no botão do Google, você <span className="text-blue-400 font-bold">não tem uma senha tradicional</span> cadastrada. Entre utilizando o botão <strong className="text-white">Google</strong>.
-                                          </p>
-                                        </div>
-                                        <hr className="border-[#2d3139]/40" />
-                                      </>
-                                    )}
-                                    
-                                    <div className="space-y-1">
-                                      <p className="font-bold text-white text-[11.5px] flex items-center gap-1.5">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                                        Usuários Criados Pelo Administrador
-                                      </p>
-                                      <p className="text-[#b0b0b0] text-[11px] pl-3">
-                                        Se você é membro de equipe, o seu usuário é o seu nome cadastrado na aba Equipe. Certifique-se de que a senha está digitada corretamente e use letras correspondentes ao cadastro.
-                                      </p>
-                                    </div>
-                                  </div>
+                                  <p className="text-[#b0b0b0] text-[11px] pl-3">
+                                    Se você se cadastrou clicando no botão do Google, você <span className="text-blue-400 font-bold">não tem uma senha tradicional</span> cadastrada. Entre utilizando o botão <strong className="text-white">Google</strong> abaixo.
+                                  </p>
                                 </div>
-                              ) : lastAuthError === 'TIMEOUT' ? (
-                                <p className="leading-relaxed text-xs text-gray-300">
-                                  O servidor demorou mais que 8 segundos para responder. Verifique sua conexão de rede ou tente novamente.
-                                </p>
-                              ) : (
-                                <p className="leading-relaxed text-xs text-gray-300">
-                                  Usuário ou senha incorretos. Verifique as credenciais e certifique-se de que a senha inserida está correta.
-                                </p>
-                              )}
-                            </div>
+                                
+                                <hr className="border-[#2d3139]/40" />
 
-                            {/* Footer of Modal */}
-                            <div className="p-4 bg-[#14161c] border-t border-[#2d3139] flex justify-end gap-2">
-                              <Button 
-                                type="button" 
-                                onClick={() => setLastAuthError(null)}
-                                className="bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none h-10 px-6 text-xs font-semibold"
-                              >
-                                Ok
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      )}
+                                <div className="space-y-1">
+                                  <p className="font-bold text-white text-[11.5px] flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                    Quer usar Senha Tradicional?
+                                  </p>
+                                  <p className="text-[#b0b0b0] text-[11px] pl-3">
+                                    Se você usava o Google mas agora quer entrar com e-mail/senha tradicional, clique no botão <button type="button" onClick={() => { setLastAuthError(null); handlePasswordReset(); }} className="text-blue-400 font-semibold underline hover:text-blue-300 focus:outline-none">Esqueceu a senha?</button>. Você receberá um e-mail para registrar sua senha.
+                                  </p>
+                                </div>
 
-                      <form onSubmit={handleEmailAuth} className="space-y-2.5 text-left">
-                        {authMode === 'register' && renderDbMode !== 'local' && (
-                          <div className="space-y-1">
-                            <Label htmlFor="reg-name" className="text-[#a0a0a0] text-[11px]">Nome Completo</Label>
-                            <Input 
-                              id="reg-name" 
-                              type="text" 
-                              value={displayName} 
-                              onChange={e => setDisplayName(e.target.value)} 
-                              placeholder="Seu nome"
-                              className="bg-[#0f1115] border-[#2d3139] text-white h-8.5 text-xs px-3 py-1.5" 
-                            />
-                          </div>
-                        )}
-                        <div className="space-y-1">
-                          <Label htmlFor="auth-username" className="text-[#a0a0a0] text-[11px]">
-                            {renderDbMode === 'local' ? 'Usuário (Nome)' : 'Usuário ou E-mail'}
-                          </Label>
-                          <Input 
-                            id="auth-username" 
-                            type="text" 
-                            value={email} 
-                            onChange={e => setEmail(e.target.value)} 
-                            placeholder={renderDbMode === 'local' ? "Nome do usuário (equipe)" : "Seu usuário ou e-mail registrado"}
-                            className="bg-[#0f1115] border-[#2d3139] text-white h-8.5 text-xs px-3 py-1.5" 
-                          />
-                          {renderDbMode !== 'local' ? (
-                            <p className="text-[9px] text-[#555] mt-0.5 italic">Dica: Se não for e-mail, usaremos @segurtecpro.com</p>
+                                <hr className="border-[#2d3139]/40" />
+
+                                <div className="space-y-1">
+                                  <p className="font-bold text-white text-[11.5px] flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                    Usuários Criados Pelo Administrador
+                                  </p>
+                                  <p className="text-[#b0b0b0] text-[11px] pl-3">
+                                    Se você é membro de equipe, o seu usuário é o seu e-mail cadastrado em letras minúsculas. Certifique-se de que não possui espaços ou letras maiúsculas.
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          ) : lastAuthError === 'TIMEOUT' ? (
+                            <p className="leading-relaxed text-xs text-gray-300">
+                              O servidor Firebase demorou mais que 8 segundos para responder. Verifique se o método de "E-mail/Senha" está devidamente ativado na aba "Autenticação" do seu console Firebase ou tente novamente com outra conexão de internet.
+                            </p>
+                          ) : lastAuthError === 'OP_NOT_ALLOWED' ? (
+                            <p className="leading-relaxed text-xs text-gray-300">
+                              O provedor de e-mail e senha está desativado no Firebase. Ative o método "E-mail/Senha" no seu console Firebase (Seção de Autenticação para que logins de equipe funcionem).
+                            </p>
+                          ) : lastAuthError === 'EMAIL_IN_USE' ? (
+                            <p className="leading-relaxed text-xs text-gray-300">
+                              Este usuário ou e-mail já está em uso em uma conta no sistema. Por favor utilize uma credencial diferente ou faça o login com o Google.
+                            </p>
+                          ) : lastAuthError === 'WEAK_PASSWORD' ? (
+                            <p className="leading-relaxed text-xs text-gray-300">
+                              A senha inserida é considerada fraca pela segurança do Firebase. A senha deve ter pelo menos 6 caracteres.
+                            </p>
+                          ) : lastAuthError === 'INVALID_EMAIL' ? (
+                            <p className="leading-relaxed text-xs text-gray-300">
+                              O formato do usuário ou e-mail é considerado inválido pelo Firebase. Verifique se digitou corretamente.
+                            </p>
                           ) : (
-                            <p className="text-[9px] text-[#555] mt-0.5 italic">Insira exatamente o nome registrado na Equipe</p>
+                            <p className="leading-relaxed text-xs text-gray-300">
+                              Usuário ou senha incorretos. Se você foi cadastrado pelo administrador de equipe, verifique letras maiúsculas/minúsculas e certifique-se de que a senha inserida está correta.
+                            </p>
                           )}
                         </div>
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between">
-                            <Label htmlFor="auth-pass" className="text-[#a0a0a0] text-[11px]">Senha</Label>
-                            {authMode === 'login' && renderDbMode !== 'local' && (
-                              <button
-                                type="button"
-                                onClick={handlePasswordReset}
-                                className="text-[10px] text-[#3b82f6] hover:text-blue-300 hover:underline transition-colors focus:outline-none"
-                              >
-                                Esqueceu a senha?
-                              </button>
-                            )}
-                          </div>
-                          <div className="relative">
-                            <Input 
-                              id="auth-pass" 
-                              type={showPassword ? "text" : "password"} 
-                              value={password} 
-                              onChange={e => setPassword(e.target.value)} 
-                              placeholder="••••••••"
-                              className="bg-[#0f1115] border-[#2d3139] text-white pr-10 h-8.5 text-xs px-3 py-1.5" 
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setShowPassword(!showPassword)}
-                              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#71717a] hover:text-white transition-colors"
-                            >
-                              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                            </button>
-                          </div>
-                        </div>
-                        <Button type="submit" disabled={isAuthLoading} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none h-8.5 text-xs flex items-center justify-center gap-2 mt-1">
-                          {isAuthLoading ? (
-                            <>
-                              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                              <span>{authMode === 'login' ? 'Entrando...' : 'Cadastrando...'}</span>
-                            </>
-                          ) : (
-                            <span>{renderDbMode === 'local' ? 'Entrar no Sistema' : (authMode === 'login' ? 'Entrar com E-mail' : 'Cadastrar e Acessar')}</span>
-                          )}
-                        </Button>
-                      </form>
 
-                      {renderDbMode !== 'local' && (
-                        <div className="pt-2 text-center">
-                          <button 
-                            onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
-                            className="text-[11px] text-[#3b82f6] hover:underline"
+                        {/* Footer of Modal */}
+                        <div className="p-4 bg-[#14161c] border-t border-[#2d3139] flex flex-col md:flex-row gap-2 justify-end">
+                          <Button 
+                            type="button" 
+                            disabled={isLoggingIn}
+                            onClick={() => {
+                              setLastAuthError(null);
+                              handleLogin();
+                            }}
+                            variant="outline"
+                            className="w-full md:w-auto gap-2 border-[#2d3139] text-white hover:bg-[#2d3139] h-10 px-4 text-xs font-semibold"
                           >
-                            {authMode === 'login' ? 'Não tem uma conta? Cadastre-se' : 'Já tem uma conta? Faça login'}
-                          </button>
+                            {isLoggingIn ? (
+                              <Loader2 className="h-4 w-4 animate-spin text-[#3b82f6]" />
+                            ) : (
+                              <svg className="h-4 w-4" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
+                                <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
+                              </svg>
+                            )}
+                            {isLoggingIn ? 'Autenticando...' : 'Entrar com Google'}
+                          </Button>
+                          <Button 
+                            type="button" 
+                            onClick={() => setLastAuthError(null)}
+                            className="w-full md:w-auto bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none h-10 px-6 text-xs font-semibold"
+                          >
+                            Ok
+                          </Button>
                         </div>
-                      )}
+                      </div>
                     </div>
+                  )}
 
-                    {renderDbMode === 'local' && (
-                      <div className="pt-3 border-t border-[#2d3139]/30 w-full mt-4">
-                        <Button 
-                          onClick={async () => {
-                            try {
-                              toast.info("Encerrando o servidor local...");
-                              await fetch('/api/system/shutdown', { method: 'POST' });
-                            } catch (e) {
-                              console.error("Não foi possível enviar comando de finalização ao servidor.", e);
-                            }
-                            window.close();
-                            setTimeout(() => {
-                              document.body.innerHTML = `
-                                <div style="min-height: 100vh; background-color: #0f1115; color: #e0e0e0; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; padding: 20px; text-align: center;">
-                                  <div style="background-color: #1a1d23; border: 1px solid #2d3139; padding: 32px; border-radius: 12px; max-w: 400px; width: 100%; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);">
-                                    <div style="width: 48px; height: 48px; background-color: rgba(239, 68, 68, 0.1); border-radius: 9999px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto; border: 1px solid rgba(239, 68, 68, 0.2);">
-                                      <span style="color: #ef4444; font-size: 24px; font-weight: bold; line-height: 1;">✕</span>
-                                    </div>
-                                    <h2 style="color: #ffffff; margin-top: 0; font-size: 18px; font-weight: bold; text-transform: uppercase; tracking-wider; margin-bottom: 8px;">Servidor Encerrado</h2>
-                                    <p style="color: #a0a0a0; font-size: 13px; margin-bottom: 24px; line-height: 1.5;">O servidor local do SegurTec-Pro foi finalizado com sucesso.</p>
-                                    <p style="color: #71717a; font-size: 11px; font-style: italic;">Você já pode fechar esta janela do seu navegador.</p>
-                                  </div>
-                                </div>
-                              `;
-                            }, 300);
-                          }}
-                          variant="outline"
-                          className="w-full gap-2 border-red-500/20 text-red-400 hover:bg-neutral-950 hover:text-red-500 transition-all h-8.5 text-[10px] font-black uppercase tracking-wider mt-1 border-dashed"
-                        >
-                          <Power size={11} className="mr-1.5" />
-                          Encerrar Servidor & Fechar Programa
-                        </Button>
+                  <form onSubmit={handleEmailAuth} className="space-y-2.5 text-left">
+                    {authMode === 'register' && (
+                      <div className="space-y-1">
+                        <Label htmlFor="reg-name" className="text-[#a0a0a0] text-[11px]">Nome Completo</Label>
+                        <Input 
+                          id="reg-name" 
+                          type="text" 
+                          value={displayName} 
+                          onChange={e => setDisplayName(e.target.value)} 
+                          placeholder="Seu nome"
+                          className="bg-[#0f1115] border-[#2d3139] text-white h-8.5 text-xs px-3 py-1.5" 
+                        />
                       </div>
                     )}
-                  </CardContent>
-                </Card>
-              </div>
-            )}
+                    <div className="space-y-1">
+                      <Label htmlFor="auth-username" className="text-[#a0a0a0] text-[11px]">Usuário ou E-mail</Label>
+                      <Input 
+                        id="auth-username" 
+                        type="text" 
+                        value={email} 
+                        onChange={e => setEmail(e.target.value)} 
+                        placeholder="Seu usuário ou e-mail registrado"
+                        className="bg-[#0f1115] border-[#2d3139] text-white h-8.5 text-xs px-3 py-1.5" 
+                      />
+                      <p className="text-[9px] text-[#555] mt-0.5 italic">Dica: Se não for e-mail, usaremos @segurtecpro.com</p>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="auth-pass" className="text-[#a0a0a0] text-[11px]">Senha</Label>
+                        {authMode === 'login' && (
+                          <button
+                            type="button"
+                            onClick={handlePasswordReset}
+                            className="text-[10px] text-[#3b82f6] hover:text-blue-300 hover:underline transition-colors focus:outline-none"
+                          >
+                            Esqueceu a senha?
+                          </button>
+                        )}
+                      </div>
+                      <div className="relative">
+                        <Input 
+                          id="auth-pass" 
+                          type={showPassword ? "text" : "password"} 
+                          value={password} 
+                          onChange={e => setPassword(e.target.value)} 
+                          placeholder="••••••••"
+                          className="bg-[#0f1115] border-[#2d3139] text-white pr-10 h-8.5 text-xs px-3 py-1.5" 
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-[#71717a] hover:text-white transition-colors"
+                        >
+                          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
+                    </div>
+                    <Button type="submit" disabled={isAuthLoading} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none h-8.5 text-xs flex items-center justify-center gap-2 mt-1">
+                      {isAuthLoading ? (
+                        <>
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                          <span>{authMode === 'login' ? 'Entrando...' : 'Cadastrando...'}</span>
+                        </>
+                      ) : (
+                        <span>{authMode === 'login' ? 'Entrar com E-mail' : 'Cadastrar e Acessar'}</span>
+                      )}
+                    </Button>
+                  </form>
 
-            {/* Right Column: Google Connection / Social Access */}
-            {(renderDbMode === 'default' || renderDbMode === 'online') && (
-              <div className={cn(
-                "flex flex-col",
-                renderDbMode === 'default' ? "md:col-span-5" : "col-span-1"
-              )}>
-                <Card className="border-[#2d3139]/80 bg-[#1a1d23] h-full flex flex-col justify-between">
-                  <CardHeader className="p-4 pb-2 space-y-1">
-                    <CardTitle className="text-white text-base flex items-center gap-2">
-                      <svg className="h-4 w-4 text-[#3b82f6]" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
+                  <div className="pt-2 text-center">
+                    <button 
+                      onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
+                      className="text-[11px] text-[#3b82f6] hover:underline"
+                    >
+                      {authMode === 'login' ? 'Não tem uma conta? Cadastre-se' : 'Já tem uma conta? Faça login'}
+                    </button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Right Column: Google Connection / Social Access (spanning 5 columns on md) */}
+            <div className="md:col-span-5 flex flex-col">
+              <Card className="border-[#2d3139]/80 bg-[#1a1d23] h-full flex flex-col justify-between">
+                <CardHeader className="p-4 pb-2 space-y-1">
+                  <CardTitle className="text-white text-base flex items-center gap-2">
+                    <svg className="h-4 w-4 text-[#3b82f6]" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
+                      <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
+                    </svg>
+                    Acesso Rápido
+                  </CardTitle>
+                  <CardDescription className="text-[#71717a] text-[11px] leading-snug">
+                    Conecte usando sua conta Google sem precisar de senhas.
+                  </CardDescription>
+                </CardHeader>
+
+                <CardContent className="p-4 pt-1 space-y-3 flex-1 flex flex-col justify-between">
+                  <div className="flex flex-col items-center justify-center text-center space-y-2 py-1">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500/20 to-purple-500/25 flex items-center justify-center border border-blue-500/30 animate-pulse">
+                      <svg className="h-5 w-5 text-[#3b82f6]" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
                         <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
                       </svg>
-                      Acesso Rápido
-                    </CardTitle>
-                    <CardDescription className="text-[#71717a] text-[11px] leading-snug">
-                      Conecte usando sua conta Google sem precisar de senhas.
-                    </CardDescription>
-                  </CardHeader>
-
-                  <CardContent className="p-4 pt-1 space-y-3 flex-1 flex flex-col justify-between">
-                    <div className="flex flex-col items-center justify-center text-center space-y-2 py-1">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500/20 to-purple-500/25 flex items-center justify-center border border-blue-500/30 animate-pulse">
-                        <svg className="h-5 w-5 text-[#3b82f6]" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
-                          <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
-                        </svg>
-                      </div>
-                      <div className="space-y-0.5">
-                        <p className="text-white font-semibold text-xs">Autenticação Unificada</p>
-                        <p className="text-[#a0a0a0] text-[10px]">Acesso rápido e criptografado.</p>
-                        <p className="text-[#71717a] text-[10px] leading-relaxed max-w-xs">
-                          Para administradores, instaladores e parceiros com conta Google.
-                        </p>
-                      </div>
                     </div>
+                    <div className="space-y-0.5">
+                      <p className="text-white font-semibold text-xs">Autenticação Unificada</p>
+                      <p className="text-[#a0a0a0] text-[10px]">Acesso rápido e criptografado.</p>
+                      <p className="text-[#71717a] text-[10px] leading-relaxed max-w-xs">
+                        Para administradores, instaladores e parceiros com conta Google.
+                      </p>
+                    </div>
+                  </div>
 
-                    <Button 
-                      onClick={handleLogin} 
-                      disabled={isLoggingIn}
-                      variant="outline" 
-                      className="w-full gap-2 border-[#2d3139] text-white hover:bg-[#3b82f6]/10 hover:text-white bg-[#0f1115] h-8.5 text-xs font-semibold shadow-sm transition-all duration-200"
+                  <Button 
+                    onClick={handleLogin} 
+                    disabled={isLoggingIn}
+                    variant="outline" 
+                    className="w-full gap-2 border-[#2d3139] text-white hover:bg-[#3b82f6]/10 hover:text-white bg-[#0f1115] h-8.5 text-xs font-semibold shadow-sm transition-all duration-200"
+                  >
+                    {isLoggingIn ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-[#3b82f6]" />
+                    ) : (
+                      <svg className="h-3.5 w-3.5 text-white" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
+                        <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
+                      </svg>
+                    )}
+                    {isLoggingIn ? 'Autenticando...' : 'Entrar com o Google'}
+                  </Button>
+
+                  <div className="pt-2 border-t border-[#2d3139]/30 w-full space-y-1.5 mt-auto">
+                    <a 
+                      href="?assinatura=portal"
+                      className="flex items-center justify-center gap-2 text-[11px] text-[#71717a] hover:text-white transition-colors py-1"
                     >
-                      {isLoggingIn ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin text-[#3b82f6]" />
-                      ) : (
-                        <svg className="h-3.5 w-3.5 text-white" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
-                          <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
-                        </svg>
-                      )}
-                      {isLoggingIn ? 'Autenticando...' : 'Entrar com o Google'}
-                    </Button>
+                      <Key size={11} />
+                      Área de Assinatura do Cliente
+                    </a>
 
-                    <div className="pt-2 border-t border-[#2d3139]/30 w-full space-y-1.5 mt-auto">
-                      <a 
-                        href="?assinatura=portal"
-                        className="flex items-center justify-center gap-2 text-[11px] text-[#71717a] hover:text-white transition-colors py-1"
-                      >
-                        <Key size={11} />
-                        Área de Assinatura do Cliente
-                      </a>
-
-                      {((import.meta as any).env.VITE_LOCAL_DB === 'true' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && (
-                        <Button 
-                          onClick={async () => {
-                            try {
-                              toast.info("Encerrando o servidor local...");
-                              await fetch('/api/system/shutdown', { method: 'POST' });
-                            } catch (e) {
-                              console.error("Não foi possível enviar comando de finalização ao servidor.", e);
-                            }
-                            window.close();
-                            setTimeout(() => {
-                              document.body.innerHTML = `
-                                <div style="min-height: 100vh; background-color: #0f1115; color: #e0e0e0; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; padding: 20px; text-align: center;">
-                                  <div style="background-color: #1a1d23; border: 1px solid #2d3139; padding: 32px; border-radius: 12px; max-w: 400px; width: 100%; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);">
-                                    <div style="width: 48px; height: 48px; background-color: rgba(239, 68, 68, 0.1); border-radius: 9999px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto; border: 1px solid rgba(239, 68, 68, 0.2);">
-                                      <span style="color: #ef4444; font-size: 24px; font-weight: bold; line-height: 1;">✕</span>
-                                    </div>
-                                    <h2 style="color: #ffffff; margin-top: 0; font-size: 18px; font-weight: bold; text-transform: uppercase; tracking-wider; margin-bottom: 8px;">Servidor Encerrado</h2>
-                                    <p style="color: #a0a0a0; font-size: 13px; margin-bottom: 24px; line-height: 1.5;">O servidor local do SegurTec-Pro foi finalizado com sucesso.</p>
-                                    <p style="color: #71717a; font-size: 11px; font-style: italic;">Você já pode fechar esta janela do seu navegador.</p>
+                    {((import.meta as any).env.VITE_LOCAL_DB === 'true' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && (
+                      <Button 
+                        onClick={async () => {
+                          try {
+                            toast.info("Encerrando o servidor local...");
+                            await fetch('/api/system/shutdown', { method: 'POST' });
+                          } catch (e) {
+                            console.error("Não foi possível enviar comando de finalização ao servidor.", e);
+                          }
+                          window.close();
+                          setTimeout(() => {
+                            document.body.innerHTML = `
+                              <div style="min-height: 100vh; background-color: #0f1115; color: #e0e0e0; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; padding: 20px; text-align: center;">
+                                <div style="background-color: #1a1d23; border: 1px solid #2d3139; padding: 32px; border-radius: 12px; max-w: 400px; width: 100%; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);">
+                                  <div style="width: 48px; height: 48px; background-color: rgba(239, 68, 68, 0.1); border-radius: 9999px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto; border: 1px solid rgba(239, 68, 68, 0.2);">
+                                    <span style="color: #ef4444; font-size: 24px; font-weight: bold; line-height: 1;">✕</span>
                                   </div>
+                                  <h2 style="color: #ffffff; margin-top: 0; font-size: 18px; font-weight: bold; text-transform: uppercase; tracking-wider; margin-bottom: 8px;">Servidor Encerrado</h2>
+                                  <p style="color: #a0a0a0; font-size: 13px; margin-bottom: 24px; line-height: 1.5;">O servidor local do SegurTec-Pro foi finalizado com sucesso.</p>
+                                  <p style="color: #71717a; font-size: 11px; font-style: italic;">Você já pode fechar esta janela do seu navegador.</p>
                                 </div>
-                              `;
-                            }, 300);
-                          }}
-                          variant="outline"
-                          className="w-full gap-2 border-red-500/20 text-red-400 hover:bg-neutral-950 hover:text-red-500 transition-all h-8 text-[10px] font-black uppercase tracking-wider mt-0.5 border-dashed"
-                        >
-                          <Power size={11} className="mr-1.5" />
-                          Encerrar Servidor & Fechar Programa
-                        </Button>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
+                              </div>
+                            `;
+                          }, 300);
+                        }}
+                        variant="outline"
+                        className="w-full gap-2 border-red-500/20 text-red-400 hover:bg-neutral-950 hover:text-red-500 transition-all h-8 text-[10px] font-black uppercase tracking-wider mt-0.5 border-dashed"
+                      >
+                        <Power size={11} className="mr-1.5" />
+                        Encerrar Servidor & Fechar Programa
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
 
           </div>
 
@@ -5962,7 +5915,6 @@ export default function MainApp() {
             <ReceiptsManager 
               receipts={receipts} 
               clients={clients} 
-              receivables={receivables}
               pixSettings={pixSettings} 
               appSettings={appSettings} 
               companyId={effectiveCompanyId || ''} 
@@ -6120,6 +6072,7 @@ export default function MainApp() {
                   }
                 }}
               >
+                <div className="overflow-y-auto max-h-[600px] custom-scrollbar">
                   <TableDoubleScroll>
                     <table className="w-full text-left border-collapse min-w-[850px]">
                     <thead>
@@ -6241,6 +6194,7 @@ export default function MainApp() {
                     </tbody>
                   </table>
                   </TableDoubleScroll>
+                </div>
               </Card>
             </div>
           )}
@@ -6448,8 +6402,7 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
         email: finalEmail,
         displayName: newUser.name,
         role: newUser.role,
-        password: cleanPassword,
-        companyId: currentUserData.companyId || 'default-company-id',
+        companyId: currentUserData.companyId,
         createdAt: Timestamp.now()
       });
 
@@ -6507,15 +6460,11 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
       const emailChanged = originalUser ? (originalUser.email?.trim().toLowerCase() !== finalEmail.trim().toLowerCase()) : false;
 
       // 1. Update metadata in Firestore first (Name, Email, Role)
-      const userUpdateFields: any = {
+      await updateDoc(doc(db, 'users', editingUser.id), {
         displayName: editingUser.displayName,
         email: finalEmail,
         role: editingUser.role
-      };
-      if (newPassword) {
-        userUpdateFields.password = newPassword.trim();
-      }
-      await updateDoc(doc(db, 'users', editingUser.id), userUpdateFields);
+      });
 
       await logAction('update', 'user', `Atualizou dados do usuário ${editingUser.displayName} no Firestore (${finalEmail})`, editingUser.id);
 
@@ -6842,9 +6791,9 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
             )}
           </div>
         ) : (
-          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl shadow-xl">
+          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative">
             <TableDoubleScroll>
-            <Table className="min-w-[800px]">
+            <Table>
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[60px]">Ações</TableHead>
@@ -7791,9 +7740,9 @@ function ClientsManager({
             )}
           </div>
         ) : (
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl shadow-xl">
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative">
           <TableDoubleScroll>
-          <Table className="min-w-[1000px]">
+          <Table>
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[110px]">Ações</TableHead>
@@ -8411,9 +8360,9 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
             )}
           </div>
         ) : (
-          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl shadow-2xl">
+          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] shadow-2xl">
             <TableDoubleScroll>
-            <Table className="min-w-[1000px]">
+            <Table>
             <TableHeader>
               <TableRow className="border-[#2d3139] hover:bg-transparent">
                 <TableHead className="w-[40px] text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ações</TableHead>
@@ -8583,7 +8532,7 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
 
 // --- Receipts Manager Component ---
 
-function ReceiptsManager({ receipts = [], clients = [], receivables = [], pixSettings, appSettings, companyId, currentUserData, showList, onEditClick, externalEditAction, onExternalEditHandled }: { receipts: Receipt[], clients: Client[], receivables?: any[], pixSettings: PixSettings, appSettings: AppSettings, companyId: string, currentUserData: any, showList: boolean, onEditClick: (type: 'receipt', data: any) => void, externalEditAction: any, onExternalEditHandled: () => void }) {
+function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings, companyId, currentUserData, showList, onEditClick, externalEditAction, onExternalEditHandled }: { receipts: Receipt[], clients: Client[], pixSettings: PixSettings, appSettings: AppSettings, companyId: string, currentUserData: any, showList: boolean, onEditClick: (type: 'receipt', data: any) => void, externalEditAction: any, onExternalEditHandled: () => void }) {
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -8657,54 +8606,36 @@ function ReceiptsManager({ receipts = [], clients = [], receivables = [], pixSet
       const snapshot = await getDocs(q);
       
       if (receiptData.status === 'Recebido') {
-        // Verification: check if there is an already marked as Paid receivable matching client and referenceMonth
-        const matchingReceivable = (receivables || []).find((r: any) => 
-          r.status === 'Pago' &&
-          r.referenceMonth === receiptData.referenceMonth &&
-          (receiptData.clientId ? r.clientId === receiptData.clientId : r.clientName?.toLowerCase().trim() === receiptData.clientName?.toLowerCase().trim())
-        );
-
-        if (matchingReceivable) {
-          // Found! Let's ask the user if they want to launch it.
-          const shouldLaunch = window.confirm(
-            `Atenção: Já foi dada BAIXA no Contas a Receber para o cliente "${receiptData.clientName}" relativo à referência "${receiptData.referenceMonth}".\n\nDeseja lançar a receita novamente no caixa (duplicando o caixa)?\n- Clique em [Cancelar] para NÃO lançar duplicado.\n- Clique em [OK] se desejar lançar mesmo assim.`
-          );
-          if (!shouldLaunch) {
-            console.log("[Receipt Sync] Ignorando lançamento duplicado devido a baixa existente no contas a receber.");
-            return; // EXIT and do NOT launch!
-          }
-        }
-
         if (snapshot.empty) {
-          await addDoc(collection(db, 'financial'), {
-            type: 'Receita',
-            category: receiptData.clientType === 'Contrato' ? 'Mensalidade Contrato' : 'Serviço Avulso',
-            description: (() => {
-              const m = receiptData.referenceMonth || format(new Date(), 'MMMM/yyyy', { locale: ptBR }).replace(/^\w/, (c) => c.toUpperCase());
-              const capM = m.charAt(0).toUpperCase() + m.slice(1);
-              return `${formatRecordNumber(receiptData.number, receiptData.date)} - ${receiptData.clientName} - ${capM}`;
-            })(),
-            origin: receiptData.number ? formatRecordNumber(receiptData.number, receiptData.date) : 'Recibo',
-            value: Number(receiptData.value),
-            date: Timestamp.now(), // Usar data atual do recebimento
-            paymentMethod: receiptData.paymentMethod || 'PIX',
-            pixAccountId: receiptData.paymentMethod === 'Dinheiro' ? null : (receiptData.pixAccountId || null),
-            serviceType: receiptData.clientType === 'Contrato' ? 'Contrato' : 'Serviço Normal',
-            clientId: receiptData.clientId || null,
-            receiptId: receiptId,
-            companyId,
-            createdAt: Timestamp.now()
-          });
-          toast.info('Lançamento financeiro realizado automaticamente!');
-        }
-      } else {
-        // Remove from financial if no longer 'Recebido'
-        for (const docSnap of snapshot.docs) {
-          await deleteDoc(doc(db, 'financial', docSnap.id));
-          toast.info('Lançamento financeiro removido (mudança de status).');
-        }
+        await addDoc(collection(db, 'financial'), {
+          type: 'Receita',
+          category: receiptData.clientType === 'Contrato' ? 'Mensalidade Contrato' : 'Serviço Avulso',
+          description: (() => {
+            const m = receiptData.referenceMonth || format(new Date(), 'MMMM/yyyy', { locale: ptBR }).replace(/^\w/, (c) => c.toUpperCase());
+            const capM = m.charAt(0).toUpperCase() + m.slice(1);
+            return `${formatRecordNumber(receiptData.number, receiptData.date)} - ${receiptData.clientName} - ${capM}`;
+          })(),
+          origin: receiptData.number ? formatRecordNumber(receiptData.number, receiptData.date) : 'Recibo',
+          value: Number(receiptData.value),
+          date: Timestamp.now(), // Usar data atual do recebimento
+          paymentMethod: receiptData.paymentMethod || 'PIX',
+          pixAccountId: receiptData.paymentMethod === 'Dinheiro' ? null : (receiptData.pixAccountId || null),
+          serviceType: receiptData.clientType === 'Contrato' ? 'Contrato' : 'Serviço Normal',
+          clientId: receiptData.clientId || null,
+          receiptId: receiptId,
+          companyId,
+          createdAt: Timestamp.now()
+        });
+        toast.info('Lançamento financeiro realizado automaticamente!');
       }
-    } catch (error) {
+    } else {
+      // Remove from financial if no longer 'Recebido'
+      for (const docSnap of snapshot.docs) {
+        await deleteDoc(doc(db, 'financial', docSnap.id));
+        toast.info('Lançamento financeiro removido (mudança de status).');
+      }
+    }
+  } catch (error) {
       console.error("Erro ao sincronizar recibo com financeiro:", error);
     }
   };
@@ -9545,7 +9476,7 @@ function ReceiptsManager({ receipts = [], clients = [], receivables = [], pixSet
           </div>
         ) : (
           <Card 
-            className="border-[#2d3139] bg-[#1a1d23] rounded-xl relative focus:outline-none focus:ring-1 focus:ring-blue-500/50 shadow-2xl"
+            className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50"
             tabIndex={0}
             onKeyDown={(e) => {
               if (!filteredReceipts.length) return;
@@ -9580,7 +9511,7 @@ function ReceiptsManager({ receipts = [], clients = [], receivables = [], pixSet
             </div>
           </div>
           <TableDoubleScroll>
-          <Table className="min-w-[1000px]">
+          <Table>
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[140px]">AÇÕES</TableHead>
@@ -11079,9 +11010,9 @@ function SuperAdminPanel({
         </CardContent>
       </Card>
 
-      <Card className="bg-[#1a1d23] border-[#2d3139] rounded-xl shadow-2xl">
+      <Card className="bg-[#1a1d23] border-[#2d3139] rounded-xl overflow-y-auto max-h-[800px]">
         <TableDoubleScroll>
-        <Table className="min-w-[1000px]">
+        <Table>
           <TableHeader>
             <TableRow className="border-[#2d3139] hover:bg-transparent">
               <TableHead className="w-10"></TableHead>
@@ -13230,22 +13161,21 @@ function SettingsManager({
                   {(() => {
                     const allMenuItems = [
                       { id: 'dashboard', label: 'Painel Geral' },
-                      { id: 'dashboard-display-config', label: 'Conf. Exibição PG' },
                       { id: 'visits', label: 'Visitas Técnicas' },
                       { id: 'service-orders', label: 'Ordens de Serviço' },
                       { id: 'laudos', label: 'Laudos Técnicos' },
-                      { id: 'clients', label: 'Clientes' },
-                      { id: 'suppliers', label: 'Fornecedores' },
-                      { id: 'budgets', label: 'Orçamentos' },
+                      { id: 'inventory', label: 'Estoque' },
                       { id: 'pdv', label: 'PDV (Vendas)' },
                       { id: 'vendas-historico', label: 'Histórico de Vendas' },
-                      { id: 'inventory', label: 'Estoque / Produtos' },
+                      { id: 'budgets', label: 'Orçamentos' },
                       { id: 'financial', label: 'Financeiro (Lançamentos)' },
                       { id: 'payable', label: 'Contas a Pagar' },
                       { id: 'receivable', label: 'Contas a Receber' },
-                      { id: 'receipts', label: 'Recibos / Emissor' },
+                      { id: 'receipts', label: 'Recibos' },
+                      { id: 'clients', label: 'Clientes' },
+                      { id: 'suppliers', label: 'Fornecedores' },
                       { id: 'reports', label: 'Relatórios Gerenciais' },
-                      { id: 'users', label: 'Equipe / Permissões' },
+                      { id: 'users', label: 'Equipe' },
                       { id: 'logs', label: 'Logs do Sistema' },
                       { id: 'settings', label: 'Configurações' },
                       { id: 'network-config', label: 'Config. Rede' },
@@ -18051,9 +17981,9 @@ function VisitsManager({
           )}
         </div>
       ) : (
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl shadow-2xl">
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative">
           <TableDoubleScroll>
-          <Table className="min-w-[1000px]">
+          <Table>
           <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">AÇÕES</TableHead>
@@ -19659,7 +19589,7 @@ function FinancialManager({
         </div>
       ) : (
         <Card 
-          className="border-[#2d3139] bg-[#1a1d23] rounded-xl relative focus:outline-none focus:ring-1 focus:ring-blue-500/50 shadow-2xl"
+          className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50"
           tabIndex={0}
           onKeyDown={(e) => {
             if (!filteredFinancials.length) return;
@@ -19678,7 +19608,7 @@ function FinancialManager({
           }}
         >
         <TableDoubleScroll>
-        <Table className="min-w-[1000px]">
+        <Table>
           <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[80px]">AÇÕES</TableHead>
@@ -20773,9 +20703,9 @@ function ServiceOrdersManager({
             )}
           </div>
         ) : (
-          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl relative focus:outline-none focus:ring-1 focus:ring-blue-500/50 shadow-2xl" tabIndex={0}>
+          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50" tabIndex={0}>
           <TableDoubleScroll>
-          <Table className="min-w-[1200px]">
+          <Table>
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">AÇÕES</TableHead>
@@ -22777,9 +22707,9 @@ function BudgetsManager({
           )}
         </div>
       ) : (
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl relative focus:outline-none focus:ring-1 focus:ring-blue-500/50 shadow-2xl" tabIndex={0}>
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50" tabIndex={0}>
           <TableDoubleScroll>
-          <Table className="min-w-[1000px]">
+          <Table>
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">Ações</TableHead>
@@ -24983,7 +24913,7 @@ function InventoryManager({
           ) : (
             <Card className="bg-[#1a1d23] border-[#2d3139] overflow-hidden shadow-2xl">
               <TableDoubleScroll>
-                <Table className="min-w-[900px]">
+                <Table>
                 <TableHeader className="bg-[#0f1115]">
                   <TableRow className="hover:bg-transparent border-[#2d3139]">
                     <TableHead className="text-[#71717a] text-[10px] uppercase font-black px-4 py-3">Cod.</TableHead>
@@ -25582,7 +25512,7 @@ function InventoryManager({
           <div className="py-2">
              <ScrollArea className="h-[450px] pr-4">
                 <TableDoubleScroll>
-                  <Table className="min-w-[650px]">
+                  <Table>
                     <TableHeader className="bg-[#0f1115] sticky top-0 z-10">
                     <TableRow className="border-[#2d3139] hover:bg-transparent">
                       <TableHead className="text-[9px] uppercase font-black px-2 py-3">Data/Hora</TableHead>

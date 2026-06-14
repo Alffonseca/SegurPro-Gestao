@@ -58,7 +58,7 @@ export default function IntroSplashScreen({
           initial={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.6, ease: 'easeInOut' }}
-          className="fixed inset-0 z-[99999] bg-[#090b0f] flex flex-col items-center justify-center overflow-hidden"
+          className="fixed inset-0 z-[99999] bg-[#090b0f] flex flex-col items-center justify-between py-6 overflow-y-auto select-none"
         >
           {/* Futuristic Cyber Grid and Ambient Lighting Background */}
           <div className="absolute inset-0 w-full h-full pointer-events-none select-none overflow-hidden">
@@ -68,8 +68,11 @@ export default function IntroSplashScreen({
             <div className="absolute inset-0 bg-black/40" />
           </div>
 
+          {/* Top spacer to balance the layout and keep the center section correctly aligned */}
+          <div className="h-4 md:h-10 w-full shrink-0" />
+
           {/* Centered Brand Presentation */}
-          <div className="relative z-10 flex flex-col items-center max-w-xl md:max-w-3xl w-full text-center px-6 md:px-12">
+          <div className="relative z-10 flex flex-col items-center max-w-xl md:max-w-3xl w-full text-center px-6 md:px-12 my-auto">
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -111,13 +114,8 @@ export default function IntroSplashScreen({
               </div>
             </motion.div>
 
-            {/* Smooth Glowing Progress Bar Driven strictly by state */}
-            <div className="mt-14 w-full max-w-md space-y-4">
-              <div className="flex items-center gap-2 px-3.5 py-1 bg-black/50 border border-white/5 rounded-full text-[9px] md:text-[10px] text-zinc-400 font-mono select-none mx-auto w-fit">
-                <span className={`h-2 w-2 rounded-full ${progress >= 100 ? 'bg-emerald-500' : 'bg-blue-500 animate-ping'}`} />
-                <span>{progress >= 100 ? 'SISTEMA AUTENTICADO' : 'SISTEMA DE SEGURANÇA OPERACIONAL ONLINE'}</span>
-              </div>
-
+            {/* Smooth Glowing Progress Bar Driven strictly by state - Positioned between text fields */}
+            <div className="mt-8 w-full max-w-md space-y-4">
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between font-mono text-[9px] md:text-[10px] px-1">
                   <span className={`tracking-widest ${progress >= 100 ? 'text-emerald-400 font-extrabold animate-pulse' : 'text-zinc-400'}`}>
@@ -143,10 +141,15 @@ export default function IntroSplashScreen({
                   />
                 </div>
               </div>
+
+              <div className="flex items-center gap-2 px-3.5 py-1 bg-black/50 border border-white/5 rounded-full text-[9px] md:text-[10px] text-zinc-400 font-mono select-none mx-auto w-fit">
+                <span className={`h-2 w-2 rounded-full ${progress >= 100 ? 'bg-emerald-500' : 'bg-blue-500 animate-ping'}`} />
+                <span>{progress >= 100 ? 'SISTEMA AUTENTICADO' : 'SISTEMA DE SEGURANÇA OPERACIONAL ONLINE'}</span>
+              </div>
             </div>
           </div>
 
-          <div className="absolute bottom-8 text-center w-full text-xs text-[#71717a] font-medium tracking-wider">
+          <div className="relative z-10 text-center w-full text-xs text-[#71717a] font-medium tracking-wider mt-10 py-1 shrink-0">
             <span>Sistema desenvolvido por AF TECNOLOGIA. Todos os direitos reservados.</span>
           </div>
         </motion.div>

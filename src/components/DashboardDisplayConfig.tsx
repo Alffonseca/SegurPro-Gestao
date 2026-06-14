@@ -35,6 +35,7 @@ type ConfigKeys =
   | 'showBudgetsCard'
   | 'showReceivablesCard'
   | 'showBalanceCard'
+  | 'showMonthBalanceCard'
   | 'showVisitsChart'
   | 'showTypesChart'
   | 'showFluxoChart'
@@ -52,6 +53,7 @@ export default function DashboardDisplayConfig({ canAccess, onBack }: DashboardD
     showBudgetsCard: true,
     showReceivablesCard: true,
     showBalanceCard: true,
+    showMonthBalanceCard: true,
     
     // Charts and Lists
     showVisitsChart: true,
@@ -62,18 +64,39 @@ export default function DashboardDisplayConfig({ canAccess, onBack }: DashboardD
   });
 
   const [cardsOrder, setCardsOrder] = useState<string[]>(() => {
+    const defaultCards = ['showVisitsCard', 'showPayablesCard', 'showOsCard', 'showPdvSalesCard', 'showBudgetsCard', 'showReceivablesCard', 'showBalanceCard', 'showMonthBalanceCard'];
     const saved = localStorage.getItem('dashboard_cards_order');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+          const validSaved = parsed.filter(item => defaultCards.includes(item));
+          const missing = defaultCards.filter(item => !validSaved.includes(item));
+          return [...validSaved, ...missing];
         }
       } catch (e) {
         // Fallback
       }
     }
-    return ['showVisitsCard', 'showPayablesCard', 'showOsCard', 'showPdvSalesCard', 'showBudgetsCard', 'showReceivablesCard', 'showBalanceCard'];
+    return defaultCards;
+  });
+
+  const [chartsOrder, setChartsOrder] = useState<string[]>(() => {
+    const defaultCharts = ['showVisitsChart', 'showTypesChart', 'showFluxoChart', 'showForecastChart', 'showTodayVisitsList'];
+    const saved = localStorage.getItem('dashboard_charts_order');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const validSaved = parsed.filter(item => defaultCharts.includes(item));
+          const missing = defaultCharts.filter(item => !validSaved.includes(item));
+          return [...validSaved, ...missing];
+        }
+      } catch (e) {
+        // Fallback
+      }
+    }
+    return defaultCharts;
   });
 
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -89,6 +112,7 @@ export default function DashboardDisplayConfig({ canAccess, onBack }: DashboardD
       showBudgetsCard: localStorage.getItem('dashboard_show_budgets_card') !== 'false',
       showReceivablesCard: localStorage.getItem('dashboard_show_receivables_card') !== 'false',
       showBalanceCard: localStorage.getItem('dashboard_show_balance_card') !== 'false',
+      showMonthBalanceCard: localStorage.getItem('dashboard_show_month_balance_card') !== 'false',
       
       // Charts and Lists
       showVisitsChart: localStorage.getItem('dashboard_show_visits_chart') !== 'false',
@@ -112,6 +136,7 @@ export default function DashboardDisplayConfig({ canAccess, onBack }: DashboardD
       showBudgetsCard: 'dashboard_show_budgets_card',
       showReceivablesCard: 'dashboard_show_receivables_card',
       showBalanceCard: 'dashboard_show_balance_card',
+      showMonthBalanceCard: 'dashboard_show_month_balance_card',
       showVisitsChart: 'dashboard_show_visits_chart',
       showTypesChart: 'dashboard_show_types_chart',
       showFluxoChart: 'dashboard_show_fluxo_chart',
@@ -136,6 +161,7 @@ export default function DashboardDisplayConfig({ canAccess, onBack }: DashboardD
       showBudgetsCard: true,
       showReceivablesCard: true,
       showBalanceCard: true,
+      showMonthBalanceCard: true,
       showVisitsChart: true,
       showTypesChart: true,
       showFluxoChart: true,
@@ -152,15 +178,20 @@ export default function DashboardDisplayConfig({ canAccess, onBack }: DashboardD
     localStorage.setItem('dashboard_show_budgets_card', 'true');
     localStorage.setItem('dashboard_show_receivables_card', 'true');
     localStorage.setItem('dashboard_show_balance_card', 'true');
+    localStorage.setItem('dashboard_show_month_balance_card', 'true');
     localStorage.setItem('dashboard_show_visits_chart', 'true');
     localStorage.setItem('dashboard_show_types_chart', 'true');
     localStorage.setItem('dashboard_show_fluxo_chart', 'true');
     localStorage.setItem('dashboard_show_forecast_chart', 'true');
     localStorage.setItem('dashboard_show_today_visits', 'true');
 
-    const defaultOrder = ['showVisitsCard', 'showPayablesCard', 'showOsCard', 'showPdvSalesCard', 'showBudgetsCard', 'showReceivablesCard', 'showBalanceCard'];
+    const defaultOrder = ['showVisitsCard', 'showPayablesCard', 'showOsCard', 'showPdvSalesCard', 'showBudgetsCard', 'showReceivablesCard', 'showBalanceCard', 'showMonthBalanceCard'];
     setCardsOrder(defaultOrder);
     localStorage.setItem('dashboard_cards_order', JSON.stringify(defaultOrder));
+
+    const defaultChartsOrder = ['showVisitsChart', 'showTypesChart', 'showFluxoChart', 'showForecastChart', 'showTodayVisitsList'];
+    setChartsOrder(defaultChartsOrder);
+    localStorage.setItem('dashboard_charts_order', JSON.stringify(defaultChartsOrder));
 
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2000);
@@ -176,6 +207,22 @@ export default function DashboardDisplayConfig({ canAccess, onBack }: DashboardD
       
       setCardsOrder(newOrder);
       localStorage.setItem('dashboard_cards_order', JSON.stringify(newOrder));
+      
+      setSavedSuccess(true);
+      const timer = setTimeout(() => setSavedSuccess(false), 2000);
+    }
+  };
+
+  const moveChart = (index: number, direction: 'up' | 'down') => {
+    const newOrder = [...chartsOrder];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex >= 0 && targetIndex < newOrder.length) {
+      const temp = newOrder[index];
+      newOrder[index] = newOrder[targetIndex];
+      newOrder[targetIndex] = temp;
+      
+      setChartsOrder(newOrder);
+      localStorage.setItem('dashboard_charts_order', JSON.stringify(newOrder));
       
       setSavedSuccess(true);
       const timer = setTimeout(() => setSavedSuccess(false), 2000);
@@ -232,6 +279,13 @@ export default function DashboardDisplayConfig({ canAccess, onBack }: DashboardD
       description: 'Diferença líquida de receitas e despesas registradas hoje.',
       requiredMenu: 'financial',
       icon: <DollarSign className="text-amber-500" size={16} />
+    },
+    {
+      key: 'showMonthBalanceCard' as ConfigKeys,
+      label: 'Resumo Financeiro do Mês (8º Card)',
+      description: 'Card financeiro detalhado com Receitas Mês, Despesas Mês e Saldo do Mês atual.',
+      requiredMenu: 'financial',
+      icon: <DollarSign className="text-pink-500" size={16} />
     }
   ];
 
@@ -436,57 +490,93 @@ export default function DashboardDisplayConfig({ canAccess, onBack }: DashboardD
             </CardDescription>
           </CardHeader>
           <CardContent className="p-6 divide-y divide-[#2d3139]/30 space-y-4">
-            {visualItems.map((item) => {
-              const hasAccessToMenu = canAccess(item.requiredMenu);
-              const isEnabled = configs[item.key] && hasAccessToMenu;
+            {(() => {
+              const sortedVisualItems = [...visualItems].sort((a, b) => {
+                const indexA = chartsOrder.indexOf(a.key);
+                const indexB = chartsOrder.indexOf(b.key);
+                const finalA = indexA === -1 ? 99 : indexA;
+                const finalB = indexB === -1 ? 99 : indexB;
+                return finalA - finalB;
+              });
 
-              return (
-                <div key={item.key} className="flex items-center justify-between pt-4 first:pt-0 gap-4">
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 bg-[#2d3139]/30 rounded-lg mt-0.5 shrink-0">
-                      {item.icon}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-[13px] font-medium transition-colors ${hasAccessToMenu ? 'text-zinc-100 font-semibold' : 'text-[#71717a]'}`}>
-                          {item.label}
-                        </span>
-                        {!hasAccessToMenu && (
-                          <Badge variant="outline" className="text-[9px] text-[#ef4444] border-red-500/20 bg-red-500/5 flex items-center gap-1 py-0 px-1.5 h-4 select-none">
-                            <Lock size={8} /> Bloqueado no Plano
-                          </Badge>
-                        )}
+              return sortedVisualItems.map((item, index) => {
+                const hasAccessToMenu = canAccess(item.requiredMenu);
+                const isEnabled = configs[item.key] && hasAccessToMenu;
+
+                return (
+                  <div key={item.key} className="flex items-center justify-between pt-4 first:pt-0 gap-4">
+                    <div className="flex items-start gap-3 min-w-0 flex-1">
+                      <div className="p-2 bg-[#2d3139]/30 rounded-lg mt-0.5 shrink-0">
+                        {item.icon}
                       </div>
-                      <p className="text-[11px] text-[#71717a] mt-0.5 max-w-sm">
-                        {item.description}
-                      </p>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`text-[13px] font-medium transition-colors truncate ${hasAccessToMenu ? 'text-zinc-100 font-semibold' : 'text-[#71717a]'}`}>
+                            {item.label}
+                          </span>
+                          {!hasAccessToMenu && (
+                            <Badge variant="outline" className="text-[9px] text-[#ef4444] border-red-500/20 bg-red-500/5 flex items-center gap-1 py-0 px-1.5 h-4 shrink-0 select-none">
+                              <Lock size={8} /> Bloqueado no Plano
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-[#71717a] mt-0.5 block max-w-sm">
+                          {item.description}
+                        </p>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center shrink-0">
-                    {hasAccessToMenu ? (
-                      <button
-                        type="button"
-                        onClick={() => handleToggle(item.key)}
-                        className={`w-10 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors ${
-                          isEnabled ? 'bg-[#3b82f6]' : 'bg-[#2d3139]'
-                        }`}
-                      >
-                        <div
-                          className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
-                            isEnabled ? 'translate-x-4' : 'translate-x-0'
+                    <div className="flex items-center gap-3 shrink-0">
+                      {/* Order Controls */}
+                      <div className="flex items-center gap-1 bg-[#25282e]/40 p-1 rounded-lg border border-[#2d3139]/30">
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => moveChart(index, 'up')}
+                          disabled={index === 0}
+                          className="h-7 w-7 text-[#71717a] hover:text-white hover:bg-[#2d3139]/50 disabled:opacity-20 disabled:pointer-events-none"
+                          title="Mover para Cima"
+                        >
+                          <ArrowUp size={13} />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => moveChart(index, 'down')}
+                          disabled={index === sortedVisualItems.length - 1}
+                          className="h-7 w-7 text-[#71717a] hover:text-white hover:bg-[#2d3139]/50 disabled:opacity-20 disabled:pointer-events-none"
+                          title="Mover para Baixo"
+                        >
+                          <ArrowDown size={13} />
+                        </Button>
+                      </div>
+
+                      {hasAccessToMenu ? (
+                        <button
+                          type="button"
+                          onClick={() => handleToggle(item.key)}
+                          className={`w-10 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors ${
+                            isEnabled ? 'bg-[#3b82f6]' : 'bg-[#2d3139]'
                           }`}
-                        />
-                      </button>
-                    ) : (
-                      <div className="text-[#ef4444] p-1.5 bg-red-500/10 rounded-full border border-red-500/20" title="Seu plano não inclui este menu">
-                        <Lock size={12} />
-                      </div>
-                    )}
+                        >
+                          <div
+                            className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                              isEnabled ? 'translate-x-4' : 'translate-x-0'
+                            }`}
+                          />
+                        </button>
+                      ) : (
+                        <div className="text-[#ef4444] p-1.5 bg-red-500/10 rounded-full border border-red-500/20" title="Seu plano não inclui este menu">
+                          <Lock size={12} />
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
           </CardContent>
         </Card>
       </div>
