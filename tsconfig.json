@@ -22,5 +22,13 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/App_backup.tsx",
+    "src/App_backup_prior_login.tsx",
+    "src/App_backup_login_redesign.tsx",
+    "src/App_backup_menus_restoration.tsx"
+  ]
 }

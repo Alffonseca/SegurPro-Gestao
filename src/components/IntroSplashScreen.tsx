@@ -19,10 +19,17 @@ export default function IntroSplashScreen({
   const [fadeOut, setFadeOut] = useState(false);
   const [progress, setProgress] = useState(0);
 
+  const onCompleteRef = React.useRef(onComplete);
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
+
   // Synchronized loading effect: progress drives the splash lifecycle
   useEffect(() => {
     const start = Date.now();
     const duration = 10000; // 10 seconds of smooth progress bar increment
+    let bufferTimer: NodeJS.Timeout | null = null;
+    let completeTimer: NodeJS.Timeout | null = null;
     
     const progressInterval = setInterval(() => {
       const elapsed = Date.now() - start;
@@ -33,23 +40,23 @@ export default function IntroSplashScreen({
         clearInterval(progressInterval);
         
         // Wait 700ms showing "SISTEMA PRONTO!" with full green bar, then trigger fadeout
-        const bufferTimer = setTimeout(() => {
+        bufferTimer = setTimeout(() => {
           setFadeOut(true);
           
           // Wait 600ms of exit animation duration, then call parent onComplete()
-          const completeTimer = setTimeout(() => {
-            onComplete();
+          completeTimer = setTimeout(() => {
+            onCompleteRef.current();
           }, 600);
-          
-          return () => clearTimeout(completeTimer);
         }, 700);
-        
-        return () => clearTimeout(bufferTimer);
       }
     }, 20);
 
-    return () => clearInterval(progressInterval);
-  }, [onComplete]);
+    return () => {
+      clearInterval(progressInterval);
+      if (bufferTimer) clearTimeout(bufferTimer);
+      if (completeTimer) clearTimeout(completeTimer);
+    };
+  }, []);
 
   return (
     <AnimatePresence>

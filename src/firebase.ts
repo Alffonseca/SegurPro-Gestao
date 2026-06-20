@@ -40,16 +40,10 @@ export { firebaseConfig };
 
 // Dynamic mode toggle
 export const isLocalDb = (() => {
-  const override = localStorage.getItem('DB_MODE_OVERRIDE');
-  const isWebLoc = typeof window !== 'undefined' && 
-                    window.location.hostname !== 'localhost' && 
-                    window.location.hostname !== '127.0.0.1' && 
-                    !/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname);
-
-  if (isWebLoc && override === 'local') {
-    localStorage.removeItem('DB_MODE_OVERRIDE');
-    return false;
+  if (typeof window !== 'undefined' && localStorage.getItem('FIRESTORE_DISABLED') === 'true') {
+    return true;
   }
+  const override = localStorage.getItem('DB_MODE_OVERRIDE');
 
   if (override === 'local') return true;
   if (override === 'online') return false;
@@ -99,21 +93,47 @@ export const doc = (dbOrCol: any, pathOrId?: string, ...pathSegments: string[]) 
 };
 
 export const onSnapshot = (q: any, callback: any, errorCallback?: any) => {
-  return isLocalDb 
-    ? localDb.onSnapshot(q, callback, errorCallback) 
-    : realOnSnapshot(q, callback, errorCallback);
+  if (isLocalDb) {
+    return localDb.onSnapshot(q, callback, errorCallback);
+  }
+  return realOnSnapshot(q, callback, (err: any) => {
+    handleCloudFirestoreFailure(err);
+    if (errorCallback) {
+      errorCallback(err);
+    } else {
+      console.error("onSnapshot cloud database error:", err);
+    }
+  });
 };
 
-export const addDoc = (collectionRef: any, data: any) => {
-  return isLocalDb ? localDb.addDoc(collectionRef, data) : realAddDoc(collectionRef, data);
+export const addDoc = async (collectionRef: any, data: any) => {
+  if (isLocalDb) return localDb.addDoc(collectionRef, data);
+  try {
+    return await realAddDoc(collectionRef, data);
+  } catch (err) {
+    handleCloudFirestoreFailure(err);
+    throw err;
+  }
 };
 
-export const updateDoc = (docRef: any, data: any) => {
-  return isLocalDb ? localDb.updateDoc(docRef, data) : realUpdateDoc(docRef, data);
+export const updateDoc = async (docRef: any, data: any) => {
+  if (isLocalDb) return localDb.updateDoc(docRef, data);
+  try {
+    return await realUpdateDoc(docRef, data);
+  } catch (err) {
+    handleCloudFirestoreFailure(err);
+    throw err;
+  }
 };
 
-export const deleteDoc = (docRef: any) => {
-  return isLocalDb ? localDb.deleteDoc(docRef) : realDeleteDoc(docRef);
+export const deleteDoc = async (docRef: any) => {
+  if (isLocalDb) return localDb.deleteDoc(docRef);
+  try {
+    return await realDeleteDoc(docRef);
+  } catch (err) {
+    handleCloudFirestoreFailure(err);
+    throw err;
+  }
 };
 
 export const query = (colRef: any, ...constraints: any[]) => {
@@ -128,8 +148,14 @@ export const where = (field: string, op: any, value: any) => {
   return isLocalDb ? localDb.where(field, op, value) : realWhere(field, op, value);
 };
 
-export const getDocs = (q: any) => {
-  return isLocalDb ? localDb.getDocs(q) : realGetDocs(q);
+export const getDocs = async (q: any) => {
+  if (isLocalDb) return localDb.getDocs(q);
+  try {
+    return await realGetDocs(q);
+  } catch (err) {
+    handleCloudFirestoreFailure(err);
+    throw err;
+  }
 };
 
 export const limit = (value: number) => {
@@ -140,16 +166,34 @@ export const limit = (value: number) => {
 export type Timestamp = RealTimestamp;
 export const Timestamp = (isLocalDb ? localDb.Timestamp : RealTimestamp) as unknown as typeof RealTimestamp;
 
-export const setDoc = (docRef: any, data: any, options?: any) => {
-  return isLocalDb ? localDb.setDoc(docRef, data, options) : realSetDoc(docRef, data, options);
+export const setDoc = async (docRef: any, data: any, options?: any) => {
+  if (isLocalDb) return localDb.setDoc(docRef, data, options);
+  try {
+    return await realSetDoc(docRef, data, options);
+  } catch (err) {
+    handleCloudFirestoreFailure(err);
+    throw err;
+  }
 };
 
-export const getDoc = (docRef: any) => {
-  return isLocalDb ? localDb.getDoc(docRef) : realGetDoc(docRef);
+export const getDoc = async (docRef: any) => {
+  if (isLocalDb) return localDb.getDoc(docRef);
+  try {
+    return await realGetDoc(docRef);
+  } catch (err) {
+    handleCloudFirestoreFailure(err);
+    throw err;
+  }
 };
 
-export const getDocFromServer = (docRef: any) => {
-  return isLocalDb ? localDb.getDocFromServer(docRef) : realGetDocFromServer(docRef);
+export const getDocFromServer = async (docRef: any) => {
+  if (isLocalDb) return localDb.getDocFromServer(docRef);
+  try {
+    return await realGetDocFromServer(docRef);
+  } catch (err) {
+    handleCloudFirestoreFailure(err);
+    throw err;
+  }
 };
 
 export const serverTimestamp = () => {
@@ -160,7 +204,35 @@ export const signInWithPopup = (authInstance: any, provider: any) => {
   return isLocalDb ? localDb.signInWithPopup(authInstance, provider) : realSignInWithPopup(authInstance, provider);
 };
 
-export const GoogleAuthProvider = (isLocalDb ? localDb.GoogleAuthProvider : realGoogleAuthProvider) as any;
+class MockGoogleAuthProvider {
+  setCustomParameters(params: any) {
+    return this;
+  }
+}
+
+export const GoogleAuthProvider = new Proxy(class {}, {
+  construct(target, args) {
+    const dynamicIsLocal = (() => {
+      if (typeof window !== 'undefined' && localStorage.getItem('FIRESTORE_DISABLED') === 'true') {
+        return true;
+      }
+      const override = typeof window !== 'undefined' ? localStorage.getItem('DB_MODE_OVERRIDE') : null;
+      if (override === 'local') return true;
+      if (override === 'online') return false;
+      return (import.meta as any).env.VITE_LOCAL_DB === 'true';
+    })();
+    
+    if (dynamicIsLocal) {
+      return new MockGoogleAuthProvider();
+    } else {
+      const inst = new realGoogleAuthProvider();
+      if (typeof inst.setCustomParameters !== 'function') {
+        (inst as any).setCustomParameters = function(params: any) { return this; };
+      }
+      return inst;
+    }
+  }
+}) as any;
 
 export const onAuthStateChanged = (authInstance: any, callback: any) => {
   return isLocalDb ? localDb.onAuthStateChanged(authInstance, callback) : realOnAuthStateChanged(authInstance, callback);
@@ -226,7 +298,27 @@ export interface FirestoreErrorInfo {
   authInfo: any;
 }
 
+export function handleCloudFirestoreFailure(err: any): void {
+  const errMsg = String(err?.message || err?.code || err || "").toLowerCase();
+  if (
+    errMsg.includes("permission-denied") || 
+    errMsg.includes("permission_denied") ||
+    errMsg.includes("cloud firestore api") || 
+    errMsg.includes("firestore.googleapis.com") ||
+    errMsg.includes("disabled") ||
+    errMsg.includes("7 permission_denied")
+  ) {
+    if (localStorage.getItem('DB_MODE_OVERRIDE') !== 'local' || localStorage.getItem('FIRESTORE_DISABLED') !== 'true') {
+      console.warn("[Firebase Resilient Handler] GCP Cloud Firestore is unconfigured or disabled for this project. Automatically switching to Local Database Mode to prevent crash.");
+      localStorage.setItem('FIRESTORE_DISABLED', 'true');
+      localStorage.setItem('DB_MODE_OVERRIDE', 'local');
+      window.location.reload();
+    }
+  }
+}
+
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  handleCloudFirestoreFailure(error);
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
@@ -242,7 +334,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 
 // Basic Cloud Connectivity Check
 async function testConnection() {
-  if (isLocalDb) return;
+  if (isLocalDb || !realDb) return;
   try {
     await realGetDocFromServer(realDoc(realDb, 'test', 'connection'));
   } catch (error) {

@@ -192,9 +192,11 @@ export class DocumentSnapshot {
 
 export class QuerySnapshot {
   docs: DocumentSnapshot[];
+  private _changes: any[];
 
-  constructor(docs: DocumentSnapshot[]) {
+  constructor(docs: DocumentSnapshot[], changes: any[] = []) {
     this.docs = docs;
+    this._changes = changes;
   }
 
   get empty() {
@@ -207,6 +209,10 @@ export class QuerySnapshot {
 
   forEach(callback: (doc: DocumentSnapshot) => void) {
     this.docs.forEach(callback);
+  }
+
+  docChanges() {
+    return this._changes;
   }
 }
 
@@ -369,12 +375,39 @@ export function onSnapshot(q: any, callback: any, errorCallback?: (error: any) =
   } else {
     // Collection or Query snapshot
     const constraints = q.constraints || [];
+    let previousDocIds: Set<string> | null = null;
     const updateSnapshot = async () => {
       try {
         const items = await localDbCache.getCollection(path);
         const filtered = evaluateQuery(items, constraints);
         const docs = filtered.map(item => new DocumentSnapshot(item.id, item));
-        callback(new QuerySnapshot(docs));
+        
+        const currentDocIds = new Set(docs.map(doc => doc.id));
+        const changes: any[] = [];
+        
+        if (previousDocIds === null) {
+          // Initial snapshot loads all matching docs as 'added'
+          docs.forEach(doc => {
+            changes.push({ type: 'added', doc });
+          });
+        } else {
+          // Dynamic diffing for subsequent database updates
+          docs.forEach(doc => {
+            if (!previousDocIds!.has(doc.id)) {
+              changes.push({ type: 'added', doc });
+            } else {
+              changes.push({ type: 'modified', doc });
+            }
+          });
+          previousDocIds!.forEach(id => {
+            if (!currentDocIds.has(id)) {
+              changes.push({ type: 'removed', doc: new DocumentSnapshot(id, undefined) });
+            }
+          });
+        }
+        
+        previousDocIds = currentDocIds;
+        callback(new QuerySnapshot(docs, changes));
       } catch (err) {
         if (errorCallback) errorCallback(err);
       }
@@ -393,7 +426,8 @@ export async function getDocs(q: any): Promise<QuerySnapshot> {
   const items = await localDbCache.getCollection(path);
   const filtered = evaluateQuery(items, constraints);
   const docs = filtered.map(item => new DocumentSnapshot(item.id, item));
-  return new QuerySnapshot(docs);
+  const changes = docs.map(doc => ({ type: 'added', doc }));
+  return new QuerySnapshot(docs, changes);
 }
 
 export async function getDoc(docRef: any): Promise<DocumentSnapshot> {
@@ -629,7 +663,11 @@ export async function signInWithPopup(authInst: any, provider: any): Promise<any
   return { user: adminUser };
 }
 
-export class GoogleAuthProvider {}
+export class GoogleAuthProvider {
+  setCustomParameters(params: any) {
+    return this;
+  }
+}
 
 export function initializeApp() {
   return {};

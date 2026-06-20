@@ -5,22 +5,27 @@ service cloud.firestore {
     function isSignedIn() { return request.auth != null; }
     
     function isSuperAdmin() {
-      return isSignedIn() && (
-        request.auth.token.email.toLower() == 'emailparasiteslixo@gmail.com' || 
-        request.auth.token.email.toLower() == 'alffonseca42@gmail.com'
-      );
+      return isSignedIn() && 
+             request.auth.token != null && 
+             'email' in request.auth.token && (
+               request.auth.token.email.lower() == 'emailparasiteslixo@gmail.com' || 
+               request.auth.token.email.lower() == 'alffonseca42@gmail.com'
+             );
     }
 
     function isMemberOf(companyId) {
       return isSignedIn() && (
-        isSuperAdmin() || 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId
+        isSuperAdmin() || (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId
+        )
       );
     }
 
     function isAdminOf(companyId) {
       return isSignedIn() && (
         isSuperAdmin() || (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId &&
           (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' || 
            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner')
@@ -30,6 +35,7 @@ service cloud.firestore {
 
     function canUpdateWithToken(docId, tokenId) {
        return tokenId != null && 
+              exists(/databases/$(database)/documents/signature_requests/$(tokenId)) &&
               get(/databases/$(database)/documents/signature_requests/$(tokenId)).data.documentId == docId &&
               get(/databases/$(database)/documents/signature_requests/$(tokenId)).data.status == 'signed';
     }
@@ -37,6 +43,17 @@ service cloud.firestore {
     // 1. Signature Requests - Public Read for Portal
     match /signature_requests/{id} {
       allow read, get, list: if true;
+      allow create: if isSignedIn();
+      allow update: if (resource.data.status == 'pending' && request.resource.data.status == 'signed') || 
+                    isSuperAdmin() || 
+                    (isSignedIn() && isMemberOf(resource.data.companyId));
+      allow delete: if isSuperAdmin() || (isSignedIn() && isMemberOf(resource.data.companyId));
+    }
+
+    // 1b. Signature Codes - Allows clients to get specific access codes directly by doc ID and update status
+    match /signature_codes/{code} {
+      allow get: if true;
+      allow list: if isSignedIn();
       allow create: if isSignedIn();
       allow update: if (resource.data.status == 'pending' && request.resource.data.status == 'signed') || 
                     isSuperAdmin() || 
@@ -66,7 +83,8 @@ service cloud.firestore {
     }
 
     match /clients/{id} {
-      allow read, delete: if isMemberOf(resource.data.companyId);
+      allow get: if true;
+      allow list, delete: if isMemberOf(resource.data.companyId);
       allow create: if isMemberOf(request.resource.data.companyId);
       allow update: if isMemberOf(resource.data.companyId) || (
                     canUpdateWithToken(id, request.resource.data.clientSignatureToken) &&
@@ -75,7 +93,8 @@ service cloud.firestore {
     }
 
     match /visits/{id} {
-      allow read, delete: if isMemberOf(resource.data.companyId);
+      allow get: if true;
+      allow list, delete: if isMemberOf(resource.data.companyId);
       allow create: if isMemberOf(request.resource.data.companyId);
       allow update: if isMemberOf(resource.data.companyId) || (
                     canUpdateWithToken(id, request.resource.data.clientSignatureToken) &&
@@ -84,7 +103,8 @@ service cloud.firestore {
     }
 
     match /serviceOrders/{id} {
-      allow read, delete: if isMemberOf(resource.data.companyId);
+      allow get: if true;
+      allow list, delete: if isMemberOf(resource.data.companyId);
       allow create: if isMemberOf(request.resource.data.companyId);
       allow update: if isMemberOf(resource.data.companyId) || (
                     canUpdateWithToken(id, request.resource.data.clientSignatureToken) &&
@@ -93,7 +113,8 @@ service cloud.firestore {
     }
 
     match /budgets/{id} {
-      allow read, delete: if isMemberOf(resource.data.companyId);
+      allow get: if true;
+      allow list, delete: if isMemberOf(resource.data.companyId);
       allow create: if isMemberOf(request.resource.data.companyId);
       allow update: if isMemberOf(resource.data.companyId) || (
                     canUpdateWithToken(id, request.resource.data.clientSignatureToken) &&

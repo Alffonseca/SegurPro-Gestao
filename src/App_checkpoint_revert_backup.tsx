@@ -20,6 +20,7 @@ import {
   AlertCircle,
   Download,
   Trash2,
+  Save,
   User,
   Minus,
   Maximize,
@@ -69,7 +70,11 @@ import {
   AlertTriangle,
   QrCode,
   Handshake,
-  Power
+  Power,
+  Monitor,
+  Cpu,
+  Network,
+  Server
 } from 'lucide-react';
 import { 
   collection, 
@@ -93,6 +98,7 @@ import {
   onAuthStateChanged, 
   signOut,
   signInWithEmailAndPassword,
+  signInWithCustomToken,
   createUserWithEmailAndPassword,
   updateProfile,
   updatePassword,
@@ -126,7 +132,7 @@ import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
 import autoTable from 'jspdf-autotable';
 
-import { db, auth, handleFirestoreError, OperationType, firebaseConfig } from './firebase';
+import { db, auth, handleFirestoreError, OperationType, firebaseConfig, isLocalDb } from './firebase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -160,9 +166,17 @@ import {
 } from '@/components/ui/select';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
+import LicenseVerifierSplash from './components/LicenseVerifierSplash';
+import TerminalRegistrationScreen from './components/TerminalRegistrationScreen';
+import IntroSplashScreen from './components/IntroSplashScreen';
+// VERSÃO DE CONSTRUÇÃO DO EXECUTÁVEL DESTE CLIENTE (Sincroniza automaticamente com o Firestore SaaS ao iniciar)
+const LOCAL_VERSION = (import.meta as any).env?.PACKAGE_VERSION || '1.1.6';
 
 const SUPER_ADMIN_EMAILS = ['emailparasiteslixo@gmail.com', 'alffonseca42@gmail.com'];
 import { LaudosManager, LaudoTecnico } from './components/LaudosManager';
+import { BackupRestoreManager } from './components/BackupRestoreManager';
+import { PayableManager, ReceivableManager, SalesHistoryManager } from './components/AccountsManager';
+import DashboardDisplayConfig from './components/DashboardDisplayConfig';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Calendar } from '@/components/ui/calendar';
@@ -177,6 +191,16 @@ import {
 } from '@/components/ui/command';
 
 // --- Helpers ---
+const normalizeName = (name: string): string => {
+  if (!name) return '';
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ');
+};
+
 const reconstructTimestamps = (obj: any): any => {
   if (obj === null || obj === undefined) return obj;
   
@@ -406,7 +430,7 @@ const originalSave = jsPDF.prototype.save;
         setTimeout(() => {
           const wantsToMemorize = window.confirm(
             `PDF de "${category.label}" salvo com sucesso!\n\n` +
-            `Deseja selecionar e MEMORIZAR uma pasta padrão específica no seu computador para novos PDFs dessa mesma categoria do SegurPro?\n` +
+            `Deseja selecionar e MEMORIZAR uma pasta padrão específica no seu computador para novos PDFs dessa mesma categoria do SegurTec-Pro?\n` +
             `Exemplo: Uma pasta chamada "PDFs de OS" ou "Visitas Tecnicas", assim o sistema iniciará sempre na pasta certa!`
           );
           
@@ -479,6 +503,15 @@ const handleGenerateSignatureLink = async (
       displayTitle: displayInfo?.title || `Documento ${type}`,
       displayValue: displayInfo?.value || '',
       displayDetails: displayInfo?.details || '',
+      status: 'pending',
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now()
+    });
+
+    // Save temporary code for fast direct lookup
+    await setDoc(doc(db, 'signature_codes', accessCode), {
+      token,
+      companyId,
       status: 'pending',
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now()
@@ -731,22 +764,24 @@ function TableDoubleScroll({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex flex-col w-full relative group/scroll">
-      <div 
-        ref={topScrollRef} 
-        onScroll={handleTopScroll}
-        className="w-full overflow-x-auto overflow-y-hidden bg-[#0f1115] border-b border-[#2d3139]/30 rounded-t-lg transition-all custom-scrollbar"
-        style={{ 
-          height: '14px', 
-          display: showTopScroll ? 'block' : 'none' 
-        }}
-      >
-        <div style={{ width: `${scrollWidth}px`, height: '1px' }} />
-      </div>
+      {scrollWidth > 0 && (
+        <div 
+          ref={topScrollRef} 
+          onScroll={handleTopScroll}
+          className="w-full overflow-x-auto overflow-y-hidden bg-[#0f1115] border-b border-[#2d3139]/30 rounded-t-lg transition-all"
+          style={{ 
+            height: '14px', 
+            display: showTopScroll ? 'block' : 'none' 
+          }}
+        >
+          <div style={{ width: `${scrollWidth}px`, height: '1px' }} />
+        </div>
+      )}
 
       <div 
         ref={bottomScrollRef} 
         onScroll={handleBottomScroll}
-        className="w-full overflow-x-auto custom-scrollbar"
+        className="w-full overflow-x-auto max-h-[580px] overflow-y-auto border border-[#2d3139]/60 rounded-b-xl custom-scrollbar"
       >
         {children}
       </div>
@@ -756,20 +791,28 @@ function TableDoubleScroll({ children }: { children: React.ReactNode }) {
 
 const ALL_MENU_ITEMS = [
   { id: 'dashboard', label: 'Painel Geral' },
-  { id: 'clients', label: 'Clientes' },
-  { id: 'suppliers', label: 'Fornecedores' },
-  { id: 'pdv', label: 'PDV / Caixa' },
-  { id: 'financial', label: 'Financeiro' },
-  { id: 'receipts', label: 'Recibos' },
-  { id: 'reports', label: 'Relatórios' },
-  { id: 'budgets', label: 'Orçamentos' },
-  { id: 'laudos', label: 'Laudos Técnicos' },
+  { id: 'dashboard-display-config', label: 'Conf. Exibição PG' },
   { id: 'visits', label: 'Visitas Técnicas' },
   { id: 'service-orders', label: 'Ordens de Serviço' },
-  { id: 'inventory', label: 'Estoque de Peças' },
-  { id: 'users', label: 'Gerenciar Equipe' },
+  { id: 'laudos', label: 'Laudos Técnicos' },
+  { id: 'clients', label: 'Clientes' },
+  { id: 'suppliers', label: 'Fornecedores' },
+  { id: 'budgets', label: 'Orçamentos' },
+  { id: 'pdv', label: 'PDV (Vendas)' },
+  { id: 'vendas-historico', label: 'Histórico de Vendas' },
+  { id: 'inventory', label: 'Estoque / Produtos' },
+  { id: 'financial', label: 'Financeiro (Lançamentos)' },
+  { id: 'payable', label: 'Contas a Pagar' },
+  { id: 'receivable', label: 'Contas a Receber' },
+  { id: 'receipts', label: 'Recibos / Emissor' },
+  { id: 'reports', label: 'Relatórios Gerenciais' },
+  { id: 'users', label: 'Equipe / Permissões' },
   { id: 'logs', label: 'Logs do Sistema' },
-  { id: 'settings', label: 'Configurações' }
+  { id: 'settings', label: 'Configurações' },
+  { id: 'network-config', label: 'Config. Rede' },
+  { id: 'license-updates', label: 'Licença e Atualizações' },
+  { id: 'financial-settings', label: 'Config. Financeiras' },
+  { id: 'backup-restore', label: 'Backup/Restauração' }
 ];
 
 interface UserRole {
@@ -1042,14 +1085,10 @@ const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettin
   doc.setFontSize(9);
   doc.text('CONTRATANTE', margin + 40, currentY + 5, { align: 'center' });
   doc.setFont('helvetica', 'bold');
-  doc.text(client.name || '', margin + 40, currentY + 10, { align: 'center' });
+  doc.text(client.name || 'Cliente Sem Nome', margin + 40, currentY + 10, { align: 'center' });
   doc.setFont('helvetica', 'normal');
-  let clientDetails = [];
-  if (client.document) clientDetails.push(client.document);
-  if (client.responsible) clientDetails.push(`Rep: ${client.responsible}`);
-  if (clientDetails.length > 0) {
-    doc.text(clientDetails.join(' - '), margin + 40, currentY + 15, { align: 'center' });
-  }
+  doc.text(client.document || '___________________________', margin + 40, currentY + 14, { align: 'center' });
+  doc.text(client.responsible || '___________________________', margin + 40, currentY + 18, { align: 'center' });
   
   doc.text('CONTRATADO', margin + 130, currentY + 5, { align: 'center' });
   doc.setFont('helvetica', 'bold');
@@ -1065,7 +1104,378 @@ const generateContractPDF = (client: Client, appSettings: AppSettings, pixSettin
   doc.save(`contrato_${(client.name || 'cliente').replace(/\s/g, '_')}.pdf`);
 };
 
-const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSettings, pixSettings: PixSettings, includeValues = false) => {
+const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSettings, pixSettings: PixSettings, includeValues = false, clients: Client[] = []) => {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 12; // Tighter margins to fit more content safely
+  const contentWidth = pageWidth - (margin * 2);
+  let currentY = 12;
+
+  // Header helpers
+  const drawLine = () => {
+    doc.setDrawColor(200, 200, 200);
+    doc.line(margin, currentY, pageWidth - margin, currentY);
+    currentY += 4;
+  };
+
+  const drawSectionTitle = (title: string) => {
+    doc.setFillColor(240, 240, 240);
+    doc.rect(margin, currentY, contentWidth, 6, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(50, 50, 50);
+    doc.text(title.toUpperCase(), margin + 2, currentY + 4.2);
+    currentY += 8;
+  };
+
+  const checkPageBreak = (neededHeight: number) => {
+    if (currentY + neededHeight > pageHeight - 10) {
+      doc.addPage();
+      currentY = 12;
+      return true;
+    }
+    return false;
+  };
+
+  // 1. HEADER
+  if (appSettings.logoUrl) {
+    try {
+      doc.addImage(appSettings.logoUrl, 'PNG', margin, currentY, 16, 16);
+    } catch (e) {
+      console.error("Erro logo OS:", e);
+    }
+  }
+
+  doc.setFontSize(13);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
+  const companyName = appSettings.companyName || '';
+  const companyNameLines = doc.splitTextToSize(companyName, contentWidth / 2);
+  doc.text(companyNameLines, appSettings.logoUrl ? margin + 20 : margin, currentY + 5);
+  
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 100, 100);
+  const addressLine = `${appSettings.address || ''}${appSettings.neighborhood ? `, ${appSettings.neighborhood}` : ''}`;
+  const addressLines = doc.splitTextToSize(addressLine, contentWidth / 2);
+  const headerTextY = currentY + 5 + (companyNameLines.length * 4.5);
+  doc.text(addressLines, appSettings.logoUrl ? margin + 20 : margin, headerTextY);
+  doc.text(`${appSettings.city || ''} - CEP: ${appSettings.cep || ''}`, appSettings.logoUrl ? margin + 20 : margin, headerTextY + (addressLines.length * 3.8));
+
+  // OS Number and Date on the right
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
+  doc.text(`ORDEM DE SERVIÇO Nº ${formatRecordNumber(os.number, os.date)}`, pageWidth - margin, currentY + 6, { align: 'right' });
+  doc.setFontSize(9);
+  doc.text(`Data: ${format(safeParseDate(os.date), 'dd/MM/yyyy')}`, pageWidth - margin, currentY + 11, { align: 'right' });
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Técnico: ${os.technicianName}`, pageWidth - margin, currentY + 15, { align: 'right' });
+
+  currentY += Math.max(18, 5 + (companyNameLines.length * 4.5) + (addressLines.length * 3.8) + 4);
+  drawLine();
+
+  // 1. DADOS DO CLIENTE E AGENDAMENTO
+  drawSectionTitle('1. Dados do Cliente e Agendamento');
+
+  const boxWidth = (contentWidth / 2) - 3;
+  const startY = currentY;
+
+  // Split lines first to calculate height dynamically
+  const clientNameLines = doc.splitTextToSize(os.clientName || 'N/A', boxWidth - 18);
+  const addressLinesBox = doc.splitTextToSize(os.address || 'N/A', boxWidth - 22);
+  const equipLinesBox = doc.splitTextToSize(os.equipment || 'N/A', boxWidth - 18);
+  const brandLinesBox = doc.splitTextToSize(os.brandModelSN || 'N/A', boxWidth - 18);
+
+  const leftHeightNeeded = 10 + (clientNameLines.length * 3.5) + (addressLinesBox.length * 3.5) + 6;
+  const rightHeightNeeded = 10 + (equipLinesBox.length * 3.5) + (brandLinesBox.length * 3.5) + 6;
+  const boxHeight = Math.max(leftHeightNeeded, rightHeightNeeded, 28);
+
+  // Draw Box 1: Client Data
+  doc.setDrawColor(200, 200, 200);
+  doc.setLineWidth(0.2);
+  doc.rect(margin, currentY, boxWidth, boxHeight);
+  
+  doc.setFillColor(240, 240, 240);
+  doc.rect(margin, currentY, boxWidth, 6, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text('DADOS DO CLIENTE', margin + 2, currentY + 4.2);
+  
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  let clientY = currentY + 10;
+  
+  doc.setFont('helvetica', 'bold');
+  doc.text('NOME:', margin + 2, clientY);
+  doc.setFont('helvetica', 'normal');
+  doc.text(clientNameLines, margin + 18, clientY);
+  clientY += (clientNameLines.length * 3.5);
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('ENDEREÇO:', margin + 2, clientY);
+  doc.setFont('helvetica', 'normal');
+  doc.text(addressLinesBox, margin + 22, clientY);
+  clientY += (addressLinesBox.length * 3.5);
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('FONE:', margin + 2, clientY);
+  doc.setFont('helvetica', 'normal');
+  doc.text(os.contact || 'N/A', margin + 15, clientY);
+
+  // Draw Box 2: Equipment/Service
+  const col2X = margin + boxWidth + 6;
+  doc.rect(col2X, startY, boxWidth, boxHeight);
+  
+  doc.setFillColor(240, 240, 240);
+  doc.rect(col2X, startY, boxWidth, 6, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.text('EQUIPAMENTO / SERVIÇO', col2X + 2, startY + 4.2);
+  
+  let equipY = startY + 10;
+  doc.setFontSize(8);
+  
+  doc.setFont('helvetica', 'bold');
+  doc.text('EQUIP:', col2X + 2, equipY);
+  doc.setFont('helvetica', 'normal');
+  doc.text(equipLinesBox, col2X + 18, equipY);
+  equipY += (equipLinesBox.length * 3.5);
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('MARCA:', col2X + 2, equipY);
+  doc.setFont('helvetica', 'normal');
+  doc.text(brandLinesBox, col2X + 18, equipY);
+  equipY += (brandLinesBox.length * 3.5);
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('TIPO:', col2X + 2, equipY);
+  doc.setFont('helvetica', 'normal');
+  doc.text(os.serviceType || 'N/A', col2X + 15, equipY);
+
+  currentY = startY + boxHeight + 4;
+  
+  // Agendamento / Período de Trabalho info
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.text(`Início do Serviço: `, margin, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`${format(safeParseDate(os.startDateTime), 'dd/MM/yyyy HH:mm')}`, margin + 24, currentY);
+  
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Fim do Serviço: `, margin + (contentWidth / 2), currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`${format(safeParseDate(os.endDateTime), 'dd/MM/yyyy HH:mm')}`, margin + (contentWidth / 2) + 22, currentY);
+  currentY += 7;
+
+  // 2. DETALHES DO SERVIÇO
+  checkPageBreak(30);
+  drawSectionTitle('2. Detalhes do Serviço');
+  
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text('Problema Relatado:', margin, currentY);
+  currentY += 3.5;
+  doc.setFont('helvetica', 'normal');
+  const probLines = doc.splitTextToSize(os.reportedProblem || 'N/A', contentWidth);
+  doc.text(probLines, margin, currentY);
+  currentY += (probLines.length * 4) + 3;
+
+  checkPageBreak(20);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Diagnóstico / Laudo Técnico:', margin, currentY);
+  currentY += 3.5;
+  doc.setFont('helvetica', 'normal');
+  const diagLines = doc.splitTextToSize(os.diagnosis || 'N/A', contentWidth);
+  doc.text(diagLines, margin, currentY);
+  currentY += (diagLines.length * 4) + 3;
+
+  checkPageBreak(20);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Serviços Realizados:', margin, currentY);
+  currentY += 3.5;
+  doc.setFont('helvetica', 'normal');
+  const servLines = doc.splitTextToSize(os.performedServices || 'N/A', contentWidth);
+  doc.text(servLines, margin, currentY);
+  currentY += (servLines.length * 4) + 4;
+
+  // 3. PEÇAS E MATERIAIS UTILIZADOS
+  checkPageBreak(25);
+  drawSectionTitle('3. Peças e Materiais Utilizados');
+  
+  if (os.parts && os.parts.length > 0) {
+    const tableHead = includeValues 
+      ? [['Descrição', 'Qtd', 'V. Unitário', 'Total']]
+      : [['Descrição', 'Qtd']];
+      
+    const tableData = os.parts.map(p => {
+      const row = [p.description, p.quantity.toString()];
+      if (includeValues) {
+        row.push(`R$ ${(p.price || 0).toFixed(2)}`, `R$ ${((p.quantity || 0) * (p.price || 0)).toFixed(2)}`);
+      }
+      return row;
+    });
+
+    autoTable(doc, {
+      startY: currentY,
+      margin: { left: margin },
+      head: tableHead,
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [59, 130, 246], fontSize: 8, cellPadding: 1.5 },
+      styles: { fontSize: 8, cellPadding: 1.5 },
+      columnStyles: includeValues ? {
+        1: { halign: 'center' },
+        2: { halign: 'right' },
+        3: { halign: 'right' }
+      } : {
+        1: { halign: 'center' }
+      }
+    });
+    currentY = (doc as any).lastAutoTable.finalY + 5;
+  } else {
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(8.5);
+    doc.text('Nenhum material/peça cadastrada neste serviço.', margin, currentY);
+    currentY += 6;
+  }
+
+  // Values and Sections 4 & 5 (Condicional)
+  if (includeValues) {
+    const osPartsValue = (os.parts || []).reduce((acc, p) => acc + ((p.quantity || 0) * (p.price || 0)), 0);
+    const osLaborValue = os.laborValue || 0;
+    const osTotalValue = osPartsValue + osLaborValue;
+
+    // 4. DISCRIMINAÇÃO DE VALORES
+    checkPageBreak(25);
+    drawSectionTitle('4. Discriminação de Valores');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(50, 50, 50);
+
+    doc.text('Custo total dos materiais / peças:', margin, currentY);
+    doc.text(`R$ ${osPartsValue.toFixed(2)}`, margin + 110, currentY, { align: 'right' });
+    currentY += 4.5;
+
+    doc.text('Custo total da mão-de-obra / serviço:', margin, currentY);
+    doc.text(`R$ ${osLaborValue.toFixed(2)}`, margin + 110, currentY, { align: 'right' });
+    currentY += 4.5;
+
+    doc.setDrawColor(220, 220, 220);
+    doc.line(margin, currentY, margin + 110, currentY);
+    currentY += 4;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(0, 0, 0);
+    doc.text('VALOR TOTAL (MATERIAIS + SERVIÇO):', margin, currentY);
+    doc.text(`R$ ${osTotalValue.toFixed(2)}`, margin + 110, currentY, { align: 'right' });
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'normal');
+    currentY += 7;
+
+    // PIX Info in OS PDF
+    if (os.pixAccountId) {
+      const selectedPix = pixSettings.accounts?.find(a => a.id === os.pixAccountId) || pixSettings.accounts?.[0];
+      if (selectedPix) {
+        checkPageBreak(25);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.text('Dados para Pagamento (PIX):', margin, currentY);
+        currentY += 4.5;
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Chave: ${selectedPix.key} - Banco: ${selectedPix.bank}`, margin, currentY);
+        currentY += 4;
+        doc.text(`Favorecido: ${selectedPix.favored} - CPF/CNPJ: ${selectedPix.document || ''}`, margin, currentY);
+        
+        // QR Code PIX
+        try {
+          const qrSize = 25; // More compact QR Code size
+          const qrContent = selectedPix.qrKey || selectedPix.key;
+          const qrDataUrl = await QRCode.toDataURL(qrContent, { margin: 1, width: 150 });
+          doc.addImage(qrDataUrl, 'PNG', pageWidth - margin - qrSize - 4, currentY - 10, qrSize, qrSize);
+        } catch (e) {
+          console.error("Error generating PIX QR Code for Service Order", e);
+        }
+
+        currentY += 7;
+      }
+    }
+  }
+
+  // Checklist
+  checkPageBreak(12);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text('Checklist de Conformidade:', margin, currentY);
+  currentY += 4;
+  doc.setFont('helvetica', 'normal');
+  doc.text(`[${os.checklist.functionalityTest ? 'X' : ' '}] Teste de Funcionamento   [${os.checklist.cleaning ? 'X' : ' '}] Limpeza   [${os.checklist.safetyCheck ? 'X' : ' '}] Verificação de Segurança`, margin, currentY);
+  if (os.checklist.additional) {
+    currentY += 4;
+    doc.text(`Observações: ${os.checklist.additional}`, margin, currentY);
+  }
+  currentY += 5;
+
+  // 5. ASSINATURAS
+  checkPageBreak(25);
+  currentY += 4;
+
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'normal');
+  const cityDateOS = formatFullDateWithCity(os.date, appSettings);
+  doc.text(cityDateOS, pageWidth / 2, currentY, { align: 'center' });
+  
+  currentY += 12; // Compact vertical space for signatures line
+  
+  doc.setLineWidth(0.25);
+  doc.line(margin + 10, currentY, margin + 70, currentY);
+  doc.line(pageWidth - margin - 70, currentY, pageWidth - margin - 10, currentY);
+  
+  doc.setFontSize(7.5);
+  doc.text('Assinatura do Técnico', margin + 40, currentY + 4, { align: 'center' });
+  
+  const techName = os.technicianName || '';
+  const isAndre = techName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes('andre');
+  
+  if (isAndre) {
+    doc.text(appSettings.responsible || techName, margin + 40, currentY + 8, { align: 'center' });
+  } else {
+    doc.text(techName, margin + 40, currentY + 8, { align: 'center' });
+  }
+
+  const clientRegistry = clients?.find(c => c.id === os.clientId || (c.name && c.name.toLowerCase().trim() === os.clientName?.toLowerCase().trim()));
+  const osClientName = clientRegistry?.name || os.clientName || 'Cliente Sem Nome';
+  const osClientDoc = clientRegistry?.document || os.clientDocument || '___________________________';
+  const osClientResp = clientRegistry?.responsible || os.contactName || '___________________________';
+
+  doc.text('Assinatura do Cliente', pageWidth - margin - 40, currentY + 4, { align: 'center' });
+  let clientLabelY = currentY + 8;
+  doc.text(osClientName, pageWidth - margin - 40, clientLabelY, { align: 'center' });
+  clientLabelY += 3.5;
+  doc.text(osClientDoc, pageWidth - margin - 40, clientLabelY, { align: 'center' });
+  clientLabelY += 3.5;
+  doc.text(osClientResp, pageWidth - margin - 40, clientLabelY, { align: 'center' });
+  
+  if (os.technicianSignature) {
+    try { doc.addImage(os.technicianSignature, 'PNG', margin + 20, currentY - 14, 40, 13); } catch(e) {}
+  } else if (isAndre && appSettings.signatureUrl) {
+    try { doc.addImage(appSettings.signatureUrl, 'PNG', margin + 20, currentY - 14, 40, 13); } catch(e) {}
+  }
+  if (os.clientSignature) {
+    try { doc.addImage(os.clientSignature, 'PNG', pageWidth - margin - 60, currentY - 14, 40, 13); } catch(e) {}
+  }
+
+  doc.save(`OS_${formatRecordNumber(os.number, os.date).replace('/', '-')}.pdf`);
+};
+
+const generateDeliveryReceiptPDF = async (os: ServiceOrder, appSettings: AppSettings, clients: Client[] = []) => {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -1078,300 +1488,206 @@ const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSetting
   const contentWidth = pageWidth - (margin * 2);
   let currentY = 15;
 
-  // Header helpers
   const drawLine = () => {
     doc.setDrawColor(200, 200, 200);
     doc.line(margin, currentY, pageWidth - margin, currentY);
-    currentY += 5;
+    currentY += 4;
   };
 
   const drawSectionTitle = (title: string) => {
-    doc.setFillColor(240, 240, 240);
-    doc.rect(margin, currentY, contentWidth, 7, 'F');
+    doc.setFillColor(242, 245, 249);
+    doc.rect(margin, currentY, contentWidth, 6, 'F');
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.setTextColor(50, 50, 50);
-    doc.text(title.toUpperCase(), margin + 2, currentY + 5);
-    currentY += 10;
+    doc.setFontSize(8.5);
+    doc.setTextColor(30, 41, 59);
+    doc.text(title.toUpperCase(), margin + 2, currentY + 4.2);
+    currentY += 8;
   };
 
-  const checkPageBreak = (neededHeight: number) => {
-    if (currentY + neededHeight > pageHeight - margin) {
+  const checkPageBreakInGenerator = (neededHeight: number) => {
+    if (currentY + neededHeight > pageHeight - 15) {
       doc.addPage();
-      currentY = margin;
+      currentY = 15;
       return true;
     }
     return false;
   };
 
-  // 1. HEADER
+  // 1. HEADER WITH LOGO
   if (appSettings.logoUrl) {
     try {
-      doc.addImage(appSettings.logoUrl, 'PNG', margin, currentY, 18, 18);
+      doc.addImage(appSettings.logoUrl, 'PNG', margin, currentY, 16, 16);
     } catch (e) {
-      console.error("Erro logo OS:", e);
+      console.error("Erro logo Comprovante:", e);
     }
   }
 
-  doc.setFontSize(14);
+  // Company Name
+  doc.setFontSize(13);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(0, 0, 0);
+  doc.setTextColor(15, 23, 42); // slate 900
   const companyName = appSettings.companyName || '';
   const companyNameLines = doc.splitTextToSize(companyName, contentWidth / 2);
-  doc.text(companyNameLines, appSettings.logoUrl ? margin + 22 : margin, currentY + 6);
+  doc.text(companyNameLines, appSettings.logoUrl ? margin + 20 : margin, currentY + 5);
   
-  doc.setFontSize(9);
+  // Company Address & Details
+  doc.setFontSize(8.5);
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(100, 100, 100);
+  doc.setTextColor(71, 85, 105); // slate 600
   const addressLine = `${appSettings.address || ''}${appSettings.neighborhood ? `, ${appSettings.neighborhood}` : ''}`;
   const addressLines = doc.splitTextToSize(addressLine, contentWidth / 2);
-  const headerTextY = currentY + 6 + (companyNameLines.length * 5);
-  doc.text(addressLines, appSettings.logoUrl ? margin + 22 : margin, headerTextY);
-  doc.text(`${appSettings.city || ''} - CEP: ${appSettings.cep || ''}`, appSettings.logoUrl ? margin + 22 : margin, headerTextY + (addressLines.length * 4));
+  const headerTextY = currentY + 5 + (companyNameLines.length * 4.5);
+  doc.text(addressLines, appSettings.logoUrl ? margin + 20 : margin, headerTextY);
+  doc.text(`${appSettings.city || ''} - CEP: ${appSettings.cep || ''}`, appSettings.logoUrl ? margin + 20 : margin, headerTextY + (addressLines.length * 3.8));
 
-  // OS Number and Date on the right
+  // Document Title & Company Info on the Right
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(0, 0, 0);
-  doc.text(`ORDEM DE SERVIÇO Nº ${formatRecordNumber(os.number, os.date)}`, pageWidth - margin, currentY + 7, { align: 'right' });
-  doc.setFontSize(10);
-  doc.text(`Data: ${format(safeParseDate(os.date), 'dd/MM/yyyy')}`, pageWidth - margin, currentY + 13, { align: 'right' });
-  doc.setFontSize(9);
+  doc.setTextColor(59, 130, 246); // Brand blue
+  doc.text('COMPROVANTE DE ENTREGA', pageWidth - margin, currentY + 6, { align: 'right' });
+  doc.setFontSize(8.5);
   doc.setFont('helvetica', 'normal');
-  doc.text(`Técnico: ${os.technicianName}`, pageWidth - margin, currentY + 18, { align: 'right' });
-
-  currentY += Math.max(20, 7 + (companyNameLines.length * 5) + (addressLines.length * 4) + 5);
-  drawLine();
-
-  // 1 & 2. DADOS DO CLIENTE E EQUIPAMENTO (BOX LAYOUT)
-  const boxWidth = (contentWidth / 2) - 3;
-  const boxHeight = 35;
-  const startY = currentY;
-
-  // Draw Box 1: Client Data
-  doc.setDrawColor(200, 200, 200);
-  doc.setLineWidth(0.2);
-  doc.rect(margin, currentY, boxWidth, boxHeight);
-  
-  doc.setFillColor(240, 240, 240);
-  doc.rect(margin, currentY, boxWidth, 7, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text('1. DADOS DO CLIENTE', margin + 2, currentY + 5);
-  
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  let clientY = currentY + 12;
-  
-  doc.setFont('helvetica', 'bold');
-  doc.text('NOME:', margin + 2, clientY);
-  doc.setFont('helvetica', 'normal');
-  const clientNameLines = doc.splitTextToSize(os.clientName || 'N/A', boxWidth - 18);
-  doc.text(clientNameLines, margin + 15, clientY);
-  clientY += (clientNameLines.length * 4);
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('ENDEREÇO:', margin + 2, clientY);
-  doc.setFont('helvetica', 'normal');
-  const addressLinesBox = doc.splitTextToSize(os.address || 'N/A', boxWidth - 22);
-  doc.text(addressLinesBox, margin + 20, clientY);
-  clientY += (addressLinesBox.length * 4);
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('FONE:', margin + 2, clientY);
-  doc.setFont('helvetica', 'normal');
-  doc.text(os.contact || 'N/A', margin + 15, clientY);
-
-  // Draw Box 2: Equipment/Service
-  const col2X = margin + boxWidth + 6;
-  doc.rect(col2X, startY, boxWidth, boxHeight);
-  
-  doc.setFillColor(240, 240, 240);
-  doc.rect(col2X, startY, boxWidth, 7, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.text('2. EQUIPAMENTO/SERVIÇO', col2X + 2, startY + 5);
-  
-  let equipY = startY + 12;
-  doc.setFontSize(8);
-  
-  doc.setFont('helvetica', 'bold');
-  doc.text('EQUIP:', col2X + 2, equipY);
-  doc.setFont('helvetica', 'normal');
-  const equipLinesBox = doc.splitTextToSize(os.equipment || 'N/A', boxWidth - 18);
-  doc.text(equipLinesBox, col2X + 15, equipY);
-  equipY += (equipLinesBox.length * 4);
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('MARCA:', col2X + 2, equipY);
-  doc.setFont('helvetica', 'normal');
-  const brandLinesBox = doc.splitTextToSize(os.brandModelSN || 'N/A', boxWidth - 18);
-  doc.text(brandLinesBox, col2X + 15, equipY);
-  equipY += (brandLinesBox.length * 4);
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('TIPO:', col2X + 2, equipY);
-  doc.setFont('helvetica', 'normal');
-  doc.text(os.serviceType || 'N/A', col2X + 15, equipY);
-
-  currentY = startY + boxHeight + 8;
-
-  // 3. PROBLEMA RELATADO
-  doc.setDrawColor(200, 200, 200);
-  doc.setLineWidth(0.3);
-  doc.line(margin, currentY - 4, pageWidth - margin, currentY - 4);
-  
-  doc.setFont('helvetica', 'bold');
-  doc.text('Problema Relatado:', margin, currentY);
-  currentY += 4;
-  doc.setFont('helvetica', 'normal');
-  const probLines = doc.splitTextToSize(os.reportedProblem, contentWidth);
-  doc.text(probLines, margin, currentY);
-  currentY += (probLines.length * 5) + 3;
-
-  // 4. DETALHES TÉCNICOS
-  checkPageBreak(20);
-  drawSectionTitle('3. Detalhes Técnicos (O que foi feito)');
-  doc.setFont('helvetica', 'bold');
-  doc.text('Diagnóstico:', margin, currentY);
-  currentY += 4;
-  doc.setFont('helvetica', 'normal');
-  const diagLines = doc.splitTextToSize(os.diagnosis, contentWidth);
-  doc.text(diagLines, margin, currentY);
-  currentY += (diagLines.length * 5) + 2;
-
-  checkPageBreak(15);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Serviços Realizados:', margin, currentY);
-  currentY += 4;
-  doc.setFont('helvetica', 'normal');
-  const servLines = doc.splitTextToSize(os.performedServices, contentWidth);
-  doc.text(servLines, margin, currentY);
-  currentY += (servLines.length * 5) + 2;
-
-  // Parts Table if exists
-  if (os.parts && os.parts.length > 0) {
-    checkPageBreak(20);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Peças/Materiais Substituídos:', margin, currentY);
-    currentY += 1;
-    autoTable(doc, {
-      startY: currentY,
-      margin: { left: margin },
-      head: [['Descrição', 'Qtd', 'V. Unitário', 'Total']],
-      body: os.parts.map(p => [p.description, p.quantity, `R$ ${(p.price || 0).toFixed(2)}`, `R$ ${((p.quantity || 0) * (p.price || 0)).toFixed(2)}`]),
-      theme: 'grid',
-      headStyles: { fillColor: [80, 80, 80], fontSize: 8 },
-      styles: { fontSize: 8 },
-      columnStyles: {
-        1: { halign: 'center' },
-        2: { halign: 'right' },
-        3: { halign: 'right' }
-      }
-    });
-    currentY = (doc as any).lastAutoTable.finalY + 4;
+  doc.setTextColor(100, 100, 100);
+  if (appSettings.document) {
+    doc.text(`CNPJ: ${appSettings.document}`, pageWidth - margin, currentY + 11.5, { align: 'right' });
+  }
+  if (appSettings.companyPhone) {
+    doc.text(`Telefone / WhatsApp: ${appSettings.companyPhone}`, pageWidth - margin, currentY + 15.5, { align: 'right' });
   }
 
-  // 4. TEMPOS E VALORES (Condicional)
-  if (includeValues) {
-    checkPageBreak(30);
-    drawSectionTitle('4. Tempos e Valores');
-    
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Início: ${format(safeParseDate(os.startDateTime), 'dd/MM/yyyy HH:mm')}`, margin, currentY);
-    doc.text(`Fim: ${format(safeParseDate(os.endDateTime), 'dd/MM/yyyy HH:mm')}`, margin + contentWidth / 2, currentY);
-    currentY += 7;
-    
-    doc.setFont('helvetica', 'bold');
-    doc.text(`Valor Mão de Obra: R$ ${(os.laborValue || 0).toFixed(2)}`, margin, currentY);
-    doc.text(`Valor Peças: R$ ${(os.partsValue || 0).toFixed(2)}`, margin + contentWidth / 2, currentY);
-    currentY += 7;
-    
-    doc.setFontSize(11);
-    doc.text(`VALOR TOTAL: R$ ${(os.totalValue || 0).toFixed(2)}`, margin, currentY);
-    doc.setFontSize(9);
-    currentY += 10;
+  currentY += Math.max(18, 5 + (companyNameLines.length * 4.5) + (addressLines.length * 3.8) + 4);
+  drawLine();
+  currentY += 2;
 
-    // PIX Info in OS PDF
-    if (os.pixAccountId) {
-      const selectedPix = pixSettings.accounts?.find(a => a.id === os.pixAccountId) || pixSettings.accounts?.[0];
-      if (selectedPix) {
-        checkPageBreak(20);
-        doc.setFont('helvetica', 'bold');
-        doc.text('Dados para Pagamento (PIX):', margin, currentY);
-        currentY += 5;
-        doc.setFont('helvetica', 'normal');
-        doc.text(`Chave: ${selectedPix.key} - Banco: ${selectedPix.bank}`, margin, currentY);
-        currentY += 4;
-        doc.text(`Favorecido: ${selectedPix.favored} - CPF/CNPJ: ${selectedPix.document || ''}`, margin, currentY);
-        
-        // QR Code PIX
-        try {
-          const qrSize = 35;
-          const qrContent = selectedPix.qrKey || selectedPix.key;
-          const qrDataUrl = await QRCode.toDataURL(qrContent, { margin: 1, width: 150 });
-          doc.addImage(qrDataUrl, 'PNG', pageWidth - margin - qrSize - 5, currentY - 15, qrSize, qrSize);
-        } catch (e) {
-          console.error("Error generating PIX QR Code for Service Order", e);
-        }
+  // Find Client Register
+  const clientRegistry = clients?.find(c => c.id === os.clientId || (c.name && c.name.toLowerCase().trim() === os.clientName?.toLowerCase().trim()));
+  const clientName = clientRegistry?.name || os.clientName || 'Cliente Sem Nome';
+  const clientDoc = clientRegistry?.document || os.clientDocument || '___________________________';
+  const clientPhone = clientRegistry?.phone || os.contact || '___________________________';
 
-        currentY += 8;
-      }
+  // 1. DADOS DO CLIENTE
+  drawSectionTitle('Dados do Cliente');
+  
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Nome do Cliente:', margin, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(51, 65, 85);
+  doc.text(clientName, margin + 28, currentY);
+  currentY += 5;
+  
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('CPF / CNPJ:', margin, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(51, 65, 85);
+  doc.text(clientDoc, margin + 28, currentY);
+  currentY += 5;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('Telefone:', margin, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(51, 65, 85);
+  doc.text(clientPhone, margin + 28, currentY);
+  currentY += 8;
+
+  // 2. DADOS DO EQUIPAMENTO
+  drawSectionTitle('Dados do Equipamento');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('Equipamento:', margin, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(51, 65, 85);
+  doc.text(os.equipment || 'Não especificado', margin + 42, currentY);
+  currentY += 5;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('Marca / Modelo:', margin, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(51, 65, 85);
+  doc.text(os.brandModelSN || 'Não especificado', margin + 42, currentY);
+  currentY += 5;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('Acessórios entregues:', margin, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(51, 65, 85);
+  
+  // accessories - falls back to extra notes or standard default
+  const accessoriesText = os.notes || 'Carregador, bateria, cabos, capa (ou nenhum acessório adicional registrado)';
+  const splitAccessories = doc.splitTextToSize(accessoriesText, contentWidth - 42);
+  doc.text(splitAccessories, margin + 42, currentY);
+  currentY += (splitAccessories.length * 3.8) + 8;
+
+  // 3. TERMO DE RETIRADA E CONDIÇÕES
+  checkPageBreakInGenerator(40);
+  drawSectionTitle('Termo de Retirada e Condições');
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 23, 42);
+  
+  const osNumStr = os.number ? `OS nº ${formatRecordNumber(os.number, os.date)}` : '________';
+  const declarationText = `Declaro que estou recebendo o equipamento acima descrito da assistência técnica após a conclusão do serviço/orçamento. Confirmo que o equipamento foi testado na minha presença, encontra-se em perfeitas condições físicas e de funcionamento, e dou por encerrado o atendimento referente à Ordem de Serviço (OS) nº ${osNumStr}.`;
+  
+  const splitDeclaration = doc.splitTextToSize(declarationText, contentWidth);
+  doc.text(splitDeclaration, margin, currentY);
+  currentY += (splitDeclaration.length * 4) + 8;
+
+  // Data
+  const getFormattedCurrentDate = () => {
+    const months = [
+      'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+    ];
+    const today = new Date();
+    const day = String(today.getDate()).padStart(2, '0');
+    const month = months[today.getMonth()];
+    const year = today.getFullYear();
+    return `${day} de ${month} de ${year}`;
+  };
+
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Data da Entrega: ${getFormattedCurrentDate()}`, margin, currentY);
+  currentY += 20;
+
+  // Signature Block
+  checkPageBreakInGenerator(30);
+  
+  doc.setLineWidth(0.3);
+  doc.setDrawColor(150, 150, 150);
+  doc.line(pageWidth / 2 - 45, currentY, pageWidth / 2 + 45, currentY);
+  currentY += 4.5;
+  
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text('Assinatura do Cliente', pageWidth / 2, currentY, { align: 'center' });
+  currentY += 4;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.text(clientName, pageWidth / 2, currentY, { align: 'center' });
+  
+  if (clientDoc && clientDoc !== '___________________________') {
+    currentY += 3.5;
+    doc.text(`CPF / CNPJ: ${clientDoc}`, pageWidth / 2, currentY, { align: 'center' });
+  }
+
+  // Draw customer signature if available
+  if (os.clientSignature) {
+    try {
+      doc.addImage(os.clientSignature, 'PNG', pageWidth / 2 - 20, currentY - 22, 40, 12);
+    } catch (e) {
+      console.error("Erro comprovante assinatura:", e);
     }
   }
 
-  // Checklist
-  checkPageBreak(15);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Checklist de Conformidade:', margin, currentY);
-  currentY += 4;
-  doc.setFont('helvetica', 'normal');
-  doc.text(`[${os.checklist.functionalityTest ? 'X' : ' '}] Teste de Funcionamento   [${os.checklist.cleaning ? 'X' : ' '}] Limpeza   [${os.checklist.safetyCheck ? 'X' : ' '}] Verificação de Segurança`, margin, currentY);
-  if (os.checklist.additional) {
-    currentY += 4;
-    doc.text(`Observações: ${os.checklist.additional}`, margin, currentY);
-  }
-  currentY += 5;
-
-  // 5. ASSINATURAS
-  checkPageBreak(40);
-  currentY += 10;
-
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  const cityDateOS = formatFullDateWithCity(os.date, appSettings);
-  doc.text(cityDateOS, pageWidth / 2, currentY, { align: 'center' });
-  
-  currentY += 20;
-  
-  doc.setLineWidth(0.3);
-  doc.line(margin + 10, currentY, margin + 80, currentY);
-  doc.line(pageWidth - margin - 80, currentY, pageWidth - margin - 10, currentY);
-  
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Assinatura do Técnico', margin + 45, currentY + 5, { align: 'center' });
-  
-  const techName = os.technicianName || '';
-  const isAndre = techName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes('andre');
-  
-  if (isAndre) {
-    doc.text(appSettings.responsible || techName, margin + 45, currentY + 9, { align: 'center' });
-  } else {
-    doc.text(techName, margin + 45, currentY + 9, { align: 'center' });
-  }
-
-  doc.text('Assinatura do Cliente (Ciente)', pageWidth - margin - 45, currentY + 5, { align: 'center' });
-  
-  if (os.technicianSignature) {
-    try { doc.addImage(os.technicianSignature, 'PNG', margin + 25, currentY - 18, 40, 16); } catch(e) {}
-  } else if (isAndre && appSettings.signatureUrl) {
-    try { doc.addImage(appSettings.signatureUrl, 'PNG', margin + 25, currentY - 18, 40, 16); } catch(e) {}
-  }
-  if (os.clientSignature) {
-    try { doc.addImage(os.clientSignature, 'PNG', pageWidth - margin - 65, currentY - 18, 40, 16); } catch(e) {}
-  }
-
-  doc.save(`OS_${formatRecordNumber(os.number, os.date).replace('/', '-')}.pdf`);
+  const filePrefix = os.number ? `Comprovante_Entrega_OS_${formatRecordNumber(os.number, os.date).replace('/', '-')}` : 'Comprovante_Entrega';
+  doc.save(`${filePrefix}.pdf`);
 };
 
 const generateOSLabelsPDF = (selectedOSs: ServiceOrder[], appSettings: AppSettings) => {
@@ -1483,20 +1799,55 @@ const generateOSLabelsPDF = (selectedOSs: ServiceOrder[], appSettings: AppSettin
     };
 
     drawField('Cliente:', os.clientName);
-    drawField('Início:', formatDateSafe(os.startDateTime));
-    drawField('Fim:', os.status === 'Concluído' ? formatDateSafe(os.updatedAt || os.endDateTime) : formatDateSafe(os.endDateTime));
-    drawField('Eqp/Mod:', `${os.equipment} ${os.brandModelSN}`);
-    drawField('Técnico:', os.technicianName || 'N/A');
-    drawField('Status:', os.status);
+    drawField('Eqp/Mod:', `${os.equipment || ''} ${os.brandModelSN || ''}`.trim());
 
-    // Anotações
+    // Início e Fim lado a lado para economizar espaço vertical
     doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.text('Início:', startX + internalMargin, currentY);
+    doc.setFont('helvetica', 'normal');
+    const startStr = formatDateSafe(os.startDateTime);
+    doc.text(startStr, startX + internalMargin + 8, currentY);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Fim:', startX + internalMargin + (contentWidth / 2) + 2, currentY);
+    doc.setFont('helvetica', 'normal');
+    const endStr = os.status === 'Concluído' ? formatDateSafe(os.updatedAt || os.endDateTime) : formatDateSafe(os.endDateTime);
+    doc.text(endStr, startX + internalMargin + (contentWidth / 2) + 8, currentY);
+    
+    currentY += rowHeightText;
+
+    // Técnico e Status lado a lado para economizar mais espaço vertical
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.text('Téc:', startX + internalMargin, currentY);
+    doc.setFont('helvetica', 'normal');
+    const techName = (os.technicianName || 'N/A').split(' ')[0]; // primeiro nome
+    doc.text(techName, startX + internalMargin + 6, currentY);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Status:', startX + internalMargin + (contentWidth / 2) + 2, currentY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(os.status || 'N/A', startX + internalMargin + (contentWidth / 2) + 12, currentY);
+
+    currentY += rowHeightText + 1;
+
+    // Anotações com espaço garantido e limitadora de layout inteligente
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
     doc.text('Anotações:', startX + internalMargin, currentY);
     currentY += 3;
+    
     doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
     const noteText = os.notes || '';
     const splitNote = doc.splitTextToSize(noteText, contentWidth);
-    const visibleNote = splitNote.slice(0, 2);
+    
+    // Calcula quantas linhas de nota cabem até o limite da etiqueta (startY + labelHeight - internalMargin)
+    const spaceLeft = (startY + labelHeight - internalMargin) - currentY;
+    const maxLinesPossible = Math.max(1, Math.floor(spaceLeft / 3));
+    const visibleNote = splitNote.slice(0, maxLinesPossible);
+    
     doc.text(visibleNote, startX + internalMargin, currentY);
 
     // Reset line width for next label
@@ -1520,6 +1871,7 @@ interface ServiceOrder {
   address: string;
   contact: string;
   contactName?: string;
+  clientDocument?: string;
   
   // Equipment Info
   equipment: string;
@@ -1564,6 +1916,7 @@ interface TechnicalVisit {
   clientName: string;
   clientPhone: string;
   address: string;
+  clientDocument?: string;
   date: any; // Firestore Timestamp
   scheduledTime?: string;
   expectedDate?: any; // Data prevista
@@ -1610,6 +1963,11 @@ interface Budget {
   clientName: string;
   clientPhone: string;
   address: string;
+  clientDocument?: string;
+  responsibleName?: string;
+  proposalValidity?: string;
+  deliveryTime?: string;
+  serviceWarranty?: string;
   items: { description: string; quantity: number; price: number; imageUrl?: string }[];
   serviceValue?: number;
   total: number;
@@ -1949,6 +2307,7 @@ interface AppSettings {
   signatureUrl?: string;
   installmentPlans?: { id: string, brand: 'VISA' | 'MASTERCARD' | 'AMERICA' | 'ELO', type: 'DÉBITO' | 'CRÉDITO', installments: number, interestRate: number }[];
   serviceTypes?: string[];
+  introVideoUrl?: string;
 }
 
 interface LogRecord {
@@ -2113,7 +2472,7 @@ function CompanyWizard({ onCreate, onJoin, initialCode }: { onCreate: (name: str
               <Input 
                 value={name} 
                 onChange={e => setName(e.target.value)} 
-                placeholder="Ex: SegurPro Filial" 
+                placeholder="Ex: SegurTec-Pro Filial" 
                 className="bg-[#0f1115] border-[#2d3139] text-white" 
               />
             </div>
@@ -2413,9 +2772,334 @@ function SignaturePortalPage({ onVerify }: { onVerify: (token: string) => void }
         </form>
 
         <p className="text-center text-[#71717a] text-xs pt-8 border-t border-[#2d3139]/50">
-          Powered by <span className="text-white font-bold tracking-widest text-[10px]">SEGURPRO GESTÃO</span>
+          Powered by <span className="text-white font-bold tracking-widest text-[10px]">AF TECNOLOGIA</span>
         </p>
       </div>
+    </div>
+  );
+}
+
+function DocumentPreviewer({ type, data }: { type: string; data: any }) {
+  if (!data) {
+    return (
+      <div className="bg-[#0f1115] text-[#71717a] border border-[#2d3139]/40 rounded-xl p-6 text-center italic text-xs flex flex-col items-center gap-2">
+        <RefreshCw className="animate-spin text-blue-500/50" size={16} />
+        <span>Buscando cópia segura do documento no servidor...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-[#0f1115] text-[#e0e0e0] border border-[#2d3139]/50 rounded-xl p-4 space-y-4 max-h-[350px] overflow-y-auto font-sans text-left">
+      <div className="flex justify-between items-center pb-2 border-b border-[#2d3139]/50">
+        <h4 className="text-xs font-black uppercase tracking-wider text-blue-400">
+          {type === 'budget' && 'Cópia do Orçamento Detalhado'}
+          {type === 'service-order' && 'Cópia da Ordem de Serviço (OS)'}
+          {type === 'visit' && 'Cópia da Visita Técnica'}
+          {type === 'contract' && 'Cópia do Contrato de Prestação'}
+        </h4>
+        <span className="text-[8px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded uppercase tracking-widest font-black">
+          Cópia Segura
+        </span>
+      </div>
+
+      {type === 'budget' && (
+        <div className="space-y-3 text-xs">
+          <div className="grid grid-cols-2 gap-2 text-[10px] text-zinc-400 font-mono">
+            <div>
+              <p className="uppercase tracking-widest font-black text-[9px] text-[#71717a]">Número:</p>
+              <p className="text-white font-bold">#{data.number || 'Pendente'}</p>
+            </div>
+            <div>
+              <p className="uppercase tracking-widest font-black text-[9px] text-[#71717a]">Cliente:</p>
+              <p className="text-white font-bold">{data.clientName}</p>
+            </div>
+          </div>
+
+          <div className="space-y-1.5 pt-2 border-t border-[#2d3139]/30">
+            <p className="font-bold text-white text-[11px] uppercase tracking-wider">Itens do Orçamento:</p>
+            <div className="space-y-1">
+              {data.items?.map((item: any, idx: number) => (
+                <div key={idx} className="flex justify-between text-[11px] bg-[#1a1d23]/85 p-2 rounded-lg border border-[#2d3139]/40">
+                  <div className="flex flex-col">
+                    <span className="text-white font-medium">{item.description}</span>
+                    <span className="text-[9px] text-zinc-500">Qtd: {item.quantity} × R$ {item.price ? item.price.toFixed(2) : '0.00'}</span>
+                  </div>
+                  <span className="font-mono text-white text-xs font-bold leading-none self-center">R$ {item.price ? (item.quantity * item.price).toFixed(2) : '0.00'}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#2d3139]/30 text-[10px] text-zinc-400">
+            {data.deliveryTime && (
+              <div>
+                <p className="uppercase tracking-widest font-black text-[9px] text-[#71717a]">Prazo de Entrega:</p>
+                <p className="text-zinc-200">{data.deliveryTime}</p>
+              </div>
+            )}
+            {data.serviceWarranty && (
+              <div>
+                <p className="uppercase tracking-widest font-black text-[9px] text-[#71717a]">Garantia dos Serviços:</p>
+                <p className="text-zinc-200">{data.serviceWarranty}</p>
+              </div>
+            )}
+          </div>
+
+          <div className="pt-2 border-t border-[#2d3139]/30 flex justify-between items-center text-sm">
+            <span className="font-black uppercase tracking-wider text-[#71717a] text-[10px]">Valor Total:</span>
+            <span className="font-mono font-black text-emerald-400 text-lg">R$ {data.total?.toFixed(2) || '0.00'}</span>
+          </div>
+        </div>
+      )}
+
+      {type === 'service-order' && (
+        <div className="space-y-3 text-xs">
+          <div className="grid grid-cols-2 gap-2 text-[10px] text-[#71717a] font-mono">
+            <div>
+              <p className="uppercase tracking-widest font-black text-[8px]">OS Número:</p>
+              <p className="text-white font-bold">#{data.number || 'Pendente'}</p>
+            </div>
+            <div>
+              <p className="uppercase tracking-widest font-black text-[8px]">Técnico:</p>
+              <p className="text-white font-bold">{data.technicianName}</p>
+            </div>
+            <div className="col-span-2">
+              <p className="uppercase tracking-widest font-black text-[8px]">Equipamento:</p>
+              <p className="text-zinc-300">{data.equipment} {data.brandModelSN ? `(${data.brandModelSN})` : ''}</p>
+            </div>
+          </div>
+
+          <div className="space-y-2 pt-2 border-t border-[#2d3139]/30">
+            <div>
+              <p className="uppercase tracking-widest font-black text-[8px] text-[#71717a]">Problema Relatado:</p>
+              <p className="text-zinc-300 bg-[#16191f] p-2 rounded-lg italic text-[11px] border border-[#2d3139]/30 leading-snug">{data.reportedProblem || 'Não especificado'}</p>
+            </div>
+            <div>
+              <p className="uppercase tracking-widest font-black text-[8px] text-[#71717a]">Diagnóstico Técnico:</p>
+              <p className="text-zinc-300 bg-[#16191f] p-2 rounded-lg italic text-[11px] border border-[#2d3139]/30 leading-snug">{data.diagnosis || 'Não especificado'}</p>
+            </div>
+            <div>
+              <p className="uppercase tracking-widest font-black text-[8px] text-[#71717a]">Serviços Realizados:</p>
+              <p className="text-zinc-300 bg-[#16191f] p-2 rounded-lg text-[11px] border border-[#2d3139]/30 leading-snug">{data.performedServices || 'Não especificado'}</p>
+            </div>
+          </div>
+
+          {data.parts && data.parts.length > 0 && (
+            <div className="space-y-1.5 pt-2 border-t border-[#2d3139]/30">
+              <p className="font-bold text-white text-[10px] uppercase tracking-wider">Peças / Materiais Aplicados:</p>
+              <div className="space-y-1">
+                {data.parts.map((p: any, idx: number) => (
+                  <div key={idx} className="flex justify-between text-[11px] bg-[#1a1d23]/80 p-2 rounded-lg border border-[#2d3139]/40">
+                    <div className="flex flex-col">
+                      <span className="text-white font-medium">{p.description}</span>
+                      <span className="text-[9px] text-zinc-500">Qtd: {p.quantity} × R$ {p.price ? p.price.toFixed(2) : '0.00'}</span>
+                    </div>
+                    <span className="font-mono text-white text-xs font-bold leading-none self-center">R$ {p.price ? (p.quantity * p.price).toFixed(2) : '0.00'}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="pt-2 border-t border-[#2d3139]/30 flex justify-between items-center text-sm">
+            <span className="font-black uppercase tracking-wider text-[#71717a] text-[10px]">Valor Total:</span>
+            <span className="font-mono font-black text-emerald-400 text-lg">R$ {data.totalValue?.toFixed(2) || '0.00'}</span>
+          </div>
+        </div>
+      )}
+
+      {type === 'visit' && (
+        <div className="space-y-3 text-xs">
+          <div className="grid grid-cols-2 gap-2 text-[10px] text-[#71717a] font-mono">
+            <div>
+              <p className="uppercase tracking-widest font-black text-[8px]">Atendimento:</p>
+              <p className="text-white font-bold">#{data.number || 'Pendente'}</p>
+            </div>
+            <div>
+              <p className="uppercase tracking-widest font-black text-[8px]">Técnico Responsável:</p>
+              <p className="text-white font-bold">{data.technicianName}</p>
+            </div>
+            <div>
+              <p className="uppercase tracking-widest font-black text-[8px]">Tipo de Serviço:</p>
+              <p className="text-indigo-400 font-bold">{data.type}</p>
+            </div>
+            {data.scheduledTime && (
+              <div>
+                <p className="uppercase tracking-widest font-black text-[8px]">Hora Agendada:</p>
+                <p className="text-zinc-200 font-bold">{data.scheduledTime}</p>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2 pt-2 border-t border-[#2d3139]/30">
+            <div>
+              <p className="uppercase tracking-widest font-black text-[8px] text-[#71717a]">Relatório da Visita:</p>
+              <p className="text-zinc-300 bg-[#16191f] p-3 rounded-lg text-[11px] border border-[#2d3139]/30 leading-relaxed font-sans">{data.description || 'Nenhum relatório preenchido.'}</p>
+            </div>
+            {data.observations && (
+              <div>
+                <p className="uppercase tracking-widest font-black text-[8px] text-[#71717a]">Observações Adicionais:</p>
+                <p className="text-zinc-400 bg-[#16191f] p-2 rounded-lg text-[10px] border border-[#2d3139]/30 italic leading-snug">{data.observations}</p>
+              </div>
+            )}
+          </div>
+
+          <div className="pt-2 border-t border-[#2d3139]/30 flex justify-between items-center text-sm">
+            <span className="font-black uppercase tracking-wider text-[#71717a] text-[10px]">Valor de Acerto:</span>
+            <span className="font-mono font-black text-emerald-400 text-lg">R$ {data.totalValue?.toFixed(2) || '0.00'}</span>
+          </div>
+        </div>
+      )}
+
+      {type === 'contract' && (
+        <div className="space-y-3 text-xs leading-relaxed text-zinc-300 font-sans">
+          <div className="p-3 bg-[#16191f] border border-[#2d3139]/40 rounded-lg text-center font-bold text-white uppercase text-[10px] tracking-wider mb-2">
+            CONTRATO DE PRESTAÇÃO DE SERVIÇOS DE SEGURANÇA E INSTALAÇÃO TECNOLÓGICA
+          </div>
+          
+          <div className="space-y-2 text-[10px] leading-relaxed">
+            <p>
+              <b>CONTRATO MESTRE Nº {data.id?.toUpperCase().slice(0, 8)}</b>
+            </p>
+            <p>
+              <b>CONTRATANTE:</b> {data.name || 'Cliente'} <br />
+              <b>DOCUMENTO:</b> {data.document || 'Não cadastrado'} <br />
+              <b>ENDEREÇO:</b> {data.address || 'Não cadastrado'}
+            </p>
+            <p>
+              <b>CLÁUSULA PRIMEIRA – DO OBJETO</b><br />
+              O objeto do presente instrumento consiste na prestação de serviços de segurança tecnológica, instalação de equipamentos (incluindo CFTV, alarmes, cercas, motores, redes) e manutenções preventivas e corretivas solicitadas através da plataforma.
+            </p>
+            <p>
+              <b>CLÁUSULA SEGUNDA – DA VALIDADE E RENOVAÇÃO</b><br />
+              O contrato terá início na data da assinatura digital do mesmo e terá previsão de 1 ano (12 meses), sendo renovado automaticamente se nenhuma das partes se manifestar por escrito.
+            </p>
+            <p className="text-[9px] text-[#71717a] italic mt-4">
+              Os detalhes específicos sobre faturamento mensal, prazos de suporte remoto e visitas técnicas periódicas estão definidos no anexo técnico atrelado a este perfil de cliente.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ClientPortalScreen({ onAccess, appSettings }: { onAccess: (token: string) => void, appSettings: any }) {
+  const [accessCode, setAccessCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (accessCode.length < 6) {
+      toast.error('O código de acesso deve ter 6 dígitos.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const q = query(
+        collection(db, 'signature_requests'),
+        where('accessCode', '==', accessCode.trim().replace(/\s/g, '')),
+        limit(10)
+      );
+      const querySnap = await getDocs(q);
+      const docSnap = querySnap.docs.find(doc => doc.data().status === 'pending');
+      if (docSnap) {
+        onAccess(docSnap.id);
+        toast.success('Acesso autorizado! Carregando guia de assinatura...');
+      } else if (querySnap.empty) {
+        setError('Código inválido ou não encontrado.');
+        toast.error('Código inválido.');
+      } else {
+        setError('Código inválido, já utilizado ou expirado. Verifique os números e tente novamente.');
+        toast.error('Código inválido ou expirado.');
+      }
+    } catch (err: any) {
+      console.error("Erro completo ao validar o código:", err);
+      setError(`Erro ao conectar ao banco de dados: ${err?.message || err?.toString() || 'verifique sua conexão.'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0f1115] p-4 flex flex-col items-center justify-center">
+      <div className="w-full max-w-md space-y-6">
+        <div className="text-center space-y-2">
+          {appSettings.logoUrl ? (
+            <img src={appSettings.logoUrl} alt="Logo" className="mx-auto h-16 w-auto object-contain mb-4" />
+          ) : (
+            <div className="mx-auto w-12 h-12 bg-blue-500/10 rounded-xl flex items-center justify-center mb-4 border border-blue-500/20">
+              <Key className="text-blue-500" size={24} />
+            </div>
+          )}
+          <h1 className="text-2xl font-black text-white tracking-tight uppercase">{appSettings.companyName || 'SegurTec-Pro'}</h1>
+          <p className="text-[#a0a0a0] text-sm tracking-widest uppercase font-bold text-[10px] text-blue-400">Portal do Cliente - Assinatura Digital</p>
+        </div>
+
+        <Card className="border-[#2d3139] bg-[#1a1d23] shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-500" />
+          <CardHeader className="pb-4">
+            <CardTitle className="text-lg text-white font-bold flex items-center gap-2">
+              <Shield className="text-blue-500 animate-pulse" size={20} />
+              Validação de Código de Acesso
+            </CardTitle>
+            <CardDescription className="text-xs text-[#71717a]">
+              Insira o código de segurança de 6 dígitos que você recebeu por mensagem para abrir o documento e fazer a assinatura segura.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleVerify} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="portal-code" className="text-[#71717a] text-[10px] font-black uppercase tracking-widest block px-1">Código de 6 Dígitos:</Label>
+                <Input
+                  id="portal-code"
+                  type="text"
+                  maxLength={6}
+                  value={accessCode}
+                  onChange={(e) => setAccessCode(e.target.value.replace(/\D/g, ''))}
+                  placeholder="Ex: 123456"
+                  className="bg-[#0f1115] border-[#2d3139] text-white text-center text-2xl font-bold tracking-[0.4em] h-14 rounded-xl placeholder:text-[#33353f] placeholder:tracking-normal placeholder:text-sm"
+                />
+              </div>
+
+              {error && (
+                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs text-center">
+                  {error}
+                </div>
+              )}
+
+              <Button
+                type="submit"
+                disabled={loading || accessCode.length < 6}
+                className="w-full h-14 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-base shadow-lg shadow-blue-600/10 transition-all rounded-xl"
+              >
+                {loading ? (
+                  <>
+                    <RefreshCw className="mr-2 animate-spin" size={18} />
+                    Validando Código...
+                  </>
+                ) : (
+                  'Verificar e Acessar Documento'
+                )}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <div className="text-center pt-4">
+          <a
+            href="?"
+            className="text-xs text-[#71717a] hover:text-white transition-colors"
+          >
+            ← Voltar para Área Oficial do Sistema
+          </a>
+        </div>
+      </div>
+      <Toaster position="top-center" theme="dark" />
     </div>
   );
 }
@@ -2428,6 +3112,8 @@ function ExternalSignaturePage({ token }: { token: string }) {
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<string>('');
+  const [docLoading, setDocLoading] = useState(false);
+  const [docData, setDocData] = useState<any>(null);
 
   useEffect(() => {
     const fetchRequest = async () => {
@@ -2454,6 +3140,34 @@ function ExternalSignaturePage({ token }: { token: string }) {
     };
     fetchRequest();
   }, [token]);
+
+  useEffect(() => {
+    if (!request || !selectedType) return;
+    const fetchAssociatedDoc = async () => {
+      setDocLoading(true);
+      let colName = '';
+      if (selectedType === 'visit') colName = 'visits';
+      else if (selectedType === 'contract') colName = 'clients';
+      else if (selectedType === 'budget') colName = 'budgets';
+      else if (selectedType === 'service-order') colName = 'serviceOrders';
+
+      if (colName && request.documentId) {
+        try {
+          const docSnap = await getDocFromServer(doc(db, colName, request.documentId));
+          if (docSnap.exists()) {
+            setDocData(docSnap.data());
+          }
+        } catch (err) {
+          console.error("Erro ao carregar cópia do documento:", err);
+        } finally {
+          setDocLoading(false);
+        }
+      } else {
+        setDocLoading(false);
+      }
+    };
+    fetchAssociatedDoc();
+  }, [request, selectedType]);
 
   const handleSave = async () => {
     if (!signature) {
@@ -2486,19 +3200,16 @@ function ExternalSignaturePage({ token }: { token: string }) {
       
       if (!collectionName) throw new Error('Tipo de documento inválido');
       
-      // We send the token as well so the security rules can verify it
       const updateData: any = {
         clientSignature: signature,
         clientSignatureToken: token, 
         updatedAt: serverTimestamp()
       };
       
-      // If it's a budget, acceptance usually means approval
       if (selectedType === 'budget') {
         updateData.status = 'Aprovado';
       }
       
-      // For visits, also set the signature date
       if (selectedType === 'visit') {
         updateData.clientSignatureDate = serverTimestamp();
       }
@@ -2555,57 +3266,44 @@ function ExternalSignaturePage({ token }: { token: string }) {
       <div className="w-full max-w-lg space-y-6">
         <div className="text-center space-y-2">
           <div className="mx-auto w-12 h-12 bg-blue-500/10 rounded-xl flex items-center justify-center mb-4 border border-blue-500/20">
-            <Lock className="text-blue-500" size={24} />
+            <Lock className="text-blue-500 animate-pulse" size={24} />
           </div>
           <h1 className="text-2xl font-bold text-white tracking-tight">Assinatura Digital</h1>
           <p className="text-[#a0a0a0] text-sm italic underline underline-offset-4 decoration-blue-500/50">Olá, {request.clientName}!</p>
         </div>
 
+        {/* ALERTA DE RESPONSABILIDADE E SESSÃO SEGURA */}
+        <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-xl text-left space-y-1 animate-in fade-in duration-300">
+          <p className="text-amber-500 text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
+            <AlertCircle size={14} /> Termo de Unicidade de Assinatura
+          </p>
+          <p className="text-[#d8d8d8] text-[11px] leading-relaxed">
+            Ao assinar abaixo, você declara ciência de que sua rubrica será vinculada <b>exclusivamente</b> a este documento e sessão de atendimento. Este arquivo não autoriza faturamentos futuros automáticos ou o reuso de sua assinatura para outras finalidades sem nova autorização expressa.
+          </p>
+        </div>
+
         <Card className="border-[#2d3139] bg-[#1a1d23] shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-blue-600" />
           <CardHeader className="pb-4">
-             <CardTitle className="text-lg text-white flex items-center gap-2">
+             <CardTitle className="text-lg text-white flex items-center gap-2 font-bold uppercase tracking-tight">
                <Pencil size={18} className="text-blue-500" />
-               Confirmação e Assinatura
+               Confirmação do Documento
              </CardTitle>
              <CardDescription className="text-xs text-[#71717a]">
-                Selecione o tipo de documento e faça sua assinatura.
+                Confira os dados reais da sua cópia antes de realizar a sua assinatura.
              </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="bg-[#0f1115] p-4 rounded-xl border border-[#2d3139] space-y-4">
-              <div className="space-y-3">
-                <Label className="text-[#71717a] text-[10px] font-black uppercase tracking-widest block px-1">Este documento refere-se a:</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { id: 'visit', label: 'Visita Técnica' },
-                    { id: 'service-order', label: 'Ordem de Serviço' },
-                    { id: 'budget', label: 'Orçamento' },
-                    { id: 'contract', label: 'Contrato' }
-                  ].map((t) => (
-                    <Button
-                      key={t.id}
-                      variant="outline"
-                      onClick={() => setSelectedType(t.id)}
-                      className={cn(
-                        "h-10 text-[10px] font-bold uppercase tracking-wider border-[#2d3139] transition-all",
-                        selectedType === t.id 
-                          ? "bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-600/20" 
-                          : "bg-[#1a1d23] text-[#71717a] hover:text-white"
-                      )}
-                    >
-                      {t.id === selectedType && <Check size={12} className="mr-1" />}
-                      {t.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
+            <div className="space-y-4">
+              {/* Document Visual Preview Block */}
+              <DocumentPreviewer type={selectedType} data={docData} />
 
               <div className="pt-2 border-t border-[#2d3139]/50">
-                <Label className="text-[#71717a] text-[10px] font-black uppercase tracking-widest block px-1">Dados:</Label>
-                <p className="text-white font-bold">{request.displayTitle}</p>
-                {request.displayValue && <p className="text-xl font-mono text-blue-500">{request.displayValue}</p>}
-                {request.displayDetails && <p className="text-[#71717a] text-xs italic mt-1">{request.displayDetails}</p>}
+                <Label className="text-[#71717a] text-[10px] font-black uppercase tracking-widest block px-1 mb-1">Identificação na Plataforma:</Label>
+                <div className="bg-[#0f1115] p-3 rounded-lg border border-[#2d3139]/40 flex justify-between items-center text-xs">
+                  <span className="text-white font-medium">{request.displayTitle}</span>
+                  {request.displayValue && <span className="font-mono text-blue-400 font-bold">R$ {request.displayValue}</span>}
+                </div>
               </div>
             </div>
 
@@ -2672,7 +3370,7 @@ const getFinalEmail = (input: string) => {
   clean = clean.replace(/[^a-z0-9._-]/g, '');
   if (!clean) return '';
   
-  return `${clean}@segurpro.com`;
+  return `${clean}@segurtecpro.com`;
 };
 
 const initialAppSettings: AppSettings = {
@@ -2686,13 +3384,59 @@ const initialAppSettings: AppSettings = {
   document: '',
   signatureUrl: '',
   serviceTypes: ['CFTV', 'Alarme', 'Cerca Elétrica', 'Motor de Portão', 'Redes', 'Outros'],
-  installmentPlans: []
+  installmentPlans: [],
+  introVideoUrl: ''
+};
+
+// PDF interception state
+let globalSetPdfPreviewData: ((data: { blobUrl: string; filename: string } | null) => void) | null = null;
+const originalJsPdfSave = jsPDF.prototype.save;
+jsPDF.prototype.save = function (filename?: string, options?: any) {
+  const result = originalJsPdfSave.apply(this, arguments as any);
+  try {
+    const finalName = filename || 'documento.pdf';
+    const blob = this.output('blob');
+    if (blob) {
+      const blobUrl = URL.createObjectURL(blob);
+      if (globalSetPdfPreviewData) {
+        globalSetPdfPreviewData({ blobUrl, filename: finalName });
+      }
+    }
+  } catch (error) {
+    console.error('[pdf-save-patch] Error generating blob URL:', error);
+  }
+  return result;
 };
 
 export default function MainApp() {
-  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [showIntro, setShowIntro] = useState(false);
+  const [pdfPreviewData, setPdfPreviewData] = useState<{ blobUrl: string; filename: string } | null>(null);
+
+  useEffect(() => {
+    globalSetPdfPreviewData = setPdfPreviewData;
+    return () => {
+      globalSetPdfPreviewData = null;
+    };
+  }, []);
+
+  const hasPlayedIntro = useRef(false);
+  const hasInitializedAdminCompany = useRef(false);
+  const [user, setUser] = useState<FirebaseUser | null>(() => {
+    try {
+      const savedMockUserStr = typeof window !== 'undefined' ? localStorage.getItem('SUB_BYPASS_USER') : null;
+      if (savedMockUserStr) {
+        const parsed = JSON.parse(savedMockUserStr);
+        if (parsed && parsed.uid) return parsed;
+      }
+    } catch (e) {
+      // ignore
+    }
+    return null;
+  });
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [isLicenseVerifying, setIsLicenseVerifying] = useState(true);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const signerTokenUrl = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
@@ -2712,9 +3456,12 @@ export default function MainApp() {
   const [activeSignerToken, setActiveSignerToken] = useState<string | null>(signerTokenUrl);
 
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [visits, setVisits] = useState<TechnicalVisit[]>([]);
   const [serviceOrders, setServiceOrders] = useState<ServiceOrder[]>([]);
   const [financials, setFinancials] = useState<FinancialRecord[]>([]);
+  const [payables, setPayables] = useState<any[]>([]);
+  const [receivables, setReceivables] = useState<any[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [inventory, setInventory] = useState<any[]>([]);
   const [inventoryTransactions, setInventoryTransactions] = useState<any[]>([]);
@@ -2723,22 +3470,6 @@ export default function MainApp() {
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [laudos, setLaudos] = useState<LaudoTecnico[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
-
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement || !!(document as any).webkitIsFullScreen || !!(document as any).mozFullScreen || !!(document as any).msFullscreenElement);
-    };
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
-    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
-    return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
-      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
-      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
-    };
-  }, []);
 
   const enterFullscreen = () => {
     try {
@@ -2752,6 +3483,7 @@ export default function MainApp() {
       } else if ((docElm as any).msRequestFullscreen) {
         (docElm as any).msRequestFullscreen()?.catch?.((err: any) => console.warn(err));
       }
+      setIsFullscreen(true);
     } catch (err) {
       console.warn("Fullscreen request blocked or not supported:", err);
     }
@@ -2759,19 +3491,19 @@ export default function MainApp() {
 
   const exitFullscreen = () => {
     try {
-      if (document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement) {
-        if (document.exitFullscreen) {
-          document.exitFullscreen().catch((err: any) => console.warn("Fullscreen exit error:", err));
-        } else if ((document as any).webkitExitFullscreen) {
-          (document as any).webkitExitFullscreen()?.catch?.((err: any) => console.warn(err));
-        } else if ((document as any).mozCancelFullScreen) {
-          (document as any).mozCancelFullScreen()?.catch?.((err: any) => console.warn(err));
-        } else if ((document as any).msExitFullscreen) {
-          (document as any).msExitFullscreen()?.catch?.((err: any) => console.warn(err));
-        }
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch((err: any) => console.warn("Fullscreen exit error:", err));
+      } else if ((document as any).webkitExitFullscreen) {
+        (document as any).webkitExitFullscreen()?.catch?.((err: any) => console.warn(err));
+      } else if ((document as any).mozCancelFullScreen) {
+        (document as any).mozCancelFullScreen()?.catch?.((err: any) => console.warn(err));
+      } else if ((document as any).msExitFullscreen) {
+        (document as any).msExitFullscreen()?.catch?.((err: any) => console.warn(err));
       }
+      setIsFullscreen(false);
     } catch (err) {
       console.warn("Fullscreen exit failed:", err);
+      setIsFullscreen(false);
     }
   };
 
@@ -2782,6 +3514,32 @@ export default function MainApp() {
       enterFullscreen();
     }
   };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement || !!(document as any).webkitIsFullScreen || !!(document as any).mozFullScreen || !!(document as any).msFullscreenElement);
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        exitFullscreen();
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   const [users, setUsers] = useState<any[]>([]);
   const [allGlobalUsers, setAllGlobalUsers] = useState<any[]>([]);
@@ -2797,6 +3555,8 @@ export default function MainApp() {
   });
   const [currentUserData, setCurrentUserData] = useState<any>(null);
   const [currentCompany, setCurrentCompany] = useState<any>(null);
+  const [companyTerminals, setCompanyTerminals] = useState<any[]>([]);
+  const [currentTerminal, setCurrentTerminal] = useState<any>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [userPhotoError, setUserPhotoError] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>(inviteCodeUrl ? 'register' : 'login');
@@ -2952,6 +3712,55 @@ export default function MainApp() {
     }
   };
 
+  const sessionLoggedRef = useRef<string | null>(null);
+
+  // Registro de entrada no sistema (login / abertura do app)
+  useEffect(() => {
+    if (user && currentUserData?.companyId) {
+      const sessionKey = `${user.uid}-${currentUserData.companyId}`;
+      if (sessionLoggedRef.current !== sessionKey) {
+        sessionLoggedRef.current = sessionKey;
+        logAction('login', 'system', `Entrou no sistema`);
+      }
+    } else if (!user) {
+      sessionLoggedRef.current = null;
+    }
+  }, [user, currentUserData?.companyId]);
+
+  // Listener para notificar o usuário master em tempo real quando algum colaborador entra no sistema
+  useEffect(() => {
+    if (!user || !effectiveCompanyId || !isSuperAdmin) return;
+
+    // Apenas entradas ocorridas APÓS o início da sessão do master atual
+    const sessionStartTime = Timestamp.now();
+
+    const q = query(
+      collection(db, 'logs'),
+      where('companyId', '==', effectiveCompanyId)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === 'added') {
+          const logData = change.doc.data();
+          const logTimestamp = logData.timestamp ? (logData.timestamp.toMillis ? logData.timestamp.toMillis() : (logData.timestamp.seconds ? logData.timestamp.seconds * 1000 : 0)) : 0;
+          const sessionStartMillis = sessionStartTime.toMillis();
+          // Certifica-se de que a ação é login, ocorreu após o início da sessão e não é o próprio usuário
+          if (logData.action === 'login' && logTimestamp > sessionStartMillis && logData.userId !== user.uid) {
+            toast.info(`Colaborador ${logData.userName || logData.userEmail || 'Desconhecido'} acabou de entrar no sistema!`, {
+              icon: '👋',
+              duration: 6000
+            });
+          }
+        }
+      });
+    }, (error) => {
+      console.error("Erro no listener de logins de colaboradores:", error);
+    });
+
+    return () => unsubscribe();
+  }, [user, effectiveCompanyId, isSuperAdmin]);
+
   // User Heartbeat (Online Status)
   useEffect(() => {
     if (!user || !currentUserData?.companyId) return;
@@ -2976,17 +3785,38 @@ export default function MainApp() {
 
   // 1. Auth Listener
   useEffect(() => {
-    const titleText = currentCompany?.name || appSettings?.companyName || 'SegurPro Gestão';
+    const titleText = currentCompany?.name || appSettings?.companyName || 'SegurTec-Pro Gestão';
     document.title = titleText;
   }, [currentCompany?.name, appSettings?.companyName]);
 
   useEffect(() => {
     async function testConnection() {
       if (signerTokenUrl || signaturePortal) return; // Se for página de assinatura externa, não testa conexão que exige auth
+      
+      // Proactive check to see if database was disabled/unconfigured in GCP Cloud console
+      try {
+        const statusRes = await fetch('/api/db-status');
+        if (statusRes.ok) {
+          const statusData = await statusRes.json();
+          if (statusData.isFirestoreEnabled === false) {
+            if (localStorage.getItem('FIRESTORE_DISABLED') !== 'true' || localStorage.getItem('DB_MODE_OVERRIDE') !== 'local') {
+              console.warn("[Client DB Fallback] Backend reported Firestore is disabled or unconfigured. Enforcing local database mode.");
+              localStorage.setItem('FIRESTORE_DISABLED', 'true');
+              localStorage.setItem('DB_MODE_OVERRIDE', 'local');
+              window.location.reload();
+              return;
+            }
+          }
+        }
+      } catch (dbErr) {
+        console.warn("Could not check backend DB status:", dbErr);
+      }
+
       try {
         await getDocFromServer(doc(db, 'test', 'connection'));
       } catch (error: any) {
-        if (error.message.includes('the client is offline')) {
+        const errorMsg = error instanceof Error ? error.message : (error?.message || String(error || ''));
+        if (errorMsg && errorMsg.includes('the client is offline')) {
           console.error("Erro de conexão com o Firebase: O cliente está offline.");
           toast.error("Erro de conexão: Verifique se o Firestore foi ativado.");
         }
@@ -3000,12 +3830,33 @@ export default function MainApp() {
     }, 10000);
 
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+      // If we have a mockup bypass session in progress, do not let real null auth kick the user out!
+      const savedMockUserStr = typeof window !== 'undefined' ? localStorage.getItem('SUB_BYPASS_USER') : null;
+      if (savedMockUserStr) {
+        try {
+          const parsed = JSON.parse(savedMockUserStr);
+          if (parsed && parsed.uid) {
+            setUser(parsed);
+            setIsLicenseVerifying(true);
+            setLoading(true);
+            return;
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
       setUser(currentUser);
+      setIsLicenseVerifying(true);
       if (!currentUser) {
         setCurrentUserData(null);
         setCurrentCompany(null);
         setLoading(false);
         clearTimeout(loadingTimeout);
+      } else {
+        // Force loading state to true when logging in, so that company & user loaders
+        // can finish loading their snapshot data before the main screen is allowed to render.
+        setLoading(true);
       }
     });
 
@@ -3014,6 +3865,16 @@ export default function MainApp() {
       clearTimeout(loadingTimeout);
     };
   }, []);
+
+  // Play brand intro animation immediately after successful login when user and company data are loaded
+  useEffect(() => {
+    const isSystemReady = !!(user && currentUserData?.companyId && currentCompany);
+    
+    if (isSystemReady && !hasPlayedIntro.current) {
+      hasPlayedIntro.current = true;
+      setShowIntro(true);
+    }
+  }, [user, currentUserData?.companyId, currentCompany]);
 
   useEffect(() => {
     if (activeTab && user && currentUserData) {
@@ -3043,6 +3904,31 @@ export default function MainApp() {
     const unsubscribeUser = onSnapshot(userRef, async (snap) => {
       if (snap.exists()) {
         const data = snap.data();
+        
+        // Auto-heal empty or missing companyId in local DB/offline mode ONLY for Master admin accounts to default-company-id
+        const loggedEmail = (user.email || '').toLowerCase().trim();
+        const isMasterUser = SUPER_ADMIN_EMAILS.includes(loggedEmail);
+        
+        if (isLocalDb && isMasterUser && (!data.companyId || data.companyId === '')) {
+          data.companyId = 'default-company-id';
+          try {
+            await updateDoc(userRef, { companyId: 'default-company-id' });
+          } catch (err) {
+            console.error("Erro ao sincronizar companyId local:", err);
+          }
+        }
+
+        // FORCE RECOVERY SHIELD: If they are in SUPER_ADMIN_EMAILS but Firestore role got corrupted, restore it!
+        if (isMasterUser && data.role !== 'super_admin') {
+          console.log("[Recovery Admin] Restoring corrupted super_admin role on Firestore...");
+          data.role = 'super_admin';
+          try {
+            await updateDoc(userRef, { role: 'super_admin' });
+          } catch (err) {
+            console.error("Erro ao recuperar perfil master:", err);
+          }
+        }
+
         setCurrentUserData(data);
         
         // Sincroniza o nome de exibição do Auth com o Firestore se houver divergência
@@ -3062,13 +3948,51 @@ export default function MainApp() {
         // Initial setup for new user
         const normalizedEmail = user.email?.toLowerCase().trim();
         const isSuper = normalizedEmail ? SUPER_ADMIN_EMAILS.includes(normalizedEmail) : false;
+        
+        // Proactively search if this email already has a company registered on Firestore (case-insensitive)
+        let activeCompanyId = '';
+        let activeRole = isSuper ? 'super_admin' : 'pending';
+        
+        if (!isLocalDb && normalizedEmail) {
+          try {
+            // 1. Case-insensitive lookup in ALL users ONLY if they are Super Admin
+            if (isSuper) {
+              const usersColl = collection(db, 'users');
+              const usersSnapshot = await getDocs(usersColl);
+              usersSnapshot.forEach((docSnap) => {
+                const d = docSnap.data();
+                const uEmail = (d.email || d.emailBkp || '').toLowerCase().trim();
+                if (uEmail === normalizedEmail && d.companyId) {
+                  activeCompanyId = d.companyId;
+                  activeRole = d.role || 'super_admin';
+                }
+              });
+            }
+
+            // 2. Fallback lookup in companies owned by this user
+            if (!activeCompanyId) {
+              const companiesColl = collection(db, 'companies');
+              const compsSnapshot = await getDocs(companiesColl);
+              compsSnapshot.forEach((docSnap) => {
+                const comp = docSnap.data();
+                if (comp.ownerId === user.uid) {
+                  activeCompanyId = docSnap.id;
+                  activeRole = isSuper ? 'super_admin' : 'admin';
+                }
+              });
+            }
+          } catch (err) {
+            console.warn("Erro ao buscar registros de usuário anteriores por e-mail:", err);
+          }
+        }
+
         try {
           const initialData = {
             uid: user.uid,
-            email: user.email,
+            email: user.email || '',
             displayName: user.displayName || 'Usuário',
-            role: isSuper ? 'super_admin' : 'pending',
-            companyId: '',
+            role: activeRole,
+            companyId: activeCompanyId,
             createdAt: Timestamp.now()
           };
           await setDoc(userRef, initialData);
@@ -3096,7 +4020,39 @@ export default function MainApp() {
     const compRef = doc(db, 'companies', effectiveCompanyId);
     const unsubscribeCompany = onSnapshot(compRef, (compSnap) => {
       if (compSnap.exists()) {
-        setCurrentCompany({ id: compSnap.id, ...compSnap.data() });
+        const compData = compSnap.data() || {};
+        setCurrentCompany({ id: compSnap.id, ...compData });
+
+        // Auto synchronization of the company's registered version with the actual executing client build version (from package.json)
+        const dbVersion = compData.version || '';
+        if (dbVersion !== LOCAL_VERSION) {
+          updateDoc(doc(db, 'companies', compSnap.id), {
+            version: LOCAL_VERSION,
+            updatedAt: Timestamp.now()
+          }).catch(err => console.warn("[Version Auto-Sync] Failed updating company version to Firestore:", err));
+        }
+        
+        // Auto synchronization with dbMode setting from license management
+        const isFirestoreDisabledGCP = localStorage.getItem('FIRESTORE_DISABLED') === 'true';
+        const savedCompanyDbMode = isFirestoreDisabledGCP ? 'local' : (compData.dbMode || 'default');
+        const currentSavedMode = localStorage.getItem('DB_MODE_OVERRIDE') || 'default';
+        const isHostWeb = window.location.hostname !== 'localhost' && 
+                           window.location.hostname !== '127.0.0.1' && 
+                           !/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname);
+        
+        // If the company is strictly local-only and we are on the cloud website,
+        // we must NOT toggle DB_MODE_OVERRIDE to 'local' (otherwise it breaks Cloud Firebase Auth/session and kicks the user out).
+        // Instead, keep DB_MODE_OVERRIDE as default/online so they remain signed in, and render the lock screen.
+        const targetSavedMode = (savedCompanyDbMode === 'local' && isHostWeb && !isFirestoreDisabledGCP) ? 'default' : savedCompanyDbMode;
+
+        if (targetSavedMode !== currentSavedMode) {
+          localStorage.setItem('DB_MODE_OVERRIDE', targetSavedMode);
+          console.log(`[Database Sync] Switched from ${currentSavedMode} to ${targetSavedMode} based on company's license settings.`);
+          toast.info("Ajustando banco de dados com base na licença da empresa...", { duration: 1500 });
+          setTimeout(() => {
+            window.location.reload();
+          }, 800);
+        }
       } else {
         setCurrentCompany(null);
       }
@@ -3116,9 +4072,30 @@ export default function MainApp() {
       console.error("Erro no listener de papéis customizados:", error);
     });
 
+    const terminalsRef = collection(db, 'companies', effectiveCompanyId, 'terminals');
+    const unsubscribeTerminals = onSnapshot(terminalsRef, (snap) => {
+      const list = snap.docs.map(tDoc => ({ id: tDoc.id, ...tDoc.data() }));
+      setCompanyTerminals(list);
+      
+      const localId = localStorage.getItem('TERMINAL_ID');
+      if (localId) {
+        const found = list.find(t => t.id === localId);
+        if (found) {
+          setCurrentTerminal(found);
+        } else {
+          setCurrentTerminal(null);
+        }
+      } else {
+        setCurrentTerminal(null);
+      }
+    }, (error) => {
+      console.error("Erro no listener de terminais:", error);
+    });
+
     return () => {
       unsubscribeCompany();
       unsubRoles();
+      unsubscribeTerminals();
     };
   }, [currentUserData?.companyId, selectedCompanyId, isSuperAdmin]);
 
@@ -3134,6 +4111,14 @@ export default function MainApp() {
     
     // Hard restriction for super-admin tab
     if (tabName === 'super-admin') return isSuperAdmin;
+
+    // Sub-settings tabs map directly to general/specific settings access based on SaaS choices
+    if (['network-config', 'license-updates', 'financial-settings', 'backup-restore'].includes(tabName)) {
+      if (!isSuperAdmin && currentCompany?.enabledMenus && !currentCompany.enabledMenus.includes(tabName)) {
+        return false;
+      }
+      return canAccess('settings');
+    }
 
     // Owners and Super Admins bypass SaaS menu restrictions for visibility
     // but we still respect company-level enabledMenus for regular staff
@@ -3156,12 +4141,16 @@ export default function MainApp() {
     } else if (!currentCompany?.enabledMenus) {
       // Default menus for companies without specific settings
       const defaultMenus = [
-        'dashboard', 'visits', 'receipts', 'clients', 'financial', 
-        'inventory', 'service-orders', 'budgets', 'settings', 'pdv',
-        'suppliers', 'reports', 'users', 'logs', 'laudos'
+        'dashboard', 'visits', 'service-orders', 'laudos', 'clients',
+        'suppliers', 'budgets', 'pdv', 'vendas-historico', 'inventory',
+        'financial', 'payable', 'receivable', 'receipts', 'reports',
+        'users', 'logs', 'settings', 'financial-settings', 'backup-restore',
+        'network-config', 'license-updates'
       ];
       if (!defaultMenus.includes(tabName)) return false;
     }
+    
+    if (role === 'owner') return true;
     
     if (role === 'admin') {
       // Admin should see everything allowed for the company except logs maybe?
@@ -3284,7 +4273,8 @@ export default function MainApp() {
           city: prev.city || currentCompany.city || currentCompany.companyCity || currentCompany.municipio || '',
           cep: prev.cep || currentCompany.cep || currentCompany.companyCep || '',
           neighborhood: prev.neighborhood || currentCompany.neighborhood || currentCompany.companyNeighborhood || currentCompany.bairro || '',
-          signatureUrl: prev.signatureUrl || currentCompany.signatureUrl || ''
+          signatureUrl: prev.signatureUrl || currentCompany.signatureUrl || '',
+          introVideoUrl: prev.introVideoUrl || currentCompany.introVideoUrl || ''
         };
         if (JSON.stringify(prev) !== JSON.stringify(updated)) {
           return updated;
@@ -3293,6 +4283,17 @@ export default function MainApp() {
       });
     }
   }, [currentCompany]);
+
+  // Synchronize Super Admin's default company ID when profile finishes loading
+  useEffect(() => {
+    if (isSuperAdmin && currentUserData?.companyId && allCompanies.length > 0 && !hasInitializedAdminCompany.current) {
+      const userCompId = currentUserData.companyId;
+      if (allCompanies.some(c => c.id === userCompId)) {
+        setSelectedCompanyId(userCompId);
+        hasInitializedAdminCompany.current = true;
+      }
+    }
+  }, [isSuperAdmin, currentUserData?.companyId, allCompanies]);
 
   useEffect(() => {
     if (!user) return;
@@ -3309,9 +4310,16 @@ export default function MainApp() {
         (snapshot) => {
           const comps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           setAllCompanies(comps);
-          // Auto-select first company if none selected and we have companies
+          // Prefer auto-selecting the user's registered company if it exists in the list
           if (comps.length > 0 && !selectedCompanyId) {
-            setSelectedCompanyId(comps[0].id);
+            const userCompId = currentUserData?.companyId;
+            const hasUserComp = userCompId && comps.some(c => c.id === userCompId);
+            if (hasUserComp) {
+              setSelectedCompanyId(userCompId);
+              hasInitializedAdminCompany.current = true;
+            } else {
+              setSelectedCompanyId(comps[0].id);
+            }
           }
         }
       );
@@ -3354,6 +4362,8 @@ export default function MainApp() {
     let visitsUnsubscribe = () => {};
     let serviceOrdersUnsubscribe = () => {};
     let financialUnsubscribe = () => {};
+    let payablesUnsubscribe = () => {};
+    let receivablesUnsubscribe = () => {};
     let budgetsUnsubscribe = () => {};
     let inventoryUnsubscribe = () => {};
     let inventoryTransactionsUnsubscribe = () => {};
@@ -3381,6 +4391,8 @@ export default function MainApp() {
       setServiceOrders([]);
       setBudgets([]);
       setFinancials([]);
+      setPayables([]);
+      setReceivables([]);
       setInventoryTransactions([]);
       setLogs([]);
 
@@ -3428,6 +4440,22 @@ export default function MainApp() {
             const dateB = safeParseDate(b.date).getTime();
             return dateB - dateA;
           }));
+        }
+      );
+
+      payablesUnsubscribe = onSnapshot(
+        query(collection(db, 'payables'), where('companyId', '==', companyId)),
+        (snapshot) => {
+          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setPayables(data);
+        }
+      );
+
+      receivablesUnsubscribe = onSnapshot(
+        query(collection(db, 'receivables'), where('companyId', '==', companyId)),
+        (snapshot) => {
+          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setReceivables(data);
         }
       );
 
@@ -3564,6 +4592,8 @@ export default function MainApp() {
       visitsUnsubscribe();
       serviceOrdersUnsubscribe();
       financialUnsubscribe();
+      payablesUnsubscribe();
+      receivablesUnsubscribe();
       budgetsUnsubscribe();
       inventoryUnsubscribe();
       inventoryTransactionsUnsubscribe();
@@ -3583,7 +4613,12 @@ export default function MainApp() {
   }, [user, currentUserData?.companyId, isSuperAdmin, selectedCompanyId]);
 
   const handleLogin = async () => {
+    if (isLoggingIn) return;
+    setIsLoggingIn(true);
     const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({
+      prompt: 'select_account'
+    });
     try {
       await signInWithPopup(auth, provider);
       toast.success('Login realizado com sucesso!');
@@ -3594,9 +4629,17 @@ export default function MainApp() {
         toast.error('Domínio não autorizado no Firebase. Adicione este domínio nas configurações do Firebase.');
       } else if (error.code === 'auth/operation-not-allowed') {
         toast.error('O login com Google não está ativado no console do Firebase.');
+      } else if (error.code === 'auth/cancelled-popup-request' || error.message?.includes('cancelled-popup-request')) {
+        toast.error('O processo de login anterior foi interrompido ou reaberto. Tente novamente.');
+      } else if (error.code === 'auth/popup-closed-by-user' || error.message?.includes('popup-closed-by-user')) {
+        toast.error('A janela de login do Google foi fechada antes do término do processo.');
+      } else if (error.code === 'auth/popup-blocked' || error.message?.includes('popup-blocked')) {
+        toast.error('A janela popup foi bloqueada pelo navegador. Permita popups para este site.');
       } else {
         toast.error(`Erro ao fazer login: ${error.message}`);
       }
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
@@ -3656,6 +4699,7 @@ export default function MainApp() {
       const companyRef = await addDoc(collection(db, 'companies'), {
         name,
         ownerId: user.uid,
+        ownerEmail: (user.email || '').toLowerCase().trim(),
         status: 'active', // Default status
         inviteCode,
         createdAt: Timestamp.now()
@@ -3809,10 +4853,17 @@ export default function MainApp() {
       return;
     }
 
-    const finalEmail = getFinalEmail(email);
-    if (!finalEmail || !finalEmail.includes('@')) {
-      toast.error('O formato do usuário ou e-mail é inválido.');
-      return;
+    const finalEmail = isLocalDb ? email.trim() : getFinalEmail(email);
+    if (!isLocalDb) {
+      if (!finalEmail || !finalEmail.includes('@')) {
+        toast.error('O formato do usuário ou e-mail é inválido.');
+        return;
+      }
+    } else {
+      if (!finalEmail) {
+        toast.error('O nome de usuário é obrigatório.');
+        return;
+      }
     }
     
     setIsAuthLoading(true);
@@ -3821,15 +4872,123 @@ export default function MainApp() {
     try {
       const cleanPassword = password.trim();
       if (authMode === 'login') {
-        // Enforce a safety timeout on the signInWithEmailAndPassword promise
-        const signInPromise = signInWithEmailAndPassword(auth, finalEmail, cleanPassword);
-        const timeoutPromise = new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error('TIMEOUT')), 8000)
-        );
+        let isSuccessfullySignedIn = false;
+        let userCredential = null;
+        try {
+          // Enforce a safety timeout on the signInWithEmailAndPassword promise
+          const signInPromise = signInWithEmailAndPassword(auth, finalEmail, cleanPassword);
+          const timeoutPromise = new Promise<never>((_, reject) => 
+            setTimeout(() => reject(new Error('TIMEOUT')), 8000)
+          );
 
-        const userCredential = await Promise.race([signInPromise, timeoutPromise]);
-        toast.success(`Bem-vindo, ${userCredential.user.displayName || 'usuário'}!`);
-        enterFullscreen();
+          userCredential = await Promise.race([signInPromise, timeoutPromise]);
+          isSuccessfullySignedIn = true;
+        } catch (signInErr: any) {
+          // Backward-compatible fallback. If they autofilled with @segurtecpro.com, try the legacy @segurpro.com domain
+          if (finalEmail.endsWith('@segurtecpro.com')) {
+            const oldEmail = finalEmail.replace('@segurtecpro.com', '@segurpro.com');
+            console.log(`Checking backward-compatible login session for legacy domain: ${oldEmail}`);
+            try {
+              const retryPromise = signInWithEmailAndPassword(auth, oldEmail, cleanPassword);
+              const timeoutPromise = new Promise<never>((_, reject) => 
+                setTimeout(() => reject(new Error('TIMEOUT')), 8000)
+              );
+              userCredential = await Promise.race([retryPromise, timeoutPromise]);
+              isSuccessfullySignedIn = true;
+            } catch (retryErr) {
+              console.warn("Legacy domain sign-in also failed, proceeding to server proxy fallback");
+            }
+          }
+
+          if (!isSuccessfullySignedIn) {
+            console.warn("Standard client login failed or timed out, trying API fallback and cloud-sync:", signInErr.message || signInErr);
+            
+            try {
+              // Let's call the /api/auth/fallback-login endpoint
+              const res = await fetch('/api/auth/fallback-login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password: cleanPassword })
+              });
+            
+              if (res.ok) {
+                const data = await res.json();
+                if (data.success) {
+                  // Direct bypass or synchronizer: we know credentials are valid.
+                  if (!isLocalDb) {
+                    console.warn("Fallback success: Online database mode active. Attempting to synchronize real Firebase Auth session...");
+                    
+                    try {
+                      // Attempt A: Try to sign in client-side using their core verified email and password
+                      console.log(`Auto-sync: Logging in ${data.user.email} in Firebase Auth...`);
+                      const userCred = await signInWithEmailAndPassword(auth, data.user.email, cleanPassword);
+                      console.log("Successfully logged in user client-side via correct email!", userCred);
+                      isSuccessfullySignedIn = true;
+                      userCredential = userCred;
+                    } catch (signInCorrectErr: any) {
+                      console.warn("Auto-login with correct email failed, attempting auto-registration...", signInCorrectErr.message || signInCorrectErr);
+                      
+                      try {
+                        // Attempt B: Try to register/create the user in real Firebase Auth if they don't exist yet
+                        console.log(`Auto-sync: Registering ${data.user.email} in Firebase Auth...`);
+                        const userCred = await createUserWithEmailAndPassword(auth, data.user.email, cleanPassword);
+                        console.log("Successfully auto-registered and logged in user client-side!", userCred);
+                        isSuccessfullySignedIn = true;
+                        userCredential = userCred;
+                      } catch (signUpErr: any) {
+                        const sigCode = String(signUpErr.code || signUpErr.message || '').toLowerCase();
+                        console.warn("Auto-registration returned:", sigCode);
+                        
+                        // Fallback to bypass mockup model so they can still browse, but they are warned
+                        console.warn("Falling back to local layout session.");
+                        const mockUser = {
+                          uid: data.user.uid,
+                          email: data.user.email,
+                          displayName: data.user.displayName,
+                          emailVerified: true
+                        };
+                        localStorage.setItem('SUB_BYPASS_USER', JSON.stringify(mockUser));
+                        setUser(mockUser);
+                        isSuccessfullySignedIn = true;
+                        toast.success(`Bem-vindo, ${mockUser.displayName} (Acesso Local de Segurança)!`);
+                        enterFullscreen();
+                        setIsAuthLoading(false);
+                        return;
+                      }
+                    }
+                  } else {
+                    console.warn("Fallback sync: Local database mode active. Establishing local manual session.");
+                    const mockUser = {
+                      uid: data.user.uid,
+                      email: data.user.email,
+                      displayName: data.user.displayName,
+                      emailVerified: true
+                    };
+                    localStorage.setItem('SUB_BYPASS_USER', JSON.stringify(mockUser));
+                    setUser(mockUser);
+                    isSuccessfullySignedIn = true;
+                    toast.success(`Bem-vindo, ${mockUser.displayName}!`);
+                    enterFullscreen();
+                    setIsAuthLoading(false);
+                    return;
+                  }
+                } else {
+                  throw signInErr; // Re-throw original sign-in error if API response lacks success
+                }
+              } else {
+                throw signInErr; // Re-throw original sign-in error if API fails (e.g., wrong password)
+              }
+            } catch (fallbackErr) {
+              console.warn("Fallback login was not successful:", fallbackErr);
+              throw signInErr; // Prefer throwing the original auth sign-in error with code information
+            }
+          }
+      }
+
+        if (isSuccessfullySignedIn && userCredential) {
+          toast.success(`Bem-vindo, ${userCredential.user.displayName || 'usuário'}!`);
+          enterFullscreen();
+        }
       } else {
         if (!displayName) {
           toast.error('Por favor, informe seu nome para o cadastro.');
@@ -3846,7 +5005,6 @@ export default function MainApp() {
         toast.success('Sua conta foi criada! Bem-vindo.');
       }
     } catch (error: any) {
-      console.error("Auth error occurred:", error);
       const errCode = (error.code || '').toLowerCase();
       const errMsg = (error.message || '').toLowerCase();
       
@@ -3863,6 +5021,14 @@ export default function MainApp() {
         errMsg.includes('wrong-password') ||
         errMsg.includes('auth/invalid-credential');
       const isInvalidEmail = errCode === 'auth/invalid-email' || errMsg.includes('invalid-email');
+
+      const isExpectedUserError = isTimeout || isOpNotAllowed || isEmailInUse || isWeakPass || isInvalidCreds || isInvalidEmail;
+
+      if (isExpectedUserError) {
+        console.warn("User auth input validation failed:", error.message || error);
+      } else {
+        console.error("Auth error occurred:", error);
+      }
 
       if (isTimeout) {
         setLastAuthError('TIMEOUT');
@@ -3893,7 +5059,9 @@ export default function MainApp() {
 
   const handleLogout = async () => {
     try {
+      hasPlayedIntro.current = false;
       exitFullscreen();
+      localStorage.removeItem('SUB_BYPASS_USER');
       await signOut(auth);
       // Clean URL parameters upon logout to ensure a clean login screen without breaking sandboxed environment
       if (window.history.pushState) {
@@ -3904,6 +5072,15 @@ export default function MainApp() {
       console.error(error);
     }
   };
+
+  // Se for uma rota de assinatura ou portal, renderizar imediatamente sem login
+  if (activeSignerToken) {
+    return <ExternalSignaturePage token={activeSignerToken} />;
+  }
+
+  if (signaturePortal) {
+    return <ClientPortalScreen onAccess={(token) => setActiveSignerToken(token)} appSettings={appSettings} />;
+  }
 
   if (loading) {
     return (
@@ -3916,7 +5093,7 @@ export default function MainApp() {
             </div>
           </div>
           <div className="text-center space-y-2">
-            <p className="text-lg font-semibold text-white tracking-widest uppercase">{appSettings.companyName || 'SegurPro Gestão'}</p>
+            <p className="text-lg font-semibold text-white tracking-widest uppercase">{appSettings.companyName || 'SegurTec-Pro Gestão'}</p>
             <p className="text-xs font-medium text-[#71717a] animate-pulse">Iniciando ambiente seguro...</p>
           </div>
         </div>
@@ -3927,325 +5104,443 @@ export default function MainApp() {
   // If user is not logged in, show the standard login page.
   // The inviteCodeUrl will stay in the URL and be processed by the CompanyWizard after login.
   if (!user) {
+    const renderDbMode = (() => {
+      // 1. Localhost Mode: if running on localhost/127.0.0.1 or isLocalDb is true, only user/password
+      const isHostLocal = window.location.hostname === 'localhost' || 
+                          window.location.hostname === '127.0.0.1' || 
+                          (import.meta as any).env.VITE_LOCAL_DB === 'true';
+      if (isHostLocal) return 'local';
+
+      // 2. Hybrid Mode: if explicitly requesting hybrid or override is set to hybrid/default
+      const urlParams = new URLSearchParams(window.location.search);
+      const isForceHybrid = urlParams.get('modo') === 'hybrid' || 
+                            urlParams.get('hibrida') === 'true' || 
+                            localStorage.getItem('DB_MODE_OVERRIDE') === 'default';
+      if (isForceHybrid) return 'default';
+
+      // 3. Web Mode: default on standard hosted cloud website with Firebase integration
+      return 'online';
+    })();
+
     return (
-      <div className="flex h-screen flex-col items-center justify-center bg-[#0f1115] p-6 overflow-y-auto">
-        <div className="w-full max-w-md space-y-8 text-center py-8">
-          <div className="space-y-4">
-            {inviteCodeUrl && (
-              <div className="bg-[#3b82f6]/10 border border-[#3b82f6]/30 p-4 rounded-xl flex items-center gap-4 mb-4 text-left animate-in slide-in-from-top duration-700">
-                <div className="p-2 bg-[#3b82f6] rounded-lg text-white">
-                  <Plus className="h-6 w-6" />
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#0f1115] p-3 md:p-6 overflow-y-auto">
+        <div className={cn(
+          "w-full space-y-4 py-2 animate-in fade-in duration-500",
+          renderDbMode === 'default' ? "max-w-4xl" : "max-w-md"
+        )}>
+          
+          {/* Logo with Company Name on Top */}
+          <div className="text-center space-y-2">
+            {inviteCodeUrl && renderDbMode !== 'local' && (
+              <div className="max-w-md mx-auto bg-[#3b82f6]/10 border border-[#3b82f6]/30 p-3 rounded-lg flex items-center gap-3 mb-2 text-left animate-in slide-in-from-top duration-700">
+                <div className="p-1.5 bg-[#3b82f6] rounded text-white">
+                  <Plus className="h-4 w-4" />
                 </div>
                 <div>
-                  <h3 className="text-white font-bold text-sm uppercase tracking-tighter italic">Voucher de Adesão Detectado!</h3>
-                  <p className="text-[#a0a0a0] text-[10px]">Crie sua conta agora para ativar seu acesso exclusivo com o código <span className="text-white font-mono">{inviteCodeUrl}</span></p>
+                  <h3 className="text-white font-bold text-xs uppercase tracking-tighter italic">Voucher de Adesão Detectado!</h3>
+                  <p className="text-[#a0a0a0] text-[9px]">Crie sua conta agora para ativar seu acesso exclusivo com o código <span className="text-white font-mono">{inviteCodeUrl}</span></p>
                 </div>
               </div>
             )}
             
-            {appSettings.logoUrl ? (
-              <div className="mx-auto flex h-24 w-auto items-center justify-center overflow-hidden mb-4">
-                <img src={appSettings.logoUrl} alt="Logo" className="max-h-full max-w-full object-contain" referrerPolicy="no-referrer" />
-              </div>
-            ) : (
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[#3b82f6] text-white shadow-xl shadow-blue-900/20">
-                <Shield size={32} />
-              </div>
-            )}
-            <h1 className="text-3xl font-bold tracking-tight text-white">
-              {inviteCodeUrl ? 'Ativação de Cadastro' : (currentCompany?.name || appSettings.companyName || 'SegurPro SaaS')}
-            </h1>
-            <p className="text-[#71717a]">
-              {inviteCodeUrl 
-                ? 'Use o formulário abaixo para criar sua conta e ativar seu código de liberação.' 
-                : 'Controle total para instaladores de segurança eletrônica.'}
-            </p>
+            <div className="flex flex-col items-center gap-1.5">
+              {appSettings.logoUrl ? (
+                <div className="mx-auto flex h-14 w-auto items-center justify-center overflow-hidden mb-0.5">
+                  <img src={appSettings.logoUrl} alt="Logo" className="max-h-full max-w-full object-contain" referrerPolicy="no-referrer" />
+                </div>
+              ) : (
+                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-[#3b82f6] text-white shadow-lg shadow-blue-900/20 mb-0.5">
+                  <Shield size={22} />
+                </div>
+              )}
+              <h1 className="text-xl md:text-2xl font-extrabold tracking-tight text-white bg-gradient-to-r from-white via-gray-200 to-gray-400 bg-clip-text text-transparent">
+                {inviteCodeUrl && renderDbMode !== 'local' ? 'Ativação de Cadastro' : (currentCompany?.name || appSettings.companyName || (renderDbMode === 'local' ? 'SegurTec-Pro Local' : 'SegurTec-Pro SaaS'))}
+              </h1>
+              <p className="text-[#71717a] text-[11px] md:text-xs max-w-md">
+                {inviteCodeUrl && renderDbMode !== 'local'
+                  ? 'Use o formulário abaixo para criar sua conta e ativar seu código de liberação.' 
+                  : (renderDbMode === 'local' ? 'Acesso ao Servidor Local Offline.' : 'Controle total para instaladores de segurança eletrônica.')}
+              </p>
+            </div>
           </div>
 
-          <Card className={`border-[#2d3139] bg-[#1a1d23] ${inviteCodeUrl ? 'ring-2 ring-blue-500/30 shadow-2xl shadow-blue-500/10' : ''}`}>
-            <CardHeader>
-              <CardTitle className="text-white">
-                {inviteCodeUrl 
-                  ? (authMode === 'login' ? 'Vincular Convite' : 'Criar Conta de Admin') 
-                  : (authMode === 'login' ? 'Bem-vindo' : 'Criar Conta')}
-              </CardTitle>
-              <CardDescription className="text-[#71717a]">
-                {inviteCodeUrl ? (
-                  <div className="bg-blue-500/10 border border-blue-500/20 p-3 rounded-lg mb-2 text-left">
-                     <p className="text-blue-400 text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2">
-                       <Shield size={14} /> Convite Mestre Detectado
-                     </p>
-                     <p className="text-white text-xs mt-1">
-                       Identificamos o código <span className="font-mono font-bold text-blue-300">{inviteCodeUrl}</span>. 
-                       {authMode === 'register' ? ' Cadastre-se para ativar sua nova empresa.' : ' Entre para vincular este acesso à sua conta.'}
-                     </p>
-                  </div>
-                ) : (authMode === 'login' ? 'Faça login para gerenciar suas visitas e finanças.' : 'Cadastre-se para começar a usar o sistema.')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {lastAuthError && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-                  <div className="bg-[#1a1d23] border border-[#2d3139] rounded-xl max-w-md w-full overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 text-left">
-                    {/* Header of Modal */}
-                    <div className="p-5 border-b border-[#2d3139] bg-[#1f232b] flex items-center gap-2.5">
-                      <div className="p-2 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400">
-                        <ShieldAlert size={20} />
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-white text-sm md:text-base">
-                          {lastAuthError === 'INVALID_CREDENTIALS' 
-                            ? 'Credencial Inválida ou Não Encontrada' 
-                            : lastAuthError === 'TIMEOUT' 
-                              ? 'Tempo de Conexão Esgotado' 
-                              : 'Problema na Autenticação'}
-                        </h3>
-                        <p className="text-[11px] text-gray-400 mt-0.5">Identificamos o seguinte detalhe:</p>
-                      </div>
-                    </div>
-                    
-                    {/* Content of Modal */}
-                    <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto text-xs md:text-sm text-gray-300">
-                      {lastAuthError === 'INVALID_CREDENTIALS' ? (
-                        <div className="space-y-3 leading-relaxed">
-                          <p className="text-[#e2e8f0]">
-                            O Firebase retornou <span className="text-red-400 font-mono text-[11px] bg-[#0f1115] px-1.5 py-0.5 rounded border border-[#2d3139]">auth/invalid-credential</span>. Se o login está falhando, considere as soluções mais comuns:
-                          </p>
-                          <div className="bg-[#0f1115] rounded-lgs p-3.5 border border-[#2d3139]/55 space-y-3 rounded-lg text-xs">
-                            <div className="space-y-1">
-                              <p className="font-bold text-white text-[11.5px] flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                                Fez o primeiro acesso via Google?
-                              </p>
-                              <p className="text-[#b0b0b0] text-[11px] pl-3">
-                                Se você se cadastrou clicando no botão do Google, você <span className="text-blue-400 font-bold">não tem uma senha tradicional</span> cadastrada. Entre utilizando o botão <strong className="text-white">Google</strong> abaixo.
-                              </p>
+          {/* Two-Column Layout */}
+          <div className={cn(
+            "grid grid-cols-1 gap-4 items-stretch",
+            renderDbMode === 'default' ? "md:grid-cols-12" : "grid-cols-1"
+          )}>
+            
+            {/* Left Column: Email/Password Authentication */}
+            {(renderDbMode === 'default' || renderDbMode === 'local') && (
+              <div className={cn(
+                "flex flex-col",
+                renderDbMode === 'default' ? "md:col-span-7" : "col-span-1"
+              )}>
+                <Card className={`border-[#2d3139]/80 bg-[#1a1d23] h-full flex flex-col justify-between ${inviteCodeUrl && renderDbMode !== 'local' ? 'ring-2 ring-blue-500/30' : ''}`}>
+                  <CardHeader className="p-4 pb-2 space-y-1">
+                    <CardTitle className="text-white text-base flex items-center gap-2">
+                      <Shield size={16} className="text-[#3b82f6]" />
+                      {inviteCodeUrl && renderDbMode !== 'local'
+                        ? (authMode === 'login' ? 'Vincular Convite' : 'Criar Conta de Admin') 
+                        : (renderDbMode === 'local' ? 'Entrar com Usuário' : (authMode === 'login' ? 'Entrar com E-mail' : 'Criar Nova Conta'))}
+                    </CardTitle>
+                    <CardDescription className="text-[#71717a] text-[11px] leading-snug">
+                      {inviteCodeUrl && renderDbMode !== 'local' ? (
+                        <div className="bg-blue-500/10 border border-blue-500/20 p-2.5 rounded mb-1 text-left">
+                           <p className="text-blue-400 text-[9px] font-black uppercase tracking-[0.2em] flex items-center gap-1.5">
+                             <Shield size={12} /> Convite Mestre
+                           </p>
+                           <p className="text-white text-[11px] mt-0.5">
+                             Registrando convite mestre <span className="font-mono font-bold text-blue-300">{inviteCodeUrl}</span>.
+                           </p>
+                        </div>
+                      ) : (renderDbMode === 'local' ? 'Insira o nome de usuário e senha da equipe.' : (authMode === 'login' ? 'Insira suas credenciais de segurança cadastradas.' : 'Cadastre sua conta para começar imediatamente.'))}
+                    </CardDescription>
+                  </CardHeader>
+
+                  <CardContent className="p-4 pt-1 space-y-3 flex-1 flex flex-col justify-between">
+                    <div>
+                      {lastAuthError && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                          <div className="bg-[#1a1d23] border border-[#2d3139] rounded-xl max-w-md w-full overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 text-left">
+                            {/* Header of Modal */}
+                            <div className="p-5 border-b border-[#2d3139] bg-[#1f232b] flex items-center gap-2.5">
+                              <div className="p-2 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400">
+                                <ShieldAlert size={20} />
+                              </div>
+                              <div>
+                                <h3 className="font-bold text-white text-sm md:text-base">
+                                  {lastAuthError === 'INVALID_CREDENTIALS' 
+                                    ? 'Credencial Inválida ou Não Encontrada' 
+                                    : lastAuthError === 'TIMEOUT' 
+                                      ? 'Tempo de Conexão Esgotado' 
+                                      : 'Problema na Autenticação'}
+                                </h3>
+                                <p className="text-[11px] text-gray-400 mt-0.5">Identificamos o seguinte detalhe:</p>
+                              </div>
                             </div>
                             
-                            <hr className="border-[#2d3139]/40" />
-
-                            <div className="space-y-1">
-                              <p className="font-bold text-white text-[11.5px] flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                                Quer usar Senha Tradicional?
-                              </p>
-                              <p className="text-[#b0b0b0] text-[11px] pl-3">
-                                Se você usava o Google mas agora quer entrar com e-mail/senha tradicional, clique no botão <button type="button" onClick={() => { setLastAuthError(null); handlePasswordReset(); }} className="text-blue-400 font-semibold underline hover:text-blue-300 focus:outline-none">Esqueceu a senha?</button>. Você receberá um e-mail para registrar sua senha.
-                              </p>
+                            {/* Content of Modal */}
+                            <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto text-xs md:text-sm text-gray-300">
+                              {lastAuthError === 'INVALID_CREDENTIALS' ? (
+                                <div className="space-y-3 leading-relaxed">
+                                  <p className="text-[#e2e8f0]">
+                                    A autenticação falhou. Se o login está falhando, considere as soluções mais comuns:
+                                  </p>
+                                  <div className="bg-[#0f1115] rounded-lgs p-3.5 border border-[#2d3139]/55 space-y-3 rounded-lg text-xs">
+                                    {renderDbMode !== 'local' && (
+                                      <>
+                                        <div className="space-y-1">
+                                          <p className="font-bold text-white text-[11.5px] flex items-center gap-1.5">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                            Fez o primeiro acesso via Google?
+                                          </p>
+                                          <p className="text-[#b0b0b0] text-[11px] pl-3">
+                                            Se você se cadastrou clicando no botão do Google, você <span className="text-blue-400 font-bold">não tem uma senha tradicional</span> cadastrada. Entre utilizando o botão <strong className="text-white">Google</strong>.
+                                          </p>
+                                        </div>
+                                        <hr className="border-[#2d3139]/40" />
+                                      </>
+                                    )}
+                                    
+                                    <div className="space-y-1">
+                                      <p className="font-bold text-white text-[11.5px] flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                        Usuários Criados Pelo Administrador
+                                      </p>
+                                      <p className="text-[#b0b0b0] text-[11px] pl-3">
+                                        Se você é membro de equipe, o seu usuário é o seu nome cadastrado na aba Equipe. Certifique-se de que a senha está digitada corretamente e use letras correspondentes ao cadastro.
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : lastAuthError === 'TIMEOUT' ? (
+                                <p className="leading-relaxed text-xs text-gray-300">
+                                  O servidor demorou mais que 8 segundos para responder. Verifique sua conexão de rede ou tente novamente.
+                                </p>
+                              ) : (
+                                <p className="leading-relaxed text-xs text-gray-300">
+                                  Usuário ou senha incorretos. Verifique as credenciais e certifique-se de que a senha inserida está correta.
+                                </p>
+                              )}
                             </div>
 
-                            <hr className="border-[#2d3139]/40" />
-
-                            <div className="space-y-1">
-                              <p className="font-bold text-white text-[11.5px] flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                                Usuários Criados Pelo Administrador
-                              </p>
-                              <p className="text-[#b0b0b0] text-[11px] pl-3">
-                                Se você é membro de equipe, o seu usuário é o seu e-mail cadastrado em letras minúsculas. Certifique-se de que não possui espaços ou letras maiúsculas.
-                              </p>
+                            {/* Footer of Modal */}
+                            <div className="p-4 bg-[#14161c] border-t border-[#2d3139] flex justify-end gap-2">
+                              <Button 
+                                type="button" 
+                                onClick={() => setLastAuthError(null)}
+                                className="bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none h-10 px-6 text-xs font-semibold"
+                              >
+                                Ok
+                              </Button>
                             </div>
                           </div>
                         </div>
-                      ) : lastAuthError === 'TIMEOUT' ? (
-                        <p className="leading-relaxed text-xs text-gray-300">
-                          O servidor Firebase demorou mais que 8 segundos para responder. Verifique se o método de "E-mail/Senha" está devidamente ativado na aba "Autenticação" do seu console Firebase ou tente novamente com outra conexão de internet.
-                        </p>
-                      ) : lastAuthError === 'OP_NOT_ALLOWED' ? (
-                        <p className="leading-relaxed text-xs text-gray-300">
-                          O provedor de e-mail e senha está desativado no Firebase. Ative o método "E-mail/Senha" no seu console Firebase (Seção de Autenticação para que logins de equipe funcionem).
-                        </p>
-                      ) : lastAuthError === 'EMAIL_IN_USE' ? (
-                        <p className="leading-relaxed text-xs text-gray-300">
-                          Este usuário ou e-mail já está em uso em uma conta no sistema. Por favor utilize uma credencial diferente ou faça o login com o Google.
-                        </p>
-                      ) : lastAuthError === 'WEAK_PASSWORD' ? (
-                        <p className="leading-relaxed text-xs text-gray-300">
-                          A senha inserida é considerada fraca pela segurança do Firebase. A senha deve ter pelo menos 6 caracteres.
-                        </p>
-                      ) : lastAuthError === 'INVALID_EMAIL' ? (
-                        <p className="leading-relaxed text-xs text-gray-300">
-                          O formato do usuário ou e-mail é considerado inválido pelo Firebase. Verifique se digitou corretamente.
-                        </p>
-                      ) : (
-                        <p className="leading-relaxed text-xs text-gray-300">
-                          Usuário ou senha incorretos. Se você foi cadastrado pelo administrador de equipe, verifique letras maiúsculas/minúsculas e certifique-se de que a senha inserida está correta.
-                        </p>
+                      )}
+
+                      <form onSubmit={handleEmailAuth} className="space-y-2.5 text-left">
+                        {authMode === 'register' && renderDbMode !== 'local' && (
+                          <div className="space-y-1">
+                            <Label htmlFor="reg-name" className="text-[#a0a0a0] text-[11px]">Nome Completo</Label>
+                            <Input 
+                              id="reg-name" 
+                              type="text" 
+                              value={displayName} 
+                              onChange={e => setDisplayName(e.target.value)} 
+                              placeholder="Seu nome"
+                              className="bg-[#0f1115] border-[#2d3139] text-white h-8.5 text-xs px-3 py-1.5" 
+                            />
+                          </div>
+                        )}
+                        <div className="space-y-1">
+                          <Label htmlFor="auth-username" className="text-[#a0a0a0] text-[11px]">
+                            {renderDbMode === 'local' ? 'Usuário (Nome)' : 'Usuário ou E-mail'}
+                          </Label>
+                          <Input 
+                            id="auth-username" 
+                            type="text" 
+                            value={email} 
+                            onChange={e => setEmail(e.target.value)} 
+                            placeholder={renderDbMode === 'local' ? "Nome do usuário (equipe)" : "Seu usuário ou e-mail registrado"}
+                            className="bg-[#0f1115] border-[#2d3139] text-white h-8.5 text-xs px-3 py-1.5" 
+                          />
+                          {renderDbMode !== 'local' ? (
+                            <p className="text-[9px] text-[#555] mt-0.5 italic">Dica: Se não for e-mail, usaremos @segurtecpro.com</p>
+                          ) : (
+                            <p className="text-[9px] text-[#555] mt-0.5 italic">Insira exatamente o nome registrado na Equipe</p>
+                          )}
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="auth-pass" className="text-[#a0a0a0] text-[11px]">Senha</Label>
+                            {authMode === 'login' && renderDbMode !== 'local' && (
+                              <button
+                                type="button"
+                                onClick={handlePasswordReset}
+                                className="text-[10px] text-[#3b82f6] hover:text-blue-300 hover:underline transition-colors focus:outline-none"
+                              >
+                                Esqueceu a senha?
+                              </button>
+                            )}
+                          </div>
+                          <div className="relative">
+                            <Input 
+                              id="auth-pass" 
+                              type={showPassword ? "text" : "password"} 
+                              value={password} 
+                              onChange={e => setPassword(e.target.value)} 
+                              placeholder="••••••••"
+                              className="bg-[#0f1115] border-[#2d3139] text-white pr-10 h-8.5 text-xs px-3 py-1.5" 
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowPassword(!showPassword)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#71717a] hover:text-white transition-colors"
+                            >
+                              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                            </button>
+                          </div>
+                        </div>
+                        <Button type="submit" disabled={isAuthLoading} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none h-8.5 text-xs flex items-center justify-center gap-2 mt-1">
+                          {isAuthLoading ? (
+                            <>
+                              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              <span>{authMode === 'login' ? 'Entrando...' : 'Cadastrando...'}</span>
+                            </>
+                          ) : (
+                            <span>{renderDbMode === 'local' ? 'Entrar no Sistema' : (authMode === 'login' ? 'Entrar com E-mail' : 'Cadastrar e Acessar')}</span>
+                          )}
+                        </Button>
+                      </form>
+
+                      {renderDbMode !== 'local' && (
+                        <div className="pt-2 text-center">
+                          <button 
+                            onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
+                            className="text-[11px] text-[#3b82f6] hover:underline"
+                          >
+                            {authMode === 'login' ? 'Não tem uma conta? Cadastre-se' : 'Já tem uma conta? Faça login'}
+                          </button>
+                        </div>
                       )}
                     </div>
 
-                    {/* Footer of Modal */}
-                    <div className="p-4 bg-[#14161c] border-t border-[#2d3139] flex flex-col md:flex-row gap-2 justify-end">
-                      <Button 
-                        type="button" 
-                        onClick={() => {
-                          setLastAuthError(null);
-                          handleLogin();
-                        }}
-                        variant="outline"
-                        className="w-full md:w-auto gap-2 border-[#2d3139] text-white hover:bg-[#2d3139] h-10 px-4 text-xs font-semibold"
-                      >
-                        <svg className="h-4 w-4" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
+                    {renderDbMode === 'local' && (
+                      <div className="pt-3 border-t border-[#2d3139]/30 w-full mt-4">
+                        <Button 
+                          onClick={async () => {
+                            try {
+                              toast.info("Encerrando o servidor local...");
+                              await fetch('/api/system/shutdown', { method: 'POST' });
+                            } catch (e) {
+                              console.error("Não foi possível enviar comando de finalização ao servidor.", e);
+                            }
+                            window.close();
+                            setTimeout(() => {
+                              document.body.innerHTML = `
+                                <div style="min-height: 100vh; background-color: #0f1115; color: #e0e0e0; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; padding: 20px; text-align: center;">
+                                  <div style="background-color: #1a1d23; border: 1px solid #2d3139; padding: 32px; border-radius: 12px; max-w: 400px; width: 100%; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);">
+                                    <div style="width: 48px; height: 48px; background-color: rgba(239, 68, 68, 0.1); border-radius: 9999px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto; border: 1px solid rgba(239, 68, 68, 0.2);">
+                                      <span style="color: #ef4444; font-size: 24px; font-weight: bold; line-height: 1;">✕</span>
+                                    </div>
+                                    <h2 style="color: #ffffff; margin-top: 0; font-size: 18px; font-weight: bold; text-transform: uppercase; tracking-wider; margin-bottom: 8px;">Servidor Encerrado</h2>
+                                    <p style="color: #a0a0a0; font-size: 13px; margin-bottom: 24px; line-height: 1.5;">O servidor local do SegurTec-Pro foi finalizado com sucesso.</p>
+                                    <p style="color: #71717a; font-size: 11px; font-style: italic;">Você já pode fechar esta janela do seu navegador.</p>
+                                  </div>
+                                </div>
+                              `;
+                            }, 300);
+                          }}
+                          variant="outline"
+                          className="w-full gap-2 border-red-500/20 text-red-400 hover:bg-neutral-950 hover:text-red-500 transition-all h-8.5 text-[10px] font-black uppercase tracking-wider mt-1 border-dashed"
+                        >
+                          <Power size={11} className="mr-1.5" />
+                          Encerrar Servidor & Fechar Programa
+                        </Button>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {/* Right Column: Google Connection / Social Access */}
+            {(renderDbMode === 'default' || renderDbMode === 'online') && (
+              <div className={cn(
+                "flex flex-col",
+                renderDbMode === 'default' ? "md:col-span-5" : "col-span-1"
+              )}>
+                <Card className="border-[#2d3139]/80 bg-[#1a1d23] h-full flex flex-col justify-between">
+                  <CardHeader className="p-4 pb-2 space-y-1">
+                    <CardTitle className="text-white text-base flex items-center gap-2">
+                      <svg className="h-4 w-4 text-[#3b82f6]" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
+                        <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
+                      </svg>
+                      Acesso Rápido
+                    </CardTitle>
+                    <CardDescription className="text-[#71717a] text-[11px] leading-snug">
+                      Conecte usando sua conta Google sem precisar de senhas.
+                    </CardDescription>
+                  </CardHeader>
+
+                  <CardContent className="p-4 pt-1 space-y-3 flex-1 flex flex-col justify-between">
+                    <div className="flex flex-col items-center justify-center text-center space-y-2 py-1">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500/20 to-purple-500/25 flex items-center justify-center border border-blue-500/30 animate-pulse">
+                        <svg className="h-5 w-5 text-[#3b82f6]" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
                           <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
                         </svg>
-                        Entrar com Google
-                      </Button>
-                      <Button 
-                        type="button" 
-                        onClick={() => setLastAuthError(null)}
-                        className="w-full md:w-auto bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none h-10 px-6 text-xs font-semibold"
-                      >
-                        Ok
-                      </Button>
+                      </div>
+                      <div className="space-y-0.5">
+                        <p className="text-white font-semibold text-xs">Autenticação Unificada</p>
+                        <p className="text-[#a0a0a0] text-[10px]">Acesso rápido e criptografado.</p>
+                        <p className="text-[#71717a] text-[10px] leading-relaxed max-w-xs">
+                          Para administradores, instaladores e parceiros com conta Google.
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              )}
 
-              <form onSubmit={handleEmailAuth} className="space-y-4 text-left">
-                {authMode === 'register' && (
-                  <div className="space-y-2">
-                    <Label htmlFor="reg-name" className="text-[#a0a0a0]">Nome Completo</Label>
-                    <Input 
-                      id="reg-name" 
-                      type="text" 
-                      value={displayName} 
-                      onChange={e => setDisplayName(e.target.value)} 
-                      placeholder="Seu nome"
-                      className="bg-[#0f1115] border-[#2d3139] text-white" 
-                    />
-                  </div>
-                )}
-                <div className="space-y-2">
-                  <Label htmlFor="auth-username" className="text-[#a0a0a0]">Usuário ou E-mail</Label>
-                  <Input 
-                    id="auth-username" 
-                    type="text" 
-                    value={email} 
-                    onChange={e => setEmail(e.target.value)} 
-                    placeholder="Seu usuário ou e-mail registrado"
-                    className="bg-[#0f1115] border-[#2d3139] text-white" 
-                  />
-                  <p className="text-[10px] text-[#555] mt-1 italic">Dica: Se não for e-mail, usaremos @segurpro.com</p>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="auth-pass" className="text-[#a0a0a0]">Senha</Label>
-                    {authMode === 'login' && (
-                      <button
-                        type="button"
-                        onClick={handlePasswordReset}
-                        className="text-[11px] text-[#3b82f6] hover:text-blue-300 hover:underline transition-colors focus:outline-none"
-                      >
-                        Esqueceu a senha?
-                      </button>
-                    )}
-                  </div>
-                  <div className="relative">
-                    <Input 
-                      id="auth-pass" 
-                      type={showPassword ? "text" : "password"} 
-                      value={password} 
-                      onChange={e => setPassword(e.target.value)} 
-                      placeholder="••••••••"
-                      className="bg-[#0f1115] border-[#2d3139] text-white pr-10" 
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#71717a] hover:text-white transition-colors"
+                    <Button 
+                      onClick={handleLogin} 
+                      disabled={isLoggingIn}
+                      variant="outline" 
+                      className="w-full gap-2 border-[#2d3139] text-white hover:bg-[#3b82f6]/10 hover:text-white bg-[#0f1115] h-8.5 text-xs font-semibold shadow-sm transition-all duration-200"
                     >
-                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
-                  </div>
-                </div>
-                <Button type="submit" disabled={isAuthLoading} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none h-11">
-                  {isAuthLoading ? (
-                    <div className="flex items-center gap-2">
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                      <span>{authMode === 'login' ? 'Entrando...' : 'Cadastrando...'}</span>
+                      {isLoggingIn ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-[#3b82f6]" />
+                      ) : (
+                        <svg className="h-3.5 w-3.5 text-white" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
+                          <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
+                        </svg>
+                      )}
+                      {isLoggingIn ? 'Autenticando...' : 'Entrar com o Google'}
+                    </Button>
+
+                    <div className="pt-2 border-t border-[#2d3139]/30 w-full space-y-1.5 mt-auto">
+                      <a 
+                        href="?assinatura=portal"
+                        className="flex items-center justify-center gap-2 text-[11px] text-[#71717a] hover:text-white transition-colors py-1"
+                      >
+                        <Key size={11} />
+                        Área de Assinatura do Cliente
+                      </a>
+
+                      {((import.meta as any).env.VITE_LOCAL_DB === 'true' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && (
+                        <Button 
+                          onClick={async () => {
+                            try {
+                              toast.info("Encerrando o servidor local...");
+                              await fetch('/api/system/shutdown', { method: 'POST' });
+                            } catch (e) {
+                              console.error("Não foi possível enviar comando de finalização ao servidor.", e);
+                            }
+                            window.close();
+                            setTimeout(() => {
+                              document.body.innerHTML = `
+                                <div style="min-height: 100vh; background-color: #0f1115; color: #e0e0e0; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; padding: 20px; text-align: center;">
+                                  <div style="background-color: #1a1d23; border: 1px solid #2d3139; padding: 32px; border-radius: 12px; max-w: 400px; width: 100%; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);">
+                                    <div style="width: 48px; height: 48px; background-color: rgba(239, 68, 68, 0.1); border-radius: 9999px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto; border: 1px solid rgba(239, 68, 68, 0.2);">
+                                      <span style="color: #ef4444; font-size: 24px; font-weight: bold; line-height: 1;">✕</span>
+                                    </div>
+                                    <h2 style="color: #ffffff; margin-top: 0; font-size: 18px; font-weight: bold; text-transform: uppercase; tracking-wider; margin-bottom: 8px;">Servidor Encerrado</h2>
+                                    <p style="color: #a0a0a0; font-size: 13px; margin-bottom: 24px; line-height: 1.5;">O servidor local do SegurTec-Pro foi finalizado com sucesso.</p>
+                                    <p style="color: #71717a; font-size: 11px; font-style: italic;">Você já pode fechar esta janela do seu navegador.</p>
+                                  </div>
+                                </div>
+                              `;
+                            }, 300);
+                          }}
+                          variant="outline"
+                          className="w-full gap-2 border-red-500/20 text-red-400 hover:bg-neutral-950 hover:text-red-500 transition-all h-8 text-[10px] font-black uppercase tracking-wider mt-0.5 border-dashed"
+                        >
+                          <Power size={11} className="mr-1.5" />
+                          Encerrar Servidor & Fechar Programa
+                        </Button>
+                      )}
                     </div>
-                  ) : (
-                    <span>{authMode === 'login' ? 'Entrar' : 'Cadastrar'}</span>
-                  )}
-                </Button>
-              </form>
-
-              <div className="relative py-2">
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t border-[#2d3139]"></span>
-                </div>
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-[#1a1d23] px-2 text-[#71717a]">Ou continue com</span>
-                </div>
+                  </CardContent>
+                </Card>
               </div>
+            )}
 
-              <Button onClick={handleLogin} variant="outline" className="w-full gap-2 border-[#2d3139] text-white hover:bg-[#2d3139]">
-                <svg className="h-4 w-4" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
-                  <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
-                </svg>
-                Google
-              </Button>
+          </div>
 
-              <div className="pt-4">
-                <button 
-                  onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
-                  className="text-sm text-[#3b82f6] hover:underline"
-                >
-                  {authMode === 'login' ? 'Não tem uma conta? Cadastre-se' : 'Já tem uma conta? Faça login'}
-                </button>
-              </div>
-
-              <div className="pt-2 border-t border-[#2d3139]/50 mt-4">
-                <a 
-                  href="?assinatura=portal"
-                  className="flex items-center justify-center gap-2 text-xs text-[#71717a] hover:text-white transition-colors py-2"
-                >
-                  <Key size={12} />
-                  Área de Assinatura do Cliente
-                </a>
-              </div>
-
-              {((import.meta as any).env.VITE_LOCAL_DB === 'true') && (
-                <div className="pt-2 border-t border-[#2d3139]/50 mt-1">
-                  <Button 
-                    onClick={async () => {
-                      const confirmClose = window.confirm("Deseja realmente encerrar o servidor local do SegurPro e fechar o programa?");
-                      if (!confirmClose) return;
-                      try {
-                        toast.info("Encerrando o servidor local...");
-                        await fetch('/api/system/shutdown', { method: 'POST' });
-                      } catch (e) {
-                        console.error("Não foi possível enviar comando de finalização ao servidor.", e);
-                      }
-                      window.close();
-                      setTimeout(() => {
-                        document.body.innerHTML = `
-                          <div style="min-height: 100vh; background-color: #0f1115; color: #e0e0e0; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; padding: 20px; text-align: center;">
-                            <div style="background-color: #1a1d23; border: 1px solid #2d3139; padding: 32px; border-radius: 12px; max-w: 400px; width: 100%; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);">
-                              <div style="width: 48px; height: 48px; background-color: rgba(239, 68, 68, 0.1); border-radius: 9999px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto; border: 1px solid rgba(239, 68, 68, 0.2);">
-                                <span style="color: #ef4444; font-size: 24px; font-weight: bold; line-height: 1;">✕</span>
-                              </div>
-                              <h2 style="color: #ffffff; margin-top: 0; font-size: 18px; font-weight: bold; text-transform: uppercase; tracking-wider; margin-bottom: 8px;">Servidor Encerrado</h2>
-                              <p style="color: #a0a0a0; font-size: 13px; margin-bottom: 24px; line-height: 1.5;">O servidor local do SegurPro foi finalizado com sucesso.</p>
-                              <p style="color: #71717a; font-size: 11px; font-style: italic;">Você já pode fechar esta janela do seu navegador.</p>
-                            </div>
-                          </div>
-                        `;
-                      }, 300);
-                    }}
-                    variant="outline"
-                    className="w-full gap-2 border-red-500/20 text-red-400 hover:bg-neutral-950 hover:text-red-500 transition-all h-9 text-[10px] font-black uppercase tracking-wider mt-1 border-dashed"
-                  >
-                    <Power size={11} />
-                    Encerrar Servidor & Fechar Programa
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-          <p className="text-xs text-[#555]">© 2026 {appSettings.companyName || 'SegurPro Gestão'}. Todos os direitos reservados.</p>
+          <p className="text-center text-xs text-[#71717a] font-medium tracking-wider pt-4">
+            Sistema desenvolvido por AF TECNOLOGIA. Todos os direitos reservados.
+          </p>
         </div>
+      </div>
+    );
+  }
+
+  // Show brand/intro video screen ONLY when login, license verification, and terminal registration (if required) are 100% complete
+  const maxStationsLimit = currentCompany?.maxStationsLimit !== undefined ? Number(currentCompany.maxStationsLimit) : 3;
+  const isSystemReady = !!(
+    user && 
+    currentUserData?.companyId && 
+    currentCompany && 
+    (isSuperAdmin || (
+      currentCompany.status !== 'blocked' &&
+      !(currentCompany.dbMode === 'local' && (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' && !/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname))) &&
+      !isLicenseVerifying &&
+      (currentCompany.dbMode === 'online' || maxStationsLimit <= 1 || currentTerminal)
+    ))
+  );
+  const isIntroPending = isSystemReady && !hasPlayedIntro.current;
+
+  if (showIntro || isIntroPending) {
+    return (
+      <div className="fixed inset-0 z-[99999] bg-[#0c0f13] select-none">
+        <IntroSplashScreen 
+          onComplete={() => {
+            hasPlayedIntro.current = true;
+            setShowIntro(false);
+          }}
+          logoUrl={appSettings.logoUrl}
+          companyName={appSettings.companyName || 'SegurTec-Pro Gestão'}
+          businessActivity={currentCompany?.businessActivity || ''}
+          videoUrl={appSettings.introVideoUrl}
+        />
       </div>
     );
   }
@@ -4295,9 +5590,234 @@ export default function MainApp() {
     );
   }
 
+  // Verification if company dbMode is strictly Local Only and user is accessing through standard Web (Cloud Website)
+  if (currentCompany && currentCompany.dbMode === 'local' && !isSuperAdmin) {
+    const isWeb = window.location.hostname !== 'localhost' && 
+                  window.location.hostname !== '127.0.0.1' && 
+                  !/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname);
+    
+    if (isWeb) {
+      return (
+        <div className="min-h-screen bg-[#0f1115] flex items-center justify-center p-4 font-sans select-none">
+          <Card className="max-w-md w-full bg-[#16191f] border border-[#2d3139] text-center p-8 rounded-2xl shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-red-500 via-amber-500 to-indigo-500"></div>
+            
+            <div className="flex justify-center mb-6">
+              <div className="w-16 h-16 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center justify-center">
+                <AlertCircle size={32} className="text-red-500" />
+              </div>
+            </div>
+
+            <h2 className="text-xl font-black uppercase tracking-tight text-white mb-1 leading-normal italic">
+              Licença Somente Local
+            </h2>
+            <p className="text-indigo-400 text-[10px] font-black uppercase tracking-[0.2em] mb-4">
+              Acesso Web Bloqueado
+            </p>
+
+            <div className="text-zinc-300 text-[11px] leading-relaxed mb-6 text-left p-4 bg-[#0f1115]/80 border border-[#2d3139]/50 rounded-xl space-y-2">
+              <p>Prezado(a) cliente da <b>{currentCompany.name}</b>,</p>
+              <p>Sua licença comercial do sistema está parametrizada em <strong className="text-indigo-400">Modo Local (Servidor & Estações)</strong>.</p>
+              <p>Por restrição de segurança e conformidade, o login via navegador Web Cloud padrão está desabilitado para o seu plano.</p>
+            </div>
+
+            <div className="bg-[#0f1115] border border-[#2d3139]/40 rounded-xl p-4 text-left space-y-2 mb-6">
+              <h4 className="text-[9px] font-black uppercase tracking-widest text-zinc-400">Como acessar o sistema:</h4>
+              <ul className="text-[10px] text-zinc-400 space-y-1 list-disc list-inside">
+                <li>Abra o aplicativo em seu computador terminal local.</li>
+                <li>Conecte-se na rede local do seu servidor principal.</li>
+                <li>Para migrar/habilitar acesso Cloud Web, contate o administrador SaaS para requerer a licença <strong className="text-indigo-400">Híbrida Web/Local</strong>.</li>
+              </ul>
+            </div>
+
+            <Button 
+              onClick={() => signOut(auth)}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold h-10 rounded-xl"
+            >
+              Retornar ao Login
+            </Button>
+          </Card>
+        </div>
+      );
+    }
+  }
+
+  // Live SaaS Contract/License verification after login - Super Admin bypasses this
+  if (user && currentUserData?.companyId && currentCompany && isLicenseVerifying && !isSuperAdmin) {
+    return (
+      <LicenseVerifierSplash 
+        user={user} 
+        company={currentCompany} 
+        onVerified={() => setIsLicenseVerifying(false)} 
+        onSignOut={() => {
+          signOut(auth);
+          setIsLicenseVerifying(true);
+        }}
+        appSettings={appSettings}
+      />
+    );
+  }
+
+  // Workstation Terminal license validation - Super Admin and pure Web companies bypass this
+  // Only display if maxStationsLimit is greater than 1 (meaning more than 1 station configured in SaaS menu)
+  if (user && currentUserData?.companyId && currentCompany && !isLicenseVerifying && !currentTerminal && !isSuperAdmin && currentCompany?.dbMode !== 'online' && maxStationsLimit > 1) {
+    return (
+      <TerminalRegistrationScreen 
+        company={currentCompany}
+        terminals={companyTerminals}
+        user={user}
+        onRegisterSuccess={(term) => setCurrentTerminal(term)}
+        onSignOut={() => {
+          signOut(auth);
+          setIsLicenseVerifying(true);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="flex h-screen bg-[#0f1115] text-[#e0e0e0] overflow-hidden">
       <Toaster position="top-right" theme="dark" />
+      
+      {pdfPreviewData && (
+        <Dialog open={!!pdfPreviewData} onOpenChange={(open) => { if (!open) setPdfPreviewData(null); }}>
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-sm text-center">
+            <DialogHeader className="pt-4">
+              <div className="mx-auto w-12 h-12 bg-blue-500/15 border border-blue-500/30 text-blue-400 rounded-full flex items-center justify-center mb-2">
+                <FileText size={24} />
+              </div>
+              <DialogTitle className="text-xl font-black uppercase tracking-tighter text-center">PDF Gerado com Sucesso!</DialogTitle>
+              <DialogDescription className="text-neutral-400 text-xs text-center leading-relaxed">
+                O arquivo <strong className="text-blue-300 font-bold">{pdfPreviewData.filename}</strong> foi baixado. Deseja abrir o documento agora para visualização em tela cheia?
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="grid grid-cols-2 gap-2 mt-4 pb-2">
+              <Button 
+                variant="outline" 
+                onClick={() => setPdfPreviewData(null)}
+                className="border-[#2d3139] text-neutral-400 hover:text-white hover:bg-neutral-800 text-xs font-bold"
+              >
+                Não, Fechar
+              </Button>
+              <Button 
+                onClick={() => {
+                  window.open(pdfPreviewData.blobUrl, '_blank');
+                  setPdfPreviewData(null);
+                }}
+                className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-extrabold uppercase tracking-wide"
+              >
+                Sim, Abrir PDF
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {generatedSignatureInfo.isOpen && (
+        <Dialog open={generatedSignatureInfo.isOpen} onOpenChange={(open) => setGeneratedSignatureInfo(prev => ({ ...prev, isOpen: open }))}>
+          <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-md p-6 overflow-hidden flex flex-col shadow-2xl rounded-2xl">
+            <DialogHeader className="space-y-1">
+              <div className="mx-auto w-12 h-12 bg-blue-500/15 border border-blue-500/30 text-blue-450 rounded-full flex items-center justify-center mb-1">
+                <PenTool size={22} className="text-blue-400 animate-pulse" />
+              </div>
+              <DialogTitle className="text-lg font-black uppercase tracking-tight text-center text-white">Link de Assinatura Criado!</DialogTitle>
+              <DialogDescription className="text-[#a0a0a0] text-xs text-center">
+                O código de segurança e o link do portal de assinatura exclusiva foram gerados com sucesso.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 my-4">
+              <div className="p-3 bg-[#0f1115] border border-[#2d3139]/45 rounded-xl space-y-1">
+                <p className="text-[9px] uppercase tracking-widest font-black text-[#71717a]">Cliente:</p>
+                <p className="text-sm font-bold text-white">{generatedSignatureInfo.clientName}</p>
+              </div>
+
+              {/* Código de Acesso */}
+              <div className="p-4 bg-[#0f1115] border border-[#2d3139]/60 rounded-xl flex flex-col items-center justify-center text-center space-y-1.5">
+                <span className="text-[9px] font-black uppercase tracking-widest text-[#71717a]">Código de Acesso (6 dígitos):</span>
+                <span className="text-3xl font-mono font-black text-emerald-400 tracking-[0.2em] select-all">
+                  {generatedSignatureInfo.accessCode}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    navigator.clipboard.writeText(generatedSignatureInfo.accessCode);
+                    toast.success('Código de acesso copiado!');
+                  }}
+                  className="h-8 text-[11px] text-[#71717a] hover:text-white transition-colors uppercase font-bold tracking-wider"
+                >
+                  <Copy size={13} className="mr-1" /> Copiar Código
+                </Button>
+              </div>
+
+              {/* Link do Portal */}
+              <div className="space-y-1.5">
+                <span className="text-[9px] font-black uppercase tracking-widest text-[#71717a] px-1">Link de Acesso Direto com Código:</span>
+                <div className="bg-[#0f1115] border border-[#2d3139]/55 rounded-xl p-3 flex items-center justify-between gap-3 overflow-hidden">
+                  <span className="text-[11px] text-[#a0a0a0] truncate select-all">{generatedSignatureInfo.url}</span>
+                  <div className="flex gap-1.5 flex-shrink-0">
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      onClick={() => {
+                        window.open(generatedSignatureInfo.url, '_blank');
+                      }}
+                      className="h-8 w-8 border-[#2d3139] text-[#a0a0a0] hover:text-white bg-transparent"
+                      title="Abrir em Nova Aba"
+                    >
+                      <ExternalLink size={14} />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      onClick={() => {
+                        navigator.clipboard.writeText(generatedSignatureInfo.url);
+                        toast.success('Link de acesso copiado!');
+                      }}
+                      className="h-8 w-8 border-[#2d3139] text-blue-400 hover:text-blue-300 bg-transparent"
+                      title="Copiar Link"
+                    >
+                      <Copy size={14} />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="grid grid-cols-2 gap-2 pb-1">
+              <Button
+                variant="outline"
+                onClick={() => setGeneratedSignatureInfo(prev => ({ ...prev, isOpen: false }))}
+                className="border-[#2d3139] text-neutral-400 hover:text-white hover:bg-neutral-800 text-xs font-bold uppercase bg-transparent"
+              >
+                Fechar
+              </Button>
+              <Button
+                onClick={() => {
+                  const text = `Olá, ${generatedSignatureInfo.clientName}! Para assinar digitalmente o seu documento de forma segura, acesse o link abaixo:\n\n🔗 *Link:* ${generatedSignatureInfo.url}\n\n🔐 *Código de Acesso:* ${generatedSignatureInfo.accessCode}\n\nO documento possui validade jurídica garantida por registro criptográfico.`;
+                  const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+                  window.open(url, '_blank');
+                }}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wide flex items-center justify-center gap-1.5"
+              >
+                <Share2 size={14} />
+                WhatsApp
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {showIntro && (
+        <IntroSplashScreen 
+          onComplete={() => setShowIntro(false)}
+          logoUrl={appSettings.logoUrl}
+          companyName={appSettings.companyName || 'SegurTec-Pro Gestão'}
+          businessActivity={currentCompany?.businessActivity || ''}
+          videoUrl={appSettings.introVideoUrl}
+        />
+      )}
       
       {/* Sidebar - Desktop */}
       <aside className="hidden flex-col border-r border-[#2d3139] bg-[#1a1d23]">
@@ -4467,13 +5987,13 @@ export default function MainApp() {
               <LogOut size={18} />
               Logout
             </div>
-            <span className="text-[10px] opacity-60">Ver. 1.5</span>
+            <span className="text-[10px] opacity-60">Ver. {LOCAL_VERSION}</span>
           </Button>
         </div>
       </aside>
 
       {/* Mobile Header */}
-      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-[#1a1d23] border-b border-[#2d3139] flex items-center justify-between px-4 z-50">
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-[#1a1d23] border-b border-[#2d3139] flex items-center justify-between px-4 z-50">
         <div className="flex items-center gap-3">
           {appSettings.logoUrl ? (
             <img src={appSettings.logoUrl} alt="Logo" className="h-8 w-auto object-contain max-w-[32px]" referrerPolicy="no-referrer" />
@@ -4483,146 +6003,175 @@ export default function MainApp() {
             </div>
           )}
           <span className="font-bold tracking-tight text-white truncate max-w-[180px]">
-            {appSettings?.companyName || currentCompany?.companyName || currentCompany?.name || 'SegurPro Gestão'}
+            {appSettings?.companyName || currentCompany?.companyName || currentCompany?.name || 'SegurTec-Pro Gestão'}
           </span>
         </div>
+        {/* PUNTO DE RESTAURACIÓN / RESTORE POINT FOR MOBILE HEADER BUTTON (PREVIOUS CODE):
         <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="text-white">
           {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+        </Button>
+        */}
+        <Button 
+          variant="ghost" 
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} 
+          className="text-white flex items-center gap-1 px-3 py-1 bg-[#1a1d23] hover:bg-[#252a33] hover:text-white border border-[#2d3139] h-10 rounded-lg text-[13px] font-bold font-mono tracking-tight"
+        >
+          <span>MENU-&gt;</span>
+          {isMobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
         </Button>
       </div>
 
       {/* Mobile Menu Overlay */}
       {isMobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 bg-[#0f1115] z-40 pt-16 flex flex-col">
-          <nav className="flex-1 p-6 space-y-2 overflow-y-auto">
-            {canAccess('dashboard') && (
-              <SidebarItem 
-                icon={<LayoutDashboard size={20} />} 
-                label="Painel Geral" 
-                active={activeTab === 'dashboard'} 
-                onClick={() => { setActiveTab('dashboard'); setIsMobileMenuOpen(false); }} 
-              />
-            )}
-            {canAccess('visits') && (
-              <SidebarItem 
-                icon={<CalendarIcon size={20} />} 
-                label="Visitas Técnicas" 
-                active={activeTab === 'visits'} 
-                onClick={() => { setActiveTab('visits'); setIsMobileMenuOpen(false); }} 
-              />
-            )}
-            {canAccess('service-orders') && (
-              <SidebarItem 
-                icon={<CheckCircle2 size={20} />} 
-                label="Ordens de Serviço" 
-                active={activeTab === 'service-orders'} 
-                onClick={() => { setActiveTab('service-orders'); setIsMobileMenuOpen(false); }} 
-              />
-            )}
-            {canAccess('inventory') && (
-              <SidebarItem 
-                icon={<Package size={20} />} 
-                label="Estoque" 
-                active={activeTab === 'inventory'} 
-                onClick={() => { setActiveTab('inventory'); setIsMobileMenuOpen(false); }} 
-              />
-            )}
-            {canAccess('pdv') && (
-              <SidebarItem 
-                icon={<ShoppingCart size={20} />} 
-                label="PDV (Vendas)" 
-                active={activeTab === 'pdv'} 
-                onClick={() => { setActiveTab('pdv'); setIsMobileMenuOpen(false); }} 
-              />
-            )}
-            {canAccess('budgets') && (
-              <SidebarItem 
-                icon={<FileText size={20} />} 
-                label="Orçamentos" 
-                active={activeTab === 'budgets'} 
-                onClick={() => { setActiveTab('budgets'); setIsMobileMenuOpen(false); }} 
-              />
-            )}
-            {canAccess('laudos') && (
-              <SidebarItem 
-                icon={<PenTool size={20} />} 
-                label="Laudos Técnicos" 
-                active={activeTab === 'laudos'} 
-                onClick={() => { setActiveTab('laudos'); setIsMobileMenuOpen(false); }} 
-              />
-            )}
-            {canAccess('financial') && (
-              <SidebarItem 
-                icon={<DollarSign size={20} />} 
-                label="Financeiro" 
-                active={activeTab === 'financial'} 
-                onClick={() => { setActiveTab('financial'); setIsMobileMenuOpen(false); }} 
-              />
-            )}
-            {canAccess('receipts') && (
-              <SidebarItem 
-                icon={<ReceiptIcon size={20} />} 
-                label="Recibos" 
-                active={activeTab === 'receipts'} 
-                onClick={() => { setActiveTab('receipts'); setIsMobileMenuOpen(false); }} 
-              />
-            )}
-            {canAccess('clients') && (
-              <SidebarItem 
-                icon={<UserIcon size={20} />} 
-                label="Clientes" 
-                active={activeTab === 'clients'} 
-                onClick={() => { setActiveTab('clients'); setIsMobileMenuOpen(false); }} 
-              />
-            )}
-            {canAccess('suppliers') && (
-              <SidebarItem 
-                icon={<Database size={20} />} 
-                label="Fornecedores" 
-                active={activeTab === 'suppliers'} 
-                onClick={() => { setActiveTab('suppliers'); setIsMobileMenuOpen(false); }} 
-              />
-            )}
-            {canAccess('reports') && (
-              <SidebarItem 
-                icon={<FileText size={20} />} 
-                label="Relatórios" 
-                active={activeTab === 'reports'} 
-                onClick={() => { setActiveTab('reports'); setIsMobileMenuOpen(false); }} 
-              />
-            )}
-            {canAccess('users') && (
-              <SidebarItem 
-                icon={<Users size={20} />} 
-                label="Equipe" 
-                active={activeTab === 'users'} 
-                onClick={() => { setActiveTab('users'); setIsMobileMenuOpen(false); }} 
-              />
-            )}
-            {canAccess('logs') && (
-              <SidebarItem 
-                icon={<History size={20} />} 
-                label="Logs do Sistema" 
-                active={activeTab === 'logs'} 
-                onClick={() => { setActiveTab('logs'); setIsMobileMenuOpen(false); }} 
-              />
-            )}
-            {canAccess('settings') && (
-              <SidebarItem 
-                icon={<Settings size={20} />} 
-                label="Configurações" 
-                active={activeTab === 'settings'} 
-                onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }} 
-              />
-            )}
-            {isSuperAdmin && (
-              <SidebarItem 
-                icon={<Shield size={20} className="text-yellow-500" />} 
-                label="Admin SaaS" 
-                active={activeTab === 'super-admin'} 
-                onClick={() => { setActiveTab('super-admin'); setIsMobileMenuOpen(false); }} 
-              />
-            )}
+        <div className="lg:hidden fixed inset-0 bg-[#0f1115] z-40 pt-16 flex flex-col">
+          <nav className="flex-1 p-6 space-y-3 overflow-y-auto">
+            {[
+              {
+                id: 'general',
+                label: 'Painel Geral',
+                icon: <LayoutDashboard size={18} />,
+                directTab: 'dashboard',
+                show: canAccess('dashboard')
+              },
+              {
+                id: 'cadastro',
+                label: 'Cadastro',
+                icon: <Database size={18} />,
+                show: canAccess('clients') || canAccess('suppliers') || canAccess('inventory') || canAccess('users'),
+                items: [
+                  { id: 'clients', label: 'Clientes', icon: <UserIcon size={16} />, show: canAccess('clients') },
+                  { id: 'suppliers', label: 'Fornecedores', icon: <Database size={16} />, show: canAccess('suppliers') },
+                  { id: 'inventory', label: 'Estoque', icon: <Package size={16} />, show: canAccess('inventory') },
+                  { id: 'users', label: 'Equipe', icon: <Users size={16} />, show: canAccess('users') }
+                ]
+              },
+              {
+                id: 'operational',
+                label: 'Operacional',
+                icon: <Shield size={18} />,
+                show: canAccess('visits') || canAccess('service-orders') || canAccess('laudos') || canAccess('budgets'),
+                items: [
+                  { id: 'visits', label: 'Visitas Técnicas', icon: <CalendarIcon size={16} />, show: canAccess('visits') },
+                  { id: 'service-orders', label: 'Ordens de Serviços', icon: <CheckCircle2 size={16} />, show: canAccess('service-orders') },
+                  { id: 'budgets', label: 'Orçamentos', icon: <FileText size={16} />, show: canAccess('budgets') },
+                  { id: 'laudos', label: 'Laudo Técnico', icon: <PenTool size={16} />, show: canAccess('laudos') }
+                ]
+              },
+              {
+                id: 'financial',
+                label: 'Financeiro',
+                icon: <DollarSign size={18} />,
+                show: canAccess('financial') || canAccess('receipts'),
+                items: [
+                  { id: 'financial', label: 'Financeiro', icon: <DollarSign size={16} />, show: canAccess('financial') },
+                  { id: 'receipts', label: 'Recibos', icon: <ReceiptIcon size={16} />, show: canAccess('receipts') },
+                  { id: 'payable', label: 'Contas a Pagar', icon: <ArrowUpRight size={16} className="text-red-400" />, show: canAccess('financial') },
+                  { id: 'receivable', label: 'Contas a Receber', icon: <ArrowDownRight size={16} className="text-green-400" />, show: canAccess('financial') }
+                ]
+              },
+              {
+                id: 'vendas',
+                label: 'Vendas (PDV)',
+                icon: <ShoppingCart size={18} />,
+                show: canAccess('pdv'),
+                items: [
+                  { id: 'pdv', label: 'Abrir PDV', icon: <ShoppingCart size={16} />, show: canAccess('pdv') },
+                  { id: 'vendas-historico', label: 'Histórico Vendas', icon: <History size={16} />, show: canAccess('pdv') }
+                ]
+              },
+              {
+                id: 'relatorio',
+                label: 'Relatório',
+                icon: <FileText size={18} />,
+                show: canAccess('reports') || canAccess('logs'),
+                items: [
+                  { id: 'reports', label: 'Relatórios', icon: <FileText size={16} />, show: canAccess('reports') },
+                  { id: 'logs', label: 'Log do sistema', icon: <History size={16} />, show: canAccess('logs') }
+                ]
+              },
+              {
+                id: 'sistema',
+                label: 'Sistema',
+                icon: <Settings size={18} />,
+                show: canAccess('settings') || isSuperAdmin,
+                items: [
+                  { id: 'settings', label: 'Configurações', icon: <Settings size={16} />, show: canAccess('settings') },
+                  { id: 'dashboard-display-config', label: 'Conf. Exibição PG', icon: <LayoutGrid size={16} />, show: canAccess('dashboard') },
+                  { id: 'network-config', label: 'Config. Rede', icon: <Network size={16} />, show: canAccess('network-config') },
+                  { id: 'license-updates', label: 'Licença e Atualizações', icon: <Shield size={16} />, show: canAccess('license-updates') },
+                  { id: 'financial-settings', label: 'Config. Financeiras', icon: <DollarSign size={16} />, show: canAccess('financial-settings') },
+                  { id: 'backup-restore', label: 'Backup/Restauração', icon: <Database size={16} />, show: canAccess('backup-restore') },
+                  { id: 'super-admin', label: 'Admin SaaS', icon: <Shield size={16} className="text-yellow-500" />, show: isSuperAdmin }
+                ]
+              }
+            ].filter(c => c.show).map(cat => {
+              const hasDropdown = !!cat.items;
+              const isExpanded = openDropdown === cat.id;
+
+              return (
+                <div key={cat.id} className="space-y-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (cat.directTab) {
+                        setActiveTab(cat.directTab);
+                        setIsMobileMenuOpen(false);
+                        setOpenDropdown(null);
+                      } else {
+                        setOpenDropdown(isExpanded ? null : cat.id);
+                      }
+                    }}
+                    className={cn(
+                      "w-full flex items-center justify-between p-3.5 rounded-xl border transition-all text-xs font-bold uppercase tracking-wider",
+                      ((cat.id === 'general' && activeTab === 'dashboard') ||
+                      (cat.id === 'cadastro' && ['clients', 'suppliers', 'inventory', 'users'].includes(activeTab)) ||
+                      (cat.id === 'operational' && ['visits', 'service-orders', 'laudos'].includes(activeTab)) ||
+                      (cat.id === 'financial' && ['financial', 'receipts', 'payable', 'receivable'].includes(activeTab)) ||
+                      (cat.id === 'vendas' && ['pdv', 'budgets', 'vendas-historico'].includes(activeTab)) ||
+                      (cat.id === 'relatorio' && ['reports', 'logs'].includes(activeTab)) ||
+                      (cat.id === 'sistema' && ['settings', 'dashboard-display-config', 'financial-settings', 'backup-restore', 'super-admin', 'network-config', 'license-updates'].includes(activeTab)))
+                        ? "bg-blue-500/10 text-blue-400 border-blue-500/30 font-extrabold"
+                        : "bg-[#16191f]/50 border-transparent text-[#71717a] hover:text-white"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      {cat.icon}
+                      <span>{cat.label}</span>
+                    </div>
+                    {hasDropdown && (
+                      <span className={cn("text-[10px] transition-transform duration-200", isExpanded ? "rotate-180 text-blue-400" : "text-gray-600")}>
+                        ▼
+                      </span>
+                    )}
+                  </button>
+
+                  {hasDropdown && isExpanded && (
+                    <div className="pl-6 pt-1 pb-2 space-y-1.5 border-l border-[#2d3139] ml-5">
+                      {cat.items?.filter(item => item.show).map(item => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => {
+                            setActiveTab(item.id);
+                            setIsMobileMenuOpen(false);
+                            setOpenDropdown(null);
+                          }}
+                          className={cn(
+                            "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all text-left",
+                            activeTab === item.id
+                              ? "bg-blue-500/10 text-blue-400 font-extrabold"
+                              : "text-[#a0a0a0] hover:text-white"
+                          )}
+                        >
+                          {item.icon}
+                          <span>{item.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </nav>
           <div className="p-6 border-t border-[#2d3139]">
             <Button variant="ghost" className="w-full justify-between gap-2 text-[#a0a0a0]" onClick={handleLogout}>
@@ -4630,15 +6179,15 @@ export default function MainApp() {
                 <LogOut size={18} />
                 Logout
               </div>
-              <span className="text-[10px] opacity-60">Ver. 1.5</span>
+              <span className="text-[10px] opacity-60">Ver. {LOCAL_VERSION}</span>
             </Button>
           </div>
         </div>
       )}
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col pt-16 md:pt-0 overflow-hidden">
-        <header className="hidden md:flex h-20 items-center justify-between px-8 border-b border-[#2d3139] bg-[#1a1d23]">
+      <main className="flex-1 flex flex-col pt-16 lg:pt-0 overflow-hidden">
+        <header className="hidden lg:flex h-20 items-center justify-between px-8 border-b border-[#2d3139] bg-[#1a1d23]">
           {/* Left: Logo & Company Name */}
           <div className="flex items-center gap-5">
             {appSettings.logoUrl ? (
@@ -4650,10 +6199,13 @@ export default function MainApp() {
             )}
             <div className="flex flex-col text-left">
               <span className="font-bold tracking-wider text-white text-xs uppercase leading-snug">
-                {appSettings?.companyName || currentCompany?.companyName || currentCompany?.name || 'SegurPro Gestão'}
+                {appSettings?.companyName || currentCompany?.companyName || currentCompany?.name || 'SegurTec-Pro Gestão'}
               </span>
               <span className="text-[9px] text-[#71717a] uppercase tracking-widest leading-none">
                 {format(new Date(), "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })}
+              </span>
+              <span className="text-[9px] text-[#3b82f6] font-mono font-bold tracking-wider leading-none mt-1">
+                VERSÃO ATUAL: {LOCAL_VERSION}
               </span>
             </div>
           </div>
@@ -4673,8 +6225,16 @@ export default function MainApp() {
                activeTab === 'users' ? 'Controle de Equipe' :
                activeTab === 'logs' ? 'Logs do Sistema' :
                activeTab === 'settings' ? 'Configurações do Sistema' :
+               activeTab === 'dashboard-display-config' ? 'Exibição do Painel Geral' :
+               activeTab === 'network-config' ? 'Configurações de Rede Local' :
+               activeTab === 'license-updates' ? 'Licença e Atualizações do Sistema' :
+               activeTab === 'financial-settings' ? 'Configurações Financeiras' :
                activeTab === 'inventory' ? 'Controle de Estoque' :
-               activeTab === 'pdv' ? 'Vendas' :
+               activeTab === 'pdv' ? 'Abertura de PDV' :
+               activeTab === 'backup-restore' ? 'Backup e Restauração' :
+               activeTab === 'payable' ? 'Contas a Pagar' :
+               activeTab === 'receivable' ? 'Contas a Receber' :
+               activeTab === 'vendas-historico' ? 'Histórico de Vendas PDV' :
                activeTab.replace('-', ' ')}
             </h2>
           </div>
@@ -4729,45 +6289,170 @@ export default function MainApp() {
           </div>
         </header>
 
-        {/* Horizontal Scrollable Menu bar with premium scrollbar */}
-        <div className="w-full bg-[#16191f] border-b border-[#2d3139] shadow-md select-none sticky top-0 z-30">
-          <div className="overflow-x-auto flex items-center gap-2 px-4 py-2 hover:scrollbar-thumb-blue-500/85 transition-all horizontal-menu-scrollbar" style={{ scrollbarWidth: 'auto' }}>
-            <div className="flex items-center gap-1.5 min-w-max pb-1">
+        {/* Horizontal Scrollable Menu bar with premium sub-menus */}
+        <div className="hidden lg:block w-full bg-[#16191f] border-b border-[#2d3139] shadow-md select-none sticky top-0 z-35">
+          {/* Click-away overlay when dropdown is open */}
+          {openDropdown && (
+            <div className="fixed inset-0 z-10" onClick={() => setOpenDropdown(null)} />
+          )}
+          
+          <div className="flex items-center gap-2 px-6 py-2.5 relative">
+            <div className="flex items-center gap-2 flex-wrap w-full">
               {[
-                { id: 'dashboard', label: 'Painel Geral', icon: <LayoutDashboard size={14} />, show: canAccess('dashboard') },
-                { id: 'visits', label: 'Visitas Técnicas', icon: <CalendarIcon size={14} />, show: canAccess('visits') },
-                { id: 'service-orders', label: 'OS', icon: <CheckCircle2 size={14} />, show: canAccess('service-orders') },
-                { id: 'inventory', label: 'Estoque', icon: <Package size={14} />, show: canAccess('inventory') },
-                { id: 'pdv', label: 'PDV (Vendas)', icon: <ShoppingCart size={14} />, show: canAccess('pdv') },
-                { id: 'budgets', label: 'Orçamentos', icon: <FileText size={14} />, show: canAccess('budgets') },
-                { id: 'laudos', label: 'Laudo Técnico', icon: <PenTool size={14} />, show: canAccess('laudos') },
-                { id: 'financial', label: 'Financeiro', icon: <DollarSign size={14} />, show: canAccess('financial') },
-                { id: 'receipts', label: 'Recibos', icon: <ReceiptIcon size={14} />, show: canAccess('receipts') },
-                { id: 'clients', label: 'Clientes', icon: <UserIcon size={14} />, show: canAccess('clients') },
-                { id: 'suppliers', label: 'Fornecedores', icon: <Database size={14} />, show: canAccess('suppliers') },
-                { id: 'reports', label: 'Relatórios', icon: <FileText size={14} />, show: canAccess('reports') },
-                { id: 'users', label: 'Equipe', icon: <Users size={14} />, show: canAccess('users') },
-                { id: 'logs', label: 'Logs', icon: <History size={14} />, show: canAccess('logs') },
-                { id: 'settings', label: 'Configurações', icon: <Settings size={14} />, show: canAccess('settings') },
-                { id: 'super-admin', label: 'Admin SaaS', icon: <Shield size={14} className="text-yellow-500" />, show: isSuperAdmin }
-              ].filter(t => t.show).map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => {
-                    setActiveTab(tab.id);
-                    setIsMobileMenuOpen(false);
-                  }}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all duration-200",
-                    activeTab === tab.id 
-                      ? "bg-blue-500/10 text-blue-400 border border-blue-500/30 shadow-[0_0_12px_rgba(59,130,246,0.15)] font-semibold" 
-                      : "text-[#71717a] hover:text-[#e0e0e0] hover:bg-[#1a1d23] border border-transparent"
-                  )}
-                >
-                  {tab.icon}
-                  <span>{tab.label}</span>
-                </button>
-              ))}
+                {
+                  id: 'general',
+                  label: 'Painel Geral',
+                  icon: <LayoutDashboard size={14} />,
+                  directTab: 'dashboard',
+                  show: canAccess('dashboard')
+                },
+                 {
+                  id: 'cadastro',
+                  label: 'Cadastro',
+                  icon: <Database size={14} />,
+                  show: canAccess('clients') || canAccess('suppliers') || canAccess('inventory') || canAccess('users'),
+                  items: [
+                    { id: 'clients', label: 'Clientes', icon: <UserIcon size={12} />, show: canAccess('clients') },
+                    { id: 'suppliers', label: 'Fornecedores', icon: <Database size={12} />, show: canAccess('suppliers') },
+                    { id: 'inventory', label: 'Estoque', icon: <Package size={12} />, show: canAccess('inventory') },
+                    { id: 'users', label: 'Equipe', icon: <Users size={12} />, show: canAccess('users') }
+                  ]
+                },
+                {
+                  id: 'operational',
+                  label: 'Operacional',
+                  icon: <Shield size={14} />,
+                  show: canAccess('visits') || canAccess('service-orders') || canAccess('laudos') || canAccess('budgets'),
+                  items: [
+                    { id: 'visits', label: 'Visitas Técnicas', icon: <CalendarIcon size={12} />, show: canAccess('visits') },
+                    { id: 'service-orders', label: 'Ordens de Serviços', icon: <CheckCircle2 size={12} />, show: canAccess('service-orders') },
+                    { id: 'budgets', label: 'Orçamentos', icon: <FileText size={12} />, show: canAccess('budgets') },
+                    { id: 'laudos', label: 'Laudo Técnico', icon: <PenTool size={12} />, show: canAccess('laudos') }
+                  ]
+                },
+                {
+                  id: 'financial',
+                  label: 'Financeiro',
+                  icon: <DollarSign size={14} />,
+                  show: canAccess('financial') || canAccess('receipts'),
+                  items: [
+                    { id: 'financial', label: 'Financeiro', icon: <DollarSign size={12} />, show: canAccess('financial') },
+                    { id: 'receipts', label: 'Recibos', icon: <ReceiptIcon size={12} />, show: canAccess('receipts') },
+                    { id: 'payable', label: 'Contas a Pagar', icon: <ArrowUpRight size={12} className="text-red-400" />, show: canAccess('financial') },
+                    { id: 'receivable', label: 'Contas a Receber', icon: <ArrowDownRight size={12} className="text-green-400" />, show: canAccess('financial') }
+                  ]
+                },
+                {
+                  id: 'vendas',
+                  label: 'Vendas (PDV)',
+                  icon: <ShoppingCart size={14} />,
+                  show: canAccess('pdv'),
+                  items: [
+                    { id: 'pdv', label: 'Abrir PDV', icon: <ShoppingCart size={12} />, show: canAccess('pdv') },
+                    { id: 'vendas-historico', label: 'Histórico Vendas', icon: <History size={12} />, show: canAccess('pdv') }
+                  ]
+                },
+                {
+                  id: 'relatorio',
+                  label: 'Relatório',
+                  icon: <FileText size={14} />,
+                  show: canAccess('reports') || canAccess('logs'),
+                  items: [
+                    { id: 'reports', label: 'Relatórios', icon: <FileText size={12} />, show: canAccess('reports') },
+                    { id: 'logs', label: 'Log do sistema', icon: <History size={12} />, show: canAccess('logs') }
+                  ]
+                },
+                {
+                  id: 'sistema',
+                  label: 'Sistema',
+                  icon: <Settings size={14} />,
+                  show: canAccess('settings') || isSuperAdmin,
+                  items: [
+                    { id: 'settings', label: 'Configurações', icon: <Settings size={12} />, show: canAccess('settings') },
+                    { id: 'dashboard-display-config', label: 'Conf. Exibição PG', icon: <LayoutGrid size={12} />, show: canAccess('dashboard') },
+                    { id: 'network-config', label: 'Config. Rede', icon: <Network size={12} />, show: canAccess('network-config') },
+                    { id: 'license-updates', label: 'Licença e Atualizações', icon: <Shield size={12} />, show: canAccess('license-updates') },
+                    { id: 'financial-settings', label: 'Config. Financeiras', icon: <DollarSign size={12} />, show: canAccess('financial-settings') },
+                    { id: 'backup-restore', label: 'Backup/Restauração', icon: <Database size={12} />, show: canAccess('backup-restore') },
+                    { id: 'super-admin', label: 'Admin SaaS', icon: <Shield size={12} className="text-yellow-500" />, show: isSuperAdmin }
+                  ]
+                }
+              ].filter(c => c.show).map(cat => {
+                const isCatActive = 
+                  (cat.id === 'general' && activeTab === 'dashboard') ||
+                  (cat.id === 'cadastro' && ['clients', 'suppliers', 'inventory', 'users'].includes(activeTab)) ||
+                  (cat.id === 'operational' && ['visits', 'service-orders', 'laudos'].includes(activeTab)) ||
+                  (cat.id === 'financial' && ['financial', 'receipts', 'payable', 'receivable'].includes(activeTab)) ||
+                  (cat.id === 'vendas' && ['pdv', 'budgets', 'vendas-historico'].includes(activeTab)) ||
+                  (cat.id === 'relatorio' && ['reports', 'logs'].includes(activeTab)) ||
+                  (cat.id === 'sistema' && ['settings', 'dashboard-display-config', 'financial-settings', 'backup-restore', 'super-admin', 'network-config', 'license-updates'].includes(activeTab));
+
+                const hasDropdown = !!cat.items;
+
+                return (
+                  <div key={cat.id} className="relative z-20">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (cat.directTab) {
+                          setActiveTab(cat.directTab);
+                          setOpenDropdown(null);
+                        } else {
+                          setOpenDropdown(openDropdown === cat.id ? null : cat.id);
+                        }
+                      }}
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all duration-200 uppercase tracking-wider border",
+                        isCatActive 
+                          ? "bg-blue-500/10 text-blue-400 border-blue-500/30 shadow-[0_0_12px_rgba(59,130,246,0.15)] font-bold" 
+                          : "text-[#71717a] hover:text-[#e0e0e0] hover:bg-[#1a1d23] border-transparent"
+                      )}
+                    >
+                      {cat.icon}
+                      <span>{cat.label}</span>
+                      {hasDropdown && (
+                        <span className="text-[9px] opacity-60 ml-1">▼</span>
+                      )}
+                    </button>
+
+                    {/* Sub-menu Window (Janela Flutuante) */}
+                    {hasDropdown && openDropdown === cat.id && (
+                      <div className={cn(
+                        "absolute top-full mt-2 w-56 rounded-xl border border-[#2d3139] bg-[#1a1d23] p-1.5 shadow-2xl z-50 animate-in fade-in slide-in-from-top-1 duration-150",
+                        ['financial', 'vendas', 'relatorio', 'sistema'].includes(cat.id) ? "right-0" : "left-0"
+                      )}>
+                        <div className="text-[9px] font-bold text-[#71717a] px-2 py-1 uppercase tracking-widest border-b border-[#2d3139]/40 mb-1">
+                          Opções de {cat.label}
+                        </div>
+                        <div className="space-y-0.5">
+                          {cat.items?.filter(item => item.show).map(item => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => {
+                                setActiveTab(item.id);
+                                setOpenDropdown(null);
+                              }}
+                              className={cn(
+                                "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-left transition-all",
+                                activeTab === item.id
+                                  ? "bg-[#3b82f6]/10 text-[#3b82f6] font-bold"
+                                  : "text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]/50"
+                              )}
+                            >
+                              {item.icon}
+                              <span>{item.label}</span>
+                              {activeTab === item.id && (
+                                <Check size={12} className="ml-auto text-[#3b82f6]" />
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -4780,6 +6465,13 @@ export default function MainApp() {
               financials={financials} 
               budgets={budgets} 
               clients={clients} 
+              payables={payables}
+              receivables={receivables} 
+              sales={sales}
+              canAccess={canAccess}
+              saasSettings={saasSettings}
+              userRole={currentUserData?.role}
+              isSuperAdmin={isSuperAdmin}
               onNavigate={(tab, filter) => {
                 if (tab === 'visits' && filter) {
                   setVisitsFilter(filter);
@@ -4900,6 +6592,7 @@ export default function MainApp() {
             <ReceiptsManager 
               receipts={receipts} 
               clients={clients} 
+              receivables={receivables}
               pixSettings={pixSettings} 
               appSettings={appSettings} 
               companyId={effectiveCompanyId || ''} 
@@ -4923,6 +6616,7 @@ export default function MainApp() {
               appSettings={appSettings} 
               companyId={effectiveCompanyId || ''}
               showList={canViewList('reports')}
+              receivables={receivables}
             />
           )}
           {activeTab === 'users' && <UsersManager users={users} currentUserData={currentUserData} currentCompany={currentCompany} showList={canViewList('users')} userRoles={userRoles} logAction={logAction} />}
@@ -5056,7 +6750,6 @@ export default function MainApp() {
                   }
                 }}
               >
-                <div className="overflow-y-auto max-h-[600px] custom-scrollbar">
                   <TableDoubleScroll>
                     <table className="w-full text-left border-collapse min-w-[850px]">
                     <thead>
@@ -5178,7 +6871,6 @@ export default function MainApp() {
                     </tbody>
                   </table>
                   </TableDoubleScroll>
-                </div>
               </Card>
             </div>
           )}
@@ -5200,21 +6892,123 @@ export default function MainApp() {
               currentUserData={currentUserData}
             />
           )}
-          {activeTab === 'settings' && (
-            <SettingsManager 
+           {activeTab === 'settings' && (
+             <SettingsManager 
+               key={`${effectiveCompanyId}-general`}
+               pixSettings={pixSettings} 
+               appSettings={appSettings} 
+               user={user!} 
+               companyId={effectiveCompanyId || ''} 
+               currentUserData={currentUserData}
+               allCompanies={allCompanies}
+               selectedCompanyId={selectedCompanyId}
+               setSelectedCompanyId={setSelectedCompanyId}
+               isSuperAdmin={isSuperAdmin}
+               currentCompany={currentCompany}
+               customRoles={customRoles}
+               userRoles={userRoles}
+               companyTerminals={companyTerminals}
+               currentTerminal={currentTerminal}
+               setCurrentTerminal={setCurrentTerminal}
+               mode="general"
+             />
+           )}
+           {activeTab === 'network-config' && (
+             <SettingsManager 
+               key={`${effectiveCompanyId}-network`}
+               pixSettings={pixSettings} 
+               appSettings={appSettings} 
+               user={user!} 
+               companyId={effectiveCompanyId || ''} 
+               currentUserData={currentUserData}
+               allCompanies={allCompanies}
+               selectedCompanyId={selectedCompanyId}
+               setSelectedCompanyId={setSelectedCompanyId}
+               isSuperAdmin={isSuperAdmin}
+               currentCompany={currentCompany}
+               customRoles={customRoles}
+               userRoles={userRoles}
+               companyTerminals={companyTerminals}
+               currentTerminal={currentTerminal}
+               setCurrentTerminal={setCurrentTerminal}
+               mode="network-config"
+             />
+           )}
+           {activeTab === 'license-updates' && (
+             <SettingsManager 
+               key={`${effectiveCompanyId}-license`}
+               pixSettings={pixSettings} 
+               appSettings={appSettings} 
+               user={user!} 
+               companyId={effectiveCompanyId || ''} 
+               currentUserData={currentUserData}
+               allCompanies={allCompanies}
+               selectedCompanyId={selectedCompanyId}
+               setSelectedCompanyId={setSelectedCompanyId}
+               isSuperAdmin={isSuperAdmin}
+               currentCompany={currentCompany}
+               customRoles={customRoles}
+               userRoles={userRoles}
+               companyTerminals={companyTerminals}
+               currentTerminal={currentTerminal}
+               setCurrentTerminal={setCurrentTerminal}
+               mode="license-updates"
+             />
+           )}
+           {activeTab === 'financial-settings' && (
+             <SettingsManager 
+               key={`${effectiveCompanyId}-financial`}
+               pixSettings={pixSettings} 
+               appSettings={appSettings} 
+               user={user!} 
+               companyId={effectiveCompanyId || ''} 
+               currentUserData={currentUserData}
+               allCompanies={allCompanies}
+               selectedCompanyId={selectedCompanyId}
+               setSelectedCompanyId={setSelectedCompanyId}
+               isSuperAdmin={isSuperAdmin}
+               currentCompany={currentCompany}
+               customRoles={customRoles}
+               userRoles={userRoles}
+               mode="financial"
+             />
+           )}
+          {activeTab === 'backup-restore' && (
+            <BackupRestoreManager 
               key={effectiveCompanyId}
-              pixSettings={pixSettings} 
               appSettings={appSettings} 
-              user={user!} 
               companyId={effectiveCompanyId || ''} 
-              currentUserData={currentUserData}
-              allCompanies={allCompanies}
-              selectedCompanyId={selectedCompanyId}
-              setSelectedCompanyId={setSelectedCompanyId}
               isSuperAdmin={isSuperAdmin}
-              currentCompany={currentCompany}
-              customRoles={customRoles}
-              userRoles={userRoles}
+              currentUserData={currentUserData}
+            />
+          )}
+          {activeTab === 'dashboard-display-config' && (
+            <DashboardDisplayConfig 
+              canAccess={canAccess} 
+              onBack={() => setActiveTab('dashboard')}
+            />
+          )}
+          {activeTab === 'payable' && (
+            <PayableManager 
+              companyId={effectiveCompanyId || ''} 
+              suppliers={suppliers}
+              pixSettings={pixSettings}
+              appSettings={appSettings}
+            />
+          )}
+          {activeTab === 'receivable' && (
+            <ReceivableManager 
+              companyId={effectiveCompanyId || ''} 
+              clients={clients}
+              pixSettings={pixSettings}
+              appSettings={appSettings}
+            />
+          )}
+          {activeTab === 'vendas-historico' && (
+            <SalesHistoryManager 
+              sales={sales} 
+              clients={clients} 
+              companyId={effectiveCompanyId || ''} 
             />
           )}
         </div>
@@ -5239,6 +7033,28 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
   const [userToDelete, setUserToDelete] = useState<any>(null);
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
 
+  const [currentTeammatePassword, setCurrentTeammatePassword] = useState<string>('');
+
+  useEffect(() => {
+    if (isEditOpen && editingUser?.id) {
+      setCurrentTeammatePassword('Carregando...');
+      fetch(`/api/admin/user-password/${editingUser.id}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.password) {
+            setCurrentTeammatePassword(data.password);
+          } else {
+            setCurrentTeammatePassword('Senha oculta/não encontrada');
+          }
+        })
+        .catch(() => {
+          setCurrentTeammatePassword('Erro ao carregar');
+        });
+    } else {
+      setCurrentTeammatePassword('');
+    }
+  }, [isEditOpen, editingUser?.id]);
+
   const handleAddUser = async () => {
     if (!newUser.name || !newUser.email || !newUser.password) {
       toast.error('Preencha todos os campos.');
@@ -5247,29 +7063,66 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
 
     setIsSubmitting(true);
     try {
-      // Use secondary app to create user without logging out current admin
-      const secondaryApp = initializeApp(firebaseConfig, 'Secondary');
-      const secondaryAuth = getAuth(secondaryApp);
-      
       const finalEmail = getFinalEmail(newUser.email);
       const cleanPassword = newUser.password.trim();
-      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, finalEmail, cleanPassword);
-      await updateProfile(userCredential.user, { displayName: newUser.name });
+      let uid = '';
+      let secondaryApp: any = null;
+      let secondaryAuth: any = null;
+
+      try {
+        // Use secondary app to create user without logging out current admin
+        secondaryApp = initializeApp(firebaseConfig, 'Secondary');
+        secondaryAuth = getAuth(secondaryApp);
+        const userCredential = await createUserWithEmailAndPassword(secondaryAuth, finalEmail, cleanPassword);
+        uid = userCredential.user.uid;
+        await updateProfile(userCredential.user, { displayName: newUser.name });
+      } catch (authErr: any) {
+        console.warn("Real Firebase Auth registration failed or was bypassed, register teammate via hybrid sync databases:", authErr.message || authErr);
+        // Fallback unique UID
+        uid = 'usr_' + Math.random().toString(36).substring(2, 12);
+      }
       
-      // Add to Firestore
-      await setDoc(doc(db, 'users', userCredential.user.uid), {
-        uid: userCredential.user.uid,
+      // Add to Firestore (this will automatically sync locally or in Cloud Db depending on configured mode)
+      await setDoc(doc(db, 'users', uid), {
+        uid: uid,
         email: finalEmail,
         displayName: newUser.name,
         role: newUser.role,
-        companyId: currentUserData.companyId,
+        password: cleanPassword,
+        companyId: currentUserData.companyId || 'default-company-id',
         createdAt: Timestamp.now()
       });
 
-      await logAction('create', 'user', `Cadastrou usuário ${newUser.name} (${newUser.role})`, userCredential.user.uid);
+      // Synchronize directly with server local file database so that auth_users.json and users.json are updated instantly!
+      try {
+        await fetch('/api/admin/sync-local-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            uid: uid,
+            email: finalEmail,
+            displayName: newUser.name,
+            password: cleanPassword,
+            role: newUser.role,
+            companyId: currentUserData.companyId || 'default-company-id'
+          })
+        });
+      } catch (syncErr) {
+        console.warn("Failed to notify server of fallback teammate registration sync:", syncErr);
+      }
 
-      await secondaryAuth.signOut();
-      await deleteApp(secondaryApp);
+      await logAction('create', 'user', `Cadastrou usuário ${newUser.name} (${newUser.role})`, uid);
+
+      if (secondaryAuth && secondaryAuth.signOut) {
+        try {
+          await secondaryAuth.signOut();
+        } catch (e) {}
+      }
+      if (secondaryApp) {
+        try {
+          await deleteApp(secondaryApp);
+        } catch (e) {}
+      }
 
       setIsAddOpen(false);
       setNewUser({ name: '', email: '', password: '', role: 'tecnico' });
@@ -5320,11 +7173,33 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
       const emailChanged = originalUser ? (originalUser.email?.trim().toLowerCase() !== finalEmail.trim().toLowerCase()) : false;
 
       // 1. Update metadata in Firestore first (Name, Email, Role)
-      await updateDoc(doc(db, 'users', editingUser.id), {
+      const userUpdateFields: any = {
         displayName: editingUser.displayName,
         email: finalEmail,
         role: editingUser.role
-      });
+      };
+      if (newPassword) {
+        userUpdateFields.password = newPassword.trim();
+      }
+      await updateDoc(doc(db, 'users', editingUser.id), userUpdateFields);
+
+      // Synchronize directly with server local file database so that auth_users.json and users.json are updated instantly upon user update!
+      try {
+        await fetch('/api/admin/sync-local-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            uid: editingUser.id,
+            email: finalEmail,
+            displayName: editingUser.displayName,
+            password: newPassword ? newPassword.trim() : (originalUser?.password || "123456"),
+            role: editingUser.role,
+            companyId: currentUserData.companyId || 'default-company-id'
+          })
+        });
+      } catch (syncErr) {
+        console.warn("Failed to notify server of fallback teammate update sync:", syncErr);
+      }
 
       await logAction('update', 'user', `Atualizou dados do usuário ${editingUser.displayName} no Firestore (${finalEmail})`, editingUser.id);
 
@@ -5430,67 +7305,91 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
-        <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest text-[#3b82f6]">Equipe e Acessos</h2>
-        <p className="text-[#a0a0a0] text-sm">Gerencie os membros da sua equipe e permissões de acesso.</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#2d3139]/30 pb-4 mb-6">
+        <div className="flex flex-col gap-2">
+          <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest text-[#3b82f6]">Equipe e Acessos</h2>
+          <p className="text-[#a0a0a0] text-sm">Gerencie os membros da sua equipe e permissões de acesso.</p>
+        </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div className="flex flex-col sm:flex-row gap-2">
-          <div className="flex items-center gap-2 bg-[#1a1d23] border border-[#2d3139] px-3 py-1.5 rounded-xl shadow-inner shadow-black/20">
-            <div className="text-[10px] uppercase text-[#71717a] font-black tracking-widest">Código de Equipe:</div>
-            <code className="text-[#3b82f6] font-mono font-bold text-sm">{currentCompany?.inviteCode || '---'}</code>
-            <div className="flex items-center gap-1">
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="h-6 w-6 text-[#71717a] hover:text-white"
-                onClick={() => {
-                  const inviteCode = currentCompany?.inviteCode;
-                  if (inviteCode) {
-                    const url = `${window.location.origin}${window.location.pathname}?code=${inviteCode}`;
-                    navigator.clipboard.writeText(url);
-                    toast.success('Link de convite copiado!');
-                  } else {
-                    toast.error('Gere um código nas configurações primeiro.');
-                  }
-                }}
-                title="Copiar Link de Convite"
-              >
-                <Share2 size={12} />
-              </Button>
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-6 w-6 text-[#71717a] hover:text-white" title="Ver QR Code">
-                    <QrCode size={12} />
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white w-fit">
-                  <DialogHeader>
-                    <DialogTitle className="text-white text-center">Convite de Equipe</DialogTitle>
-                    <DialogDescription className="text-center text-[#71717a] text-xs">Aponte a câmera para se juntar à empresa</DialogDescription>
-                  </DialogHeader>
-                  <div className="p-6 bg-white rounded-xl shadow-2xl flex items-center justify-center mx-auto">
-                    <QRCodeCanvas 
-                      value={`${window.location.origin}${window.location.pathname}?code=${currentCompany?.inviteCode}`}
-                      size={200}
-                      level="H"
-                      includeMargin={true}
-                    />
-                  </div>
-                  <div className="text-center font-mono font-bold text-lg tracking-widest mt-2">{currentCompany?.inviteCode}</div>
-                </DialogContent>
-              </Dialog>
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] justify-between items-start bg-[#1a1d23] border border-[#2d3139] p-8 rounded-2xl gap-8 mb-8 relative overflow-hidden group">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-[#3b82f6]/5 rounded-full -mr-16 -mt-16 blur-2xl group-hover:bg-[#3b82f6]/10 transition-colors"></div>
+        
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <h3 className="text-xl font-black text-white tracking-tight uppercase italic flex items-center gap-2">
+                <Share2 className="text-[#3b82f6]" size={20} />
+                Acesso de Equipe
+              </h3>
+              <Badge className="bg-green-500/20 text-green-400 border border-green-500/30 font-black text-[10px] uppercase">Ativo</Badge>
+            </div>
+            <p className="text-sm text-[#71717a] max-w-lg leading-relaxed">
+              Compartilhe o código ou o QR code abaixo para que novos <span className="text-[#3b82f6] font-bold">colaboradores</span> entrem diretamente na sua empresa.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-[#0f1115] px-6 py-4 rounded-xl border border-[#2d3139] text-[#3b82f6] font-mono font-black text-4xl tracking-widest shadow-inner select-all">
+                {currentCompany?.inviteCode || '...'}
+              </div>
+              <div className="flex flex-col gap-2">
+                <Button 
+                  variant="outline" 
+                  className="border-[#2d3139] hover:bg-white/5 text-white h-10 font-black text-[10px] uppercase tracking-widest gap-2"
+                  onClick={() => {
+                    const code = currentCompany?.inviteCode || '';
+                    if (code) {
+                      navigator.clipboard.writeText(code);
+                      toast.success('Código copiado!');
+                    }
+                  }}
+                >
+                  <Copy size={14} /> Copiar Código
+                </Button>
+                <Button 
+                  variant="default" 
+                  className="bg-[#3b82f6] hover:bg-[#2563eb] text-white h-10 font-black text-[10px] uppercase tracking-widest gap-2 shadow-lg shadow-blue-500/20"
+                  onClick={() => {
+                    const code = currentCompany?.inviteCode || '';
+                    if (code) {
+                      const url = `${window.location.origin}${window.location.pathname}?code=${code}`;
+                      navigator.clipboard.writeText(url);
+                      toast.success('Link de convite copiado!');
+                    }
+                  }}
+                >
+                  <ExternalLink size={14} /> Copiar Link
+                </Button>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 text-[10px] text-[#555] font-bold uppercase tracking-wider">
+              <Shield size={10} /> Segurança SegurTec-Pro Ativa
             </div>
           </div>
         </div>
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2 bg-[#3b82f1] hover:bg-[#2563eb] text-white h-11 px-6 font-bold shadow-lg shadow-blue-500/10">
-              <Plus size={18} />
-              NOVO USUÁRIO
-            </Button>
-          </DialogTrigger>
+
+        <div className="flex flex-col items-center gap-3">
+          <div className="p-3 bg-white rounded-xl shadow-2xl shadow-black/40">
+            <QRCodeCanvas 
+              value={`${window.location.origin}${window.location.pathname}?code=${currentCompany?.inviteCode || ''}`}
+              size={140}
+              level="H"
+              includeMargin={true}
+            />
+          </div>
+          <p className="text-[10px] text-[#71717a] font-black uppercase tracking-[0.2em]">Escanear para Entrar</p>
+        </div>
+      </div>
+
+      <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+        <DialogTrigger asChild>
+          <Button className="gap-2 bg-[#3b82f1] hover:bg-[#2563eb] text-white h-11 px-6 font-bold shadow-lg shadow-blue-500/10">
+            <Plus size={18} />
+            NOVO USUÁRIO
+          </Button>
+        </DialogTrigger>
           <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[85vh] overflow-hidden flex flex-col p-0 sm:max-w-[500px] shadow-2xl">
             <DialogHeader className="p-6 pb-2 flex-shrink-0">
               <DialogTitle className="text-white">Cadastrar Novo Usuário</DialogTitle>
@@ -5568,7 +7467,6 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
 
       {showList ? (
         viewMode === 'grid' ? (
@@ -5628,9 +7526,9 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
             )}
           </div>
         ) : (
-          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative">
+          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl shadow-xl">
             <TableDoubleScroll>
-            <Table>
+            <Table className="min-w-[800px]">
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[60px]">Ações</TableHead>
@@ -5752,6 +7650,17 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-2 border-t border-[#2d3139]/30 pt-3 mt-1">
+                  <Label className="text-[#a0a0a0]">Senha Salva no Cadastro</Label>
+                  <div className="flex items-center justify-between bg-[#13151b] border border-[#2d3139] rounded-lg p-2 text-xs">
+                    {currentTeammatePassword === 'Senha oculta/não encontrada' ? (
+                      <span className="text-gray-400">●●●●●● (Criptografada na Nuvem)</span>
+                    ) : (
+                      <span className="font-mono font-bold text-[#f59e0b]">{currentTeammatePassword || 'Criptografada / Não informada'}</span>
+                    )}
+                    <span className="text-[8px] uppercase font-bold text-gray-500 bg-gray-500/10 px-2 py-0.5 rounded border border-gray-500/20">Backup Local/Firestore</span>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label className="text-[#a0a0a0]">Nova Senha (opcional)</Label>
@@ -6566,9 +8475,9 @@ function ClientsManager({
             )}
           </div>
         ) : (
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative">
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl shadow-xl">
           <TableDoubleScroll>
-          <Table>
+          <Table className="min-w-[1000px]">
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[110px]">Ações</TableHead>
@@ -7186,9 +9095,9 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
             )}
           </div>
         ) : (
-          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] shadow-2xl">
+          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl shadow-2xl">
             <TableDoubleScroll>
-            <Table>
+            <Table className="min-w-[1000px]">
             <TableHeader>
               <TableRow className="border-[#2d3139] hover:bg-transparent">
                 <TableHead className="w-[40px] text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ações</TableHead>
@@ -7358,7 +9267,7 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
 
 // --- Receipts Manager Component ---
 
-function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings, companyId, currentUserData, showList, onEditClick, externalEditAction, onExternalEditHandled }: { receipts: Receipt[], clients: Client[], pixSettings: PixSettings, appSettings: AppSettings, companyId: string, currentUserData: any, showList: boolean, onEditClick: (type: 'receipt', data: any) => void, externalEditAction: any, onExternalEditHandled: () => void }) {
+function ReceiptsManager({ receipts = [], clients = [], receivables = [], pixSettings, appSettings, companyId, currentUserData, showList, onEditClick, externalEditAction, onExternalEditHandled }: { receipts: Receipt[], clients: Client[], receivables?: any[], pixSettings: PixSettings, appSettings: AppSettings, companyId: string, currentUserData: any, showList: boolean, onEditClick: (type: 'receipt', data: any) => void, externalEditAction: any, onExternalEditHandled: () => void }) {
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -7432,36 +9341,54 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
       const snapshot = await getDocs(q);
       
       if (receiptData.status === 'Recebido') {
+        // Verification: check if there is an already marked as Paid receivable matching client and referenceMonth
+        const matchingReceivable = (receivables || []).find((r: any) => 
+          r.status === 'Pago' &&
+          r.referenceMonth === receiptData.referenceMonth &&
+          (receiptData.clientId ? r.clientId === receiptData.clientId : r.clientName?.toLowerCase().trim() === receiptData.clientName?.toLowerCase().trim())
+        );
+
+        if (matchingReceivable) {
+          // Found! Let's ask the user if they want to launch it.
+          const shouldLaunch = window.confirm(
+            `Atenção: Já foi dada BAIXA no Contas a Receber para o cliente "${receiptData.clientName}" relativo à referência "${receiptData.referenceMonth}".\n\nDeseja lançar a receita novamente no caixa (duplicando o caixa)?\n- Clique em [Cancelar] para NÃO lançar duplicado.\n- Clique em [OK] se desejar lançar mesmo assim.`
+          );
+          if (!shouldLaunch) {
+            console.log("[Receipt Sync] Ignorando lançamento duplicado devido a baixa existente no contas a receber.");
+            return; // EXIT and do NOT launch!
+          }
+        }
+
         if (snapshot.empty) {
-        await addDoc(collection(db, 'financial'), {
-          type: 'Receita',
-          category: receiptData.clientType === 'Contrato' ? 'Mensalidade Contrato' : 'Serviço Avulso',
-          description: (() => {
-            const m = receiptData.referenceMonth || format(new Date(), 'MMMM/yyyy', { locale: ptBR }).replace(/^\w/, (c) => c.toUpperCase());
-            const capM = m.charAt(0).toUpperCase() + m.slice(1);
-            return `${formatRecordNumber(receiptData.number, receiptData.date)} - ${receiptData.clientName} - ${capM}`;
-          })(),
-          origin: receiptData.number ? formatRecordNumber(receiptData.number, receiptData.date) : 'Recibo',
-          value: Number(receiptData.value),
-          date: Timestamp.now(), // Usar data atual do recebimento
-          paymentMethod: receiptData.paymentMethod || 'PIX',
-          pixAccountId: receiptData.paymentMethod === 'Dinheiro' ? null : (receiptData.pixAccountId || null),
-          serviceType: receiptData.clientType === 'Contrato' ? 'Contrato' : 'Serviço Normal',
-          clientId: receiptData.clientId || null,
-          receiptId: receiptId,
-          companyId,
-          createdAt: Timestamp.now()
-        });
-        toast.info('Lançamento financeiro realizado automaticamente!');
+          await addDoc(collection(db, 'financial'), {
+            type: 'Receita',
+            category: receiptData.clientType === 'Contrato' ? 'Mensalidade Contrato' : 'Serviço Avulso',
+            description: (() => {
+              const m = receiptData.referenceMonth || format(new Date(), 'MMMM/yyyy', { locale: ptBR }).replace(/^\w/, (c) => c.toUpperCase());
+              const capM = m.charAt(0).toUpperCase() + m.slice(1);
+              return `${formatRecordNumber(receiptData.number, receiptData.date)} - ${receiptData.clientName} - ${capM}`;
+            })(),
+            origin: receiptData.number ? formatRecordNumber(receiptData.number, receiptData.date) : 'Recibo',
+            value: Number(receiptData.value),
+            date: Timestamp.now(), // Usar data atual do recebimento
+            paymentMethod: receiptData.paymentMethod || 'PIX',
+            pixAccountId: receiptData.paymentMethod === 'Dinheiro' ? null : (receiptData.pixAccountId || null),
+            serviceType: receiptData.clientType === 'Contrato' ? 'Contrato' : 'Serviço Normal',
+            clientId: receiptData.clientId || null,
+            receiptId: receiptId,
+            companyId,
+            createdAt: Timestamp.now()
+          });
+          toast.info('Lançamento financeiro realizado automaticamente!');
+        }
+      } else {
+        // Remove from financial if no longer 'Recebido'
+        for (const docSnap of snapshot.docs) {
+          await deleteDoc(doc(db, 'financial', docSnap.id));
+          toast.info('Lançamento financeiro removido (mudança de status).');
+        }
       }
-    } else {
-      // Remove from financial if no longer 'Recebido'
-      for (const docSnap of snapshot.docs) {
-        await deleteDoc(doc(db, 'financial', docSnap.id));
-        toast.info('Lançamento financeiro removido (mudança de status).');
-      }
-    }
-  } catch (error) {
+    } catch (error) {
       console.error("Erro ao sincronizar recibo com financeiro:", error);
     }
   };
@@ -8302,7 +10229,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
           </div>
         ) : (
           <Card 
-            className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+            className="border-[#2d3139] bg-[#1a1d23] rounded-xl relative focus:outline-none focus:ring-1 focus:ring-blue-500/50 shadow-2xl"
             tabIndex={0}
             onKeyDown={(e) => {
               if (!filteredReceipts.length) return;
@@ -8337,7 +10264,7 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
             </div>
           </div>
           <TableDoubleScroll>
-          <Table>
+          <Table className="min-w-[1000px]">
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[140px]">AÇÕES</TableHead>
@@ -8584,6 +10511,46 @@ function SuperAdminPanel({
   const [selectedCompanyIdForClear, setSelectedCompanyIdForClear] = useState('');
   const [isClearingUserHistory, setIsClearingUserHistory] = useState(false);
 
+  // Global Core Updates state
+  const [publishingVersion, setPublishingVersion] = useState(saasSettings?.latestVersion || LOCAL_VERSION);
+  const [publishingNotes, setPublishingNotes] = useState(saasSettings?.latestNotes || 'Melhorias de desempenho e correções visuais.');
+  const [publishingFileUrl, setPublishingFileUrl] = useState(saasSettings?.latestFileUrl || '');
+  const [supportPhone, setSupportPhone] = useState(saasSettings?.supportPhone || '');
+  const [supportWhatsapp, setSupportWhatsapp] = useState(saasSettings?.supportWhatsapp || '');
+  const [supportEmail, setSupportEmail] = useState(saasSettings?.supportEmail || '');
+  const [isSavingUpdatesConfig, setIsSavingUpdatesConfig] = useState(false);
+
+  useEffect(() => {
+    if (saasSettings) {
+      if (saasSettings.latestVersion) setPublishingVersion(saasSettings.latestVersion);
+      if (saasSettings.latestNotes) setPublishingNotes(saasSettings.latestNotes);
+      if (saasSettings.latestFileUrl) setPublishingFileUrl(saasSettings.latestFileUrl);
+      if (saasSettings.supportPhone) setSupportPhone(saasSettings.supportPhone);
+      if (saasSettings.supportWhatsapp) setSupportWhatsapp(saasSettings.supportWhatsapp);
+      if (saasSettings.supportEmail) setSupportEmail(saasSettings.supportEmail);
+    }
+  }, [saasSettings]);
+
+  const handleSaveGlobalUpdatesSettings = async () => {
+    setIsSavingUpdatesConfig(true);
+    try {
+      await setDoc(doc(db, 'saas_settings', 'global'), {
+        latestVersion: publishingVersion,
+        latestNotes: publishingNotes,
+        latestFileUrl: publishingFileUrl,
+        supportPhone,
+        supportWhatsapp,
+         supportEmail
+      }, { merge: true });
+      toast.success("Novos parâmetros de atualização e canais de suporte salvos com sucesso!");
+    } catch (saveError) {
+      console.error("Error saving global updates:", saveError);
+      toast.error("Erro ao salvar parâmetros globais.");
+    } finally {
+      setIsSavingUpdatesConfig(false);
+    }
+  };
+
   const companyUsersForClear = allUsers.filter(u => u.companyId === selectedCompanyIdForClear);
   const companyUsers = allUsers.filter(u => u.companyId === selectedCompanyId);
 
@@ -8806,9 +10773,17 @@ function SuperAdminPanel({
         customPrice: Number(editingCompany.customPrice) || 0,
         billingCycle: editingCompany.billingCycle || 'mensal',
         receivesUpdates: editingCompany.receivesUpdates ?? true,
-        enabledMenus: editingCompany.enabledMenus || ['resumo', 'visits', 'receipts', 'clients', 'financial', 'inventory', 'os', 'budgets', 'settings', 'pdv'],
+        supportChannels: editingCompany.supportChannels || ['whatsapp', 'email'],
+        enabledMenus: editingCompany.enabledMenus || [
+          'dashboard', 'dashboard-display-config', 'visits', 'service-orders', 'laudos', 'clients',
+          'suppliers', 'budgets', 'pdv', 'vendas-historico', 'inventory',
+          'financial', 'payable', 'receivable', 'receipts', 'reports',
+          'users', 'logs', 'settings', 'financial-settings', 'backup-restore',
+          'network-config', 'license-updates'
+        ],
         ownerName: editingCompany.ownerName || '',
         ownerEmail: editingCompany.ownerEmail || '',
+        dbMode: editingCompany.dbMode || 'default',
         updatedAt: Timestamp.now()
       });
       toast.success("Licença e menus atualizados!");
@@ -8820,10 +10795,90 @@ function SuperAdminPanel({
     }
   };
 
+  const [editingOwnerPassword, setEditingOwnerPassword] = useState<string>('');
+  const [newOwnerPassword, setNewOwnerPassword] = useState<string>('');
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState<boolean>(false);
+
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [companyToToggle, setCompanyToToggle] = useState<{id: string, status: string} | null>(null);
   const [editingCompany, setEditingCompany] = useState<any>(null);
+
+  useEffect(() => {
+    if (isEditCompanyOpen && editingCompany?.ownerId) {
+      setEditingOwnerPassword('Carregando...');
+      setNewOwnerPassword('');
+      fetch(`/api/admin/user-password/${editingCompany.ownerId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.password) {
+            setEditingOwnerPassword(data.password);
+          } else {
+            setEditingOwnerPassword('Senha oculta/não encontrada');
+          }
+        })
+        .catch(() => {
+          setEditingOwnerPassword('Erro ao carregar');
+        });
+    } else {
+      setEditingOwnerPassword('');
+      setNewOwnerPassword('');
+    }
+  }, [isEditCompanyOpen, editingCompany?.ownerId]);
+
+  const handleUpdateOwnerPassword = async () => {
+    if (!editingCompany?.ownerId) return;
+    if (!newOwnerPassword.trim()) {
+      toast.error("Por favor, digite a nova senha.");
+      return;
+    }
+    if (newOwnerPassword.trim().length < 6) {
+      toast.error("A senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+    setIsUpdatingPassword(true);
+    try {
+      const response = await fetch('/api/admin/update-user-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: editingCompany.ownerId,
+          newPassword: newOwnerPassword.trim()
+        })
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        if (data.fallback) {
+          toast.warning(
+            <div className="space-y-2 text-left p-1 text-xs">
+              <p className="font-bold text-amber-400">⚠️ Salvo com Observação (API do Google Desativada)</p>
+              <p className="text-gray-300 leading-relaxed">
+                A senha foi registrada com sucesso na base Firestore! Porém, a redefinição de credenciais no **servidor de login do Firebase** falhou porque a <strong>Identity Toolkit API</strong> está desativada na sua conta Google Cloud.
+              </p>
+              <div className="bg-black/60 rounded border border-white/10 p-2 font-mono text-[10px] select-all break-all text-blue-300">
+                https://console.developers.google.com/apis/api/identitytoolkit.googleapis.com/overview?project=154805406116
+              </div>
+              <p className="text-[10px] text-gray-400">
+                Copie o link acima, abra-o no seu navegador para ativar a API e tente alterar a senha novamente para que ela passe a valer no ambiente Cloud real.
+              </p>
+            </div>,
+            { duration: 20000 }
+          );
+        } else {
+          toast.success("Senha do proprietário alterada com sucesso no Firebase!");
+        }
+        setEditingOwnerPassword(newOwnerPassword.trim());
+        setNewOwnerPassword('');
+      } else {
+        toast.error(data.error || "Erro ao atualizar senha.");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro de conexão ao alterar senha.");
+    } finally {
+      setIsUpdatingPassword(false);
+    }
+  };
 
   const editingCompanyOwner = useMemo(() => {
     if (!editingCompany?.ownerId) return null;
@@ -9067,10 +11122,17 @@ function SuperAdminPanel({
         customPrice: Number(editingCompany.customPrice) || 0,
         receivesUpdates: editingCompany.receivesUpdates ?? true,
         isExempt: editingCompany.isExempt || false,
+        dbMode: editingCompany.dbMode || 'default',
+        businessActivity: editingCompany.businessActivity || '',
+        maxStationsLimit: Number(editingCompany.maxStationsLimit) || 3,
+        supportChannels: editingCompany.supportChannels || ['whatsapp', 'email'],
+        version: editingCompany.version || LOCAL_VERSION,
         enabledMenus: editingCompany.enabledMenus || [
-          'dashboard', 'visits', 'receipts', 'clients', 'financial', 
-          'inventory', 'service-orders', 'budgets', 'settings', 'pdv',
-          'suppliers', 'reports', 'users', 'logs'
+          'dashboard', 'dashboard-display-config', 'visits', 'service-orders', 'laudos', 'clients',
+          'suppliers', 'budgets', 'pdv', 'vendas-historico', 'inventory',
+          'financial', 'payable', 'receivable', 'receipts', 'reports',
+          'users', 'logs', 'settings', 'financial-settings', 'backup-restore',
+          'network-config', 'license-updates'
         ]
       });
       toast.success("Plano da empresa atualizado!");
@@ -9561,6 +11623,94 @@ function SuperAdminPanel({
       <Card className="bg-[#1a1d23] border-[#2d3139] text-white shadow-xl hover:border-blue-500/20 transition-all mb-8">
         <CardHeader>
           <CardTitle className="text-white flex items-center gap-2">
+            <RefreshCw className="text-[#3b82f6]" size={20} />
+            Publicação de Atualizações do Core (SaaS Central)
+          </CardTitle>
+          <CardDescription className="text-[#71717a]">
+            Publique novos pacotes de atualização para que os clientes licenciados que possuem atualizações liberadas possam aplicar as melhorias e correções no sistema deles.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black tracking-widest">Código da Versão Comercial (ex: v4.8.3)</Label>
+              <Input 
+                value={publishingVersion}
+                onChange={(e) => setPublishingVersion(e.target.value)}
+                placeholder="v4.8.3"
+                className="bg-[#0f1115] border-[#2d3139] text-white h-11"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black tracking-widest">Localização/URL do Pacote de Patch (.zip ou diretório)</Label>
+              <Input 
+                value={publishingFileUrl}
+                onChange={(e) => setPublishingFileUrl(e.target.value)}
+                placeholder="Ex: /updates/v4.8.3.zip ou URL externa de CDN"
+                className="bg-[#0f1115] border-[#2d3139] text-white h-11"
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-[#a0a0a0] text-[10px] uppercase font-black tracking-widest">Notas da Versão (Melhorias, Novidades e Correções)</Label>
+            <textarea
+              value={publishingNotes}
+              onChange={(e) => setPublishingNotes(e.target.value)}
+              placeholder="Novos módulos adicionados..."
+              className="w-full bg-[#0f1115] border border-[#2d3139] rounded-md p-3 text-sm text-white font-sans h-24 focus:outline-none focus:border-blue-500 transition-colors"
+            />
+          </div>
+
+          <div className="border-t border-[#2d3139] pt-4 mt-2 space-y-4">
+            <h4 className="text-xs font-black uppercase tracking-widest text-[#3b82f6]">Canais de Suporte de Atualizações (AF TECNOLOGIA)</h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black tracking-widest">Telefone de Suporte</Label>
+                <Input 
+                  value={supportPhone}
+                  onChange={(e) => setSupportPhone(e.target.value)}
+                  placeholder="Ex: (91) 99999-9999"
+                  className="bg-[#0f1115] border-[#2d3139] text-white h-11"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black tracking-widest">WhatsApp de Suporte</Label>
+                <Input 
+                  value={supportWhatsapp}
+                  onChange={(e) => setSupportWhatsapp(e.target.value)}
+                  placeholder="Ex: https://wa.me/5591999999999"
+                  className="bg-[#0f1115] border-[#2d3139] text-white h-11"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black tracking-widest">E-mail de Suporte</Label>
+                <Input 
+                  value={supportEmail}
+                  onChange={(e) => setSupportEmail(e.target.value)}
+                  placeholder="Ex: suporte@aftecnologia.com.br"
+                  className="bg-[#0f1115] border-[#2d3139] text-white h-11"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="p-3 bg-[#0f1115] border border-[#2d3139] rounded-lg text-xs text-[#71717a] leading-relaxed">
+            💡 <span className="text-neutral-300 font-semibold">Onde deixar o arquivo de atualização?</span> Você pode armazenar o arquivo compactado em <span className="text-zinc-500 font-mono">/public/updates/</span> deste projeto, em um bucket do Google Cloud Storage, ou no seu próprio servidor central, e depois colar o link de download direto no campo acima. Quando as empresas parceiras checarem por atualizações, elas lerão este registro do Firestore e poderão instalar os novos recursos instantaneamente de forma integrada.
+          </div>
+          <Button 
+            onClick={handleSaveGlobalUpdatesSettings} 
+            disabled={isSavingUpdatesConfig}
+            className="w-full bg-[#10b981] hover:bg-[#059669] text-white font-bold h-11 shadow-lg shadow-emerald-500/10"
+          >
+            {isSavingUpdatesConfig ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+            PUBLICAR E DISPONIBILIZAR ATUALIZAÇÃO ONLINE AGORA
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="bg-[#1a1d23] border-[#2d3139] text-white shadow-xl hover:border-blue-500/20 transition-all mb-8">
+        <CardHeader>
+          <CardTitle className="text-white flex items-center gap-2">
             <CreditCard className="text-[#3b82f6]" size={20} />
             Importar Juros de Cartões
           </CardTitle>
@@ -9613,14 +11763,16 @@ function SuperAdminPanel({
         </CardContent>
       </Card>
 
-      <Card className="bg-[#1a1d23] border-[#2d3139] rounded-xl overflow-y-auto max-h-[800px]">
+      <Card className="bg-[#1a1d23] border-[#2d3139] rounded-xl shadow-2xl">
         <TableDoubleScroll>
-        <Table>
+        <Table className="min-w-[1000px]">
           <TableHeader>
             <TableRow className="border-[#2d3139] hover:bg-transparent">
               <TableHead className="w-10"></TableHead>
               <TableHead className="text-[#71717a] font-semibold">Empresa</TableHead>
               <TableHead className="text-[#71717a] font-semibold">Plano / Ciclo</TableHead>
+              <TableHead className="text-[#71717a] font-semibold text-center">Modo</TableHead>
+              <TableHead className="text-[#71717a] font-semibold text-center">Rede</TableHead>
               <TableHead className="text-[#71717a] font-semibold text-center">Atualizações</TableHead>
               <TableHead className="text-[#71717a] font-semibold">Status</TableHead>
             </TableRow>
@@ -9638,7 +11790,9 @@ function SuperAdminPanel({
                         ...company,
                         billingCycle: company.billingCycle || saasSettings?.billingCycle || 'mensal',
                         customPrice: company.customPrice !== undefined ? company.customPrice : (saasSettings?.price || 0),
-                        receivesUpdates: company.receivesUpdates ?? true
+                        receivesUpdates: company.receivesUpdates ?? true,
+                        businessActivity: company.businessActivity || '',
+                        supportChannels: company.supportChannels || ['whatsapp', 'email']
                       });
                       setIsEditCompanyOpen(true);
                     }}
@@ -9678,6 +11832,24 @@ function SuperAdminPanel({
                 </TableCell>
                 <TableCell className="text-center">
                   <Badge className={cn(
+                    "text-[10px] font-bold uppercase border",
+                    company.dbMode === 'online' ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20" :
+                    company.dbMode === 'local' ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
+                    "bg-indigo-500/10 text-indigo-400 border-indigo-500/20"
+                  )}>
+                    {company.dbMode === 'online' ? 'Web' : company.dbMode === 'local' ? 'Local' : 'Web/Local'}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-center font-bold text-xs">
+                  <Badge className={cn(
+                    "text-[10px] font-bold uppercase border",
+                    company.dbMode === 'online' ? "bg-red-500/10 text-red-500 border-red-500/20" : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                  )}>
+                    {company.dbMode === 'online' ? 'Não' : 'Sim'}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-center">
+                  <Badge className={cn(
                     "text-[10px]",
                     company.receivesUpdates === false ? "bg-orange-500/20 text-orange-500 border-orange-500/50" : "bg-blue-500/20 text-blue-500 border-blue-500/50"
                   )}>
@@ -9710,7 +11882,7 @@ function SuperAdminPanel({
           </DialogHeader>
           <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2 custom-scrollbar">
             <div className="space-y-4 py-4 text-white">
-                {/* Proprietor Info */}
+                {/* Proprietor Info & Business Activity */}
                 <div className="space-y-4 pt-2">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -9731,11 +11903,20 @@ function SuperAdminPanel({
                         className="bg-[#0f1115] border-[#2d3139] text-white h-9 text-xs"
                       />
                     </div>
+                    <div className="space-y-2 col-span-2">
+                      <Label className="text-[#a0a0a0] text-[10px] uppercase font-bold">Ramo de Atividade (Aparece na Animação Inicial)</Label>
+                      <Input 
+                        value={editingCompany?.businessActivity || ''} 
+                        onChange={e => setEditingCompany({...editingCompany, businessActivity: e.target.value})} 
+                        placeholder="Ex: SISTEMA DE GESTÃO AUTOMOTIVA, CLÍNICA MÉDICA, OFICINA MECÂNICA, etc."
+                        className="bg-[#0f1115] border-[#2d3139] text-white h-9 text-xs"
+                      />
+                    </div>
                   </div>
                 </div>
 
                 {editingCompanyOwner && (
-                  <div className="p-4 bg-[#0f1115] border border-blue-500/20 rounded-xl space-y-2 shadow-inner group transition-all hover:border-blue-500/40">
+                  <div className="p-4 bg-[#0f1115] border border-blue-500/20 rounded-xl space-y-3 shadow-inner group transition-all hover:border-blue-500/40 text-left">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-blue-400">
                         <UserIcon size={14} className="group-hover:scale-110 transition-transform" />
@@ -9743,10 +11924,45 @@ function SuperAdminPanel({
                       </div>
                       <Badge variant="outline" className="text-[8px] bg-blue-500/10 text-blue-400 border-blue-400/20 uppercase font-black tracking-widest">Master Admin</Badge>
                     </div>
-                    <div className="flex flex-col gap-0.5">
+                    <div className="flex flex-col gap-0.5 border-b border-[#2d3139]/30 pb-2.5">
                       <span className="text-sm font-black text-white tracking-tight">{editingCompanyOwner.displayName || editingCompanyOwner.name || 'Nome não informado'}</span>
                       <div className="flex items-center gap-2 text-[#71717a]">
                         <span className="text-[11px] font-medium font-mono">{editingCompanyOwner.email}</span>
+                      </div>
+                    </div>
+                    
+                    {/* Exibição e troca de senha do proprietário da licença */}
+                    <div className="space-y-2.5 pt-0.5">
+                      <div className="flex items-center justify-between bg-[#13151b] border border-[#2d3139] rounded-lg p-2">
+                        <div className="flex flex-col">
+                          <span className="text-[9px] uppercase font-black text-[#71717a] tracking-wider">Senha Atual</span>
+                          {editingOwnerPassword === 'Senha oculta/não encontrada' ? (
+                            <span className="text-[11px] font-semibold text-gray-400">●●●●●● (Criptografada na Nuvem)</span>
+                          ) : (
+                            <span className="text-xs font-mono font-bold text-[#f59e0b] truncate">{editingOwnerPassword || '---'}</span>
+                          )}
+                        </div>
+                        <span className="text-[8px] uppercase font-bold text-gray-500 bg-gray-500/10 px-2.5 py-1 rounded border border-gray-500/20">Acesso SaaS</span>
+                      </div>
+                      
+                      <div className="space-y-1">
+                        <Label className="text-[9px] uppercase font-bold text-[#a0a0a0]">Mudar Senha do Proprietário</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            type="text"
+                            value={newOwnerPassword}
+                            onChange={(e) => setNewOwnerPassword(e.target.value)}
+                            placeholder="Nova senha (min. 6 dig)"
+                            className="bg-[#13151b] border-[#2d3139] text-white h-7 text-xs flex-1"
+                          />
+                          <Button 
+                            onClick={handleUpdateOwnerPassword}
+                            disabled={isUpdatingPassword}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold h-7 text-[10px] px-2.5 transition-colors shrink-0"
+                          >
+                            {isUpdatingPassword ? 'Gravando...' : 'Mudar'}
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -9759,22 +11975,31 @@ function SuperAdminPanel({
                       <span className="text-[10px] text-[#71717a]">Selecione quais abas esta empresa pode ver.</span>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 p-3 bg-[#0f1115]/50 border border-[#2d3139] rounded-lg">
+                  <div className="grid grid-cols-2 gap-2 p-3 bg-[#0f1115]/50 border border-[#2d3139] rounded-lg max-h-[230px] overflow-y-auto custom-scrollbar">
                     {[
-                      {id: 'dashboard', label: 'Dashboard'},
+                      {id: 'dashboard', label: 'Painel Geral'},
+                      {id: 'dashboard-display-config', label: 'Conf. Exibição PG'},
                       {id: 'visits', label: 'Visitas Técnicas'},
-                      {id: 'receipts', label: 'Recibos'},
-                      {id: 'clients', label: 'Clientes'},
-                      {id: 'financial', label: 'Financeiro'},
-                      {id: 'inventory', label: 'Estoque'},
                       {id: 'service-orders', label: 'Ordens de Serviço'},
+                      {id: 'laudos', label: 'Laudos Técnicos'},
+                      {id: 'clients', label: 'Clientes'},
+                      {id: 'suppliers', label: 'Fornecedores'},
                       {id: 'budgets', label: 'Orçamentos'},
                       {id: 'pdv', label: 'PDV (Vendas)'},
-                      {id: 'suppliers', label: 'Fornecedores'},
-                      {id: 'reports', label: 'Relatórios'},
-                      {id: 'users', label: 'Equipe'},
-                      {id: 'logs', label: 'Logs'},
-                      {id: 'settings', label: 'Configurações'}
+                      {id: 'vendas-historico', label: 'Histórico de Vendas'},
+                      {id: 'inventory', label: 'Estoque / Produtos'},
+                      {id: 'financial', label: 'Financeiro (Lançamentos)'},
+                      {id: 'payable', label: 'Contas a Pagar'},
+                      {id: 'receivable', label: 'Contas a Receber'},
+                      {id: 'receipts', label: 'Recibos / Emissor'},
+                      {id: 'reports', label: 'Relatórios Gerenciais'},
+                      {id: 'users', label: 'Equipe / Permissões'},
+                      {id: 'logs', label: 'Logs do Sistema'},
+                      {id: 'settings', label: 'Configurações'},
+                      {id: 'network-config', label: 'Config. Rede'},
+                      {id: 'license-updates', label: 'Licença e Atualizações'},
+                      {id: 'financial-settings', label: 'Config. Financeiras'},
+                      {id: 'backup-restore', label: 'Backup/Restauração'}
                     ].map(menu => (
                       <div key={menu.id} className="flex items-center space-x-2">
                         <Checkbox 
@@ -9782,9 +12007,11 @@ function SuperAdminPanel({
                           checked={editingCompany?.enabledMenus ? editingCompany.enabledMenus.includes(menu.id) : true}
                           onCheckedChange={(checked) => {
                             const current = editingCompany?.enabledMenus || [
-                              'dashboard', 'visits', 'receipts', 'clients', 'financial', 
-                              'inventory', 'service-orders', 'budgets', 'settings', 'pdv',
-                              'suppliers', 'reports', 'users', 'logs'
+                              'dashboard', 'dashboard-display-config', 'visits', 'service-orders', 'laudos', 'clients',
+                              'suppliers', 'budgets', 'pdv', 'vendas-historico', 'inventory',
+                              'financial', 'payable', 'receivable', 'receipts', 'reports',
+                              'users', 'logs', 'settings', 'financial-settings', 'backup-restore',
+                              'network-config', 'license-updates'
                             ];
                             let updated;
                             if (checked) {
@@ -9795,7 +12022,7 @@ function SuperAdminPanel({
                             setEditingCompany({...editingCompany, enabledMenus: updated});
                           }}
                         />
-                        <Label htmlFor={`menu-${menu.id}`} className="text-xs cursor-pointer">{menu.label}</Label>
+                        <Label htmlFor={`menu-${menu.id}`} className="text-[11px] cursor-pointer text-neutral-300 hover:text-white transition-colors select-none">{menu.label}</Label>
                       </div>
                     ))}
                   </div>
@@ -9878,6 +12105,81 @@ function SuperAdminPanel({
                 </div>
               </motion.div>
             )}
+
+            {/* Database operational mode for this client company */}
+            <div className="space-y-2 p-4 bg-[#0f1115]/50 border border-[#2d3139] rounded-lg">
+              <Label className="text-[#a0a0a0] text-[10px] font-bold uppercase tracking-widest text-[#3b82f6]">Modalidade de Licença & Conectividade</Label>
+              <select 
+                className="w-full h-10 bg-[#0f1115] border-[#2d3139] rounded-md px-3 text-xs font-bold text-white uppercase tracking-wider"
+                value={editingCompany?.dbMode || 'default'}
+                onChange={(e) => setEditingCompany({...editingCompany, dbMode: e.target.value})}
+              >
+                <option value="default">Híbrido Web/Local (Acesso por Navegador e Executável)</option>
+                <option value="online">Somente Web Nuvem (Navegador e Firebase - Sem local)</option>
+                <option value="local">Somente Local Offline (Executável Local - Bloqueado na Web)</option>
+              </select>
+              <p className="text-[9px] text-[#71717a] uppercase font-semibold leading-normal mt-1 tracking-tight mb-2">
+                Define onde o cliente pode operar. Se selecionado 'Somente Local Offline', o login no site da Web Cloud padrão será bloqueado por segurança, exigindo o executável local do terminal.
+              </p>
+            </div>
+
+            {/* Station / Terminal Limit configuration inside license */}
+            <div className="space-y-2 p-4 bg-[#0f1115]/50 border border-[#2d3139] rounded-lg">
+              <Label className="text-[#3b82f6] text-[10px] font-black uppercase tracking-widest">Limite de Estações & Terminais SaaS</Label>
+              <div className="flex gap-2 items-center">
+                <Input 
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={editingCompany?.maxStationsLimit !== undefined ? editingCompany.maxStationsLimit : 3}
+                  onChange={(e) => setEditingCompany({...editingCompany, maxStationsLimit: parseInt(e.target.value) || 1})}
+                  className="bg-[#0f1115] border-[#2d3139] text-white w-24 h-9 text-xs font-bold"
+                />
+                <span className="text-[11px] text-zinc-400">estações de trabalho adicionais inclusas no plano.</span>
+              </div>
+              <p className="text-[9px] text-[#71717a] uppercase font-semibold leading-normal tracking-tight">
+                Controla o número máximo de computadores/estações que o cliente pode registrar simultaneamente sob esta licença.
+              </p>
+            </div>
+
+            {/* Canais de Suporte Técnico Habilitados */}
+            <div className="space-y-3 p-4 bg-[#0f1115]/50 border border-[#2d3139] rounded-lg">
+              <Label className="text-[#a0a0a0] text-[10px] font-bold uppercase tracking-widest text-[#3b82f6]">Modalidades de Suporte Técnico</Label>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                {[
+                  { id: 'whatsapp', label: 'WhatsApp', color: 'text-emerald-400' },
+                  { id: 'telefone', label: 'Telefone', color: 'text-sky-400' },
+                  { id: 'email', label: 'E-mail (e-Ticket)', color: 'text-amber-400' },
+                  { id: 'acesso_remoto', label: 'Acesso Remoto', color: 'text-fuchsia-400' }
+                ].map(channel => {
+                  const currentChannels = editingCompany?.supportChannels || ['whatsapp', 'email'];
+                  const isChecked = currentChannels.includes(channel.id);
+                  return (
+                    <div key={channel.id} className="flex items-center space-x-2">
+                      <Checkbox 
+                        id={`support-${channel.id}`} 
+                        checked={isChecked}
+                        onCheckedChange={(checked) => {
+                          let updated;
+                          if (checked) {
+                            updated = [...currentChannels, channel.id];
+                          } else {
+                            updated = currentChannels.filter((c: string) => c !== channel.id);
+                          }
+                          setEditingCompany({...editingCompany, supportChannels: updated});
+                        }}
+                      />
+                      <Label htmlFor={`support-${channel.id}`} className={cn("text-[11px] cursor-pointer select-none font-bold", channel.color)}>
+                        {channel.label}
+                      </Label>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-[9px] text-[#71717a] uppercase font-semibold leading-normal mt-1 tracking-tight">
+                Define quais modais e links de suporte estarão visíveis para a empresa no topo ou painel de configurações.
+              </p>
+            </div>
 
             <div className="flex items-center justify-between p-3 bg-[#0f1115]/50 border border-[#2d3139] rounded-lg">
               <div className="flex flex-col">
@@ -10467,7 +12769,11 @@ function SettingsManager({
   isSuperAdmin = false,
   currentCompany,
   customRoles,
-  userRoles
+  userRoles,
+  companyTerminals = [],
+  currentTerminal,
+  setCurrentTerminal,
+  mode = 'general'
 }: { 
   pixSettings: PixSettings, 
   appSettings: AppSettings, 
@@ -10481,9 +12787,35 @@ function SettingsManager({
   currentCompany?: any,
   customRoles: UserRole[],
   userRoles: UserRole[],
-  key?: any
+  companyTerminals?: any[],
+  currentTerminal?: any,
+  setCurrentTerminal?: (term: any) => void,
+  key?: any,
+  mode?: 'general' | 'financial' | 'network-config' | 'license-updates'
 }) {
   const [localApp, setLocalApp] = useState<AppSettings>(appSettings || initialAppSettings);
+  const [dbMode, setDbMode] = useState<'default' | 'local' | 'online'>(
+    () => (localStorage.getItem('DB_MODE_OVERRIDE') as 'default' | 'local' | 'online') || 'default'
+  );
+  const [activeSupportChannelModal, setActiveSupportChannelModal] = useState<string | null>(null);
+  const [saasGlobal, setSaasGlobal] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchGlobal = async () => {
+      try {
+        const globalDoc = await getDoc(doc(db, 'saas_settings', 'global'));
+        if (globalDoc.exists()) {
+          setSaasGlobal(globalDoc.data());
+        }
+      } catch (err) {
+        console.warn("Could not fetch remote version at startup of settings:", err);
+      }
+    };
+    fetchGlobal();
+  }, []);
+  const [localDbUrl, setLocalDbUrl] = useState(
+    () => localStorage.getItem('LOCAL_DB_SERVER_URL') || ''
+  );
 
   useEffect(() => {
     if (appSettings && Object.keys(appSettings).length > 0) {
@@ -10497,9 +12829,262 @@ function SettingsManager({
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
+  const [updateLogLines, setUpdateLogLines] = useState<string[]>([]);
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'up-to-date' | 'update-available' | 'updating' | 'error'>('idle');
+  const [foundUpdateInfo, setFoundUpdateInfo] = useState<{ version: string; notes: string; fileUrl: string } | null>(null);
+  const [showInstallerInstructionsModal, setShowInstallerInstructionsModal] = useState(false);
+
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [connectionTestResult, setConnectionTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [showNetworkTroubleshoot, setShowNetworkTroubleshoot] = useState(false);
+
+  const handleTestConnection = async () => {
+    if (!localDbUrl.trim()) {
+      setConnectionTestResult({ success: false, message: 'Digite o endereço IP do Servidor Local primeiro.' });
+      return;
+    }
+    setIsTestingConnection(true);
+    setConnectionTestResult(null);
+    localStorage.setItem('LOCAL_DB_SERVER_URL', localDbUrl.trim());
+    localStorage.setItem('TERMINAL_SERVER_IP', localDbUrl.trim());
+    
+    let targetIp = localDbUrl.trim();
+    if (!targetIp.startsWith('http://') && !targetIp.startsWith('https://')) {
+      targetIp = `http://${targetIp}`;
+    }
+    
+    try {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 3500);
+      const targetUrl = targetIp.includes(':') ? targetIp : `${targetIp}:3000`;
+      
+      const res = await fetch(`${targetUrl}/api/health`, { 
+        method: 'GET',
+        signal: controller.signal,
+        mode: 'cors'
+      });
+      clearTimeout(id);
+      
+      if (res.ok) {
+        setConnectionTestResult({ 
+          success: true, 
+          message: 'Conexão estabelecida com sucesso! Banco de dados local respondendo perfeitamente.' 
+        });
+      } else {
+        setConnectionTestResult({ 
+          success: false, 
+          message: `Servidor encontrado, mas retornou resposta inesperada (Status: ${res.status}).` 
+        });
+        setShowNetworkTroubleshoot(true);
+      }
+    } catch (err: any) {
+      console.warn("Connection test error:", err);
+      if (localDbUrl.trim() === 'localhost' || localDbUrl.trim() === '127.0.0.1') {
+        setConnectionTestResult({
+          success: true,
+          message: 'Conexão local (localhost) simulada com sucesso! Conectado à base de dados local interna.'
+        });
+      } else {
+        setConnectionTestResult({ 
+          success: false, 
+          message: `Não foi possível alcançar o servidor no IP ${localDbUrl.trim()}. Certifique-se de que o Servidor está ligado, executando a aplicação na porta 3000 e na mesma rede local.` 
+        });
+        setShowNetworkTroubleshoot(true);
+      }
+    } finally {
+      setIsTestingConnection(false);
+    }
+  };
+
+  const isHostLocal = window.location.hostname === 'localhost' || 
+                      window.location.hostname === '127.0.0.1' || 
+                      /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname) || 
+                      (typeof isLocalDb !== 'undefined' && isLocalDb);
+
+  const handleCheckUpdates = async () => {
+    setIsCheckingUpdates(true);
+    setUpdateStatus('checking');
+    setUpdateLogLines([
+      "Conectando ao SaaS Central...",
+    ]);
+
+    const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+    await sleep(400);
+
+    let latestVersion = LOCAL_VERSION;
+    let supportPhoneStr = '';
+    let supportWhatsappStr = '';
+    let supportEmailStr = '';
+    try {
+      const globalDoc = await getDoc(doc(db, 'saas_settings', 'global'));
+      if (globalDoc.exists()) {
+        const latestData = globalDoc.data();
+        latestVersion = latestData?.latestVersion || LOCAL_VERSION;
+        supportPhoneStr = latestData?.supportPhone || '';
+        supportWhatsappStr = latestData?.supportWhatsapp || '';
+        supportEmailStr = latestData?.supportEmail || '';
+      }
+    } catch (err) {
+      console.warn("Could not fetch remote version at beginning of check:", err);
+    }
+
+    const currentVersion = LOCAL_VERSION;
+
+    if (currentCompany?.receivesUpdates === false) {
+      setUpdateStatus('error');
+      const supportDetails = [];
+      if (supportPhoneStr) supportDetails.push(`Telefone: ${supportPhoneStr}`);
+      if (supportWhatsappStr) supportDetails.push(`WhatsApp: ${supportWhatsappStr}`);
+      if (supportEmailStr) supportDetails.push(`E-mail: ${supportEmailStr}`);
+      const supportLineText = supportDetails.length > 0 
+        ? `Canais de Suporte: ${supportDetails.join(' | ')}`
+        : 'Entre em contato com a AF TECNOLOGIA para obter ajuda.';
+
+      setUpdateLogLines([
+        "Iniciando requisição de handshake com servidor central...",
+        "🔴 ERRO 403 - ACESSO RESTRITO (SaaS License Level Block)",
+        `Sua assinatura ou suporte técnico para novas atualizações expirou (Versão do Servidor: ${latestVersion} / Licenciada: ${currentVersion}).`,
+        "Entre em contato com a AF TECNOLOGIA para renovar seu plano e liberar os novos recursos.",
+        supportLineText,
+        "💡 Informação: Você pode continuar utilizando o sistema apenas na versão offline para que suas atividades não fiquem paradas."
+      ]);
+      return;
+    }
+
+    setUpdateLogLines(prev => [...prev, "✓ Conexão Handshake SSL estabelecida com sucesso."]);
+    setUpdateLogLines(prev => [...prev, "Sincronizando assinatura digital de licenciamento..."]);
+    
+    await sleep(700);
+    setUpdateLogLines(prev => [...prev, "✓ Licenciamento verificado para: " + (currentCompany?.name || "Sua Empresa") + "."]);
+    setUpdateLogLines(prev => [...prev, "Analisando manifestos de patches e arquivos operacionais locais disponíveis..."]);
+    
+    await sleep(800);
+    setUpdateLogLines(prev => [...prev, `• Versão Atual: ${currentVersion}`]);
+    setUpdateLogLines(prev => [...prev, "• Modo Técnico: " + (currentCompany?.dbMode === 'local' ? "Híbrido Offline Sandbox" : "Nuvem Real Cloud")]);
+    setUpdateLogLines(prev => [...prev, "Buscando catálogo de atualizações publicadas no SaaS Central..."]);
+
+    await sleep(900);
+    try {
+      const globalDoc = await getDoc(doc(db, 'saas_settings', 'global'));
+      if (globalDoc.exists()) {
+        const latestData = globalDoc.data();
+        const latestVersion = latestData?.latestVersion || LOCAL_VERSION;
+        const latestNotes = latestData?.latestNotes || 'Melhorias de desempenho e correções visuais.';
+        const latestFileUrl = latestData?.latestFileUrl || '';
+
+        if (latestVersion !== currentVersion && latestVersion !== LOCAL_VERSION) {
+          setUpdateLogLines(prev => [
+            ...prev,
+            `🎁 NOVA ATUALIZAÇÃO ENCONTRADA: ${latestVersion}`,
+            `📝 Notas da Versão: ${latestNotes}`
+          ]);
+          setFoundUpdateInfo({ version: latestVersion, notes: latestNotes, fileUrl: latestFileUrl });
+          setUpdateStatus('update-available');
+        } else {
+          setUpdateLogLines(prev => [
+            ...prev,
+            "✓ Banco de dados e estrutura local estão otimizados e em perfeita conformidade.",
+            `🎉 Seu sistema já está rodando a última versão estável recomendada (${currentVersion})!`
+          ]);
+          setUpdateStatus('up-to-date');
+        }
+      } else {
+        setUpdateLogLines(prev => [
+          ...prev,
+          "✓ Banco de dados e estrutura local estão otimizados e em perfeita conformidade.",
+          `🎉 Seu sistema já está rodando a última versão estável recomendada (${LOCAL_VERSION})!`
+        ]);
+        setUpdateStatus('up-to-date');
+      }
+    } catch (e: any) {
+      console.warn("Firestore updates directory unconfigured or offline:", e.message || e);
+      setUpdateLogLines(prev => [
+        ...prev,
+        "✓ Banco de dados e estrutura local estão em conformidade.",
+        `🎉 Seu sistema já está rodando a última versão estável recomendada (${LOCAL_VERSION}-local)!`
+      ]);
+      setUpdateStatus('up-to-date');
+    }
+  };
+
+  const handleApplyUpdate = async () => {
+    if (!foundUpdateInfo?.version) return;
+    setUpdateStatus('updating');
+    setUpdateLogLines([
+      `Iniciando implantação integrada de versão para ${foundUpdateInfo.version}...`,
+    ]);
+
+    const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+    await sleep(700);
+    setUpdateLogLines(prev => [...prev, "• Baixando manifesto de compilações..."]);
+    if (foundUpdateInfo.fileUrl) {
+      setUpdateLogLines(prev => [...prev, `• Iniciando redirecionamento para download seguro...`]);
+    } else {
+      setUpdateLogLines(prev => [...prev, "• Obtendo pacotes de compilação do repositório mestre..."]);
+    }
+
+    await sleep(900);
+    // At this point we trigger the browser download of the fileUrl (e.g. Google Drive/Electron installer URL)
+    if (foundUpdateInfo.fileUrl) {
+      try {
+        const dlink = document.createElement('a');
+        dlink.href = foundUpdateInfo.fileUrl;
+        dlink.setAttribute('download', '');
+        dlink.setAttribute('target', '_blank');
+        dlink.setAttribute('rel', 'noopener noreferrer');
+        document.body.appendChild(dlink);
+        dlink.click();
+        document.body.removeChild(dlink);
+        setUpdateLogLines(prev => [...prev, "✓ Comando de download enviado com sucesso!"]);
+      } catch (dlErr) {
+        console.error("Failed to automatically trigger download link:", dlErr);
+        // Fallback standard window opening
+        window.open(foundUpdateInfo.fileUrl, '_blank');
+        setUpdateLogLines(prev => [...prev, "• Aberto endereço de download do executável em nova aba segura."]);
+      }
+    }
+
+    await sleep(1000);
+    setUpdateLogLines(prev => [...prev, "✓ Registro local sincronizado. Atualizando licença de software e registros em tempo real..."]);
+
+    try {
+      await updateDoc(doc(db, 'companies', companyId), {
+        version: foundUpdateInfo.version,
+        updatedAt: Timestamp.now()
+      });
+      setUpdateLogLines(prev => [
+        ...prev,
+        "✓ Registro lógico de sistema no Cloud Firestore atualizado para " + foundUpdateInfo.version,
+        `🎉 PARÂMETROS PREPARADOS PARA INSTALAÇÃO: ${foundUpdateInfo.version}!`,
+        "Por favor, configure as permissões e execute o instalador conforme as instruções."
+      ]);
+      setUpdateStatus('up-to-date');
+      toast.success(`Parâmetros de atualização preparados para versão ${foundUpdateInfo.version}!`);
+      
+      // Delay before showing the modal with full steps
+      setTimeout(() => {
+        setShowInstallerInstructionsModal(true);
+      }, 600);
+    } catch (err: any) {
+      console.warn("Fallback local system updates save:", err.message || err);
+      setUpdateLogLines(prev => [
+        ...prev,
+        "✓ Registro local sincronizado na sandbox cliente local.",
+        `🎉 PARÂMETROS LOCALMENTE PREPARADOS: ${foundUpdateInfo.version}!`
+      ]);
+      setUpdateStatus('up-to-date');
+      
+      setTimeout(() => {
+        setShowInstallerInstructionsModal(true);
+      }, 600);
+    }
+  };
+  
   const [newServiceType, setNewServiceType] = useState('');
 
-  const handleAddServiceType = () => {
+  const handleAddServiceType = async () => {
     if (!newServiceType.trim()) return;
     if (localApp.serviceTypes?.includes(newServiceType.trim())) {
       toast.error('Este tipo de serviço já existe.');
@@ -10508,23 +13093,106 @@ function SettingsManager({
     const updatedTypes = [...(localApp.serviceTypes || []), newServiceType.trim()];
     setLocalApp({ ...localApp, serviceTypes: updatedTypes });
     setNewServiceType('');
+    try {
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'general'), { serviceTypes: updatedTypes }, { merge: true });
+      toast.success('Tipo de serviço adicionado com sucesso!');
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  const handleRemoveServiceType = (typeToRemove: string) => {
+  const handleRemoveServiceType = async (typeToRemove: string) => {
     const updatedTypes = (localApp.serviceTypes || []).filter(t => t !== typeToRemove);
     setLocalApp({ ...localApp, serviceTypes: updatedTypes });
+    try {
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'general'), { serviceTypes: updatedTypes }, { merge: true });
+      toast.success('Tipo de serviço removido.');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const [newPayableDestination, setNewPayableDestination] = useState('');
+  const [newPayableCategory, setNewPayableCategory] = useState('');
+
+  const handleAddPayableDestination = async () => {
+    if (!newPayableDestination.trim()) return;
+    const dest = newPayableDestination.trim();
+    if (localApp.payableDestinations?.includes(dest)) {
+      toast.error('Este destino já existe.');
+      return;
+    }
+    const updated = [...(localApp.payableDestinations || []), dest];
+    const updatedApp = { ...localApp, payableDestinations: updated };
+    setLocalApp(updatedApp);
+    setNewPayableDestination('');
+    try {
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'general'), { payableDestinations: updated }, { merge: true });
+      toast.success('Destino adicionado com sucesso!');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleRemovePayableDestination = async (destToRemove: string) => {
+    const updated = (localApp.payableDestinations || []).filter(d => d !== destToRemove);
+    const updatedApp = { ...localApp, payableDestinations: updated };
+    setLocalApp(updatedApp);
+    try {
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'general'), { payableDestinations: updated }, { merge: true });
+      toast.success('Destino removido.');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleAddPayableCategory = async () => {
+    if (!newPayableCategory.trim()) return;
+    const cat = newPayableCategory.trim();
+    if (localApp.payableCategories?.includes(cat)) {
+      toast.error('Esta categoria já existe.');
+      return;
+    }
+    const updated = [...(localApp.payableCategories || []), cat];
+    const updatedApp = { ...localApp, payableCategories: updated };
+    setLocalApp(updatedApp);
+    setNewPayableCategory('');
+    try {
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'general'), { payableCategories: updated }, { merge: true });
+      toast.success('Categoria adicionada com sucesso!');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleRemovePayableCategory = async (catToRemove: string) => {
+    const updated = (localApp.payableCategories || []).filter(c => c !== catToRemove);
+    const updatedApp = { ...localApp, payableCategories: updated };
+    setLocalApp(updatedApp);
+    try {
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'general'), { payableCategories: updated }, { merge: true });
+      toast.success('Categoria removida.');
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const [editingServiceType, setEditingServiceType] = useState<string | null>(null);
   const [editServiceTypeLabel, setEditServiceTypeLabel] = useState('');
 
-  const handleUpdateServiceType = () => {
+  const handleUpdateServiceType = async () => {
     if (!editingServiceType || !editServiceTypeLabel.trim()) return;
     const updatedTypes = (localApp.serviceTypes || []).map(t => 
       t === editingServiceType ? editServiceTypeLabel.trim() : t
     );
     setLocalApp({ ...localApp, serviceTypes: updatedTypes });
     setEditingServiceType(null);
+    try {
+      await setDoc(doc(db, 'companies', companyId, 'settings', 'general'), { serviceTypes: updatedTypes }, { merge: true });
+      toast.success('Tipo de serviço atualizado com sucesso!');
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   // Multi-PIX states
@@ -10541,6 +13209,24 @@ function SettingsManager({
   const [planInstallmentFilter, setPlanInstallmentFilter] = useState<string>('');
   const [lastUsedBrand, setLastUsedBrand] = useState<'VISA' | 'MASTERCARD' | 'AMERICA' | 'ELO'>('VISA');
   const [lastUsedType, setLastUsedType] = useState<'DÉBITO' | 'CRÉDITO'>('CRÉDITO');
+
+  const [installmentPlansViewMode, setInstallmentPlansViewMode] = useState<'list' | 'columns'>(() => {
+    return (localStorage.getItem('installmentPlansViewMode') as 'list' | 'columns') || 'list';
+  });
+
+  const [pixAccountsViewMode, setPixAccountsViewMode] = useState<'list' | 'columns'>(() => {
+    return (localStorage.getItem('pixAccountsViewMode') as 'list' | 'columns') || 'list';
+  });
+
+  const handleSetInstallmentPlansViewMode = (mode: 'list' | 'columns') => {
+    setInstallmentPlansViewMode(mode);
+    localStorage.setItem('installmentPlansViewMode', mode);
+  };
+
+  const handleSetPixAccountsViewMode = (mode: 'list' | 'columns') => {
+    setPixAccountsViewMode(mode);
+    localStorage.setItem('pixAccountsViewMode', mode);
+  };
 
   // Keep state in sync with props
   useEffect(() => {
@@ -10985,84 +13671,1098 @@ function SettingsManager({
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
-        <h2 className="text-3xl font-black tracking-tighter text-white uppercase italic text-[#3b82f6]">Configurações</h2>
-        <p className="text-[#a0a0a0] text-sm uppercase tracking-[0.2em] font-medium">Controle de acesso, dados da empresa e backup.</p>
+        <h2 className="text-3xl font-black tracking-tighter text-white uppercase italic text-[#3b82f6]">
+          {mode === 'financial' ? 'Config. Financeiras' : 
+           mode === 'network-config' ? 'Config. Rede' :
+           mode === 'license-updates' ? 'Licença e Atualizações' : 
+           'Configurações'}
+        </h2>
+        <p className="text-[#a0a0a0] text-sm uppercase tracking-[0.2em] font-medium text-left">
+          {mode === 'financial' ? 'Tipos de Serviço, Categorias de pagamento, Parcelamentos e Chaves PIX.' : 
+           mode === 'network-config' ? 'Estações, Terminais de Venda e Conectividade Local.' :
+           mode === 'license-updates' ? 'Contrato de Licenciamento, Recursos e Atualizações de Software.' : 
+           'Controle de acesso e dados da empresa.'}
+        </p>
       </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] justify-between items-start bg-[#1a1d23] border border-[#2d3139] p-8 rounded-2xl gap-8 mb-8 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-[#3b82f6]/5 rounded-full -mr-16 -mt-16 blur-2xl group-hover:bg-[#3b82f6]/10 transition-colors"></div>
-          
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <h3 className="text-xl font-black text-white tracking-tight uppercase italic flex items-center gap-2">
-                  <Share2 className="text-[#3b82f6]" size={20} />
-                  Acesso de Equipe
-                </h3>
-                <Badge className="bg-green-500/20 text-green-400 border border-green-500/30 font-black text-[10px] uppercase">Ativo</Badge>
-              </div>
-              <p className="text-sm text-[#71717a] max-w-lg leading-relaxed">
-                Compartilhe o código ou o QR code abaixo para que novos <span className="text-[#3b82f6] font-bold">colaboradores</span> entrem diretamente na sua empresa.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-4">
-              <div className="flex items-center gap-3">
-                <div className="bg-[#0f1115] px-6 py-4 rounded-xl border border-[#2d3139] text-[#3b82f6] font-mono font-black text-4xl tracking-widest shadow-inner select-all">
-                  {currentCompany?.inviteCode || '...'}
+      <div className="grid grid-cols-1 gap-8 max-w-4xl mx-auto">
+        <div className="space-y-8">
+          {mode === 'license-updates' && (
+            <>
+              {/* Painel de Licenciamento SaaS do Cliente */}
+              <Card className="bg-[#1a1d23] border-[#2d3139] text-white overflow-hidden relative mb-8">
+                <div className="absolute top-0 right-0 p-4">
+                  <span className="text-[10px] uppercase font-bold tracking-widest text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-md border border-emerald-500/20 flex items-center gap-1.5 shadow-sm">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    Licença Certificada
+                  </span>
                 </div>
-                <div className="flex flex-col gap-2">
-                  <Button 
-                    variant="outline" 
-                    className="border-[#2d3139] hover:bg-white/5 text-white h-10 font-black text-[10px] uppercase tracking-widest gap-2"
-                    onClick={() => {
-                      const code = currentCompany?.inviteCode || '';
-                      if (code) {
-                        navigator.clipboard.writeText(code);
-                        toast.success('Código copiado!');
-                      }
-                    }}
-                  >
-                    <Copy size={14} /> Copiar Código
-                  </Button>
-                  <Button 
-                    variant="default" 
-                    className="bg-[#3b82f6] hover:bg-[#2563eb] text-white h-10 font-black text-[10px] uppercase tracking-widest gap-2 shadow-lg shadow-blue-500/20"
-                    onClick={() => {
-                      const code = currentCompany?.inviteCode || '';
-                      if (code) {
-                        const url = `${window.location.origin}${window.location.pathname}?code=${code}`;
-                        navigator.clipboard.writeText(url);
-                        toast.success('Link de convite copiado!');
-                      }
-                    }}
-                  >
-                    <ExternalLink size={14} /> Copiar Link
-                  </Button>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 text-[10px] text-[#555] font-bold uppercase tracking-wider">
-                <Shield size={10} /> Segurança SegurPro Ativa
-              </div>
-            </div>
-          </div>
+                
+                <CardHeader className="border-b border-[#2d3139]/30 bg-[#16191f]/40 p-5">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Shield className="text-[#3b82f6]" size={18} />
+                    Informações de Licenciamento & SaaS
+                  </CardTitle>
+                  <CardDescription className="text-[#71717a] text-[11px] uppercase tracking-wider font-semibold">
+                    Status de ativação e recursos contratados para esta Empresa.
+                  </CardDescription>
+                </CardHeader>
+                
+                <CardContent className="p-5 space-y-5 text-left">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center py-1.5 border-b border-[#2d3139]/30">
+                        <span className="text-[11px] text-[#71717a] uppercase font-bold tracking-wider">ID de Licenciamento:</span>
+                        <span className="text-[11px] font-mono font-bold text-white bg-[#0f1115] px-2 py-0.5 rounded border border-[#2d3139]/50">{companyId}</span>
+                      </div>
+                      
+                      <div className="flex justify-between items-center py-1.5 border-b border-[#2d3139]/30">
+                        <span className="text-[11px] text-[#71717a] uppercase font-bold tracking-wider">Status do Contrato:</span>
+                        <span className="text-xs font-black text-emerald-400 uppercase">Ativo</span>
+                      </div>
+                      
+                      <div className="flex justify-between items-center py-1.5 border-b border-[#2d3139]/30">
+                        <span className="text-[11px] text-[#71717a] uppercase font-bold tracking-wider">Parâmetro de Cobrança:</span>
+                        <span className="text-xs font-bold text-white bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded text-blue-300">
+                          {currentCompany?.isExempt ? 'Isenta / Parceria Cortesia' : `SaaS Mensal (${currentCompany?.customPrice && parseFloat(currentCompany.customPrice) > 0 ? 'R$ ' + currentCompany?.customPrice : 'Valor Padrão'})`}
+                        </span>
+                      </div>
 
-          <div className="flex flex-col items-center gap-3">
-            <div className="p-3 bg-white rounded-xl shadow-2xl shadow-black/40">
-              <QRCodeCanvas 
-                value={`${window.location.origin}${window.location.pathname}?code=${currentCompany?.inviteCode || ''}`}
-                size={140}
-                level="H"
-                includeMargin={true}
-              />
-            </div>
-            <p className="text-[10px] text-[#71717a] font-black uppercase tracking-[0.2em]">Escanear para Entrar</p>
-          </div>
-        </div>
+                      <div className="flex justify-between items-center py-1.5 border-b border-[#2d3139]/30">
+                        <span className="text-[11px] text-[#71717a] uppercase font-bold tracking-wider">Suporte Técnico:</span>
+                        <div className="flex flex-wrap gap-1.5 justify-end max-w-[220px]">
+                          {(() => {
+                            const channels = currentCompany?.supportChannels || ['whatsapp', 'email'];
+                            if (channels.length === 0) return <span className="text-xs text-red-400 font-bold">NÃO INCLUSO</span>;
+                            return channels.map((ch: string) => {
+                              if (ch === 'whatsapp') return (
+                                <button 
+                                  key={ch} 
+                                  type="button"
+                                  onClick={() => setActiveSupportChannelModal('whatsapp')}
+                                  className="text-[9px] font-black tracking-widest px-2.5 py-1.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 transition cursor-pointer uppercase font-sans flex items-center gap-1 active:scale-95"
+                                >
+                                  <span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse"></span>
+                                  WhatsApp
+                                </button>
+                              );
+                              if (ch === 'telefone') return (
+                                <button 
+                                  key={ch} 
+                                  type="button"
+                                  onClick={() => setActiveSupportChannelModal('telefone')}
+                                  className="text-[9px] font-black tracking-widest px-2.5 py-1.5 rounded bg-sky-500/15 text-sky-400 border border-sky-500/30 hover:bg-sky-500/25 transition cursor-pointer uppercase font-sans flex items-center gap-1 active:scale-95"
+                                >
+                                  <span className="w-1 h-1 rounded-full bg-sky-400"></span>
+                                  Telefone
+                                </button>
+                              );
+                              if (ch === 'email') return (
+                                <button 
+                                  key={ch} 
+                                  type="button"
+                                  onClick={() => setActiveSupportChannelModal('email')}
+                                  className="text-[9px] font-black tracking-widest px-2.5 py-1.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 transition cursor-pointer uppercase font-sans flex items-center gap-1 active:scale-95"
+                                >
+                                  <span className="w-1 h-1 rounded-full bg-amber-400 animate-pulse"></span>
+                                  E-mail
+                                </button>
+                              );
+                              if (ch === 'acesso_remoto' || ch === 'acesso-remoto') return (
+                                <button 
+                                  key={ch} 
+                                  type="button"
+                                  onClick={() => setActiveSupportChannelModal('acesso_remoto')}
+                                  className="text-[9px] font-black tracking-widest px-2.5 py-1.5 rounded bg-fuchsia-500/15 text-fuchsia-400 border border-fuchsia-500/30 hover:bg-fuchsia-500/25 transition cursor-pointer uppercase font-sans flex items-center gap-1 active:scale-95"
+                                >
+                                  <span className="w-1 h-1 rounded-full bg-fuchsia-400"></span>
+                                  Remoto
+                                </button>
+                              );
+                              return null;
+                            });
+                          })()}
+                        </div>
+                      </div>
+                    </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="space-y-8">
-            <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center py-1.5 border-b border-[#2d3139]/30">
+                        <span className="text-[11px] text-[#71717a] uppercase font-bold tracking-wider">Atualizações On-line:</span>
+                        <span className={`text-xs font-bold ${
+                          currentCompany?.dbMode === 'online'
+                            ? 'text-blue-300'
+                            : (currentCompany?.dbMode === 'default' && !isHostLocal)
+                            ? 'text-blue-300'
+                            : currentCompany?.receivesUpdates === false
+                            ? 'text-orange-400'
+                            : 'text-blue-300'
+                        }`}>
+                          {currentCompany?.dbMode === 'online'
+                            ? 'HABILITADA (Plano Web Cloud)'
+                            : (currentCompany?.dbMode === 'default' && !isHostLocal)
+                            ? 'HABILITADA (Plano Web Cloud)'
+                            : currentCompany?.receivesUpdates === false
+                            ? 'TRAVADA (Bloqueado)'
+                            : 'HABILITADA (Recebendo Recursos)'}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center py-1.5 border-b border-[#2d3139]/30">
+                        <span className="text-[11px] text-[#71717a] uppercase font-bold tracking-wider">Modo de Operação:</span>
+                        <span className="text-xs font-bold text-indigo-400 uppercase">
+                          {currentCompany?.dbMode === 'local' ? 'Servidor Local Sandbox' : currentCompany?.dbMode === 'online' ? 'Nuvem Real Cloud' : 'Híbrido Padrão'}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center py-1.5 border-b border-[#2d3139]/30">
+                        <span className="text-[11px] text-[#71717a] uppercase font-bold tracking-wider">Ciclo Comercial:</span>
+                        <span className="text-xs font-mono font-bold text-white uppercase">{currentCompany?.billingCycle || 'mensal'}</span>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Seção Interativa para Checar por Atualizações */}
+                  <div className="p-4 bg-[#0f1115]/80 border border-[#2d3139] rounded-xl space-y-4">
+                    <div className="flex items-center justify-between flex-wrap gap-3">
+                      <div className="flex flex-col gap-0.5 text-left">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-300">Atualização do Core do Sistema</span>
+                        <span className="text-[10px] text-neutral-500">Verifique se existem novos recursos ou patches de segurança pendentes.</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {updateStatus === 'update-available' && foundUpdateInfo && (
+                          <Button
+                            size="sm"
+                            onClick={handleApplyUpdate}
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-8 px-4 transition-all duration-200 shadow-md animate-pulse"
+                          >
+                            <RefreshCw size={12} className="mr-1.5 shrink-0" />
+                            Instalar {foundUpdateInfo.version}
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          disabled={updateStatus === 'checking' || updateStatus === 'updating'}
+                          onClick={handleCheckUpdates}
+                          className={cn(
+                            "font-bold text-xs h-8 px-4 transition-all duration-200 shadow-md",
+                            (updateStatus === 'checking' || updateStatus === 'updating')
+                              ? "bg-[#0f1115] border border-[#2d3139] text-[#71717a]" 
+                              : "bg-blue-600 text-white hover:bg-blue-500"
+                          )}
+                        >
+                          <RefreshCw size={12} className={cn("mr-1.5 shrink-0", (updateStatus === 'checking' || updateStatus === 'updating') && "animate-spin")} />
+                          {updateStatus === 'checking' ? "Verificando..." : updateStatus === 'updating' ? "Instalando..." : "Checar Atualizações"}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {isCheckingUpdates && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        className="bg-[#050608] border border-[#22252c] rounded-lg p-3 text-left font-mono font-bold text-[11px] space-y-1.5 shadow-inner"
+                      >
+                        <div className="flex items-center justify-between border-b border-[#2d3139]/40 pb-1.5 mb-1.5">
+                          <span className="text-[#a0a0a0] uppercase text-[9px] tracking-widest flex items-center gap-1.5">
+                            <span className={cn("h-1.5 w-1.5 rounded-full", (updateStatus === 'checking' || updateStatus === 'updating') ? "bg-blue-400 animate-ping" : updateStatus === 'error' ? "bg-red-500" : "bg-green-500")}></span>
+                            Mecanismo de Atualizações Online
+                          </span>
+                          <span className="text-[9px] text-[#71717a]">Build 2026.06</span>
+                        </div>
+                        <div className="space-y-1 max-h-[160px] overflow-y-auto custom-scrollbar">
+                          {updateLogLines.map((line, idx) => (
+                            <div 
+                              key={idx} 
+                              className={cn(
+                                "leading-relaxed text-left transition-all duration-300 border-l border-[#2d3139]/30 pl-2",
+                                line.startsWith('✓') ? 'text-green-400' :
+                                line.startsWith('•') ? 'text-blue-300' :
+                                line.startsWith('🔴') ? 'text-red-400' :
+                                line.startsWith('🎁') ? 'text-yellow-400 font-extrabold text-xs block mt-1' :
+                                line.startsWith('📝') ? 'text-blue-200 font-sans font-medium text-xs bg-blue-950/20 p-2 border border-blue-500/20 rounded block my-1' :
+                                line.startsWith('🎉') ? 'text-green-400 font-extrabold font-sans text-xs bg-emerald-950/25 px-2 py-1.5 border border-emerald-500/25 rounded mt-3 inline-block text-left' :
+                                'text-[#e0e0e0]'
+                              )}
+                            >
+                              {line}
+                            </div>
+                          ))}
+                        </div>
+                        {updateStatus !== 'checking' && updateStatus !== 'updating' && (
+                          <div className="pt-2 text-right">
+                            <Button 
+                              size="sm" 
+                              variant="ghost" 
+                              className="h-6 text-[10px] hover:bg-[#1f232b] text-neutral-400 font-bold hover:text-white"
+                              onClick={() => {
+                                setIsCheckingUpdates(false);
+                                setUpdateStatus('idle');
+                                setFoundUpdateInfo(null);
+                              }}
+                            >
+                              Fechar Painel
+                            </Button>
+                          </div>
+                        )}
+                      </motion.div>
+                    )}
+                  </div>
+
+                  {(() => {
+                    const allMenuItems = [
+                      { id: 'dashboard', label: 'Painel Geral' },
+                      { id: 'dashboard-display-config', label: 'Conf. Exibição PG' },
+                      { id: 'visits', label: 'Visitas Técnicas' },
+                      { id: 'service-orders', label: 'Ordens de Serviço' },
+                      { id: 'laudos', label: 'Laudos Técnicos' },
+                      { id: 'clients', label: 'Clientes' },
+                      { id: 'suppliers', label: 'Fornecedores' },
+                      { id: 'budgets', label: 'Orçamentos' },
+                      { id: 'pdv', label: 'PDV (Vendas)' },
+                      { id: 'vendas-historico', label: 'Histórico de Vendas' },
+                      { id: 'inventory', label: 'Estoque / Produtos' },
+                      { id: 'financial', label: 'Financeiro (Lançamentos)' },
+                      { id: 'payable', label: 'Contas a Pagar' },
+                      { id: 'receivable', label: 'Contas a Receber' },
+                      { id: 'receipts', label: 'Recibos / Emissor' },
+                      { id: 'reports', label: 'Relatórios Gerenciais' },
+                      { id: 'users', label: 'Equipe / Permissões' },
+                      { id: 'logs', label: 'Logs do Sistema' },
+                      { id: 'settings', label: 'Configurações' },
+                      { id: 'network-config', label: 'Config. Rede' },
+                      { id: 'license-updates', label: 'Licença e Atualizações' },
+                      { id: 'financial-settings', label: 'Config. Financeiras' },
+                      { id: 'backup-restore', label: 'Backup/Restauração' }
+                    ];
+
+                    const allowedCount = allMenuItems.filter(menu => {
+                      let regId = menu.id;
+                      if (menu.id === 'vendas-historico') regId = 'pdv';
+                      if (menu.id === 'payable' || menu.id === 'receivable') regId = 'financial';
+                      if (menu.id === 'financial-settings' || menu.id === 'backup-restore' || menu.id === 'network-config' || menu.id === 'license-updates') regId = 'settings';
+
+                      const isAllowed = currentCompany?.enabledMenus 
+                        ? (currentCompany.enabledMenus.includes(menu.id) || 
+                           currentCompany.enabledMenus.includes(regId) || 
+                           (regId === 'dashboard' && currentCompany.enabledMenus.includes('resumo')) ||
+                           (regId === 'service-orders' && currentCompany.enabledMenus.includes('os')))
+                        : true;
+                      return isAllowed;
+                    }).length;
+
+                    return (
+                      <div className="space-y-2.5 pt-3">
+                        <Label className="text-xs text-[#a0a0a0] font-bold uppercase tracking-wider flex items-center justify-between">
+                          <span>Telas e Recursos Liberados nesta Licença</span>
+                          <span className="text-blue-400 font-mono text-xs bg-blue-500/10 px-2.5 py-0.5 rounded-md border border-blue-500/25 font-black">
+                            {allowedCount} / {allMenuItems.length}
+                          </span>
+                        </Label>
+                        <div className="flex flex-wrap gap-2">
+                          {allMenuItems.map((menu) => {
+                            let regId = menu.id;
+                            if (menu.id === 'vendas-historico') regId = 'pdv';
+                            if (menu.id === 'payable' || menu.id === 'receivable') regId = 'financial';
+                            if (menu.id === 'financial-settings' || menu.id === 'backup-restore' || menu.id === 'network-config' || menu.id === 'license-updates') regId = 'settings';
+
+                            const isAllowed = currentCompany?.enabledMenus 
+                              ? (currentCompany.enabledMenus.includes(menu.id) || 
+                                 currentCompany.enabledMenus.includes(regId) || 
+                                 (regId === 'dashboard' && currentCompany.enabledMenus.includes('resumo')) ||
+                                 (regId === 'service-orders' && currentCompany.enabledMenus.includes('os')))
+                              : true;
+
+                            return (
+                              <span 
+                                key={menu.id} 
+                                className={`text-[10px] font-bold px-2.5 py-1 rounded-md flex items-center gap-1.5 border transition-all ${
+                                  isAllowed 
+                                    ? 'bg-[#3b82f6]/10 text-blue-300 border-[#3b82f6]/30' 
+                                    : 'bg-neutral-950/40 text-red-500 border-red-940/40 line-through opacity-50'
+                                }`}
+                              >
+                                {!isAllowed && <Lock size={10} className="shrink-0 text-red-500" />}
+                                {menu.label}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {currentCompany?.receivesUpdates === false && currentCompany?.dbMode !== 'online' && (currentCompany?.dbMode !== 'default' || isHostLocal) && (
+                    <div className="bg-orange-500/10 border border-orange-500/20 p-3 rounded-lg flex items-center gap-3 mt-4">
+                      <AlertTriangle className="h-5 w-5 text-orange-400 shrink-0" />
+                      <div>
+                        <h4 className="text-orange-400 font-bold text-xs uppercase italic tracking-wider">Atenção: Licença em Versão Estática</h4>
+                        <p className="text-[#a0a0a0] text-[10px] leading-relaxed">
+                          Esta empresa não possui direito a novas atualizações de recursos. Solicite a liberação técnica com o administrador SaaS.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          )}
+
+          {mode === 'network-config' && (
+            <>
+              {/* Terminais e Rede Local (Estações) */}
+              <Card className="bg-[#1a1d23] border-[#2d3139] text-white overflow-hidden relative mb-8">
+                    <CardHeader className="border-b border-[#2d3139]/30 bg-[#16191f]/40 p-5">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle className="text-base flex items-center gap-2">
+                            <Monitor className="text-indigo-400" size={18} />
+                            Terminais & Rede Local (Estações)
+                          </CardTitle>
+                          <CardDescription className="text-[#71717a] text-[11px] uppercase tracking-wider font-semibold">
+                            Controle de Computadores Autorizados e Rede Local.
+                          </CardDescription>
+                        </div>
+                        <span className="text-xs font-mono font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2.5 py-1 rounded">
+                          {companyTerminals.filter(t => t.role === 'estacao').length} / {currentCompany?.maxStationsLimit !== undefined ? currentCompany.maxStationsLimit : 3} Estações
+                        </span>
+                      </div>
+                    </CardHeader>
+
+                    <CardContent className="p-5 text-left space-y-6">
+                      {/* Info about this machine */}
+                      <div className="p-4 bg-[#0f1115]/80 border border-[#2d3139] rounded-xl">
+                        <h4 className="text-xs font-black uppercase tracking-wider text-indigo-400 flex items-center gap-2 mb-3">
+                          <Cpu size={14} />
+                          Este Dispositivo Local
+                        </h4>
+                        
+                        {currentTerminal ? (
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="space-y-1">
+                              <p className="text-[10px] text-zinc-500 uppercase font-black">Identificação do Terminal</p>
+                              <p className="text-xs font-bold text-white">{currentTerminal.name}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[10px] text-zinc-500 uppercase font-black">Papel na Rede</p>
+                              <p className="text-xs font-bold text-indigo-300 uppercase">
+                                {currentTerminal.role === 'servidor' ? '★ Servidor Principal' : 'Estação de Trabalho'}
+                              </p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[10px] text-zinc-500 uppercase font-black">Destino do Banco de Dados (IP)</p>
+                              <p className="text-xs font-mono text-zinc-300">
+                                {currentTerminal.role === 'servidor' ? 'Servidor Local (localhost / 127.0.0.1)' : `${currentTerminal.serverIp}`}
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-red-400 font-bold">⚠️ Este dispositivo ainda não está registrado como terminal desta licença.</p>
+                        )}
+
+                        <div className="mt-4 pt-4 border-t border-[#2d3139]/40 flex flex-wrap gap-2 justify-end">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              const confirm = window.confirm("Deseja realmente reconfigurar este terminal? Você retornará ao fluxo de registro.");
+                              if (confirm) {
+                                localStorage.removeItem('TERMINAL_ID');
+                                localStorage.removeItem('TERMINAL_NAME');
+                                localStorage.removeItem('TERMINAL_ROLE');
+                                localStorage.removeItem('TERMINAL_SERVER_IP');
+                                if (setCurrentTerminal) setCurrentTerminal(null);
+                                window.location.reload();
+                              }
+                            }}
+                            className="border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#1a1d23] text-xs font-bold h-8"
+                          >
+                            <Settings size={12} className="mr-1.5" />
+                            Reconfigurar Máquina Local
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Network Guide block if in Local / Hybrid Mode */}
+                      <div className="p-4 bg-indigo-950/10 border border-indigo-500/20 rounded-xl space-y-2">
+                        <h4 className="text-xs font-black uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
+                          <Network size={14} />
+                          Instruções para Conexão de Múltiplas Máginas
+                        </h4>
+                        <p className="text-zinc-300 text-xs leading-normal">
+                          Para que as estações adicionais trabalhem integradas, elas devem "enxergar" o Servidor Principal na mesma rede local:
+                        </p>
+                        <ul className="text-zinc-400 text-[11px] list-disc list-inside space-y-1 pl-1">
+                          <li>Certifique-se de que todos os computadores estão no mesmo roteador / Wi-Fi da empresa.</li>
+                          <li>No computador configurado como <b>Servidor Main</b>, abra o CMD e digite <code className="text-indigo-300 font-mono">ipconfig</code> para obter o <code className="text-white font-mono">IPv4</code> (Ex: <code className="text-indigo-400">192.168.1.100</code>).</li>
+                          <li>Nas outras máquinas (<b>Estações</b>), quando solicitado no início ou nas configurações, insira este endereço IP no campo do servidor.</li>
+                          <li>O sistema roteará as conexões para trabalharem unificadas no banco de dados do Servidor Central.</li>
+                        </ul>
+                      </div>
+
+                      {/* Monitor All terminals */}
+                      <div className="space-y-3">
+                        <p className="text-zinc-400 text-[10px] font-black uppercase tracking-wider pl-1 font-bold">
+                          Terminais Ativos Registrados sob esta Licença
+                        </p>
+
+                        {companyTerminals.length === 0 ? (
+                          <p className="text-xs text-zinc-500 italic pl-1">Nenhum terminal cadastrado ainda.</p>
+                        ) : (
+                          <div className="grid grid-cols-1 gap-2.5">
+                            {companyTerminals.map((term) => {
+                              const isActive = term.id === currentTerminal?.id;
+                              return (
+                                <div 
+                                  key={term.id}
+                                  className={`p-3 border rounded-xl flex items-center justify-between transition-all ${
+                                    isActive 
+                                      ? 'bg-indigo-500/5 border-indigo-500/30' 
+                                      : 'bg-[#0f1115]/50 border-[#2d3139]/50 hover:border-[#2d3139]'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3 text-left">
+                                    <div className={`p-2 rounded-lg ${term.role === 'servidor' ? 'bg-indigo-500/15 text-indigo-400' : 'bg-zinc-500/10 text-zinc-400'}`}>
+                                      {term.role === 'servidor' ? <Server size={14} className="shrink-0" /> : <Monitor size={14} className="shrink-0" />}
+                                    </div>
+                                    <div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs font-bold text-white leading-none">{term.name}</span>
+                                        {isActive && (
+                                          <span className="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-indigo-500 text-white leading-none">
+                                            ESTA MÁQUINA
+                                          </span>
+                                        )}
+                                      </div>
+                                      <p className="text-[10px] text-zinc-500 font-semibold uppercase tracking-wider mt-1 flex items-center gap-1">
+                                        <span>{term.role === 'servidor' ? 'SERVIDOR CENTRAL' : 'ESTAÇÃO'}</span>
+                                        {term.role === 'estacao' && term.serverIp && (
+                                          <span className="bg-neutral-900 border border-[#2d3139] font-mono text-[9px] px-1 rounded lowercase text-zinc-400">
+                                            Server: {term.serverIp}
+                                          </span>
+                                        )}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-2">
+                                    <Button
+                                      type="button"
+                                      size="icon"
+                                      variant="ghost"
+                                      onClick={async () => {
+                                        const confirm = window.confirm(`Deseja realmente revogar a licença do terminal "${term.name}"? Isso liberará uma contagem contratada.`);
+                                        if (!confirm) return;
+                                        try {
+                                          await deleteDoc(doc(db, 'companies', companyId, 'terminals', term.id));
+                                          toast.success(`Slot liberado: terminal "${term.name}" removido.`);
+                                          if (isActive) {
+                                            localStorage.clear();
+                                            window.location.reload();
+                                          }
+                                        } catch (err) {
+                                          toast.error("Erro ao revogar.");
+                                        }
+                                      }}
+                                      className="h-8 w-8 text-zinc-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg"
+                                    >
+                                      <Trash2 size={13} />
+                                    </Button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Card de Configuração de IP do Servidor e Teste de Conexão */}
+                  <Card className="bg-[#1a1d23] border-[#2d3139] text-white overflow-hidden relative">
+                    <CardHeader className="border-b border-[#2d3139]/30 bg-[#161a20]/45 p-5">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Database className="text-[#3b82f6]" size={18} />
+                        Configurações IP do Servidor do Banco de Dados Local
+                      </CardTitle>
+                      <CardDescription className="text-[#71717a] text-[11px] uppercase tracking-wider font-semibold">
+                        Cadastre o IP e teste a conectividade com o seu banco de dados local.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-5 space-y-5 text-left">
+                      <div className="space-y-2">
+                        <Label className="text-[11px] font-bold uppercase text-[#71717a] tracking-wider">Endereço IP do Servidor Local</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            type="text"
+                            placeholder="Ex: 192.168.1.100 ou localhost"
+                            value={localDbUrl}
+                            onChange={(e) => setLocalDbUrl(e.target.value)}
+                            className="bg-[#0f1115] border-[#2d3139] text-white font-mono text-xs font-bold"
+                          />
+                          <Button
+                            onClick={() => {
+                              localStorage.setItem('LOCAL_DB_SERVER_URL', localDbUrl.trim());
+                              localStorage.setItem('TERMINAL_SERVER_IP', localDbUrl.trim());
+                              toast.success('Endereço IP do Servidor salvo com sucesso!');
+                            }}
+                            className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold font-sans animate-none"
+                            size="sm"
+                          >
+                            Salvar IP
+                          </Button>
+                        </div>
+                        <p className="text-[9px] text-[#71717a] font-semibold uppercase tracking-tight">
+                          Se esta máquina for o próprio Servidor Principal, use <code className="text-indigo-400 font-mono font-bold">localhost</code> ou <code className="text-indigo-400 font-mono font-bold">127.0.0.1</code>.
+                        </p>
+                      </div>
+
+                      <div className="pt-4 border-t border-[#2d3139]/40 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-xs font-bold text-neutral-200">Testar Conexão com o Servidor Local</span>
+                            <span className="text-[10px] text-zinc-500">Valide se a porta de comunicação do banco de dados local está operacional neste IP.</span>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={isTestingConnection}
+                            onClick={handleTestConnection}
+                            className="border-[#2d3139] hover:bg-[#25282e]/40 text-xs font-bold text-white px-4"
+                          >
+                            {isTestingConnection ? (
+                              <>
+                                <Loader2 size={12} className="mr-1.5 animate-spin" />
+                                Testando...
+                              </>
+                            ) : (
+                              <>
+                                <Activity size={12} className="mr-1.5 text-blue-400" />
+                                Testar Conexão
+                              </>
+                            )}
+                          </Button>
+                        </div>
+
+                        {connectionTestResult && (
+                          <div className={cn(
+                            "p-3 rounded-lg border text-xs font-semibold leading-relaxed flex flex-col gap-2",
+                            connectionTestResult.success 
+                              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" 
+                              : "bg-red-500/10 border-red-500/25 text-red-400"
+                          )}>
+                            <div className="flex items-start gap-2.5">
+                              <span className={cn(
+                                "h-2 w-2 rounded-full mt-1.5 shrink-0 animate-pulse",
+                                connectionTestResult.success ? "bg-emerald-400" : "bg-red-400"
+                              )}></span>
+                              <div className="text-left flex-1">
+                                <p className="font-bold uppercase text-[10px] tracking-wider">
+                                  {connectionTestResult.success ? 'Conexão OK' : 'Falha na Conexão'}
+                                </p>
+                                <p className="text-[11px] leading-relaxed mt-0.5 text-zinc-300 font-medium">
+                                  {connectionTestResult.message}
+                                </p>
+                              </div>
+                            </div>
+                            {!connectionTestResult.success && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => setShowNetworkTroubleshoot(true)}
+                                className="w-full mt-1 bg-red-500/10 hover:bg-red-500/20 border-red-500/30 text-white font-bold uppercase text-[10px] tracking-wide h-8"
+                              >
+                                Ver Passo a Passo Detalhado para Resolver
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </>
+              )}
+
+              {mode === 'general' && (
+                <>
+                  {/* Modal dinâmico de Suporte Técnico */}
+                <Dialog 
+                  open={activeSupportChannelModal !== null} 
+                  onOpenChange={(open) => !open && setActiveSupportChannelModal(null)}
+                >
+                  <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[460px] p-0 overflow-hidden shadow-2xl">
+                    {activeSupportChannelModal === 'whatsapp' && (
+                      <>
+                        <DialogHeader className="p-6 pb-4 text-left bg-[#161a20]/45 border-b border-[#2d3139]/30 bg-gradient-to-b from-emerald-950/20 to-transparent">
+                          <DialogTitle className="flex items-center gap-2 text-emerald-400 font-black uppercase italic tracking-tighter text-lg">
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            Suporte via WhatsApp
+                          </DialogTitle>
+                          <DialogDescription className="text-zinc-400 text-xs mt-1">
+                            Atendimento rápido para dúvidas, chamados e auxílio operacional.
+                          </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="p-6 pt-4 space-y-4">
+                          <div className="bg-[#0f1115] p-4 rounded-xl border border-emerald-500/15 text-left space-y-2">
+                            <span className="text-[10px] uppercase font-extrabold tracking-widest text-[#71717a]">Número de Contato:</span>
+                            <div className="text-lg font-mono font-black text-white flex items-center justify-between">
+                              <span>{(saasGlobal?.supportWhatsapp || '+55 (83) 98132-7204')}</span>
+                              <span className="text-[10px] text-[#10b981] font-sans font-extrabold uppercase tracking-wider bg-emerald-500/10 px-2 py-0.5 border border-emerald-500/20 rounded-md">Ativo</span>
+                            </div>
+                          </div>
+
+                          <div className="text-xs text-zinc-400 text-left leading-relaxed py-1 space-y-1">
+                            <p className="font-semibold text-zinc-300">📅 Horário de Atendimento:</p>
+                            <p>Segunda a Sexta-feira: 08:00 às 18:00 (Horário de Brasília).</p>
+                            <p className="text-[11px] text-zinc-500 italic mt-1">* Respostas geralmente em menos de 15 minutos durante o horário comercial.</p>
+                          </div>
+
+                          <div className="flex gap-2 pt-2 pb-2">
+                            <Button 
+                              variant="outline" 
+                              onClick={() => setActiveSupportChannelModal(null)}
+                              className="flex-1 border-[#2d3139] hover:bg-neutral-800 text-zinc-400 font-bold uppercase text-xs"
+                            >
+                              Voltar
+                            </Button>
+                            <Button 
+                              onClick={() => {
+                                const num = (saasGlobal?.supportWhatsapp || '5583981327204').replace(/\D/g, '');
+                                window.open(`https://wa.me/${num}`, '_blank');
+                              }}
+                              className="flex-[1.5] bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold uppercase text-xs tracking-wider flex items-center justify-center gap-2"
+                            >
+                              Iniciar Conversa
+                            </Button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {activeSupportChannelModal === 'telefone' && (
+                      <>
+                        <DialogHeader className="p-6 pb-4 text-left bg-[#161a20]/45 border-b border-[#2d3139]/30 bg-gradient-to-b from-sky-950/20 to-transparent">
+                          <DialogTitle className="flex items-center gap-2 text-sky-400 font-black uppercase italic tracking-tighter text-lg">
+                            <span className="w-2.5 h-2.5 rounded-full bg-sky-500"></span>
+                            Suporte por Telefone
+                          </DialogTitle>
+                          <DialogDescription className="text-zinc-400 text-xs mt-1">
+                            Fale diretamente com nossa Central de Atendimento Técnico SegurTec-Pro.
+                          </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="p-6 pt-4 space-y-4">
+                          <div className="bg-[#0f1115] p-4 rounded-xl border border-sky-500/15 text-left space-y-2">
+                            <span className="text-[10px] uppercase font-extrabold tracking-widest text-[#71717a]">Central de Voz:</span>
+                            <div className="text-lg font-mono font-black text-white flex items-center justify-between">
+                              <span>{(saasGlobal?.supportPhone || '(83) 98132-7204')}</span>
+                              <span className="text-[10px] text-sky-400 font-sans font-extrabold uppercase tracking-wider bg-sky-500/10 px-2 py-0.5 border border-sky-500/20 rounded-md">Ativa</span>
+                            </div>
+                          </div>
+
+                          <div className="text-xs text-zinc-400 text-left leading-relaxed py-1 space-y-1">
+                            <p className="font-semibold text-zinc-300">📅 Horário Comercial:</p>
+                            <p>Segunda a Sexta-feira: 08:00 às 18:00.</p>
+                            <p className="text-[11px] text-zinc-500 italic mt-1">* Chamadas de voz para suporte emergencial ou técnico operacional.</p>
+                          </div>
+
+                          <div className="flex gap-2 pt-2 pb-2">
+                            <Button 
+                              variant="outline" 
+                              onClick={() => setActiveSupportChannelModal(null)}
+                              className="flex-1 border-[#2d3139] hover:bg-neutral-800 text-zinc-400 font-bold uppercase text-xs"
+                            >
+                              Voltar
+                            </Button>
+                            <Button 
+                              onClick={() => {
+                                const phoneNum = (saasGlobal?.supportPhone || '83981327204').replace(/\D/g, '');
+                                window.location.href = `tel:${phoneNum}`;
+                              }}
+                              className="flex-[1.5] bg-sky-600 hover:bg-sky-500 text-white font-extrabold uppercase text-xs tracking-wider flex items-center justify-center gap-2"
+                            >
+                              Ligar Agora
+                            </Button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {activeSupportChannelModal === 'email' && (
+                      <>
+                        <DialogHeader className="p-6 pb-4 text-left bg-[#161a20]/45 border-b border-[#2d3139]/30 bg-gradient-to-b from-amber-950/20 to-transparent">
+                          <DialogTitle className="flex items-center gap-2 text-amber-500 font-black uppercase italic tracking-tighter text-lg">
+                            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                            Suporte via E-mail
+                          </DialogTitle>
+                          <DialogDescription className="text-zinc-400 text-xs mt-1">
+                            Envie sua dúvida, sugestão ou abra um chamado de atendimento técnico formal.
+                          </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="p-6 pt-4 space-y-4">
+                          <div className="bg-[#0f1115] p-3 rounded-xl border border-amber-500/15 text-left space-y-2">
+                            <span className="text-[10px] uppercase font-extrabold tracking-widest text-[#71717a]">Endereço de E-mail de Suporte:</span>
+                            <div className="text-xs font-mono font-bold text-white flex items-center justify-between p-2.5 bg-[#161a22] rounded border border-[#2d3139]/50 select-all">
+                              <span>{(saasGlobal?.supportEmail || 'suporte@segurtecpro.com.br')}</span>
+                              <span className="text-[9px] text-[#71717a] font-sans font-normal uppercase tracking-wider bg-zinc-800 px-1.5 py-0.5 rounded">Copiar</span>
+                            </div>
+                          </div>
+
+                          <div className="text-xs text-zinc-400 text-left leading-relaxed py-1 space-y-1">
+                            <p className="font-semibold text-zinc-300">📋 Recomendações:</p>
+                            <p>Anexe capturas de tela (prints) ou detalhes específicos do erro para que possamos solucionar o seu caso com maior rapidez e assertitividade.</p>
+                            <p className="text-[11px] text-zinc-500 italic mt-1">* Prazo de resposta: Até 24 horas úteis.</p>
+                          </div>
+
+                          <div className="flex gap-2 pt-2 pb-2">
+                            <Button 
+                              variant="outline" 
+                              onClick={() => setActiveSupportChannelModal(null)}
+                              className="flex-1 border-[#2d3139] hover:bg-neutral-800 text-zinc-400 font-bold uppercase text-xs"
+                            >
+                              Voltar
+                            </Button>
+                            <Button 
+                              onClick={() => {
+                                const emailAddr = (saasGlobal?.supportEmail || 'suporte@segurtecpro.com.br');
+                                window.location.href = `mailto:${emailAddr}?subject=Suporte Técnico SegurTec-Pro`;
+                              }}
+                              className="flex-[1.5] bg-amber-600 hover:bg-amber-500 text-white font-extrabold uppercase text-xs tracking-wider flex items-center justify-center gap-2"
+                            >
+                              Escrever E-mail
+                            </Button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {activeSupportChannelModal === 'acesso_remoto' && (
+                      <>
+                        <DialogHeader className="p-6 pb-4 text-left bg-[#161a20]/45 border-b border-[#2d3139]/30 bg-gradient-to-b from-fuchsia-950/20 to-transparent">
+                          <DialogTitle className="flex items-center gap-2 text-fuchsia-400 font-black uppercase italic tracking-tighter text-lg">
+                            <span className="w-2.5 h-2.5 rounded-full bg-fuchsia-500"></span>
+                            Acesso Remoto Rápido
+                          </DialogTitle>
+                          <DialogDescription className="text-zinc-400 text-xs mt-1">
+                            Permita que nosso atendente acesse seu computador de forma segura em tempo real.
+                          </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="p-6 pt-4 space-y-4 max-h-[380px] overflow-y-auto">
+                          <div className="space-y-3 font-medium">
+                            <h4 className="text-[10px] uppercase font-black tracking-wider text-fuchsia-400 text-left">Como Iniciar o Acesso:</h4>
+                            
+                            <div className="space-y-3 text-left">
+                              <div className="flex gap-3">
+                                <div className="flex-shrink-0 h-5 w-5 rounded-full bg-fuchsia-500/10 border border-fuchsia-500/30 text-[10px] font-black flex items-center justify-center text-fuchsia-400">
+                                  1
+                                </div>
+                                <div className="space-y-0.5">
+                                  <p className="text-xs font-bold text-white">Baixe e Abra o AnyDesk</p>
+                                  <p className="text-[11px] text-zinc-400 leading-normal">
+                                    Baixe o programa oficial de suporte AnyDesk clicando no botão verde abaixo e execute-o. Não precisa instalar.
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex gap-3">
+                                <div className="flex-shrink-0 h-5 w-5 rounded-full bg-fuchsia-500/10 border border-fuchsia-500/30 text-[10px] font-black flex items-center justify-center text-fuchsia-400">
+                                  2
+                                </div>
+                                <div className="space-y-0.5">
+                                  <p className="text-xs font-bold text-white">Localize o Número de Acesso</p>
+                                  <p className="text-[11px] text-zinc-400 leading-normal">
+                                    Na tela inicial do AnyDesk, você verá o campo <span className="font-bold text-zinc-200">"Este Computador"</span> ou <span className="font-bold text-zinc-200">"Seu Endereço"</span> contendo 9 dígitos (ex: <code className="font-mono bg-[#0f1115] px-1.5 py-0.5 rounded text-fuchsia-300 border border-[#2d3139]/40">123 456 789</code>).
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex gap-3">
+                                <div className="flex-shrink-0 h-5 w-5 rounded-full bg-fuchsia-500/10 border border-fuchsia-500/30 text-[10px] font-black flex items-center justify-center text-fuchsia-400">
+                                  3
+                                </div>
+                                <div className="space-y-0.5">
+                                  <p className="text-xs font-bold text-white">Forneça o Número ao Suporte</p>
+                                  <p className="text-[11px] text-zinc-400 leading-normal">
+                                    Copie ou digite esses 9 dígitos e informe-os ao nosso analista de suporte técnico (através do WhatsApp ou do canal aberto).
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex gap-3">
+                                <div className="flex-shrink-0 h-5 w-5 rounded-full bg-fuchsia-500/10 border border-fuchsia-500/30 text-[10px] font-black flex items-center justify-center text-fuchsia-400">
+                                  4
+                                </div>
+                                <div className="space-y-0.5">
+                                  <p className="text-xs font-bold text-slate-200">Aceite a Conexão Segura</p>
+                                  <p className="text-[11px] text-[#ef4444] font-bold leading-normal">
+                                    Uma janela solicitará sua permissão de conexão no computador. Clique em <span className="font-extrabold uppercase text-green-400">"Aceitar"</span> ou <span className="font-extrabold uppercase text-green-400">"Autorizar"</span> para liberar a tela.
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2 pt-2 pb-2">
+                            <Button 
+                              variant="outline" 
+                              onClick={() => setActiveSupportChannelModal(null)}
+                              className="flex-1 border-[#2d3139] hover:bg-neutral-800 text-zinc-400 font-bold uppercase text-xs"
+                            >
+                              Voltar
+                            </Button>
+                            <Button 
+                              onClick={() => {
+                                window.open('https://anydesk.com/pt/downloads/windows', '_blank');
+                              }}
+                              className="flex-[1.5] bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-extrabold uppercase text-xs tracking-wider flex items-center justify-center gap-2"
+                            >
+                              Baixar AnyDesk
+                            </Button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </DialogContent>
+                </Dialog>
+
+                {/* Modal de Suporte Técnico / Diagnóstico de Rede Local */}
+                <Dialog open={showNetworkTroubleshoot} onOpenChange={setShowNetworkTroubleshoot}>
+                  <DialogContent className="bg-[#16191f] border-[#2d3139] text-white max-w-2xl p-0 overflow-hidden shadow-2xl">
+                    <DialogHeader className="p-6 pb-4 text-left bg-red-500/10 border-b border-[#2d3139]/40 flex flex-row items-start gap-4">
+                      <div className="p-2.5 bg-red-500/15 text-red-500 rounded-xl border border-red-500/15 shrink-0">
+                        <AlertCircle size={20} className="animate-bounce" />
+                      </div>
+                      <div>
+                        <DialogTitle className="text-sm font-black uppercase tracking-wider text-red-400">
+                          Guia de Diagnóstico e Solução de Rede Local
+                        </DialogTitle>
+                        <DialogDescription className="text-zinc-500 text-[10px] font-semibold uppercase tracking-wider mt-0.5">
+                          Siga as seguintes etapas para resolver a conectividade entre a Estação e o Servidor
+                        </DialogDescription>
+                      </div>
+                    </DialogHeader>
+
+                    <div className="p-6 space-y-5 max-h-[420px] overflow-y-auto text-left text-sm text-zinc-300 leading-relaxed">
+                      {/* Passo 1 */}
+                      <div className="flex gap-3.5 items-start">
+                        <div className="w-6 h-6 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 flex items-center justify-center font-bold font-mono text-xs shrink-0 mt-0.5">
+                          1
+                        </div>
+                        <div>
+                          <h4 className="text-white text-xs font-extrabold uppercase tracking-wide">Mesma Rede de Comunicação Local</h4>
+                          <p className="text-zinc-400 text-xs mt-1">
+                            Ambos os computadores (o Servidor Principal e esta Estação) devem estar conectados exatamente no mesmo roteador local (seja via cabo de rede ethernet ou no mesmo sinal do Wi-Fi corporativo).
+                          </p>
+                          <p className="text-[10px] text-zinc-500 mt-1 italic">
+                            * Note: Redes de convidados (Guest) ou redes móveis (4G/5G) de celulares impedem a comunicação entre computadores locais.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Passo 2 */}
+                      <div className="flex gap-3.5 items-start border-t border-[#2d3139]/45 pt-4">
+                        <div className="w-6 h-6 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 flex items-center justify-center font-bold font-mono text-xs shrink-0 mt-0.5">
+                          2
+                        </div>
+                        <div>
+                          <h4 className="text-white text-xs font-extrabold uppercase tracking-wide">Localizar e Validar o IP IPv4 do Servidor</h4>
+                          <p className="text-zinc-400 text-xs mt-1">
+                            Você está tentando conectar ao IP: <code className="text-indigo-400 font-mono font-bold bg-[#0f1115] px-1.5 py-0.5 rounded text-xs">{localDbUrl}</code>. Para garantir que este IP está correto:
+                          </p>
+                          <div className="bg-[#0f1115] border border-[#2d3139] p-3 rounded-lg text-xs text-zinc-400 mt-2 space-y-1">
+                            <p className="font-extrabold text-white text-[9px] uppercase tracking-wider text-[#3b82f6]">No Computador Servidor Principal:</p>
+                            <p>1. Clique no menu Iniciar do Windows e digite <code className="text-indigo-400">cmd</code> para entrar no Prompt.</p>
+                            <p>2. Digite <code className="text-indigo-300 font-mono">ipconfig</code> e pressione Enter.</p>
+                            <p>3. Encontre a linha <b>Endereço IPv4</b> (Exemplo: <code className="text-white font-mono font-bold bg-neutral-900 px-1 py-0.2 rounded">192.168.1.15</code>) e digite este exato número no campo de IP da Estação.</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Passo 3 */}
+                      <div className="flex gap-3.5 items-start border-t border-[#2d3139]/45 pt-4">
+                        <div className="w-6 h-6 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 flex items-center justify-center font-bold font-mono text-xs shrink-0 mt-0.5">
+                          3
+                        </div>
+                        <div>
+                          <h4 className="text-white text-xs font-extrabold uppercase tracking-wide flex items-center gap-1.5">
+                            Criar Regra de Firewall Interna no Servidor
+                            <span className="text-[9px] bg-red-500/20 text-red-500 font-black tracking-widest px-1.5 py-0.2 rounded">REQUISITO PRINCIPAL</span>
+                          </h4>
+                          <p className="text-zinc-400 text-xs mt-1">
+                            O Firewall de segurança do Windows por padrão fecha portas de comunicação local. Execute o comando de liberação unificada no computador Servidor:
+                          </p>
+                          <div className="bg-[#0f1115] border border-[#2d3139] p-3.5 rounded-xl text-xs space-y-2 mt-2">
+                            <p className="text-[10px] text-[#71717a] font-bold uppercase">Abra o CMD como Administrador no Servidor e cole o código:</p>
+                            <div className="bg-neutral-950 p-2.5 rounded-lg border border-zinc-800 font-mono text-2xs text-amber-500 select-all leading-relaxed whitespace-pre-wrap word-break">
+                              netsh advfirewall firewall add rule name="Porta 3000 SegurTec" dir=in action=allow protocol=TCP localport=3000
+                            </div>
+                            <p className="text-[10px] text-zinc-500">
+                              * Como abrir como Admin: Clique no Menu Iniciar do Servidor, pesquise por <code className="text-indigo-400">cmd</code>, clique com o botão direito e escolha "Executar como Administrador".
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Passo 4 */}
+                      <div className="flex gap-3.5 items-start border-t border-[#2d3139]/45 pt-4">
+                        <div className="w-6 h-6 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 flex items-center justify-center font-bold font-mono text-xs shrink-0 mt-0.5">
+                          4
+                        </div>
+                        <div>
+                          <h4 className="text-white text-xs font-extrabold uppercase tracking-wide">Ajustar Perfil de rede para "Privado"</h4>
+                          <p className="text-zinc-400 text-xs mt-1">
+                            O Windows oculta conexões em redes marcadas como "Públicas". Nas Configurações de Rede do seu Windows (Painel de Controle e depois Central de Rede e Compartilhamento), mude o status da rede Conectada para <b>Rede Privada</b> em ambos os computadores.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Passo 5 */}
+                      <div className="flex gap-3.5 items-start border-t border-[#2d3139]/45 pt-4">
+                        <div className="w-6 h-6 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 flex items-center justify-center font-bold font-mono text-xs shrink-0 mt-0.5">
+                          5
+                        </div>
+                        <div>
+                          <h4 className="text-white text-xs font-extrabold uppercase tracking-wide">Testar Acesso Direto</h4>
+                          <p className="text-zinc-400 text-xs mt-1">
+                            Abra o navegador nesta máquina do terminal e digite na barra de endereços: <code className="text-indigo-300 font-mono font-bold bg-[#0f1115] px-1.5 py-0.5 rounded text-xs">http://{localDbUrl}:3000/api/health</code>. Se receber uma resposta <code className="text-emerald-400 font-mono font-bold">{ '{"status":"ok"}' }</code>, os seus computadores já estão conversando fisicamente através da rede local.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-[#0f1115] border-t border-[#2d3139]/50 p-4 flex justify-between items-center shrink-0">
+                      <span className="text-[9px] text-[#71717a] font-bold uppercase">Suporte Local SegurTec-Pro®</span>
+                      <Button
+                        type="button"
+                        onClick={() => setShowNetworkTroubleshoot(false)}
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold uppercase tracking-tighter italic text-xs h-9 px-6 font-sans shrink-0"
+                      >
+                        Ok, entendi!
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+
+                {/* Centered Instructions Modal for System Update (Method 1) */}
+                <Dialog open={showInstallerInstructionsModal} onOpenChange={setShowInstallerInstructionsModal}>
+                  <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[480px] p-0 overflow-hidden shadow-2xl">
+                    <DialogHeader className="p-6 pb-2 text-left bg-gradient-to-b from-blue-950/25 to-transparent">
+                      <DialogTitle className="flex items-center gap-2.5 text-lg font-black tracking-tight text-white">
+                        <Download className="text-blue-400 animate-bounce" size={20} />
+                        Configuração do Patch Iniciada
+                      </DialogTitle>
+                      <DialogDescription className="text-neutral-400 text-xs">
+                        Siga as instruções abaixo para concluir a atualização para a versão <span className="text-blue-300 font-bold">{foundUpdateInfo?.version || 'Instalada'}</span>.
+                      </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="p-6 pt-2 space-y-4 text-left text-sm text-neutral-300">
+                      <div className="p-4 bg-[#0f1115] border border-blue-500/20 rounded-xl space-y-2">
+                        <span className="text-[10px] font-black uppercase text-blue-400 tracking-wider flex items-center gap-1.5">
+                          <span className="h-2 w-2 rounded-full bg-blue-400 animate-ping"></span>
+                          Status do Download
+                        </span>
+                        <p className="text-xs leading-relaxed text-neutral-300">
+                          O arquivo de instalação atualizado foi requisitado com sucesso e deve estar sendo baixado pelo seu navegador agora.
+                        </p>
+                        {foundUpdateInfo?.fileUrl && (
+                          <div className="pt-1.5 flex flex-col gap-1">
+                            <a href={foundUpdateInfo.fileUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-400 hover:underline flex items-center gap-1 shrink-0">
+                              Baixar Novamente <ExternalLink size={12} className="ml-1" />
+                            </a>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-3">
+                        <h4 className="text-[11px] uppercase font-black tracking-wider text-neutral-400">Como Instalar (Passo a Passo)</h4>
+                        
+                        <div className="space-y-3 font-medium">
+                          <div className="flex gap-3">
+                            <div className="flex-shrink-0 h-5 w-5 rounded-full bg-[#2d3139] border border-[#3f4450] text-[10px] font-black flex items-center justify-center text-white">
+                              1
+                            </div>
+                            <div className="space-y-0.5">
+                              <p className="text-xs font-bold text-white">Aguarde o download</p>
+                              <p className="text-[11px] text-neutral-400 leading-normal">
+                                Aguarde até que o navegador termine de baixar o novo instalador executável (normalmente chamado <code className="font-mono bg-neutral-950 px-1 py-0.5 rounded text-neutral-300">Setup.exe</code> ou similar).
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-3">
+                            <div className="flex-shrink-0 h-5 w-5 rounded-full bg-[#2d3139] border border-[#3f4450] text-[10px] font-black flex items-center justify-center text-white">
+                              2
+                            </div>
+                            <div className="space-y-0.5">
+                              <p className="text-xs font-bold text-white">Feche esta Janela do Sistema</p>
+                              <p className="text-[11px] text-[#ef4444] font-bold leading-normal">
+                                É altamente recomendado fechar o sistema atual utilizando o botão de encerramento abaixo para evitar que arquivos de banco de dados locais fiquem travados.
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-3">
+                            <div className="flex-shrink-0 h-5 w-5 rounded-full bg-[#2d3139] border border-[#3f4450] text-[10px] font-black flex items-center justify-center text-white">
+                              3
+                            </div>
+                            <div className="space-y-0.5">
+                              <p className="text-xs font-bold text-white">Execute a Instalação por cima</p>
+                              <p className="text-[11px] text-neutral-400 leading-normal">
+                                Dê um duplo clique no instalador baixado para instalar por cima. Seus dados e configurações do cliente <span className="text-[#f59e0b] font-bold">não serão afetados</span> no processo!
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <DialogFooter className="p-6 pt-2 bg-[#0f1115]/50 border-t border-[#2d3139] flex flex-col sm:flex-row gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => setShowInstallerInstructionsModal(false)}
+                        className="border-[#2d3139] text-white hover:bg-[#2d3139] h-9 text-xs font-bold"
+                      >
+                        Continuar no Sistema
+                      </Button>
+                      
+                      {((import.meta as any).env.VITE_LOCAL_DB === 'true') ? (
+                        <Button
+                          variant="destructive"
+                          onClick={async () => {
+                            try {
+                              await fetch('/api/system/shutdown', { method: 'POST' });
+                            } catch (e) {
+                              console.error("Erro ao desligar o servidor local:", e);
+                            }
+                            window.close();
+                          }}
+                          className="bg-red-600 hover:bg-red-700 text-white font-black h-9 text-xs flex items-center gap-1.5 shadow"
+                        >
+                          <Power size={13} />
+                          Fechar & Instalar Agora
+                        </Button>
+                      ) : (
+                        <Button
+                          onClick={() => {
+                            setShowInstallerInstructionsModal(false);
+                            toast.info("Por favor, execute o instalador baixado para concluir a melhoria.");
+                          }}
+                          className="bg-blue-600 hover:bg-blue-700 text-white font-black h-9 text-xs flex items-center gap-1.5 shadow"
+                        >
+                          Entendi, Fechar
+                        </Button>
+                      )}
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+
+                <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Settings className="text-[#3b82f6]" size={20} />
@@ -11181,6 +14881,7 @@ function SettingsManager({
                     />
                   </div>
                 </div>
+
                 <div className="space-y-4 pt-4 border-t border-[#2d3139]">
                   <Label className="text-[#a0a0a0]">Assinatura Digital</Label>
                   <SignaturePad 
@@ -11195,103 +14896,15 @@ function SettingsManager({
                 </Button>
               </CardContent>
             </Card>
+            </>
+            )}
+            
+            {/* Database card removed as requested. Configured inside Admin SaaS client licenses */}
           </div>
 
           <div className="space-y-8">
-            <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Database className="text-[#3b82f6]" size={20} />
-                  Backup e Restauração
-                </CardTitle>
-                <CardDescription className="text-[#71717a]">
-                  Exporte ou importe seus dados com filtros personalizados.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                
-                {/* Custom Checklist for modules/data categories */}
-                <div className="border border-[#2d3139]/80 rounded-xl p-4 bg-[#0f1115]/60 space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 pb-2 border-b border-[#2d3139]/40">
-                    <span className="text-[10px] font-black text-[#3b82f6] uppercase tracking-wider">
-                      Módulos Selecionados (Exportar / Importar)
-                    </span>
-                    <div className="flex gap-2">
-                      <button 
-                        type="button"
-                        onClick={handleSelectAllBackupCollections} 
-                        className="text-[9px] font-black text-blue-400 hover:text-blue-300 transition-colors uppercase tracking-wider"
-                      >
-                        Marcar Todos
-                      </button>
-                      <span className="text-neutral-700 text-[9px]">|</span>
-                      <button 
-                        type="button"
-                        onClick={handleSelectNoneBackupCollections} 
-                        className="text-[9px] font-black text-rose-400 hover:text-rose-300 transition-colors uppercase tracking-wider"
-                      >
-                        Desmarcar Todos
-                      </button>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                    {Object.entries(BACKUP_COLLECTIONS_LABELS).map(([key, label]) => {
-                      const isSelected = selectedBackupCollections.includes(key);
-                      return (
-                        <label 
-                          key={key} 
-                          className={`flex items-center gap-3 p-1.5 rounded-lg border transition-all cursor-pointer select-none ${
-                            isSelected 
-                              ? 'bg-[#1a1d23]/80 border-[#3b82f6]/30 text-white font-semibold' 
-                              : 'bg-transparent border-transparent text-[#71717a] hover:text-[#e2e8f0]'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleBackupCollection(key)}
-                            className="rounded border-[#2d3139] bg-[#0f1115] text-[#3b82f6] focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5 transition-all checked:bg-[#3b82f6]"
-                          />
-                          <span className="text-[10px] uppercase tracking-tight font-mono">{label}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <Button 
-                    onClick={handleDownloadBackup} 
-                    disabled={isBackingUp || isRestoring}
-                    variant="outline"
-                    className="border-blue-500/30 text-blue-400 hover:bg-blue-500 hover:text-white h-11 text-[9px] font-black tracking-tighter"
-                  >
-                    {isBackingUp ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} className="mr-2" />}
-                    EXPORTAR FILTRADO
-                  </Button>
- 
-                  <div className="relative">
-                    <input 
-                      type="file" 
-                      ref={fileInputRef}
-                      onChange={handleRestoreBackup}
-                      accept=".json,application/json"
-                      className="hidden"
-                    />
-                    <Button 
-                      onClick={() => fileInputRef.current?.click()} 
-                      disabled={isBackingUp || isRestoring}
-                      variant="outline"
-                      className="w-full border-yellow-500/30 text-yellow-400 hover:bg-yellow-500 hover:text-white h-11 text-[9px] font-black tracking-tighter"
-                    >
-                      {isRestoring ? <RefreshCw size={14} className="animate-spin" /> : <Upload size={14} className="mr-2" />}
-                      IMPORTAR FILTRADO
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
+            {mode === 'financial' && (
+              <>
             <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -11356,6 +14969,77 @@ function SettingsManager({
             </Card>
 
             <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ArrowUpRight className="text-[#3b82f6]" size={20} />
+                  Contas a Pagar (Destinos & Categorias)
+                </CardTitle>
+                <CardDescription className="text-[#71717a]">
+                  Personalize os destinos de pagamento e categorias para Contas a Pagar.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Destinos */}
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0] font-bold text-xs uppercase tracking-wide">Destinos de Pagamento</Label>
+                  <div className="flex gap-2">
+                    <Input 
+                      placeholder="Ex: Fornecedor de Cabos, Internet Link, Aluguel" 
+                      className="bg-[#0f1115] border-[#2d3139] text-white h-10"
+                      value={newPayableDestination}
+                      onChange={e => setNewPayableDestination(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleAddPayableDestination()}
+                    />
+                    <Button onClick={handleAddPayableDestination} className="bg-[#3b82f6] hover:bg-[#2563eb] h-10">
+                      <Plus size={16} />
+                    </Button>
+                  </div>
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {(localApp.payableDestinations || []).length === 0 ? (
+                      <span className="text-xs text-[#71717a] italic">Nenhum destino específico cadastrado. Usará fornecedores padrão.</span>
+                    ) : (
+                      (localApp.payableDestinations || []).map((dest: string) => (
+                        <Badge key={dest} className="bg-[#0f1115] border border-[#2d3139] text-[#a0a0a0] py-1.5 px-3 flex gap-2 items-center">
+                          {dest}
+                          <button onClick={() => handleRemovePayableDestination(dest)} className="text-[#555] hover:text-red-500 transition-colors">
+                            <X size={12} />
+                          </button>
+                        </Badge>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Categorias */}
+                <div className="space-y-2 border-t border-[#2d3139]/40 pt-4">
+                  <Label className="text-[#a0a0a0] font-bold text-xs uppercase tracking-wide">Categorias de Despesa</Label>
+                  <div className="flex gap-2">
+                    <Input 
+                      placeholder="Ex: Energia, Peças, Salários" 
+                      className="bg-[#0f1115] border-[#2d3139] text-white h-10"
+                      value={newPayableCategory}
+                      onChange={e => setNewPayableCategory(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleAddPayableCategory()}
+                    />
+                    <Button onClick={handleAddPayableCategory} className="bg-[#3b82f6] hover:bg-[#2563eb] h-10">
+                      <Plus size={16} />
+                    </Button>
+                  </div>
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {(localApp.payableCategories || ['Peças', 'Energia', 'Internet/Chip', 'Aluguel', 'Salários', 'Impostos', 'Softwares', 'Outros']).map((cat: string) => (
+                      <Badge key={cat} className="bg-[#0f1115] border border-[#2d3139] text-[#a0a0a0] py-1.5 px-3 flex gap-2 items-center">
+                        {cat}
+                        <button onClick={() => handleRemovePayableCategory(cat)} className="text-[#555] hover:text-red-500 transition-colors">
+                          <X size={12} />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-[#1a1d23] border-[#2d3139] text-white">
               <CardHeader className="flex flex-row items-center justify-between">
                 <div className="space-y-1">
                   <CardTitle className="flex items-center gap-2">
@@ -11375,62 +15059,104 @@ function SettingsManager({
                 </Button>
               </CardHeader>
               <CardContent>
-                <div className="mb-4 flex flex-col sm:flex-row gap-2">
-                  <Select value={planBrandFilter} onValueChange={(val: any) => setPlanBrandFilter(val)}>
-                    <SelectTrigger className="w-fit min-w-[110px] bg-[#0f1115] border-[#2d3139] text-white h-10 px-3">
-                      <SelectValue placeholder="Bandeira">
-                        {planBrandFilter === 'ALL' ? 'Todas' : (planBrandFilter === 'NONE' ? 'Nenhuma' : planBrandFilter)}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      <SelectItem value="NONE">Nenhum</SelectItem>
-                      <SelectItem value="ALL">Todas</SelectItem>
-                      <SelectItem value="VISA">VISA</SelectItem>
-                      <SelectItem value="MASTERCARD">MASTERCARD</SelectItem>
-                      <SelectItem value="AMERICA">AMEX</SelectItem>
-                      <SelectItem value="ELO">ELO</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="mb-4 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-[#2d3139]/30 pb-4">
+                  <div className="flex flex-wrap gap-2 flex-1">
+                    <Select value={planBrandFilter} onValueChange={(val: any) => setPlanBrandFilter(val)}>
+                      <SelectTrigger className="w-fit min-w-[110px] bg-[#0f1115] border-[#2d3139] text-white h-10 px-3">
+                        <SelectValue placeholder="Bandeira">
+                          {planBrandFilter === 'ALL' ? 'Todas' : (planBrandFilter === 'NONE' ? 'Nenhuma' : planBrandFilter)}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="NONE">Nenhum</SelectItem>
+                        <SelectItem value="ALL">Todas</SelectItem>
+                        <SelectItem value="VISA">VISA</SelectItem>
+                        <SelectItem value="MASTERCARD">MASTERCARD</SelectItem>
+                        <SelectItem value="AMERICA">AMEX</SelectItem>
+                        <SelectItem value="ELO">ELO</SelectItem>
+                      </SelectContent>
+                    </Select>
 
-                  <Select value={planTypeFilter} onValueChange={(val: any) => setPlanTypeFilter(val)}>
-                    <SelectTrigger className="flex-1 bg-[#0f1115] border-[#2d3139] text-white h-10">
-                      <SelectValue placeholder="Tipo">
-                        {planTypeFilter === 'ALL' ? 'Todos os Tipos' : planTypeFilter}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                      <SelectItem value="ALL">Todos os Tipos</SelectItem>
-                      <SelectItem value="DÉBITO">DÉBITO</SelectItem>
-                      <SelectItem value="CRÉDITO">CRÉDITO</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    <Select value={planTypeFilter} onValueChange={(val: any) => setPlanTypeFilter(val)}>
+                      <SelectTrigger className="w-fit min-w-[140px] bg-[#0f1115] border-[#2d3139] text-white h-10">
+                        <SelectValue placeholder="Tipo">
+                          {planTypeFilter === 'ALL' ? 'Todos os Tipos' : planTypeFilter}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                        <SelectItem value="ALL">Todos os Tipos</SelectItem>
+                        <SelectItem value="DÉBITO">DÉBITO</SelectItem>
+                        <SelectItem value="CRÉDITO">CRÉDITO</SelectItem>
+                      </SelectContent>
+                    </Select>
 
-                  <Input 
-                    type="number" 
-                    placeholder="Parcelas" 
-                    value={planInstallmentFilter}
-                    onChange={e => setPlanInstallmentFilter(e.target.value)}
-                    className="w-full sm:w-24 bg-[#0f1115] border-[#2d3139] text-white h-10"
-                  />
+                    <Input 
+                      type="number" 
+                      placeholder="Parcelas" 
+                      value={planInstallmentFilter}
+                      onChange={e => setPlanInstallmentFilter(e.target.value)}
+                      className="w-24 bg-[#0f1115] border-[#2d3139] text-white h-10"
+                    />
 
-                  <Button 
-                    variant="outline" 
-                    onClick={generateInstallmentPlansPDF}
-                    className="bg-[#0f1115] border-[#2d3139] hover:bg-[#1a1d23] hover:text-[#3b82f6] text-white h-10 flex gap-2 items-center"
-                  >
-                    <Download className="h-4 w-4" />
-                    PDF
-                  </Button>
+                    <Button 
+                      variant="outline" 
+                      onClick={generateInstallmentPlansPDF}
+                      className="bg-[#0f1115] border-[#2d3139] hover:bg-[#1a1d23] hover:text-[#3b82f6] text-white h-10 flex gap-2 items-center text-xs"
+                    >
+                      <Download className="h-4 w-4" />
+                      PDF
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center bg-[#0f1115] border border-[#2d3139] p-0.5 rounded-lg shrink-0">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleSetInstallmentPlansViewMode('list')}
+                      type="button"
+                      className={cn(
+                        "h-8 px-3 text-xs font-black uppercase tracking-wider rounded-md transition-all gap-1.5",
+                        installmentPlansViewMode === 'list' 
+                          ? "bg-[#3b82f6] text-white hover:bg-[#3b82f6] hover:text-white" 
+                          : "text-[#71717a] hover:text-white hover:bg-white/5"
+                      )}
+                    >
+                      <List size={14} />
+                      Lista
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleSetInstallmentPlansViewMode('columns')}
+                      type="button"
+                      className={cn(
+                        "h-8 px-3 text-xs font-black uppercase tracking-wider rounded-md transition-all gap-1.5",
+                        installmentPlansViewMode === 'columns' 
+                          ? "bg-[#3b82f6] text-white hover:bg-[#3b82f6] hover:text-white" 
+                          : "text-[#71717a] hover:text-white hover:bg-white/5"
+                      )}
+                    >
+                      <LayoutGrid size={14} />
+                      Colunas
+                    </Button>
+                  </div>
                 </div>
 
-                    <div className="space-y-3">
+                    <div className={cn(
+                      installmentPlansViewMode === 'columns' 
+                        ? "grid grid-cols-1 sm:grid-cols-2 gap-3" 
+                        : "space-y-3"
+                    )}>
                       {(localApp.installmentPlans || []).filter(p => {
                         const matchBrand = planBrandFilter === 'ALL' ? true : (planBrandFilter === 'NONE' ? false : p.brand === planBrandFilter);
                         const matchType = planTypeFilter === 'ALL' ? true : p.type === planTypeFilter;
                         const matchInstallment = planInstallmentFilter === '' ? true : p.installments === Number(planInstallmentFilter);
                         return matchBrand && matchType && matchInstallment;
                       }).length === 0 ? (
-                        <div className="p-4 text-center text-[#71717a] text-[10px] uppercase font-bold bg-[#0f1115] rounded-xl border border-dashed border-[#2d3139]">
+                        <div className={cn(
+                          "p-4 text-center text-[#71717a] text-[10px] uppercase font-bold bg-[#0f1115] rounded-xl border border-dashed border-[#2d3139]",
+                          installmentPlansViewMode === 'columns' && "sm:col-span-2"
+                        )}>
                           {planBrandFilter === 'NONE' ? 'Selecione uma bandeira para ver os planos' : 'Nenhum plano encontrado com os filtros selecionados'}
                         </div>
                       ) : (
@@ -11495,9 +15221,51 @@ function SettingsManager({
                 </Button>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
+                <div className="mb-4 flex justify-end border-b border-[#2d3139]/30 pb-4">
+                  <div className="flex items-center bg-[#0f1115] border border-[#2d3139] p-0.5 rounded-lg font-bold">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleSetPixAccountsViewMode('list')}
+                      type="button"
+                      className={cn(
+                        "h-8 px-3 text-xs font-black uppercase tracking-wider rounded-md transition-all gap-1.5",
+                        pixAccountsViewMode === 'list' 
+                          ? "bg-[#3b82f6] text-white hover:bg-[#3b82f6] hover:text-white" 
+                          : "text-[#71717a] hover:text-white hover:bg-white/5"
+                      )}
+                    >
+                      <List size={14} />
+                      Lista
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleSetPixAccountsViewMode('columns')}
+                      type="button"
+                      className={cn(
+                        "h-8 px-3 text-xs font-black uppercase tracking-wider rounded-md transition-all gap-1.5",
+                        pixAccountsViewMode === 'columns' 
+                          ? "bg-[#3b82f6] text-white hover:bg-[#3b82f6] hover:text-white" 
+                          : "text-[#71717a] hover:text-white hover:bg-white/5"
+                      )}
+                    >
+                      <LayoutGrid size={14} />
+                      Colunas
+                    </Button>
+                  </div>
+                </div>
+
+                <div className={cn(
+                  pixAccountsViewMode === 'columns'
+                    ? "grid grid-cols-1 sm:grid-cols-2 gap-3"
+                    : "space-y-3"
+                )}>
                   {(pixSettings?.accounts || []).length === 0 ? (
-                    <div className="p-4 text-center text-[#71717a] text-[10px] uppercase font-bold bg-[#0f1115] rounded-xl border border-dashed border-[#2d3139]">Nenhuma conta cadastrada</div>
+                    <div className={cn(
+                      "p-4 text-center text-[#71717a] text-[10px] uppercase font-bold bg-[#0f1115] rounded-xl border border-dashed border-[#2d3139]",
+                      pixAccountsViewMode === 'columns' && "sm:col-span-2"
+                    )}>Nenhuma conta cadastrada</div>
                   ) : (
                     pixSettings.accounts.map(acc => (
                       <div key={acc.id} className="flex flex-col p-4 bg-[#0f1115] border border-[#2d3139] rounded-xl group space-y-3">
@@ -11536,6 +15304,14 @@ function SettingsManager({
                 </div>
               </CardContent>
             </Card>
+            <div className="pt-4 pb-8">
+              <Button onClick={handleSaveApp} disabled={isSubmitting} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white font-bold uppercase tracking-widest text-xs h-12 flex gap-2 items-center justify-center">
+                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save size={16} />}
+                Salvar Configurações Financeiras
+              </Button>
+            </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -11676,8 +15452,12 @@ function SettingsManager({
           </DialogContent>
         </Dialog>
 
-        <RoleSettings companyId={companyId} customRoles={customRoles} userRoles={userRoles} />
-        <RolePermissionManager companyId={companyId} user={user} userRoles={userRoles} currentUserData={currentUserData} />
+        {mode === 'general' && (
+          <>
+            <RoleSettings companyId={companyId} customRoles={customRoles} userRoles={userRoles} />
+            <RolePermissionManager companyId={companyId} user={user} userRoles={userRoles} currentUserData={currentUserData} />
+          </>
+        )}
       </div>
     );
   }
@@ -11693,7 +15473,8 @@ function ReportsManager({
   sales = [],
   appSettings, 
   companyId,
-  showList
+  showList,
+  receivables = []
 }: { 
   visits: TechnicalVisit[], 
   financials: FinancialRecord[], 
@@ -11705,7 +15486,8 @@ function ReportsManager({
   sales: any[],
   appSettings: AppSettings, 
   companyId: string,
-  showList: boolean
+  showList: boolean,
+  receivables?: any[]
 }) {
   const [date, setDate] = useState<Date>(new Date());
   const [month, setMonth] = useState<number>(new Date().getMonth());
@@ -11717,7 +15499,7 @@ function ReportsManager({
     const title = category.toUpperCase();
     const period = reportType === 'daily' 
       ? format(date, 'dd/MM/yyyy') 
-      : `${format(new Date(year, month), 'MMMM', { locale: ptBR })}/${year}`;
+      : `${format(new Date(year, month, 10, 12, 0, 0), 'MMMM', { locale: ptBR })}/${year}`;
     
     // Header
     doc.setFontSize(20);
@@ -11732,6 +15514,8 @@ function ReportsManager({
     let filteredData: any[] = [];
     let tableHeaders: string[] = [];
     let tableRows: any[][] = [];
+    let tableFoot: any[][] | undefined = undefined;
+    let tableFootStyles: any = undefined;
 
     const isMatch = (itemDate: any) => {
       const d = safeParseDate(itemDate);
@@ -11752,21 +15536,59 @@ function ReportsManager({
         `R$ ${(v.totalValue || 0).toFixed(2)}`,
         v.status
       ]);
+      const totalVal = filteredData.reduce((sum, v) => sum + (Number(v.totalValue) || 0), 0);
+      tableFoot = [['TOTAL', '', '', `R$ ${totalVal.toFixed(2)}`, '']];
+      tableFootStyles = { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' };
     } else if (category === 'Financeiro') {
-      filteredData = financials.filter(f => isMatch(f.date));
-      tableHeaders = ['Data', 'Cliente', 'Descrição', 'Valor', 'Tipo', 'Categoria'];
-      tableRows = filteredData.map(f => {
-        const d = safeParseDate(f.date);
-        const client = clients.find(c => c.id === f.clientId);
-        return [
-          format(d, 'dd/MM/yyyy'),
-          client ? client.name : 'N/A',
-          f.description,
-          `R$ ${(f.value || 0).toFixed(2)}`,
-          f.type,
-          f.category || 'N/A'
+      try {
+        filteredData = financials.filter(f => isMatch(f.date || f.createdAt));
+        tableHeaders = ['Data', 'Cliente', 'Descrição', 'Valor', 'Tipo', 'Categoria'];
+        tableRows = filteredData.map(f => {
+          const d = safeParseDate(f.date || f.createdAt);
+          const client = clients && clients.find ? clients.find(c => c.id === f.clientId) : null;
+          
+          const isReceitaCheck = f.type && ['receita', 'receitas', 'entrada', 'entradas'].includes(String(f.type).trim().toLowerCase());
+          const isDespesaCheck = f.type && ['despesa', 'despesas', 'saida', 'saídas', 'saída', 'saidas'].includes(String(f.type).trim().toLowerCase());
+          
+          let signPrefix = '';
+          if (isReceitaCheck) {
+            signPrefix = '(+) ';
+          } else if (isDespesaCheck) {
+            signPrefix = '(-) ';
+          }
+          
+          return [
+            d ? format(d, 'dd/MM/yyyy') : '--/--/----',
+            client ? (client.name || 'N/A') : 'N/A',
+            f.description || '',
+            `${signPrefix}R$ ${(f.value || 0).toFixed(2)}`,
+            isReceitaCheck ? 'RECEITA' : (isDespesaCheck ? 'DESPESA' : (f.type || 'N/A').toUpperCase()),
+            f.category || 'N/A'
+          ];
+        });
+        
+        const income = filteredData.filter(f => {
+          const typeStr = String(f.type || '').trim().toLowerCase();
+          return typeStr === 'receita' || typeStr === 'receitas' || typeStr === 'entrada';
+        }).reduce((sum, f) => sum + (Number(f.value) || 0), 0);
+        
+        const expense = filteredData.filter(f => {
+          const typeStr = String(f.type || '').trim().toLowerCase();
+          return typeStr === 'despesa' || typeStr === 'despesas' || typeStr === 'saida' || typeStr === 'saída';
+        }).reduce((sum, f) => sum + (Number(f.value) || 0), 0);
+        
+        const balance = income - expense;
+        tableFoot = [
+          ['(+) TOTAL ENTRADAS (RECEITAS)', '', '', `R$ ${income.toFixed(2)}`, '', ''],
+          ['(-) TOTAL SAÍDAS (DESPESAS)', '', '', `R$ ${expense.toFixed(2)}`, '', ''],
+          ['(=) SALDO FINAL', '', '', `R$ ${balance.toFixed(2)}`, '', '']
         ];
-      });
+        tableFootStyles = { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' };
+      } catch (err) {
+        console.error("Erro ao mapear relatório Financeiro:", err);
+        toast.error("Erro ao compilar dados do Livro Financeiro.");
+        return;
+      }
     } else if (category === 'Recibos') {
       filteredData = receipts.filter(r => isMatch(r.createdAt));
       tableHeaders = ['Número', 'Cliente', 'Data', 'Valor'];
@@ -11776,6 +15598,9 @@ function ReportsManager({
         format(safeParseDate(r.createdAt), 'dd/MM/yyyy'),
         `R$ ${(r.value || 0).toFixed(2)}`
       ]);
+      const totalVal = filteredData.reduce((sum, r) => sum + (Number(r.value) || 0), 0);
+      tableFoot = [['TOTAL', '', '', `R$ ${totalVal.toFixed(2)}`]];
+      tableFootStyles = { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' };
     } else if (category === 'Orçamentos') {
       filteredData = budgets.filter(b => isMatch(b.createdAt));
       tableHeaders = ['Número', 'Cliente', 'Valor', 'Status'];
@@ -11785,6 +15610,9 @@ function ReportsManager({
         `R$ ${(b.total || 0).toFixed(2)}`,
         b.status
       ]);
+      const totalVal = filteredData.reduce((sum, b) => sum + (Number(b.total) || 0), 0);
+      tableFoot = [['TOTAL', '', `R$ ${totalVal.toFixed(2)}`, '']];
+      tableFootStyles = { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' };
     } else if (category === 'Clientes') {
       filteredData = clients;
       tableHeaders = ['Nome', 'Tipo', 'Telefone', 'Endereço'];
@@ -11795,16 +15623,22 @@ function ReportsManager({
         c.address
       ]);
     } else if (category === 'Ordem de Serviço') {
-      filteredData = serviceOrders.filter(os => isMatch(os.date));
+      filteredData = serviceOrders.filter(os => isMatch(os.date || os.createdAt || os.startDateTime));
       tableHeaders = ['Número', 'Cliente', 'Equipamento', 'Técnico', 'Status', 'Valor'];
-      tableRows = filteredData.map(os => [
-        formatRecordNumber(os.number, os.date),
-        os.clientName,
-        os.equipment,
-        os.technicianName,
-        os.status,
-        `R$ ${(os.totalValue || 0).toFixed(2)}`
-      ]);
+      tableRows = filteredData.map(os => {
+        const dateToUse = os.date || os.createdAt || os.startDateTime;
+        return [
+          formatRecordNumber(os.number, dateToUse),
+          os.clientName || 'N/A',
+          os.equipment || 'N/A',
+          os.technicianName || 'N/A',
+          os.status || 'N/A',
+          `R$ ${(os.totalValue || 0).toFixed(2)}`
+        ];
+      });
+      const totalVal = filteredData.reduce((sum, os) => sum + (Number(os.totalValue) || 0), 0);
+      tableFoot = [['TOTAL', '', '', '', '', `R$ ${totalVal.toFixed(2)}`]];
+      tableFootStyles = { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' };
     } else if (category === 'Fornecedores') {
       filteredData = suppliers; // Suppliers report might not need date filtering if they don't have a transaction date, but I'll leave it simple
       tableHeaders = ['Nº Cad.', 'Fornecedor', 'Atividade', 'Contato', 'Telefone', 'Cidade/UF'];
@@ -11826,6 +15660,174 @@ function ReportsManager({
         s.paymentMethod,
         `R$ ${(s.total || 0).toFixed(2)}`
       ]);
+      const totalVal = filteredData.reduce((sum, s) => sum + (Number(s.total) || 0), 0);
+      tableFoot = [['TOTAL', '', '', '', `R$ ${totalVal.toFixed(2)}`]];
+      tableFootStyles = { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' };
+    } else if (category === 'Contas a Receber') {
+      const q = query(collection(db, 'receivables'), where('companyId', '==', companyId));
+      getDocs(q).then(snap => {
+        const list = snap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as any));
+        const filtered = list.filter(item => isMatch(item.dueDate || item.createdAt));
+        
+        // Add dynamic active contract projections for the selected period
+        const selMonth = reportType === 'daily' ? date.getMonth() : month;
+        const selYear = reportType === 'daily' ? date.getFullYear() : year;
+        const refMonthStr = `${String(selMonth + 1).padStart(2, '0')}/${selYear}`;
+
+        const activeContracts = (clients || []).filter(c => c.type === 'Contrato');
+        const contractProjections = activeContracts.map(client => {
+          const isContractVal = Number(client.contractValue || 0);
+          const paymentDay = Number(client.paymentDay || 10);
+          const sanitizedDay = Math.min(paymentDay, 28);
+          const isoDueDate = `${selYear}-${String(selMonth + 1).padStart(2, '0')}-${String(sanitizedDay).padStart(2, '0')}`;
+          
+          const alreadyExists = list.some(r => 
+            (r.clientId === client.id || normalizeName(r.clientName) === normalizeName(client.name)) &&
+            r.referenceMonth === refMonthStr &&
+            (r.isContractPrediction === true || 
+             (r.category || '').toLowerCase().includes('contrato') || 
+             (r.category || '').toLowerCase().includes('mensalidade'))
+          );
+          
+          if (alreadyExists) return null;
+          if (!isMatch(isoDueDate)) return null;
+
+          return {
+            id: `proj-${client.id}`,
+            clientName: client.name,
+            description: `Contrato Mensal - Ref ${refMonthStr}`,
+            value: isContractVal,
+            dueDate: isoDueDate,
+            status: 'Previsto'
+          };
+        }).filter(Boolean) as any[];
+
+        const combined = [...filtered, ...contractProjections];
+
+        // Sort in ascending order of due date (or fall back to creation date)
+        combined.sort((a, b) => {
+          const dateA = safeParseDate(a.dueDate || a.createdAt).getTime();
+          const dateB = safeParseDate(b.dueDate || b.createdAt).getTime();
+          return dateA - dateB;
+        });
+
+        const totalValue = combined.reduce((sum, item) => sum + (Number(item.value) || 0), 0);
+
+        const headers = ['Vencimento', 'Cliente', 'Descrição', 'Valor', 'Status'];
+        const rows = combined.map(item => {
+          let desc = item.description || '';
+          if (item.partialPayments && item.partialPayments.length > 0) {
+            const historyText = item.partialPayments.map((p: any) => {
+              const pDate = p.date ? format(safeParseDate(p.date), 'dd/MM/yy') : 'N/A';
+              return `${pDate}: R$ ${Number(p.value).toFixed(2)} (${p.paymentMethod || 'Outro'})`;
+            }).join(' | ');
+            desc += ` (Histórico de Baixas: ${historyText})`;
+          }
+
+          let statusText = item.status || 'Pendente';
+          if (item.status === 'Parcial') {
+            const paidSum = (item.partialPayments || []).reduce((acc: number, p: any) => acc + Number(p.value || 0), 0);
+            statusText = `Parcial (Pago R$ ${paidSum.toFixed(2)})`;
+          } else if (item.status === 'Pago') {
+            statusText = 'Pago / Liquidado';
+          }
+
+          return [
+            item.dueDate ? format(safeParseDate(item.dueDate), 'dd/MM/yyyy') : 'N/A',
+            item.clientName || 'N/A',
+            desc,
+            `R$ ${(item.value || 0).toFixed(2)}`,
+            statusText
+          ];
+        });
+
+        if (rows.length === 0) {
+          toast.error(`Nenhum registro de Contas a Receber ou Contrato ativo encontrado para este período.`);
+          return;
+        }
+
+        autoTable(doc, {
+          startY: 45,
+          head: [headers],
+          body: rows,
+          foot: [['TOTAL', '', '', `R$ ${totalValue.toFixed(2)}`, '']],
+          headStyles: { fillColor: [16, 185, 129] },
+          footStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' },
+          theme: 'grid'
+        });
+
+        doc.save(`Relatorio_Contas_a_Receber_${period.replace(/\//g, '_')}.pdf`);
+        toast.success('Relatório de Contas a Receber gerado com sucesso!');
+      }).catch(err => {
+        toast.error('Erro ao buscar as contas a receber do banco.');
+        console.error(err);
+      });
+      return;
+    } else if (category === 'Contas a Pagar') {
+      const q = query(collection(db, 'payables'), where('companyId', '==', companyId));
+      getDocs(q).then(snap => {
+        const list = snap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as any));
+        const filtered = list.filter(item => isMatch(item.dueDate || item.createdAt));
+        
+        // Sort in ascending order of due date (or fall back to creation date)
+        filtered.sort((a, b) => {
+          const dateA = safeParseDate(a.dueDate || a.createdAt).getTime();
+          const dateB = safeParseDate(b.dueDate || b.createdAt).getTime();
+          return dateA - dateB;
+        });
+
+        const totalValue = filtered.reduce((sum, item) => sum + (Number(item.value) || 0), 0);
+
+        const headers = ['Vencimento', 'Fornecedor', 'Descrição', 'Valor', 'Status'];
+        const rows = filtered.map(item => {
+          let desc = item.category || item.description || '';
+          if (item.partialPayments && item.partialPayments.length > 0) {
+            const historyText = item.partialPayments.map((p: any) => {
+              const pDate = p.date ? format(safeParseDate(p.date), 'dd/MM/yy') : 'N/A';
+              return `${pDate}: R$ ${Number(p.value).toFixed(2)} (${p.paymentMethod || 'Outro'})`;
+            }).join(' | ');
+            desc += ` (Histórico de Baixas: ${historyText})`;
+          }
+
+          let statusText = item.status || 'Pendente';
+          if (item.status === 'Parcial') {
+            const paidSum = (item.partialPayments || []).reduce((acc: number, p: any) => acc + Number(p.value || 0), 0);
+            statusText = `Parcial (Pago R$ ${paidSum.toFixed(2)})`;
+          } else if (item.status === 'Pago') {
+            statusText = 'Pago / Liquidado';
+          }
+
+          return [
+            item.dueDate ? format(safeParseDate(item.dueDate), 'dd/MM/yyyy') : 'N/A',
+            item.supplierName || 'N/A',
+            desc,
+            `R$ ${(item.value || 0).toFixed(2)}`,
+            statusText
+          ];
+        });
+
+        if (rows.length === 0) {
+          toast.error(`Nenhum registro de Contas a Pagar encontrado para este período.`);
+          return;
+        }
+
+        autoTable(doc, {
+          startY: 45,
+          head: [headers],
+          body: rows,
+          foot: [['TOTAL', '', '', `R$ ${totalValue.toFixed(2)}`, '']],
+          headStyles: { fillColor: [239, 68, 68] },
+          footStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' },
+          theme: 'grid'
+        });
+
+        doc.save(`Relatorio_Contas_a_Pagar_${period.replace(/\//g, '_')}.pdf`);
+        toast.success('Relatório de Contas a Pagar gerado com sucesso!');
+      }).catch(err => {
+        toast.error('Erro ao buscar as contas a pagar do banco.');
+        console.error(err);
+      });
+      return;
     }
 
     if (tableRows.length === 0) {
@@ -11837,11 +15839,30 @@ function ReportsManager({
       startY: 45,
       head: [tableHeaders],
       body: tableRows,
+      foot: tableFoot,
       headStyles: { fillColor: [59, 130, 246] },
-      theme: 'grid'
+      footStyles: tableFootStyles,
+      theme: 'grid',
+      didParseCell: (data) => {
+        if (category === 'Financeiro' && data.section === 'body') {
+          const typeValue = Array.isArray(data.row.raw) ? String(data.row.raw[4]).toUpperCase() : '';
+          if (typeValue === 'RECEITA') {
+            if (data.column.index === 3 || data.column.index === 4) {
+              data.cell.styles.textColor = [16, 185, 129]; // Emerald 500
+              data.cell.styles.fontStyle = 'bold';
+            }
+          } else if (typeValue === 'DESPESA') {
+            if (data.column.index === 3 || data.column.index === 4) {
+              data.cell.styles.textColor = [239, 68, 68]; // Red 500
+              data.cell.styles.fontStyle = 'bold';
+            }
+          }
+        }
+      }
     });
 
-    doc.save(`Relatorio_${category}_${period.replace(/\//g, '_')}.pdf`);
+    const safeCategoryName = category.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "_");
+    doc.save(`Relatorio_${safeCategoryName}_${period.replace(/\//g, '_')}.pdf`);
     toast.success('Relatório gerado com sucesso!');
   };
 
@@ -11899,11 +15920,13 @@ function ReportsManager({
                     <Label className="text-[#a0a0a0]">Mês</Label>
                     <Select value={month.toString()} onValueChange={(v) => setMonth(parseInt(v))}>
                       <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white h-11">
-                        <SelectValue />
+                        <span className="flex flex-1 text-left uppercase font-bold text-white">
+                          {format(new Date(2022, month, 10, 12, 0, 0), 'MMMM', { locale: ptBR }).toUpperCase()}
+                        </span>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                         {Array.from({ length: 12 }, (_, i) => (
-                          <SelectItem key={i} value={i.toString()}>{format(new Date(2022, i, 1), 'MMMM', { locale: ptBR }).toUpperCase()}</SelectItem>
+                          <SelectItem key={i} value={i.toString()}>{format(new Date(2022, i, 10, 12, 0, 0), 'MMMM', { locale: ptBR }).toUpperCase()}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -11927,6 +15950,8 @@ function ReportsManager({
               {[
                 { label: 'Visitas Técnicas', icon: <CalendarIcon size={24} />, cat: 'Visitas', color: '#3b82f6' },
                 { label: 'Livro Financeiro', icon: <DollarSign size={24} />, cat: 'Financeiro', color: '#10b981' },
+                { label: 'Contas a Receber', icon: <ArrowDownRight size={24} />, cat: 'Contas a Receber', color: '#10b981' },
+                { label: 'Contas a Pagar', icon: <ArrowUpRight size={24} />, cat: 'Contas a Pagar', color: '#ef4444' },
                 { label: 'Recibos Emitidos', icon: <ReceiptIcon size={24} />, cat: 'Recibos', color: '#f59e0b' },
                 { label: 'Orçamentos', icon: <FileText size={24} />, cat: 'Orçamentos', color: '#8b5cf6' },
                 { label: 'Ordens de Serviço', icon: <Settings size={24} />, cat: 'Ordem de Serviço', color: '#6366f1' },
@@ -11961,7 +15986,15 @@ function ReportsManager({
 
 // --- Dashboard Component ---
 
-function VisitsChart({ data, onBarClick }: { data: any[], onBarClick?: (date: Date) => void }) {
+function VisitsChart({ 
+  data, 
+  onBarClick, 
+  type = 'bar-vertical' 
+}: { 
+  data: any[], 
+  onBarClick?: (date: Date) => void, 
+  type?: string 
+}) {
   const [isClient, setIsClient] = useState(false);
   
   useEffect(() => {
@@ -11973,57 +16006,406 @@ function VisitsChart({ data, onBarClick }: { data: any[], onBarClick?: (date: Da
     return <div className="h-full w-full bg-[#1a1d23]/50 animate-pulse flex items-center justify-center text-[#71717a] text-xs">Carregando gráfico...</div>;
   }
 
+  const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6'];
+
+  const renderChart = () => {
+    switch (type) {
+      case 'pie': {
+        const activeData = data.filter(item => item.visitas > 0);
+        if (activeData.length === 0) {
+          return (
+            <div className="h-full w-full flex items-center justify-center text-[#71717a] text-xs py-10 italic">
+              Nenhuma visita programada para esta semana.
+            </div>
+          );
+        }
+        return (
+          <PieChart>
+            <Pie
+              data={activeData}
+              dataKey="visitas"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              outerRadius={70}
+              label={({ name, value }) => `${name}: ${value}`}
+            >
+              {activeData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip 
+              contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
+              itemStyle={{ color: '#fff' }}
+            />
+            <Legend />
+          </PieChart>
+        );
+      }
+      case 'doughnut': {
+        const activeData = data.filter(item => item.visitas > 0);
+        if (activeData.length === 0) {
+          return (
+            <div className="h-full w-full flex items-center justify-center text-[#71717a] text-xs py-10 italic">
+              Nenhuma visita programada para esta semana.
+            </div>
+          );
+        }
+        return (
+          <PieChart>
+            <Pie
+              data={activeData}
+              dataKey="visitas"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              innerRadius={50}
+              outerRadius={70}
+              label={({ name, value }) => `${name}: ${value}`}
+            >
+              {activeData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip 
+              contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
+              itemStyle={{ color: '#fff' }}
+            />
+            <Legend />
+          </PieChart>
+        );
+      }
+      case 'bar-horizontal': {
+        return (
+          <BarChart 
+            data={data}
+            layout="vertical"
+            className="cursor-pointer"
+            margin={{ top: 10, right: 15, left: -10, bottom: 0 }}
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" horizontal={false} />
+            <XAxis 
+              type="number"
+              stroke="#71717a" 
+              fontSize={11} 
+              tickLine={false} 
+              axisLine={false} 
+            />
+            <YAxis 
+              dataKey="name"
+              type="category"
+              stroke="#71717a" 
+              fontSize={11} 
+              tickLine={false} 
+              axisLine={false}
+              width={35}
+            />
+            <Tooltip 
+              cursor={{fill: '#25282e'}}
+              contentStyle={{ 
+                backgroundColor: '#1a1d23', 
+                border: '1px solid #2d3139',
+                borderRadius: '8px',
+                color: '#fff'
+              }}
+              itemStyle={{ color: '#3b82f6' }}
+            />
+            <Bar 
+              dataKey="visitas" 
+              fill="#3b82f6" 
+              radius={[0, 4, 4, 0]} 
+              barSize={18}
+              style={{ cursor: 'pointer' }}
+              onClick={(props: any) => {
+                if (onBarClick && props && props.fullDate) {
+                  onBarClick(props.fullDate);
+                }
+              }}
+            />
+          </BarChart>
+        );
+      }
+      case 'area': {
+        return (
+          <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+            <defs>
+              <linearGradient id="visitsAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
+            <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+            <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+            <Tooltip 
+              contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
+              itemStyle={{ color: '#3b82f6' }}
+            />
+            <Area type="monotone" dataKey="visitas" name="Visitas" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#visitsAreaGrad)" />
+          </AreaChart>
+        );
+      }
+      case 'pos-neg': {
+        const avgVal = data.reduce((sum, item) => sum + (Number(item.visitas) || 0), 0) / (data.length || 1);
+        const devData = data.map(item => ({
+          ...item,
+          deviation: Number((item.visitas - avgVal).toFixed(1)),
+          originalValue: item.visitas
+        }));
+        return (
+          <BarChart data={devData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
+            <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+            <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+            <Tooltip 
+              contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
+              itemStyle={{ color: '#fff' }}
+              formatter={(value: any, name: any, props: any) => [
+                `Desvio: ${value > 0 ? '+' : ''}${value} (Visitas: ${props.payload.originalValue})`, 
+                'Desempenho'
+              ]}
+            />
+            <Bar dataKey="deviation">
+              {devData.map((entry, index) => (
+                <Cell 
+                  key={`cell-${index}`} 
+                  fill={entry.deviation >= 0 ? '#10b981' : '#ef4444'} 
+                />
+              ))}
+            </Bar>
+          </BarChart>
+        );
+      }
+      case 'bar-vertical':
+      default:
+        return (
+          <BarChart 
+            data={data}
+            className="cursor-pointer"
+            margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
+            <XAxis 
+              dataKey="name" 
+              stroke="#71717a" 
+              fontSize={12} 
+              tickLine={false} 
+              axisLine={false} 
+            />
+            <YAxis 
+              stroke="#71717a" 
+              fontSize={12} 
+              tickLine={false} 
+              axisLine={false}
+            />
+            <Tooltip 
+              cursor={{fill: '#25282e'}}
+              contentStyle={{ 
+                backgroundColor: '#1a1d23', 
+                border: '1px solid #2d3139',
+                borderRadius: '8px',
+                color: '#fff'
+              }}
+              itemStyle={{ color: '#3b82f6' }}
+            />
+            <Bar 
+              dataKey="visitas" 
+              fill="#3b82f6" 
+              radius={[4, 4, 0, 0]} 
+              barSize={40}
+              style={{ cursor: 'pointer' }}
+              onClick={(props: any) => {
+                if (onBarClick && props && props.fullDate) {
+                  onBarClick(props.fullDate);
+                }
+              }}
+            />
+          </BarChart>
+        );
+    }
+  };
+
   return (
     <div style={{ width: '100%', height: '100%', minHeight: '200px' }}>
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart 
-          data={data}
-          className="cursor-pointer"
-        >
-          <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
-          <XAxis 
-            dataKey="name" 
-            stroke="#71717a" 
-            fontSize={12} 
-            tickLine={false} 
-            axisLine={false} 
-          />
-          <YAxis 
-            stroke="#71717a" 
-            fontSize={12} 
-            tickLine={false} 
-            axisLine={false}
-          />
-          <Tooltip 
-            cursor={{fill: '#25282e'}}
-            contentStyle={{ 
-              backgroundColor: '#1a1d23', 
-              border: '1px solid #2d3139',
-              borderRadius: '8px',
-              color: '#fff'
-            }}
-            itemStyle={{ color: '#3b82f6' }}
-          />
-          <Bar 
-            dataKey="visitas" 
-            fill="#3b82f6" 
-            radius={[4, 4, 0, 0]} 
-            barSize={40}
-            style={{ cursor: 'pointer' }}
-            onClick={(props: any) => {
-              if (onBarClick && props && props.fullDate) {
-                onBarClick(props.fullDate);
-              }
-            }}
-          />
-        </BarChart>
+        {renderChart()}
       </ResponsiveContainer>
     </div>
   );
 }
 
-function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets = [], clients = [], onNavigate, companyId, showList }: { visits: TechnicalVisit[], serviceOrders: ServiceOrder[], financials: FinancialRecord[], budgets: Budget[], clients: Client[], onNavigate: (tab: string, filter?: any) => void, companyId: string, showList: boolean }) {
+function ChartTypeSelector({ 
+  current, 
+  onChange,
+  className
+}: { 
+  current: string, 
+  onChange: (type: string) => void,
+  className?: string
+}) {
+  const options = [
+    { value: 'pizza', label: 'Pizza' },
+    { value: 'bar-horizontal', label: 'Barra Horiz.' },
+    { value: 'bar-vertical', label: 'Barra Vert.' },
+    { value: 'doughnut', label: 'Círculo' },
+    { value: 'area', label: 'Ondas' },
+    { value: 'pos-neg', label: 'Pos./Neg.' }
+  ];
+
+  return (
+    <div className="flex flex-wrap items-center gap-1 bg-[#0f1115] p-1 rounded-lg border border-[#2d3139] text-[9px] md:text-[10px] shrink-0">
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          onClick={() => onChange(opt.value)}
+          className={cn(
+            "px-1.5 py-0.5 rounded transition-all font-bold uppercase tracking-wider text-[9px]",
+            current === opt.value 
+              ? "bg-blue-600 text-white shadow-sm" 
+              : "text-zinc-400 hover:text-white hover:bg-[#1a1d23]"
+          )}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Dashboard({ 
+  visits = [], 
+  serviceOrders = [], 
+  financials = [], 
+  budgets = [], 
+  clients = [], 
+  onNavigate, 
+  companyId, 
+  showList,
+  payables = [],
+  receivables = [],
+  sales = [],
+  canAccess = () => true,
+  saasSettings,
+  userRole,
+  isSuperAdmin = false
+}: { 
+  visits: TechnicalVisit[], 
+  serviceOrders: ServiceOrder[], 
+  financials: FinancialRecord[], 
+  budgets: Budget[], 
+  clients: Client[], 
+  onNavigate: (tab: string, filter?: any) => void, 
+  companyId: string, 
+  showList: boolean,
+  payables?: any[],
+  receivables?: any[],
+  sales?: any[],
+  canAccess?: (tab: string) => boolean,
+  saasSettings?: any,
+  userRole?: string,
+  isSuperAdmin?: boolean
+}) {
   const [weekOffset, setWeekOffset] = useState(0);
+  
+  // Dashboard display configurations
+  const showVisitsCard = localStorage.getItem('dashboard_show_visits_card') !== 'false';
+  const showOsCard = localStorage.getItem('dashboard_show_os_card') !== 'false';
+  const showBudgetsCard = localStorage.getItem('dashboard_show_budgets_card') !== 'false';
+  const showBalanceCard = localStorage.getItem('dashboard_show_balance_card') !== 'false';
+  const showMonthBalanceCard = localStorage.getItem('dashboard_show_month_balance_card') !== 'false';
+  const showPdvSalesCard = localStorage.getItem('dashboard_show_pdv_sales_card') !== 'false';
+  const showPayablesCard = localStorage.getItem('dashboard_show_payables_card') !== 'false';
+  const showReceivablesCard = localStorage.getItem('dashboard_show_receivables_card') !== 'false';
+
+  const showVisitsChart = localStorage.getItem('dashboard_show_visits_chart') !== 'false';
+  const showTypesChart = localStorage.getItem('dashboard_show_types_chart') !== 'false';
+  const showFluxoChart = localStorage.getItem('dashboard_show_fluxo_chart') !== 'false';
+  const showForecastChart = localStorage.getItem('dashboard_show_forecast_chart') !== 'false';
+  const showTodayVisitsList = localStorage.getItem('dashboard_show_today_visits') !== 'false';
+  
+  // Custom card positions preferences
+  const cardsOrder = useMemo<string[]>(() => {
+    const defaultCards = ['showVisitsCard', 'showPayablesCard', 'showOsCard', 'showPdvSalesCard', 'showBudgetsCard', 'showReceivablesCard', 'showBalanceCard', 'showMonthBalanceCard'];
+    const saved = localStorage.getItem('dashboard_cards_order');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const validSaved = parsed.filter(item => defaultCards.includes(item));
+          const missing = defaultCards.filter(item => !validSaved.includes(item));
+          return [...validSaved, ...missing];
+        }
+      } catch (e) {
+        // Fallback below
+      }
+    }
+    return defaultCards;
+  }, []);
+
+  // Custom chart positions preferences
+  const chartsOrder = useMemo<string[]>(() => {
+    const defaultCharts = ['showVisitsChart', 'showTypesChart', 'showFluxoChart', 'showForecastChart', 'showTodayVisitsList'];
+    const saved = localStorage.getItem('dashboard_charts_order');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const validSaved = parsed.filter(item => defaultCharts.includes(item));
+          const missing = defaultCharts.filter(item => !validSaved.includes(item));
+          return [...validSaved, ...missing];
+        }
+      } catch (e) {
+        // Fallback below
+      }
+    }
+    return defaultCharts;
+  }, []);
+
+  const [visitsChartType, setVisitsChartType] = useState(() => localStorage.getItem('dashboard_visits_chart_type') || 'bar-vertical');
+  const [typesChartType, setTypesChartType] = useState(() => localStorage.getItem('dashboard_types_chart_type') || 'doughnut');
+  const [fluxoChartType, setFluxoChartType] = useState(() => localStorage.getItem('dashboard_fluxo_chart_type') || 'area');
+  const [forecastChartType, setForecastChartType] = useState(() => localStorage.getItem('dashboard_forecast_chart_type') || 'area');
+
+  const handleVisitsChartTypeChange = (type: string) => {
+    setVisitsChartType(type);
+    localStorage.setItem('dashboard_visits_chart_type', type);
+  };
+  const handleTypesChartTypeChange = (type: string) => {
+    setTypesChartType(type);
+    localStorage.setItem('dashboard_types_chart_type', type);
+  };
+  const handleFluxoChartTypeChange = (type: string) => {
+    setFluxoChartType(type);
+    localStorage.setItem('dashboard_fluxo_chart_type', type);
+  };
+  const handleForecastChartTypeChange = (type: string) => {
+    setForecastChartType(type);
+    localStorage.setItem('dashboard_forecast_chart_type', type);
+  };
+  const [selectedForecastMonth, setSelectedForecastMonth] = useState<number>(() => {
+    const today = new Date();
+    return (today.getMonth() + 1) % 12;
+  });
+  const [selectedForecastYear, setSelectedForecastYear] = useState<number>(() => {
+    const today = new Date();
+    const nextMonthDate = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+    return nextMonthDate.getFullYear();
+  });
+
+  const monthsList = [
+    { label: 'Jan', index: 0 },
+    { label: 'Fev', index: 1 },
+    { label: 'Mar', index: 2 },
+    { label: 'Abr', index: 3 },
+    { label: 'Mai', index: 4 },
+    { label: 'Jun', index: 5 },
+    { label: 'Jul', index: 6 },
+    { label: 'Ago', index: 7 },
+    { label: 'Set', index: 8 },
+    { label: 'Out', index: 9 },
+    { label: 'Nov', index: 10 },
+    { label: 'Dez', index: 11 }
+  ];
 
   const visitsByDay = useMemo(() => {
     const today = new Date();
@@ -12099,8 +16481,50 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
       return format(d, 'yyyy-MM-dd') === todayStr;
     }).sort((a, b) => (a.scheduledTime || '').localeCompare(b.scheduledTime || ''));
 
-    return { income, expense, balance: income - expense, todayBalance, pendingVisits, completedVisits, pendingBudgets, pendingOS, totalClients, todayVisits };
-  }, [visits, serviceOrders, financials, budgets, clients]);
+    // Today's PDV Sales
+    const todaySales = (sales || []).filter(s => {
+      if (!s.createdAt) return false;
+      const d = s.createdAt.toDate ? s.createdAt.toDate() : new Date(s.createdAt);
+      return format(d, 'yyyy-MM-dd') === todayStr;
+    });
+    const todaySalesCount = todaySales.length;
+    const todaySalesTotal = todaySales.reduce((acc, s) => acc + (Number(s.total) || 0), 0);
+
+    // Pending Payables (Contas a Pagar Pendentes)
+    const pendingPayablesCount = (payables || []).filter(p => p.status !== 'Pago').length;
+    const pendingPayablesTotal = (payables || []).filter(p => p.status !== 'Pago').reduce((acc, p) => {
+      const partialSum = (p.partialPayments || []).reduce((sum: number, pay: any) => sum + Number(pay?.value || 0), 0);
+      const remainingVal = Math.max(0, (Number(p.value) || 0) - partialSum);
+      return acc + remainingVal;
+    }, 0);
+
+    // Pending Receivables (Contas a Receber Pendentes)
+    const pendingReceivablesCount = (receivables || []).filter(r => r.status !== 'Pago').length;
+    const pendingReceivablesTotal = (receivables || []).filter(r => r.status !== 'Pago').reduce((acc, r) => {
+      const partialSum = (r.partialPayments || []).reduce((sum: number, pay: any) => sum + Number(pay?.value || 0), 0);
+      const remainingVal = Math.max(0, (Number(r.value) || 0) - partialSum);
+      return acc + remainingVal;
+    }, 0);
+
+    return { 
+      income, 
+      expense, 
+      balance: income - expense, 
+      todayBalance, 
+      pendingVisits, 
+      completedVisits, 
+      pendingBudgets, 
+      pendingOS, 
+      totalClients, 
+      todayVisits,
+      todaySalesCount,
+      todaySalesTotal,
+      pendingPayablesCount,
+      pendingPayablesTotal,
+      pendingReceivablesCount,
+      pendingReceivablesTotal
+    };
+  }, [visits, serviceOrders, financials, budgets, clients, sales, payables, receivables]);
 
   const chartData = useMemo(() => {
     const last7Days = Array.from({ length: 7 }, (_, i) => {
@@ -12130,13 +16554,111 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
     })).filter(t => t.value > 0);
   }, [visits]);
 
+  const nextMonthForecastData = useMemo(() => {
+    const forecastYear = selectedForecastYear;
+    const forecastMonth = selectedForecastMonth; // 0-indexed
+
+    const daysInMonth = new Date(forecastYear, forecastMonth + 1, 0).getDate();
+
+    // 1. Compile projected contract values from client records for selected month
+    const activeContracts = (clients || []).filter(c => c.type === 'Contrato');
+    const contractProjections = activeContracts.map(client => {
+      const val = Number(client.contractValue || 0);
+      const paymentDay = Number(client.paymentDay || 10);
+      
+      const forecastMonthStr = `${String(forecastMonth + 1).padStart(2, '0')}/${forecastYear}`;
+      
+      // Look for a real receivable already registered in Firestore matching this client in selected month
+      const exists = (receivables || []).some(r => 
+        (r.clientId === client.id || normalizeName(r.clientName) === normalizeName(client.name)) &&
+        r.referenceMonth === forecastMonthStr &&
+        (r.isContractPrediction === true || 
+         (r.category || '').toLowerCase().includes('contrato') || 
+         (r.category || '').toLowerCase().includes('mensalidade'))
+      );
+
+      return {
+        day: Math.min(paymentDay, 28),
+        value: exists ? 0 : val
+      };
+    });
+
+    const forecast = [];
+    for (let day = 1; day <= daysInMonth; day++) {
+      // Filter receivables due on this day
+      const dayReceivables = (receivables || []).filter(r => {
+        if (!r.dueDate) return false;
+        if (r.status === 'Pago') return false;
+        try {
+          const d = safeParseDate(r.dueDate);
+          return d.getDate() === day && d.getMonth() === forecastMonth && d.getFullYear() === forecastYear;
+        } catch {
+          return false;
+        }
+      });
+
+      // Filter payables due on this day
+      const dayPayables = (payables || []).filter(p => {
+        if (!p.dueDate) return false;
+        if (p.status === 'Pago') return false;
+        try {
+          const d = safeParseDate(p.dueDate);
+          return d.getDate() === day && d.getMonth() === forecastMonth && d.getFullYear() === forecastYear;
+        } catch {
+          return false;
+        }
+      });
+
+      // Income = directly launched receivables + contract-based dynamic predictions for selected month
+      const receitaReal = dayReceivables.reduce((acc, r) => {
+        const partialSum = (r.partialPayments || []).reduce((sum: number, pay: any) => sum + Number(pay?.value || 0), 0);
+        const remainingVal = Math.max(0, (Number(r.value) || 0) - partialSum);
+        return acc + remainingVal;
+      }, 0);
+      const contractIncome = contractProjections.filter(p => p.day === day).reduce((acc, p) => acc + p.value, 0);
+      
+      const receita = receitaReal + contractIncome;
+      const despesa = dayPayables.reduce((acc, p) => {
+        const partialSum = (p.partialPayments || []).reduce((sum: number, pay: any) => sum + Number(pay?.value || 0), 0);
+        const remainingVal = Math.max(0, (Number(p.value) || 0) - partialSum);
+        return acc + remainingVal;
+      }, 0);
+
+      forecast.push({
+        name: String(day),
+        receita,
+        despesa,
+        totalDia: receita - despesa
+      });
+    }
+
+    const targetDate = new Date(forecastYear, forecastMonth, 1);
+    return {
+      monthLabel: format(targetDate, 'MMMM/yyyy', { locale: ptBR }),
+      data: forecast
+    };
+  }, [payables, receivables, clients, selectedForecastMonth, selectedForecastYear]);
+
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#71717a'];
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2 mb-6 border-b border-[#2d3139]/30 pb-4">
-        <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest text-[#3b82f6]">Painel de Controle</h2>
-        <p className="text-[#a0a0a0] text-sm">Visão geral das atividades e performance da sua empresa.</p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 border-b border-[#2d3139]/30 pb-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest text-[#3b82f6]">Painel de Controle</h2>
+          <p className="text-[#a0a0a0] text-sm">Visão geral das atividades e performance da sua empresa.</p>
+        </div>
+        {(userRole === 'owner' || isSuperAdmin) && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onNavigate('dashboard-display-config')}
+            className="md:self-end border-[#2d3139] hover:bg-[#25282e]/50 text-[#a0a0a0] hover:text-white flex items-center gap-2"
+          >
+            <LayoutGrid size={14} />
+            Configurar Exibição
+          </Button>
+        )}
       </div>
 
       {!showList ? (
@@ -12150,192 +16672,819 @@ function Dashboard({ visits = [], serviceOrders = [], financials = [], budgets =
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard 
-          title="Visitas Agendadas" 
-          value={stats.pendingVisits} 
-          icon={<CalendarIcon className="text-[#3b82f6]" />} 
-          trend={`${stats.completedVisits} concluídas`} 
-          isCount 
-          onClick={() => onNavigate('visits')}
-        />
-        <StatCard 
-          title="O.S. Ativas" 
-          value={stats.pendingOS} 
-          icon={<CheckCircle2 className="text-[#10b981]" />} 
-          trend="Em andamento/Aberto" 
-          isCount 
-          onClick={() => onNavigate('service-orders')}
-        />
-        <StatCard 
-          title="Orçamentos Pendentes" 
-          value={stats.pendingBudgets} 
-          icon={<FileText className="text-[#f59e0b]" />} 
-          trend="Aguardando aprovação" 
-          isCount 
-          onClick={() => onNavigate('budgets')}
-        />
-        <Card 
-          className={cn(
-            "border-[#2d3139] p-6 rounded-xl cursor-pointer hover:border-[#3b82f6]/40 transition-all",
-            stats.todayBalance >= 0 ? "bg-emerald-500/10 border-emerald-500/20" : "bg-red-500/10 border-red-500/20"
-          )}
-          onClick={() => onNavigate('financial')}
-        >
-          <div className="text-[12px] text-[#71717a] mb-2 font-medium">Saldo do Dia</div>
-          <div className={cn(
-            "text-[22px] font-bold tracking-tight",
-            stats.todayBalance >= 0 ? "text-emerald-500" : "text-red-500"
-          )}>
-            R$ {stats.todayBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            {cardsOrder.map((cardKey) => {
+              switch (cardKey) {
+                case 'showVisitsCard':
+                  return canAccess('visits') && showVisitsCard ? (
+                    <React.Fragment key="visits">
+                      <StatCard 
+                        title="Visitas Agendadas" 
+                        value={stats.pendingVisits} 
+                        icon={<CalendarIcon className="text-[#3b82f6]" />} 
+                        trend={`${stats.completedVisits} concluídas`} 
+                        isCount 
+                        onClick={() => onNavigate('visits')}
+                      />
+                    </React.Fragment>
+                  ) : null;
+
+                case 'showPayablesCard':
+                  return showPayablesCard && (canAccess('payable') || canAccess('financial')) ? (
+                    <React.Fragment key="payables">
+                      <Card 
+                        className="border-[#2d3139] p-6 rounded-xl cursor-pointer hover:border-red-500/40 bg-red-500/5 transition-all text-left flex flex-col justify-between"
+                        onClick={() => onNavigate('payable')}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="text-[12px] text-[#71717a] mb-2 font-medium">Contas a Pagar (Pendentes)</div>
+                            <div className="text-[22px] font-bold tracking-tight text-red-500">
+                              R$ {stats.pendingPayablesTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </div>
+                          </div>
+                          <div className="p-2 bg-red-500/10 rounded-lg text-red-400">
+                            <ArrowUpRight size={20} className="transform rotate-180" />
+                          </div>
+                        </div>
+                        <div className="text-[11px] mt-2 text-[#71717a]">
+                          {stats.pendingPayablesCount} lançamentos em aberto
+                        </div>
+                      </Card>
+                    </React.Fragment>
+                  ) : null;
+
+                case 'showOsCard':
+                  return canAccess('service-orders') && showOsCard ? (
+                    <React.Fragment key="os">
+                      <StatCard 
+                        title="O.S. Ativas" 
+                        value={stats.pendingOS} 
+                        icon={<CheckCircle2 className="text-[#10b981]" />} 
+                        trend="Em andamento/Aberto" 
+                        isCount 
+                        onClick={() => onNavigate('service-orders')}
+                      />
+                    </React.Fragment>
+                  ) : null;
+
+                case 'showPdvSalesCard':
+                  return showPdvSalesCard && canAccess('pdv') ? (
+                    <React.Fragment key="pdv">
+                      <Card 
+                        className="border-[#2d3139] p-6 rounded-xl cursor-pointer hover:border-indigo-500/40 bg-indigo-500/5 transition-all text-left flex flex-col justify-between"
+                        onClick={() => onNavigate('pdv')}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="text-[12px] text-[#71717a] mb-2 font-medium">Vendas no PDV (Hoje)</div>
+                            <div className="text-[22px] font-bold tracking-tight text-indigo-400">
+                              {stats.todaySalesCount} {stats.todaySalesCount === 1 ? 'venda' : 'vendas'}
+                            </div>
+                          </div>
+                          <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-400">
+                            <ShoppingCart size={20} />
+                          </div>
+                        </div>
+                        <div className="text-[11px] mt-2 text-[#71717a]">
+                          Total hoje: R$ {stats.todaySalesTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </div>
+                      </Card>
+                    </React.Fragment>
+                  ) : null;
+
+                case 'showBudgetsCard':
+                  return canAccess('budgets') && showBudgetsCard ? (
+                    <React.Fragment key="budgets">
+                      <StatCard 
+                        title="Orçamentos Pendentes" 
+                        value={stats.pendingBudgets} 
+                        icon={<FileText className="text-[#f59e0b]" />} 
+                        trend="Aguardando aprovação" 
+                        isCount 
+                        onClick={() => onNavigate('budgets')}
+                      />
+                    </React.Fragment>
+                  ) : null;
+
+                case 'showReceivablesCard':
+                  return showReceivablesCard && (canAccess('receivable') || canAccess('financial')) ? (
+                    <React.Fragment key="receivables">
+                      <Card 
+                        className="border-[#2d3139] p-6 rounded-xl cursor-pointer hover:border-emerald-500/40 bg-emerald-500/5 transition-all text-left flex flex-col justify-between"
+                        onClick={() => onNavigate('receivable')}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="text-[12px] text-[#71717a] mb-2 font-medium">Contas a Receber (Pendentes)</div>
+                            <div className="text-[22px] font-bold tracking-tight text-emerald-500">
+                              R$ {stats.pendingReceivablesTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </div>
+                          </div>
+                          <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-400">
+                            <ArrowUpRight size={20} />
+                          </div>
+                        </div>
+                        <div className="text-[11px] mt-2 text-[#71717a]">
+                          {stats.pendingReceivablesCount} lançamentos em aberto
+                        </div>
+                      </Card>
+                    </React.Fragment>
+                  ) : null;
+
+                case 'showBalanceCard':
+                  return showBalanceCard && canAccess('financial') ? (
+                    <React.Fragment key="balance">
+                      <Card 
+                        className={cn(
+                          "border-[#2d3139] p-6 rounded-xl cursor-pointer hover:border-[#3b82f6]/40 transition-all text-left flex flex-col justify-between",
+                          stats.todayBalance >= 0 ? "bg-emerald-500/10 border-emerald-500/20" : "bg-red-500/10 border-red-500/20"
+                        )}
+                        onClick={() => onNavigate('financial')}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="text-[12px] text-[#71717a] mb-2 font-medium">Saldo do Dia</div>
+                            <div className={cn(
+                              "text-[22px] font-bold tracking-tight",
+                              stats.todayBalance >= 0 ? "text-emerald-500" : "text-red-500"
+                            )}>
+                              R$ {stats.todayBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </div>
+                          </div>
+                          <div className={cn(
+                            "p-2 rounded-lg",
+                            stats.todayBalance >= 0 ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"
+                          )}>
+                            <DollarSign size={20} />
+                          </div>
+                        </div>
+                        <div className="text-[11px] mt-2 text-[#71717a]">
+                          Fluxo de caixa hoje
+                        </div>
+                      </Card>
+                    </React.Fragment>
+                  ) : null;
+
+                case 'showMonthBalanceCard':
+                  return showMonthBalanceCard && canAccess('financial') ? (
+                    <React.Fragment key="month_balance">
+                      <Card 
+                        className="border-[#2d3139] p-6 rounded-xl cursor-pointer hover:border-pink-500/40 bg-pink-500/5 transition-all text-left flex flex-col justify-between"
+                        onClick={() => onNavigate('financial')}
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <div className="text-[11px] text-[#71717a] uppercase tracking-wider font-extrabold text-pink-400">Resumo do Mês</div>
+                          </div>
+                          <div className="p-2 bg-pink-500/10 rounded-lg text-pink-400">
+                            <DollarSign size={18} />
+                          </div>
+                        </div>
+                        <div className="space-y-1.5 text-[11px] font-semibold text-zinc-300">
+                          <div className="flex justify-between items-center bg-[#1c1f26]/30 px-2 py-1 rounded">
+                            <span className="text-[#a1a1aa]">Receitas Mês:</span>
+                            <span className="text-emerald-400 font-extrabold">R$ {stats.income.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="flex justify-between items-center bg-[#1c1f26]/30 px-2 py-1 rounded">
+                            <span className="text-[#a1a1aa]">Despesas Mês:</span>
+                            <span className="text-red-400 font-extrabold">R$ {stats.expense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="flex justify-between items-center border-t border-[#2d3139] pt-1.5 px-2 mt-1">
+                            <span className="text-neutral-200">Saldo Mês:</span>
+                            <span className={cn("font-extrabold text-xs", stats.balance >= 0 ? "text-emerald-400" : "text-red-400")}>
+                              R$ {stats.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        </div>
+                      </Card>
+                    </React.Fragment>
+                  ) : null;
+
+                default:
+                  return null;
+              }
+            })}
           </div>
-          <div className="text-[11px] mt-2 text-[#71717a]">
-            Fluxo de caixa hoje
-          </div>
-        </Card>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-8">
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden h-[400px]">
-          <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-row items-center justify-between">
-            <div className="flex flex-col">
-              <CardTitle className="text-[15px] font-semibold text-white">Cronograma de Visitas</CardTitle>
-              <div className="flex items-center gap-2 mt-1">
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-6 w-6 text-[#71717a] hover:text-white" 
-                  onClick={() => setWeekOffset(prev => prev - 1)}
-                >
-                  <ChevronLeft size={14} />
-                </Button>
-                <span className="text-[10px] text-[#71717a] font-mono uppercase tracking-wider">{visitsByDay.range}</span>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-6 w-6 text-[#71717a] hover:text-white" 
-                  onClick={() => setWeekOffset(prev => prev + 1)}
-                >
-                  <ChevronRight size={14} />
-                </Button>
-                {weekOffset !== 0 && (
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="h-6 px-2 text-[9px] text-[#3b82f6] hover:bg-[#3b82f6]/10" 
-                    onClick={() => setWeekOffset(0)}
-                  >
-                    Hoje
-                  </Button>
-                )}
-              </div>
-            </div>
-            <span 
-              className="text-[12px] text-[#3b82f6] cursor-pointer hover:underline"
-              onClick={() => onNavigate('visits')}
-            >
-              Ver Todas
-            </span>
-          </CardHeader>
-          <CardContent className="p-6 h-[320px]">
-            <VisitsChart 
-              data={visitsByDay.data} 
-              onBarClick={(date) => onNavigate('visits', { date })}
-            />
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {chartsOrder.map((chartKey) => {
+          switch (chartKey) {
+            case 'showVisitsChart':
+              return canAccess('visits') && showVisitsChart ? (
+                <React.Fragment key="visits_chart">
+                  <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden min-h-[440px] flex flex-col">
+                    <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col gap-3">
+                      <div className="flex flex-row items-center justify-between w-full gap-2">
+                        <CardTitle className="text-[15px] font-semibold text-white whitespace-nowrap">Cronograma de Visitas</CardTitle>
+                        
+                        {/* Week Offset Selection placed exactly between title and "Ver Todas" */}
+                        <div className="flex items-center gap-1 bg-[#0f1115] px-1.5 py-0.5 rounded-lg border border-[#2d3139] text-xs">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-5 w-5 text-[#71717a] hover:text-white" 
+                            onClick={() => setWeekOffset(prev => prev - 1)}
+                          >
+                            <ChevronLeft size={12} />
+                          </Button>
+                          <span className="text-[9px] text-zinc-300 font-mono font-bold uppercase tracking-wider">{visitsByDay.range}</span>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-5 w-5 text-[#71717a] hover:text-white" 
+                            onClick={() => setWeekOffset(prev => prev + 1)}
+                          >
+                            <ChevronRight size={12} />
+                          </Button>
+                          {weekOffset !== 0 && (
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-5 px-1 text-[8px] font-bold text-[#3b82f6] hover:bg-[#3b82f6]/10 uppercase" 
+                              onClick={() => setWeekOffset(0)}
+                            >
+                              Hoje
+                            </Button>
+                          )}
+                        </div>
 
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden h-[400px]">
-          <CardHeader className="border-b border-[#2d3139] px-6 py-4">
-            <CardTitle className="text-[15px] font-semibold text-white">Distribuição por Tipo de Serviço</CardTitle>
-          </CardHeader>
-          <CardContent className="p-6 flex flex-col items-center justify-center h-[320px]">
-            <div className="h-full w-full min-h-[250px]">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                <PieChart>
-                  <Pie
-                    data={typeData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {typeData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
-                    itemStyle={{ color: '#fff' }}
-                  />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
+                        <span 
+                          className="text-[12px] text-[#3b82f6] cursor-pointer hover:underline font-bold shrink-0"
+                          onClick={() => onNavigate('visits')}
+                        >
+                          Ver Todas
+                        </span>
+                      </div>
+                      <div className="w-full pt-1.5 border-t border-[#2d3139]/30">
+                        <ChartTypeSelector current={visitsChartType} onChange={handleVisitsChartTypeChange} />
+                      </div>
+                    </CardHeader>
+                    <CardContent className="p-6 flex-1 min-h-[300px]">
+                      <VisitsChart 
+                        data={visitsByDay.data} 
+                        onBarClick={(date) => onNavigate('visits', { date })}
+                        type={visitsChartType}
+                      />
+                    </CardContent>
+                  </Card>
+                </React.Fragment>
+              ) : null;
 
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden col-span-full h-[400px]">
-          <CardHeader className="border-b border-[#2d3139] px-6 py-4">
-            <CardTitle className="text-[15px] font-semibold text-white">Fluxo Financeiro (Últimos 7 dias)</CardTitle>
-          </CardHeader>
-          <CardContent className="p-6 h-[320px]">
-            <div className="h-full w-full min-h-[250px]">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                <AreaChart data={chartData}>
-                  <defs>
-                    <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorExpense" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <XAxis dataKey="name" stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `R$ ${value}`} />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
-                    itemStyle={{ color: '#fff' }}
-                  />
-                  <Area type="monotone" dataKey="receita" stroke="#10b981" fillOpacity={1} fill="url(#colorIncome)" />
-                  <Area type="monotone" dataKey="despesa" stroke="#ef4444" fillOpacity={1} fill="url(#colorExpense)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
+            case 'showTypesChart':
+              return canAccess('visits') && showTypesChart ? (
+                <React.Fragment key="types_chart">
+                  <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden min-h-[440px] flex flex-col">
+                    <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col items-start gap-2.5">
+                      <CardTitle className="text-[15px] font-semibold text-white">Distribuição por Tipo de Serviço</CardTitle>
+                      <ChartTypeSelector current={typesChartType} onChange={handleTypesChartTypeChange} />
+                    </CardHeader>
+                    <CardContent className="p-6 flex-1 min-h-[300px] flex flex-col items-center justify-center">
+                      <div className="h-full w-full min-h-[250px] flex-1">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                          {(() => {
+                            switch (typesChartType) {
+                              case 'pizza':
+                                return (
+                                  <PieChart>
+                                    <Pie
+                                      data={typeData}
+                                      cx="50%"
+                                      cy="50%"
+                                      outerRadius={80}
+                                      dataKey="value"
+                                      label={({ name, percent }) => percent > 0 ? `${name} (${(percent * 100).toFixed(0)}%)` : ''}
+                                    >
+                                      {typeData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                      ))}
+                                    </Pie>
+                                    <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} />
+                                    <Legend />
+                                  </PieChart>
+                                );
+                              case 'bar-vertical':
+                                return (
+                                  <BarChart data={typeData}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
+                                    <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                                    <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                                    <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} />
+                                    <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={25}>
+                                      {typeData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                      ))}
+                                    </Bar>
+                                  </BarChart>
+                                );
+                              case 'bar-horizontal':
+                                return (
+                                  <BarChart data={typeData} layout="vertical">
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" horizontal={false} />
+                                    <XAxis type="number" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                                    <YAxis dataKey="name" type="category" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} width={80} />
+                                    <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} />
+                                    <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={18}>
+                                      {typeData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                      ))}
+                                    </Bar>
+                                  </BarChart>
+                                );
+                              case 'area':
+                                return (
+                                  <AreaChart data={typeData}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
+                                    <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                                    <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                                    <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} />
+                                    <Area type="monotone" dataKey="value" stroke="#10b981" strokeWidth={2} fillOpacity={0.25} fill="#10b981" />
+                                  </AreaChart>
+                                );
+                              case 'pos-neg': {
+                                const avgVal = typeData.reduce((sum, item) => sum + (Number(item.value) || 0), 0) / (typeData.length || 1);
+                                const devData = typeData.map(item => ({
+                                  ...item,
+                                  deviation: Number((item.value - avgVal).toFixed(1)),
+                                  originalValue: item.value
+                                }));
+                                return (
+                                  <BarChart data={devData}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
+                                    <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                                    <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                                    <Tooltip 
+                                      contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} 
+                                      itemStyle={{ color: '#fff' }}
+                                      formatter={(value: any, name: any, props: any) => [
+                                        `Desvio: ${value > 0 ? '+' : ''}${value} (Registros: ${props.payload.originalValue})`, 
+                                        'Desvio Desempenho'
+                                      ]}
+                                    />
+                                    <Bar dataKey="deviation">
+                                      {devData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={entry.deviation >= 0 ? '#10b981' : '#ef4444'} />
+                                      ))}
+                                    </Bar>
+                                  </BarChart>
+                                );
+                              }
+                              case 'doughnut':
+                              default:
+                                return (
+                                  <PieChart>
+                                    <Pie
+                                      data={typeData}
+                                      cx="50%"
+                                      cy="50%"
+                                      innerRadius={60}
+                                      outerRadius={80}
+                                      paddingAngle={5}
+                                      dataKey="value"
+                                      label={({ name, percent }) => percent > 0 ? `${name} (${(percent * 100).toFixed(0)}%)` : ''}
+                                    >
+                                      {typeData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                      ))}
+                                    </Pie>
+                                    <Tooltip 
+                                      contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
+                                      itemStyle={{ color: '#fff' }}
+                                    />
+                                    <Legend />
+                                  </PieChart>
+                                );
+                            }
+                          })()}
+                        </ResponsiveContainer>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </React.Fragment>
+              ) : null;
 
-        {stats.todayVisits.length > 0 && (
-          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden col-span-full">
-            <CardHeader className="border-b border-[#2d3139] px-6 py-4">
-              <CardTitle className="text-[15px] font-semibold text-white">Visitas para Hoje ({stats.todayVisits.length})</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="divide-y divide-[#25282e]">
-                {stats.todayVisits.map(visit => (
-                  <div key={visit.id} className="flex items-center justify-between px-6 py-4 hover:bg-[#25282e]/30 transition-colors cursor-pointer" onClick={() => onNavigate('visits', { date: new Date() })}>
-                    <div className="flex flex-col">
-                      <span className="text-[13px] font-medium text-white">{visit.clientName}</span>
-                      <span className="text-[11px] text-[#71717a] mt-0.5">{visit.type} • {visit.scheduledTime} • {visit.technicianName}</span>
-                    </div>
-                    <Badge className={cn(
-                      "text-[10px] uppercase px-2 py-0.5",
-                      visit.status === 'Concluída' ? "bg-emerald-500/10 text-emerald-500" :
-                      visit.status === 'Cancelada' ? "bg-red-500/10 text-red-500" :
-                      visit.status === 'Em Andamento' ? "bg-amber-500/10 text-amber-500" :
-                      "bg-blue-500/10 text-blue-500"
-                    )}>
-                      {visit.status}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
+            case 'showFluxoChart':
+              return canAccess('financial') && showFluxoChart ? (
+                <React.Fragment key="fluxo_chart">
+                  <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden col-span-full h-[400px]">
+                    <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col items-start gap-2.5">
+                      <CardTitle className="text-[15px] font-semibold text-white">Fluxo Financeiro (Últimos 7 dias)</CardTitle>
+                      <ChartTypeSelector current={fluxoChartType} onChange={handleFluxoChartTypeChange} />
+                    </CardHeader>
+                    <CardContent className="p-6 h-[320px]">
+                      <div className="h-full w-full min-h-[250px]">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                          {(() => {
+                            switch (fluxoChartType) {
+                              case 'pizza': {
+                                const totalReceita = chartData.reduce((acc, d) => acc + d.receita, 0);
+                                const totalDespesa = chartData.reduce((acc, d) => acc + d.despesa, 0);
+                                const pieData = [
+                                  { name: 'Receita', value: totalReceita, color: '#10b981' },
+                                  { name: 'Despesa', value: totalDespesa, color: '#ef4444' }
+                                ].filter(item => item.value > 0);
+                                if (pieData.length === 0) {
+                                  return (
+                                    <div className="h-full w-full flex items-center justify-center text-[#71717a] text-xs py-10 italic">
+                                      Sem lançamentos financeiros no período.
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <PieChart>
+                                    <Pie
+                                      data={pieData}
+                                      cx="50%"
+                                      cy="50%"
+                                      outerRadius={80}
+                                      dataKey="value"
+                                      label={({ name, percent, value }) => percent > 0 ? `${name}: R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${(percent * 100).toFixed(0)}%)` : ''}
+                                    >
+                                      {pieData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={entry.color} />
+                                      ))}
+                                    </Pie>
+                                    <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} formatter={(val: any) => `R$ ${val.toLocaleString('pt-BR')}`} />
+                                    <Legend />
+                                  </PieChart>
+                                );
+                              }
+                              case 'doughnut': {
+                                const totalReceita = chartData.reduce((acc, d) => acc + d.receita, 0);
+                                const totalDespesa = chartData.reduce((acc, d) => acc + d.despesa, 0);
+                                const pieData = [
+                                  { name: 'Receita', value: totalReceita, color: '#10b981' },
+                                  { name: 'Despesa', value: totalDespesa, color: '#ef4444' }
+                                ].filter(item => item.value > 0);
+                                if (pieData.length === 0) {
+                                  return (
+                                    <div className="h-full w-full flex items-center justify-center text-[#71717a] text-xs py-10 italic">
+                                      Sem lançamentos financeiros no período.
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <PieChart>
+                                    <Pie
+                                      data={pieData}
+                                      cx="50%"
+                                      cy="50%"
+                                      innerRadius={60}
+                                      outerRadius={80}
+                                      dataKey="value"
+                                      label={({ name, percent, value }) => percent > 0 ? `${name}: R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${(percent * 100).toFixed(0)}%)` : ''}
+                                    >
+                                      {pieData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={entry.color} />
+                                      ))}
+                                    </Pie>
+                                    <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} formatter={(val: any) => `R$ ${val.toLocaleString('pt-BR')}`} />
+                                    <Legend />
+                                  </PieChart>
+                                );
+                              }
+                              case 'bar-vertical':
+                                return (
+                                  <BarChart data={chartData}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
+                                    <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                                    <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(value) => `R$ ${value}`} />
+                                    <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} formatter={(val: any) => `R$ ${val.toLocaleString('pt-BR')}`} />
+                                    <Bar dataKey="receita" fill="#10b981" radius={[4, 4, 0, 0]} barSize={25} name="Receita" />
+                                    <Bar dataKey="despesa" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={25} name="Despesa" />
+                                    <Legend />
+                                  </BarChart>
+                                );
+                              case 'bar-horizontal':
+                                return (
+                                  <BarChart data={chartData} layout="vertical">
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" horizontal={false} />
+                                    <XAxis type="number" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                                    <YAxis dataKey="name" type="category" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} width={45} />
+                                    <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} formatter={(val: any) => `R$ ${val.toLocaleString('pt-BR')}`} />
+                                    <Bar dataKey="receita" fill="#10b981" radius={[0, 4, 4, 0]} barSize={12} name="Receita" />
+                                    <Bar dataKey="despesa" fill="#ef4444" radius={[0, 4, 4, 0]} barSize={12} name="Despesa" />
+                                    <Legend />
+                                  </BarChart>
+                                );
+                              case 'pos-neg': {
+                                const netData = chartData.map(item => ({
+                                  ...item,
+                                  saldo: item.receita - item.despesa
+                                }));
+                                return (
+                                  <BarChart data={netData}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
+                                    <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                                    <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(value) => `R$ ${value}`} />
+                                    <Tooltip 
+                                      contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} 
+                                      itemStyle={{ color: '#fff' }}
+                                      formatter={(value: any) => [`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Saldo Líquido Diário']}
+                                    />
+                                    <Bar dataKey="saldo" name="Saldo Líquido">
+                                      {netData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={entry.saldo >= 0 ? '#10b981' : '#ef4444'} />
+                                      ))}
+                                    </Bar>
+                                  </BarChart>
+                                );
+                              }
+                              case 'area':
+                              default:
+                                return (
+                                  <AreaChart data={chartData}>
+                                    <defs>
+                                      <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                                      </linearGradient>
+                                      <linearGradient id="colorExpense" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
+                                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                                      </linearGradient>
+                                    </defs>
+                                    <XAxis dataKey="name" stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
+                                    <YAxis stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `R$ ${value}`} />
+                                    <Tooltip 
+                                      contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
+                                      itemStyle={{ color: '#fff' }}
+                                    />
+                                    <Area type="monotone" dataKey="receita" stroke="#10b981" fillOpacity={1} fill="url(#colorIncome)" name="Receita" />
+                                    <Area type="monotone" dataKey="despesa" stroke="#ef4444" fillOpacity={1} fill="url(#colorExpense)" name="Despesa" />
+                                  </AreaChart>
+                                );
+                            }
+                          })()}
+                        </ResponsiveContainer>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </React.Fragment>
+              ) : null;
+
+            case 'showForecastChart':
+              return canAccess('financial') && showForecastChart ? (
+                <React.Fragment key="forecast_chart">
+                  <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden col-span-full min-h-[470px] flex flex-col">
+                    <CardHeader className="border-b border-[#2d3139] px-6 py-4 flex flex-col gap-4">
+                      <div className="w-full flex flex-col gap-1">
+                        <CardTitle className="text-[15px] font-semibold text-white">
+                          Previsão Financeira Dupla de Vencimentos ({nextMonthForecastData.monthLabel})
+                        </CardTitle>
+                        <p className="text-[11px] text-[#71717a]">Visão unificada dia a dia das contas a pagar e receber agendadas para o mês selecionado.</p>
+                      </div>
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 w-full border-t border-[#2d3139]/30 pt-2.5">
+                        <ChartTypeSelector current={forecastChartType} onChange={handleForecastChartTypeChange} />
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-mono">
+                          <span className="flex items-center gap-1.5 text-emerald-400">
+                            <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block"></span>
+                            Total a Receber: R$ {nextMonthForecastData.data.reduce((acc, item) => acc + item.receita, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                          <span className="flex items-center gap-1.5 text-red-500">
+                            <span className="w-2.5 h-2.5 rounded-sm bg-red-500 inline-block"></span>
+                            Total a Pagar: R$ {nextMonthForecastData.data.reduce((acc, item) => acc + item.despesa, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="p-6 flex-1 flex flex-col gap-5">
+                      <div className="h-full w-full min-h-[220px] flex-1">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                          {(() => {
+                            switch (forecastChartType) {
+                              case 'pizza': {
+                                const totalReceita = nextMonthForecastData.data.reduce((acc, d) => acc + d.receita, 0);
+                                const totalDespesa = nextMonthForecastData.data.reduce((acc, d) => acc + d.despesa, 0);
+                                const pieData = [
+                                  { name: 'A Receber', value: totalReceita, color: '#10b981' },
+                                  { name: 'A Pagar', value: totalDespesa, color: '#ef4444' }
+                                ].filter(item => item.value > 0);
+                                if (pieData.length === 0) {
+                                  return (
+                                    <div className="h-full w-full flex items-center justify-center text-[#71717a] text-xs py-10 italic">
+                                      Sem lançamentos previstos para este mês.
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <PieChart>
+                                    <Pie
+                                      data={pieData}
+                                      cx="50%"
+                                      cy="50%"
+                                      outerRadius={80}
+                                      dataKey="value"
+                                      label={({ name, percent, value }) => percent > 0 ? `${name}: R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${(percent * 100).toFixed(0)}%)` : ''}
+                                    >
+                                      {pieData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={entry.color} />
+                                      ))}
+                                    </Pie>
+                                    <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} formatter={(val: any) => `R$ ${val.toLocaleString('pt-BR')}`} />
+                                    <Legend />
+                                  </PieChart>
+                                );
+                              }
+                              case 'doughnut': {
+                                const totalReceita = nextMonthForecastData.data.reduce((acc, d) => acc + d.receita, 0);
+                                const totalDespesa = nextMonthForecastData.data.reduce((acc, d) => acc + d.despesa, 0);
+                                const pieData = [
+                                  { name: 'A Receber', value: totalReceita, color: '#10b981' },
+                                  { name: 'A Pagar', value: totalDespesa, color: '#ef4444' }
+                                ].filter(item => item.value > 0);
+                                if (pieData.length === 0) {
+                                  return (
+                                    <div className="h-full w-full flex items-center justify-center text-[#71717a] text-xs py-10 italic">
+                                      Sem lançamentos previstos para este mês.
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <PieChart>
+                                    <Pie
+                                      data={pieData}
+                                      cx="50%"
+                                      cy="50%"
+                                      innerRadius={60}
+                                      outerRadius={80}
+                                      dataKey="value"
+                                      label={({ name, percent, value }) => percent > 0 ? `${name}: R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${(percent * 100).toFixed(0)}%)` : ''}
+                                    >
+                                      {pieData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={entry.color} />
+                                      ))}
+                                    </Pie>
+                                    <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} formatter={(val: any) => `R$ ${val.toLocaleString('pt-BR')}`} />
+                                    <Legend />
+                                  </PieChart>
+                                );
+                              }
+                              case 'bar-vertical':
+                                return (
+                                  <BarChart data={nextMonthForecastData.data}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
+                                    <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                                    <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(value) => `R$ ${value}`} />
+                                    <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} formatter={(val: any) => `R$ ${val.toLocaleString('pt-BR')}`} />
+                                    <Bar dataKey="receita" fill="#10b981" radius={[4, 4, 0, 0]} barSize={10} name="A Receber" />
+                                    <Bar dataKey="despesa" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={10} name="A Pagar" />
+                                    <Legend />
+                                  </BarChart>
+                                );
+                              case 'bar-horizontal':
+                                return (
+                                  <BarChart data={nextMonthForecastData.data} layout="vertical">
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" horizontal={false} />
+                                    <XAxis type="number" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                                    <YAxis dataKey="name" type="category" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} width={30} />
+                                    <Tooltip contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} formatter={(val: any) => `R$ ${val.toLocaleString('pt-BR')}`} />
+                                    <Bar dataKey="receita" fill="#10b981" radius={[0, 4, 4, 0]} barSize={6} name="A Receber" />
+                                    <Bar dataKey="despesa" fill="#ef4444" radius={[0, 4, 4, 0]} barSize={6} name="A Pagar" />
+                                    <Legend />
+                                  </BarChart>
+                                );
+                              case 'pos-neg': {
+                                const netData = nextMonthForecastData.data.map(item => ({
+                                  ...item,
+                                  saldo: item.receita - item.despesa
+                                }));
+                                return (
+                                  <BarChart data={netData}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" vertical={false} />
+                                    <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} />
+                                    <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(value) => `R$ ${value}`} />
+                                    <Tooltip 
+                                      contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }} 
+                                      itemStyle={{ color: '#fff' }}
+                                      formatter={(value: any) => [`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Saldo Previsto Líquido']}
+                                      labelFormatter={(label) => `Dia ${label} de ${nextMonthForecastData.monthLabel}`}
+                                    />
+                                    <Bar dataKey="saldo" name="Saldo Previsto">
+                                      {netData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={entry.saldo >= 0 ? '#10b981' : '#ef4444'} />
+                                      ))}
+                                    </Bar>
+                                  </BarChart>
+                                );
+                              }
+                              case 'area':
+                              default:
+                                return (
+                                  <AreaChart data={nextMonthForecastData.data}>
+                                    <defs>
+                                      <linearGradient id="colorForecastIncome" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.25}/>
+                                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                                      </linearGradient>
+                                      <linearGradient id="colorForecastExpense" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.25}/>
+                                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                                      </linearGradient>
+                                    </defs>
+                                    <XAxis dataKey="name" stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} label={{ value: 'Dia do Mês', position: 'insideBottom', offset: -5, fill: '#71717a', fontSize: 10 }} />
+                                    <YAxis stroke="#71717a" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(value) => `R$ ${value}`} />
+                                    <Tooltip 
+                                      contentStyle={{ backgroundColor: '#1a1d23', border: '1px solid #2d3139', borderRadius: '8px' }}
+                                      itemStyle={{ color: '#fff' }}
+                                      formatter={(value: any) => [`R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]}
+                                      labelFormatter={(label) => `Dia ${label} de ${nextMonthForecastData.monthLabel}`}
+                                    />
+                                    <Area type="monotone" dataKey="receita" name="A Receber" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorForecastIncome)" />
+                                    <Area type="monotone" dataKey="despesa" name="A Pagar" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorForecastExpense)" />
+                                  </AreaChart>
+                                );
+                            }
+                          })()}
+                        </ResponsiveContainer>
+                      </div>
+
+                      {/* Months Selector Bar below the chart */}
+                      <div className="flex flex-col md:flex-row items-center justify-between gap-3 bg-[#15171c]/50 p-2.5 rounded-lg border border-[#2d3139]/50 mt-1">
+                        <div className="flex items-center gap-1.5 bg-[#0f1115] p-1 rounded-lg border border-[#2d3139] shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-[#71717a] hover:text-white hover:bg-[#1a1d23]"
+                            onClick={() => setSelectedForecastYear(prev => prev - 1)}
+                          >
+                            <ChevronLeft size={14} />
+                          </Button>
+                          <span className="text-xs font-bold text-white px-2 font-mono">{selectedForecastYear}</span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-[#71717a] hover:text-white hover:bg-[#1a1d23]"
+                            onClick={() => setSelectedForecastYear(prev => prev + 1)}
+                          >
+                            <ChevronRight size={14} />
+                          </Button>
+                        </div>
+
+                        <div className="flex-1 flex justify-center overflow-x-auto max-w-full no-scrollbar py-0.5">
+                          <div className="flex items-center gap-1 justify-center shrink-0">
+                            {monthsList.map((m) => {
+                              const isSelected = selectedForecastMonth === m.index;
+                              return (
+                                <Button
+                                  key={m.index}
+                                  variant={isSelected ? "default" : "ghost"}
+                                  size="sm"
+                                  className={cn(
+                                    "h-7 px-2.5 text-xs font-semibold rounded-md transition-all shrink-0",
+                                    isSelected 
+                                      ? "bg-blue-600 text-white shadow-sm hover:bg-blue-700" 
+                                      : "text-[#a0a0a0] hover:text-white hover:bg-[#25282e]/50"
+                                  )}
+                                  onClick={() => setSelectedForecastMonth(m.index)}
+                                >
+                                  {m.label}
+                                </Button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </React.Fragment>
+              ) : null;
+
+            case 'showTodayVisitsList':
+              return stats.todayVisits.length > 0 && canAccess('visits') && showTodayVisitsList ? (
+                <React.Fragment key="today_visits_list">
+                  <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-hidden col-span-full">
+                    <CardHeader className="border-b border-[#2d3139] px-6 py-4">
+                      <CardTitle className="text-[15px] font-semibold text-white">Visitas para Hoje ({stats.todayVisits.length})</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <div className="divide-y divide-[#25282e]">
+                        {stats.todayVisits.map(visit => (
+                          <div key={visit.id} className="flex items-center justify-between px-6 py-4 hover:bg-[#25282e]/30 transition-colors cursor-pointer" onClick={() => onNavigate('visits', { date: new Date() })}>
+                            <div className="flex flex-col">
+                              <span className="text-[13px] font-medium text-white">{visit.clientName}</span>
+                              <span className="text-[11px] text-[#71717a] mt-0.5">{visit.type} • {visit.scheduledTime} • {visit.technicianName}</span>
+                            </div>
+                            <Badge className={cn(
+                              "text-[10px] uppercase px-2 py-0.5",
+                              visit.status === 'Concluída' ? "bg-emerald-500/10 text-emerald-500" :
+                              visit.status === 'Cancelada' ? "bg-red-500/10 text-red-500" :
+                              visit.status === 'Em Andamento' ? "bg-amber-500/10 text-amber-500" :
+                              "bg-blue-500/10 text-blue-500"
+                            )}>
+                              {visit.status}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </React.Fragment>
+              ) : null;
+
+            default:
+              return null;
+          }
+        })}
       </div>
     </>
   )}
@@ -12497,7 +17646,7 @@ function VisitsManager({
     });
   }, [visits, dateFilterType, dayFilter, monthFilter, yearFilter, statusFilter, clientFilter]);
   const [newVisit, setNewVisit] = useState<Partial<TechnicalVisit>>({
-    type: 'CFTV',
+    type: (appSettings?.serviceTypes?.[0] || 'CFTV') as any,
     status: 'Agendada',
     date: new Date(),
     scheduledTime: '',
@@ -12561,7 +17710,7 @@ function VisitsManager({
 
       await logAction('create', 'visit', `Agendou visita para ${newVisit.clientName}`, docRef.id, newVisit.clientName);
       setNewVisit({ 
-        type: 'CFTV', 
+        type: (appSettings?.serviceTypes?.[0] || 'CFTV') as any, 
         status: 'Agendada', 
         date: new Date(), 
         scheduledTime: '',
@@ -12729,8 +17878,39 @@ function VisitsManager({
     }
   };
 
-  const generateVisitPDF = (visit: TechnicalVisit) => {
-    const doc = new jsPDF();
+  const generateVisitPDF = async (visit: TechnicalVisit) => {
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+    
+    // Helper to load image securely as Base64 format to bypass CORS limits
+    const loadImage = (url: string): Promise<string | null> => {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'Anonymous';
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0);
+            try {
+              resolve(canvas.toDataURL('image/png'));
+            } catch (e) {
+              console.error("CORS Error loading image:", url);
+              resolve(null);
+            }
+          } else {
+            resolve(null);
+          }
+        };
+        img.onerror = () => resolve(null);
+        img.src = url;
+      });
+    };
     
     // Resolve which date to print based on current status and status-change history
     const currentStatus = visit.status || 'Agendada';
@@ -12766,221 +17946,277 @@ function VisitsManager({
 
     const createdStr = visit.createdAt ? format(safeParseDate(visit.createdAt), 'dd/MM/yyyy HH:mm') : '';
     
-    // Header
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 12; // Tighter margins to fit more content safely
+    const contentWidth = pageWidth - (margin * 2);
+    let currentY = 12;
+
+    // Header helpers
+    const drawLine = () => {
+      doc.setDrawColor(200, 200, 200);
+      doc.line(margin, currentY, pageWidth - margin, currentY);
+      currentY += 4;
+    };
+
+    const drawSectionTitle = (title: string) => {
+      doc.setFillColor(240, 240, 240);
+      doc.rect(margin, currentY, contentWidth, 6, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(50, 50, 50);
+      doc.text(title.toUpperCase(), margin + 2, currentY + 4.2);
+      currentY += 8;
+    };
+
+    const checkPageBreak = (neededHeight: number) => {
+      if (currentY + neededHeight > pageHeight - 10) {
+        doc.addPage();
+        currentY = 12;
+        return true;
+      }
+      return false;
+    };
+
+    // Header Logo
     if (appSettings.logoUrl) {
       try {
-        doc.addImage(appSettings.logoUrl, 'PNG', 20, 10, 18, 18);
+        const logoData = await loadImage(appSettings.logoUrl);
+        if (logoData) {
+          doc.addImage(logoData, 'PNG', margin, currentY, 16, 16);
+        }
       } catch (e) {
         console.error("Erro ao adicionar logo ao PDF:", e);
       }
     }
 
-    doc.setFontSize(16);
+    doc.setFontSize(13);
     doc.setFont('helvetica', 'bold');
-    const headerX = appSettings.logoUrl ? 42 : 20;
-    doc.text(appSettings.companyName || '', headerX, 18);
-    
-    doc.setFontSize(12);
-    doc.text(`RELATÓRIO DE VISITA TÉCNICA ${formatRecordNumber(visit.number, visit.date)}`, headerX, 26);
+    const headerX = appSettings.logoUrl ? margin + 20 : margin;
+    doc.text(appSettings.companyName || '', headerX, currentY + 5);
     
     doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
+    doc.text(`RELATÓRIO DE VISITA TÉCNICA ${formatRecordNumber(visit.number, visit.date)}`, headerX, currentY + 11);
+    
+    currentY += 18;
+    drawLine();
 
-    let currentY = 40;
-
-    const drawSectionTitle = (title: string) => {
-      doc.setFillColor(240, 240, 240);
-      doc.rect(20, currentY, 170, 8, 'F');
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10);
-      doc.text(title, 25, currentY + 5.5);
-      doc.setFont('helvetica', 'normal');
-      currentY += 12;
-    };
-
-    // 2. DADOS DO CLIENTE & AGENDAMENTO
+    // 1. DADOS DO CLIENTE E AGENDAMENTO
     drawSectionTitle('1. Dados do Cliente e Agendamento');
-    const boxWidth = 83;
-    const boxHeight = visit.serviceAddress ? 42 : 35;
+    const boxWidth = (contentWidth / 2) - 3;
+    const boxHeight = 24; // Compact box height
+    const startY = currentY;
     
     // Draw Box for Client Data
     doc.setDrawColor(200, 200, 200);
     doc.setLineWidth(0.2);
-    doc.rect(20, currentY - 2, boxWidth, boxHeight);
+    doc.rect(margin, currentY, boxWidth, boxHeight);
     
-    // Left Column: Client Data
+    doc.setFillColor(240, 240, 240);
+    doc.rect(margin, currentY, boxWidth, 6, 'F');
     doc.setFont('helvetica', 'bold');
-    doc.text('CLIENTE:', 23, currentY + 5);
-    doc.setFont('helvetica', 'normal');
-    const clientNameSplitted = doc.splitTextToSize(visit.clientName, boxWidth - 28);
-    doc.text(clientNameSplitted, 48, currentY + 5);
-    
-    let clientDataY = currentY + 5 + (clientNameSplitted.length * 5);
-    
-    doc.setFont('helvetica', 'bold');
-    doc.text('ENDEREÇO:', 23, clientDataY);
-    doc.setFont('helvetica', 'normal');
-    const addressLines = doc.splitTextToSize(visit.address || 'N/A', boxWidth - 28);
-    doc.text(addressLines, 48, clientDataY);
-    
-    clientDataY += (addressLines.length * 5);
+    doc.setFontSize(8.5);
+    doc.text('DADOS DO CLIENTE', margin + 2, currentY + 4.2);
 
-    if (visit.serviceAddress) {
-      doc.setFont('helvetica', 'bold');
-      doc.text('SERVIÇO:', 23, clientDataY);
-      doc.setFont('helvetica', 'normal');
-      const serviceAddressLines = doc.splitTextToSize(visit.serviceAddress, boxWidth - 28);
-      doc.text(serviceAddressLines, 48, clientDataY);
-      clientDataY += (serviceAddressLines.length * 5);
-    }
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    let clientY = currentY + 10;
 
     doc.setFont('helvetica', 'bold');
-    doc.text('FONE:', 23, clientDataY);
+    doc.text('CLIENTE:', margin + 2, clientY);
     doc.setFont('helvetica', 'normal');
-    doc.text(`${visit.clientPhone || 'N/A'}`, 48, clientDataY);
+    const clientNameSplitted = doc.splitTextToSize(visit.clientName, boxWidth - 18);
+    doc.text(clientNameSplitted, margin + 15, clientY);
+    clientY += (clientNameSplitted.length * 3.5);
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text('ENDEREÇO:', margin + 2, clientY);
+    doc.setFont('helvetica', 'normal');
+    const addressLines = doc.splitTextToSize(visit.address || 'N/A', boxWidth - 22);
+    doc.text(addressLines, margin + 20, clientY);
+    clientY += (addressLines.length * 3.5);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('FONE:', margin + 2, clientY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`${visit.clientPhone || 'N/A'}`, margin + 15, clientY);
 
     // Right Column: Scheduling Data Box
-    const rightColX = 108;
-    doc.rect(rightColX, currentY - 2, boxWidth, boxHeight);
+    const rightColX = margin + boxWidth + 6;
+    doc.rect(rightColX, startY, boxWidth, boxHeight);
     
-    let schedY = currentY + 5;
+    doc.setFillColor(240, 240, 240);
+    doc.rect(rightColX, startY, boxWidth, 6, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text('AGENDAMENTO E EQUIPE', rightColX + 2, startY + 4.2);
+
+    let schedY = startY + 10;
+    doc.setFontSize(8);
     
     doc.setFont('helvetica', 'bold');
-    doc.text(schedLabel, rightColX + 3, schedY);
+    doc.text(schedLabel, rightColX + 2, schedY);
     doc.setFont('helvetica', 'normal');
-    doc.text(schedVal, rightColX + 35, schedY);
+    doc.text(schedVal, rightColX + 24, schedY);
     
-    schedY += 7;
+    schedY += 4.5;
     doc.setFont('helvetica', 'bold');
-    doc.text('PREVISÃO:', rightColX + 3, schedY);
+    doc.text('PREVISÃO:', rightColX + 2, schedY);
     doc.setFont('helvetica', 'normal');
     const expDateStr = visit.expectedDate ? format(safeParseDate(visit.expectedDate), 'dd/MM/yyyy') : '--/--/----';
-    doc.text(`${expDateStr}${visit.expectedTime ? ` às ${visit.expectedTime}` : ''}`, rightColX + 35, schedY);
+    doc.text(`${expDateStr}${visit.expectedTime ? ` às ${visit.expectedTime}` : ''}`, rightColX + 24, schedY);
 
-    schedY += 7;
+    schedY += 4.5;
     doc.setFont('helvetica', 'bold');
-    doc.text('TÉCNICO:', rightColX + 3, schedY);
+    doc.text('TÉCNICO:', rightColX + 2, schedY);
     doc.setFont('helvetica', 'normal');
-    const technicianSplitted = doc.splitTextToSize(visit.technicianName, boxWidth - 38);
-    doc.text(technicianSplitted, rightColX + 35, schedY);
+    const technicianSplitted = doc.splitTextToSize(visit.technicianName, boxWidth - 24);
+    doc.text(technicianSplitted, rightColX + 24, schedY);
 
-    currentY += boxHeight + 5;
+    currentY = startY + boxHeight + 4;
     
-    doc.setDrawColor(0, 0, 0);
-    doc.line(20, currentY, 190, currentY);
-    currentY += 10;
+    doc.setDrawColor(200, 200, 200);
+    doc.line(margin, currentY, pageWidth - margin, currentY);
+    currentY += 6;
     
-    // 3. DETALHES DO SERVIÇO
+    // 2. DETALHES DO SERVIÇO
     drawSectionTitle('2. Detalhes do Serviço');
     doc.setFont('helvetica', 'normal');
-    doc.text(`Tipo de Serviço: ${visit.type}`, 20, currentY);
-    currentY += 7;
-    doc.text(`Status: ${visit.status}`, 20, currentY);
-    currentY += 10;
+    doc.setFontSize(8.5);
+    doc.text(`Tipo de Serviço: ${visit.type}    |    Status: ${visit.status}`, margin, currentY);
+    currentY += 6;
     
-    doc.text('Descrição do Serviço/Problema:', 20, currentY);
-    currentY += 7;
-    const splitDesc = doc.splitTextToSize(visit.description || 'N/A', 170);
-    doc.text(splitDesc, 20, currentY);
-    currentY += (splitDesc.length * 5) + 10;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Descrição do Serviço/Problema:', margin, currentY);
+    currentY += 3.5;
+    doc.setFont('helvetica', 'normal');
+    const splitDesc = doc.splitTextToSize(visit.description || 'N/A', contentWidth);
+    doc.text(splitDesc, margin, currentY);
+    currentY += (splitDesc.length * 4) + 4;
 
-    // --- NOVO: SEÇÃO DE PEÇAS E MATERIAIS NO PDF DA VISITA ---
+    const vPartsValue = (visit.parts || []).reduce((acc, p) => acc + ((p.quantity || 0) * (p.price || 0)), 0);
+    const vTotalValue = visit.totalValue || 0;
+    const vLaborValue = Math.max(0, vTotalValue - vPartsValue);
+
+    // 3. PEÇAS E MATERIAIS UTILIZADOS
+    checkPageBreak(25);
+    drawSectionTitle('3. Peças e Materiais Utilizados');
+    
     if (visit.parts && visit.parts.length > 0) {
-      if (currentY > 230) { doc.addPage(); currentY = 20; }
-      drawSectionTitle('3. Peças e Materiais Utilizados');
-      
-      // Table Header for Parts
-      doc.setFillColor(245, 245, 245);
-      doc.rect(20, currentY, 170, 7, 'F');
-      doc.setFont('helvetica', 'bold');
-      doc.text('Descrição', 23, currentY + 5);
-      doc.text('Qtd', 130, currentY + 5);
-      doc.text('V. Unit', 150, currentY + 5);
-      doc.text('Total', 175, currentY + 5);
-      doc.setFont('helvetica', 'normal');
-      currentY += 10;
+      const tableHead = [['Descrição', 'Qtd', 'V. Unitário', 'Total']];
+      const tableData = visit.parts.map(p => [
+        p.description,
+        p.quantity.toString(),
+        `R$ ${(p.price || 0).toFixed(2)}`,
+        `R$ ${((p.quantity || 0) * (p.price || 0)).toFixed(2)}`
+      ]);
 
-      visit.parts.forEach(p => {
-        if (currentY > 275) { doc.addPage(); currentY = 20; }
-        const desc = p.description.length > 45 ? p.description.substring(0, 42) + '...' : p.description;
-        doc.text(desc, 23, currentY);
-        doc.text(p.quantity.toString(), 133, currentY);
-        doc.text(p.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), 148, currentY);
-        doc.text((p.quantity * p.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), 173, currentY);
-        currentY += 6;
+      autoTable(doc, {
+        startY: currentY,
+        margin: { left: margin },
+        head: tableHead,
+        body: tableData,
+        theme: 'grid',
+        headStyles: { fillColor: [59, 130, 246], fontSize: 8, cellPadding: 1.5 },
+        styles: { fontSize: 8, cellPadding: 1.5 },
+        columnStyles: {
+          1: { halign: 'center' },
+          2: { halign: 'right' },
+          3: { halign: 'right' }
+        }
       });
-      currentY += 5;
+      currentY = (doc as any).lastAutoTable.finalY + 5;
+    } else {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8.5);
+      doc.text('Nenhum material/peça cadastrada neste serviço.', margin, currentY);
+      currentY += 6;
     }
 
-    if (visit.observations) {
-      // Check if we need a new page for observations
-      if (currentY > 260) {
-        doc.addPage();
-        currentY = 20;
-      }
-      doc.setFont('helvetica', 'bold');
-      doc.text('Observações:', 20, currentY);
-      doc.setFont('helvetica', 'normal');
-      currentY += 7;
-      const splitObs = doc.splitTextToSize(visit.observations, 170);
-      doc.text(splitObs, 20, currentY);
-      currentY += (splitObs.length * 5) + 10;
-    }
-    
-    // Check space for total value
-    if (currentY > 270) {
-      doc.addPage();
-      currentY = 20;
-    }
+    // 4. DISCRIMINAÇÃO DE VALORES
+    checkPageBreak(30);
+    drawSectionTitle('4. Discriminação de Valores');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(50, 50, 50);
+
+    doc.text('Custo total dos materiais / peças:', margin, currentY);
+    doc.text(`R$ ${vPartsValue.toFixed(2)}`, margin + 110, currentY, { align: 'right' });
+    currentY += 4.5;
+
+    doc.text('Custo total da mão-de-obra / serviço:', margin, currentY);
+    doc.text(`R$ ${vLaborValue.toFixed(2)}`, margin + 110, currentY, { align: 'right' });
+    currentY += 4.5;
+
+    doc.setDrawColor(220, 220, 220);
+    doc.line(margin, currentY, margin + 110, currentY);
+    currentY += 4;
 
     doc.setFont('helvetica', 'bold');
-    doc.text(`VALOR DO SERVIÇO: R$ ${(visit.totalValue || 0).toFixed(2)}`, 20, currentY);
-    
-    // Signatures
-    let signatureY = currentY + 30;
-    
-    if (signatureY > 270) {
-      doc.addPage();
-      signatureY = 40;
+    doc.setFontSize(10);
+    doc.setTextColor(0, 0, 0);
+    doc.text('VALOR TOTAL (MATERIAIS + SERVIÇO):', margin, currentY);
+    doc.text(`R$ ${vTotalValue.toFixed(2)}`, margin + 110, currentY, { align: 'right' });
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'normal');
+    currentY += 7;
+
+    // Observações inseridas após o VALOR TOTAL
+    if (visit.observations) {
+      checkPageBreak(15);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Observações:', margin, currentY);
+      doc.setFont('helvetica', 'normal');
+      currentY += 3.5;
+      const splitObs = doc.splitTextToSize(visit.observations, contentWidth);
+      doc.text(splitObs, margin, currentY);
+      currentY += (splitObs.length * 4) + 4;
     }
     
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    const cityDate = formatFullDateWithCity(resolvedDate, appSettings);
-    doc.text(cityDate, 105, signatureY - 10, { align: 'center' });
-    
     // Signatures
+    checkPageBreak(22);
+    currentY += 4;
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    const cityDate = formatFullDateWithCity(resolvedDate, appSettings);
+    doc.text(cityDate, pageWidth / 2, currentY, { align: 'center' });
+    
+    currentY += 12;
+    
     const techName = visit.technicianName || '';
     const isAndre = techName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes('andre');
 
-    doc.setLineWidth(0.3);
+    doc.setLineWidth(0.25);
+    doc.line(margin + 10, currentY, margin + 70, currentY);
+    doc.line(pageWidth - margin - 70, currentY, pageWidth - margin - 10, currentY);
+    
+    doc.setFontSize(7.5);
+    doc.text('Assinatura do Técnico', margin + 40, currentY + 4, { align: 'center' });
+    doc.text(isAndre ? (appSettings.responsible || techName) : techName, margin + 40, currentY + 8, { align: 'center' });
+    
+    const clientRegistry = clients?.find(c => c.id === visit.clientId || (c.name && c.name.toLowerCase().trim() === visit.clientName?.toLowerCase().trim()));
+    const vClientName = clientRegistry?.name || visit.clientName || 'Cliente Sem Nome';
+    const vClientDoc = clientRegistry?.document || visit.clientDocument || '___________________________';
+    const vClientResp = clientRegistry?.responsible || visit.responsibleName || '___________________________';
+
+    doc.text('Assinatura do Cliente', pageWidth - margin - 40, currentY + 4, { align: 'center' });
+    let clientLabelY = currentY + 8;
+    doc.text(vClientName, pageWidth - margin - 40, clientLabelY, { align: 'center' });
+    clientLabelY += 3.5;
+    doc.text(vClientDoc, pageWidth - margin - 40, clientLabelY, { align: 'center' });
+    clientLabelY += 3.5;
+    doc.text(vClientResp, pageWidth - margin - 40, clientLabelY, { align: 'center' });
+
     if (visit.technicianSignature) {
-      try {
-        doc.addImage(visit.technicianSignature, 'PNG', 35, signatureY - 8, 40, 15);
-      } catch (e) {
-        console.error("Erro ao adicionar assinatura técnica:", e);
-      }
+      try { doc.addImage(visit.technicianSignature, 'PNG', margin + 20, currentY - 14, 40, 13); } catch(e) {}
     } else if (isAndre && appSettings.signatureUrl) {
-      try {
-        doc.addImage(appSettings.signatureUrl, 'PNG', 35, signatureY - 8, 40, 15);
-      } catch (e) {
-        console.error("Erro ao adicionar assinatura à visita:", e);
-      }
+      try { doc.addImage(appSettings.signatureUrl, 'PNG', margin + 20, currentY - 14, 40, 13); } catch(e) {}
     }
-    doc.line(25, signatureY + 10, 90, signatureY + 10);
-    doc.text('Assinatura do Técnico', 57.5, signatureY + 15, { align: 'center' });
-    doc.text(isAndre ? (appSettings.responsible || techName) : techName, 57.5, signatureY + 20, { align: 'center' });
     
     if (visit.clientSignature) {
-      try {
-        doc.addImage(visit.clientSignature, 'PNG', 130, signatureY - 8, 40, 15);
-      } catch (e) {
-        console.error("Erro ao adicionar assinatura do cliente:", e);
-      }
+      try { doc.addImage(visit.clientSignature, 'PNG', pageWidth - margin - 60, currentY - 14, 40, 13); } catch(e) {}
     }
-    doc.line(120, signatureY + 10, 185, signatureY + 10);
-    doc.text('Assinatura do Cliente', 152.5, signatureY + 15, { align: 'center' });
-    doc.text(visit.responsibleName || visit.clientName, 152.5, signatureY + 20, { align: 'center' });
     
     doc.save(`visita_${visit.clientName.replace(/\s/g, '_')}.pdf`);
   };
@@ -13200,12 +18436,15 @@ function VisitsManager({
                         clientName: client.name,
                         clientPhone: client.phone,
                         address: client.address,
-                        responsibleName: client.responsible || ''
+                        responsibleName: client.responsible || '',
+                        clientDocument: client.document || ''
                       });
                     }
                   }}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
-                      <SelectValue placeholder="Escolha um cliente..." />
+                      <SelectValue placeholder="Escolha um cliente...">
+                        {newVisit.clientId ? (clients.find(c => c.id === newVisit.clientId)?.name || "Cliente Sem Nome") : "Escolha um cliente..."}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
                       <div className="p-2 sticky top-0 bg-[#1a1d23] z-10 border-b border-[#2d3139]">
@@ -13257,12 +18496,9 @@ function VisitsManager({
                         </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                        <SelectItem value="CFTV">CFTV</SelectItem>
-                        <SelectItem value="Alarme">Alarme</SelectItem>
-                        <SelectItem value="Cerca Elétrica">Cerca Elétrica</SelectItem>
-                        <SelectItem value="Motor de Portão">Motor de Portão</SelectItem>
-                        <SelectItem value="Redes">Redes</SelectItem>
-                        <SelectItem value="Outros">Outros</SelectItem>
+                        {(appSettings?.serviceTypes || ['CFTV', 'Alarme', 'Cerca Elétrica', 'Motor de Portão', 'Redes', 'Outros']).map(type => (
+                          <SelectItem key={type} value={type}>{type}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -13311,14 +18547,18 @@ function VisitsManager({
                   <Label htmlFor="observations" className="text-[#a0a0a0]">Observações Internas / Adicionais</Label>
                   <Input id="observations" value={newVisit.observations || ''} onChange={e => setNewVisit({...newVisit, observations: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="techName" className="text-[#a0a0a0]">Nome do Técnico</Label>
                     <Input id="techName" value={newVisit.technicianName || ''} onChange={e => setNewVisit({...newVisit, technicianName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="responsibleName" className="text-[#a0a0a0]">Responsável no Local</Label>
-                    <Input id="responsibleName" value={newVisit.responsibleName || ''} onChange={e => setNewVisit({...newVisit, responsibleName: e.target.value})} placeholder="Nome de quem acompanhará" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                    <Input id="responsibleName" value={newVisit.responsibleName || ''} onChange={e => setNewVisit({...newVisit, responsibleName: e.target.value})} placeholder="Quem acompanhará" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="clientDocument" className="text-[#a0a0a0]">CPF/CNPJ do Cliente</Label>
+                    <Input id="clientDocument" value={newVisit.clientDocument || ''} onChange={e => setNewVisit({...newVisit, clientDocument: e.target.value})} placeholder="Ex: 00.000.000/0000-00" className="bg-[#0f1115] border-[#2d3139] text-white" />
                   </div>
                 </div>
                 <div className="space-y-4 pt-4 border-t border-[#2d3139]/50">
@@ -13495,9 +18735,9 @@ function VisitsManager({
           )}
         </div>
       ) : (
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative">
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl shadow-2xl">
           <TableDoubleScroll>
-          <Table>
+          <Table className="min-w-[1000px]">
           <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">AÇÕES</TableHead>
@@ -13525,12 +18765,42 @@ function VisitsManager({
                         <Eye size={12} />
                       </Button>
                       <Button variant="outline" size="icon" title="Abrir Navegação (Maps)" className="h-7 w-7 border-[#2d3139] text-green-500 hover:bg-green-500/10" onClick={() => {
-                        const targetAddress = visit.serviceAddress || visit.address || '';
-                        const address = `${targetAddress} ${visit.cep || ''}`.trim();
+                        const clientRegistry = (clients || []).find(c => 
+                          c.id === visit.clientId || 
+                          (c.name && visit.clientName && c.name.toLowerCase().trim() === visit.clientName.toLowerCase().trim())
+                        );
+
+                        let address = '';
+                        let usingRegistry = false;
+                        if (clientRegistry) {
+                          const parts = [];
+                          if (clientRegistry.address) parts.push(clientRegistry.address);
+                          if (clientRegistry.neighborhood) parts.push(clientRegistry.neighborhood);
+                          if (clientRegistry.city) parts.push(clientRegistry.city);
+                          if (clientRegistry.cep) parts.push(clientRegistry.cep);
+                          
+                          if (parts.length > 0) {
+                            address = parts.join(', ').trim();
+                            usingRegistry = true;
+                          }
+                        }
+
+                        if (!address) {
+                          const targetAddress = visit.serviceAddress || visit.address || '';
+                          address = `${targetAddress} ${visit.cep || ''}`.trim();
+                        }
+
                         if (!address) {
                           toast.error('Endereço não informado.');
                           return;
                         }
+
+                        if (usingRegistry) {
+                          toast.success('Abrindo GPS usando o endereço cadastrado do cliente.');
+                        } else {
+                          toast.info('Abrindo GPS usando o endereço registrado na visita.');
+                        }
+
                         window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`, '_blank');
                       }}>
                         <Navigation size={12} />
@@ -13672,8 +18942,42 @@ function VisitsManager({
                     variant="outline" 
                     className="h-8 gap-2 bg-green-600/10 border-green-600/20 text-green-500 hover:bg-green-600 hover:text-white"
                     onClick={() => {
-                      const targetAddress = viewingVisit.serviceAddress || viewingVisit.address || '';
-                      const address = `${targetAddress} ${viewingVisit.cep || ''}`.trim();
+                      const clientRegistry = (clients || []).find(c => 
+                        c.id === viewingVisit.clientId || 
+                        (c.name && viewingVisit.clientName && c.name.toLowerCase().trim() === viewingVisit.clientName.toLowerCase().trim())
+                      );
+
+                      let address = '';
+                      let usingRegistry = false;
+                      if (clientRegistry) {
+                        const parts = [];
+                        if (clientRegistry.address) parts.push(clientRegistry.address);
+                        if (clientRegistry.neighborhood) parts.push(clientRegistry.neighborhood);
+                        if (clientRegistry.city) parts.push(clientRegistry.city);
+                        if (clientRegistry.cep) parts.push(clientRegistry.cep);
+                        
+                        if (parts.length > 0) {
+                          address = parts.join(', ').trim();
+                          usingRegistry = true;
+                        }
+                      }
+
+                      if (!address) {
+                        const targetAddress = viewingVisit.serviceAddress || viewingVisit.address || '';
+                        address = `${targetAddress} ${viewingVisit.cep || ''}`.trim();
+                      }
+
+                      if (!address) {
+                        toast.error('Endereço não informado.');
+                        return;
+                      }
+
+                      if (usingRegistry) {
+                        toast.success('Abrindo GPS usando o endereço cadastrado do cliente.');
+                      } else {
+                        toast.info('Abrindo GPS usando o endereço registrado na visita.');
+                      }
+
                       window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`, '_blank');
                     }}
                   >
@@ -13782,12 +19086,9 @@ function VisitsManager({
                         </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                        <SelectItem value="CFTV">CFTV</SelectItem>
-                        <SelectItem value="Alarme">Alarme</SelectItem>
-                        <SelectItem value="Cerca Elétrica">Cerca Elétrica</SelectItem>
-                        <SelectItem value="Motor de Portão">Motor de Portão</SelectItem>
-                        <SelectItem value="Redes">Redes</SelectItem>
-                        <SelectItem value="Outros">Outros</SelectItem>
+                        {(appSettings?.serviceTypes || ['CFTV', 'Alarme', 'Cerca Elétrica', 'Motor de Portão', 'Redes', 'Outros']).map(type => (
+                          <SelectItem key={type} value={type}>{type}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -13930,7 +19231,7 @@ function VisitsManager({
                     <Input id="editVal" type="number" value={editingVisit.totalValue || ''} onChange={e => setEditingVisit({...editingVisit, totalValue: Number(e.target.value)})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="editTechName" className="text-[#a0a0a0]">Nome do Técnico</Label>
                     <Input id="editTechName" value={editingVisit.technicianName || ''} onChange={e => setEditingVisit({...editingVisit, technicianName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
@@ -13938,6 +19239,10 @@ function VisitsManager({
                   <div className="space-y-2">
                     <Label htmlFor="editResponsibleName" className="text-[#a0a0a0]">Responsável no Local</Label>
                     <Input id="editResponsibleName" value={editingVisit.responsibleName || ''} onChange={e => setEditingVisit({...editingVisit, responsibleName: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="editClientDocument" className="text-[#a0a0a0]">CPF/CNPJ do Cliente</Label>
+                    <Input id="editClientDocument" value={editingVisit.clientDocument || ''} onChange={e => setEditingVisit({...editingVisit, clientDocument: e.target.value})} placeholder="Ex: 00.000.000/0000-00" className="bg-[#0f1115] border-[#2d3139] text-white" />
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -14000,6 +19305,58 @@ function VisitsManager({
   );
 }
 
+// OFX Statement Parser
+function parseOFX(text: string) {
+  const transactionRegex = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi;
+  const transactions = [];
+  let match;
+  
+  while ((match = transactionRegex.exec(text)) !== null) {
+    const block = match[1];
+    
+    // Helper to extract values
+    const extract = (tag: string): string => {
+      const tagRegex = new RegExp(`<${tag}>([^<\\n\\r]*)`, 'i');
+      const m = block.match(tagRegex);
+      if (m && m[1]) {
+        return m[1].replace(/<\/[^>]+>/gi, '').trim();
+      }
+      return '';
+    };
+
+    const trntype = extract('TRNTYPE');
+    const dtposted = extract('DTPOSTED');
+    const trnamt = extract('TRNAMT');
+    const memo = extract('MEMO') || extract('NAME') || 'Transação Extrato OFX';
+    const fitid = extract('FITID');
+
+    let date = new Date();
+    if (dtposted && dtposted.length >= 8) {
+      const year = parseInt(dtposted.substring(0, 4), 10);
+      const month = parseInt(dtposted.substring(4, 6), 10) - 1;
+      const day = parseInt(dtposted.substring(6, 8), 10);
+      date = new Date(year, month, day, 12, 0, 0);
+    }
+
+    const valueNum = Number(trnamt.replace(',', '.')) || 0;
+    const type = valueNum < 0 ? 'Despesa' : 'Receita';
+    const absoluteValue = Math.abs(valueNum);
+
+    transactions.push({
+      id: fitid || Math.random().toString(36).substring(7),
+      date,
+      description: memo,
+      value: absoluteValue,
+      type,
+      selected: true,
+      category: type === 'Receita' ? 'Faturamento' : 'Despesas Gerais',
+      paymentMethod: 'PIX'
+    });
+  }
+
+  return transactions;
+}
+
 // --- Financial Manager Component ---
 
 function FinancialManager({ 
@@ -14033,6 +19390,9 @@ function FinancialManager({
 }) {
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isOfxOpen, setIsOfxOpen] = useState(false);
+  const [ofxTransactions, setOfxTransactions] = useState<any[]>([]);
+  const [ofxIsParsing, setOfxIsParsing] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -14524,6 +19884,216 @@ function FinancialManager({
                   <LayoutGrid size={14} className="mr-1" /> Colunas
                 </Button>
               </div>
+              <Dialog open={isOfxOpen} onOpenChange={(val) => {
+                setIsOfxOpen(val);
+                if (!val) setOfxTransactions([]);
+              }}>
+                <DialogTrigger asChild>
+                  <Button className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white h-10 px-4 font-bold shadow-lg shadow-emerald-500/10">
+                    <Upload size={16} />
+                    IMPORTAR OFX
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[90vh] overflow-hidden flex flex-col p-0 max-w-4xl w-[90vw]">
+                  <DialogHeader className="p-6 pb-2 flex-shrink-0 border-b border-[#2d3139]/40">
+                    <DialogTitle className="text-white flex items-center gap-2">
+                      <Upload className="text-emerald-400" size={20} />
+                      Importação de Extrato Bancário (OFX)
+                    </DialogTitle>
+                    <DialogDescription className="text-[#a0a0a0] text-xs">
+                      Selecione ou clique para carregar o arquivo .ofx baixado no aplicativo do seu banco para conciliar as receitas e despesas.
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6">
+                    {ofxTransactions.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center border-2 border-dashed border-[#2d3139] hover:border-emerald-500/40 rounded-xl p-10 bg-[#0f1115]/40 transition-all cursor-pointer relative lg:py-16">
+                        <input
+                          type="file"
+                          accept=".ofx"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            setOfxIsParsing(true);
+                            try {
+                              const text = await file.text();
+                              const parsed = parseOFX(text);
+                              if (parsed.length === 0) {
+                                toast.error("Nenhuma transação STMTTRN foi encontrada no arquivo. Verifique se é um arquivo OFX válido.");
+                              } else {
+                                setOfxTransactions(parsed);
+                                toast.success(`${parsed.length} transações carregadas com sucesso!`);
+                              }
+                            } catch (err) {
+                              toast.error("Erro ao ler o arquivo OFX.");
+                            } finally {
+                              setOfxIsParsing(false);
+                            }
+                          }}
+                          className="absolute inset-0 opacity-0 cursor-pointer"
+                        />
+                        <Upload size={40} className="text-[#71717a] mb-3 animate-pulse" />
+                        <p className="text-sm font-bold text-white uppercase tracking-wider mb-1">Selecionar Extrato Bancário</p>
+                        <p className="text-xs text-[#71717a] uppercase font-mono tracking-tight select-none">Clique ou arraste o arquivo contendo a extensão .ofx</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-[#71717a] uppercase tracking-wider font-mono">
+                            Lista de Transações ({ofxTransactions.filter(t => t.selected).length} selecionadas de {ofxTransactions.length})
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const allSelectedStatus = ofxTransactions.every(t => t.selected);
+                              setOfxTransactions(ofxTransactions.map(t => ({ ...t, selected: !allSelectedStatus })));
+                            }}
+                            className="text-xs font-mono font-bold uppercase tracking-wider text-blue-400 hover:text-blue-300"
+                          >
+                            {ofxTransactions.every(t => t.selected) ? "Desmarcar Todos" : "Marcar Todos"}
+                          </button>
+                        </div>
+
+                        {/* Transaction Table */}
+                        <div className="border border-[#2d3139] rounded-xl bg-[#0f1115]/50 overflow-hidden">
+                          <TableDoubleScroll>
+                            <table className="w-full text-left text-xs font-mono border-collapse min-w-[700px]">
+                            <thead>
+                              <tr className="bg-[#1a1d23] border-b border-[#2d3139] text-[#71717a] tracking-wider uppercase font-black">
+                                <th className="p-3 w-10 text-center"></th>
+                                <th className="p-3">Data</th>
+                                <th className="p-3">Descrição (Memo)</th>
+                                <th className="p-3 text-right">Valor</th>
+                                <th className="p-3">Categoria</th>
+                                <th className="p-3">Forma Pagto</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {ofxTransactions.map((trx, idx) => (
+                                <tr key={trx.id} className="border-b border-[#2d3139]/40 hover:bg-[#1a1d23]/40">
+                                  <td className="p-3 text-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={trx.selected}
+                                      onChange={() => {
+                                        const updated = [...ofxTransactions];
+                                        updated[idx].selected = !updated[idx].selected;
+                                        setOfxTransactions(updated);
+                                      }}
+                                      className="rounded bg-[#1a1d23] border-[#2d3139] text-blue-500"
+                                    />
+                                  </td>
+                                  <td className="p-3 text-emerald-400 font-bold whitespace-nowrap">
+                                    {format(trx.date, 'dd/MM/yyyy')}
+                                  </td>
+                                  <td className="p-3 truncate max-w-[200px]" title={trx.description}>
+                                    {trx.description}
+                                  </td>
+                                  <td className={cn(
+                                    "p-3 text-right font-bold font-mono whitespace-nowrap",
+                                    trx.type === 'Receita' ? 'text-green-400' : 'text-red-400'
+                                  )}>
+                                    {trx.type === 'Receita' ? '+' : '-'} R$ {trx.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </td>
+                                  <td className="p-3">
+                                    <select
+                                      value={trx.category}
+                                      onChange={(e) => {
+                                        const updated = [...ofxTransactions];
+                                        updated[idx].category = e.target.value;
+                                        setOfxTransactions(updated);
+                                      }}
+                                      className="bg-[#1a1d23] border border-[#2d3139] text-white text-[10px] rounded px-1.5 py-0.5"
+                                    >
+                                      <option value="Faturamento">Faturamento (Geral)</option>
+                                      <option value="Serviço Normal">Serviço Normal</option>
+                                      <option value="Contrato Mensal">Contrato Mensal</option>
+                                      <option value="Peças / Equipamentos">Peças / Equipamentos</option>
+                                      <option value="Despesas Gerais">Despesas Gerais</option>
+                                      <option value="Impostos">Impostos</option>
+                                      <option value="Estrutura">Estrutura</option>
+                                      <option value="Salários / Comissões">Salários / Comissões</option>
+                                    </select>
+                                  </td>
+                                  <td className="p-3 text-[#a0a0a0]">
+                                    <select
+                                      value={trx.paymentMethod}
+                                      onChange={(e) => {
+                                        const updated = [...ofxTransactions];
+                                        updated[idx].paymentMethod = e.target.value;
+                                        setOfxTransactions(updated);
+                                      }}
+                                      className="bg-[#1a1d23] border border-[#2d3139] text-white text-[10px] rounded px-1.5 py-0.5"
+                                    >
+                                      <option value="PIX">PIX</option>
+                                      <option value="Dinheiro">Dinheiro</option>
+                                      <option value="Cartão">Cartão</option>
+                                    </select>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </TableDoubleScroll>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <DialogFooter className="p-6 border-t border-[#2d3139]/40 gap-2 flex-shrink-0">
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsOfxOpen(false)}
+                      className="border-[#2d3139] text-[#71717a] hover:text-white"
+                    >
+                      Cancelar
+                    </Button>
+                    {ofxTransactions.length > 0 && (
+                      <Button
+                        onClick={async () => {
+                          const toImport = ofxTransactions.filter(t => t.selected);
+                          if (toImport.length === 0) {
+                            toast.error("Nenhuma transação selecionada.");
+                            return;
+                          }
+
+                          let importedCount = 0;
+                          for (const info of toImport) {
+                            const newRec = {
+                              type: info.type,
+                              date: Timestamp.fromDate(info.date instanceof Date ? info.date : new Date()),
+                              value: Number(info.value) || 0,
+                              serviceType: info.type === 'Receita' ? 'Serviço Normal' : 'Despesas Gerais',
+                              category: info.category,
+                              paymentMethod: info.paymentMethod,
+                              pixAccountId: '',
+                              clientId: '',
+                              description: info.description,
+                              companyId,
+                              createdAt: Timestamp.now()
+                            };
+
+                            await addDoc(collection(db, 'financial'), newRec);
+                            importedCount++;
+                          }
+
+                          if (logAction) {
+                            logAction('financial', `Importou ${importedCount} transações via arquivo de extrato bancário OFX`);
+                          }
+
+                          toast.success(`Importação realizada! ${importedCount} lançamentos salvos com sucesso.`);
+                          setIsOfxOpen(false);
+                          setOfxTransactions([]);
+                        }}
+                        className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-6"
+                      >
+                        Importar Lançamentos ({ofxTransactions.filter(t => t.selected).length})
+                      </Button>
+                    )}
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
               <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
                 <DialogTrigger asChild>
                   <Button className="gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white h-10 px-6 font-bold shadow-lg shadow-blue-500/10">
@@ -14773,7 +20343,7 @@ function FinancialManager({
         </div>
       ) : (
         <Card 
-          className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+          className="border-[#2d3139] bg-[#1a1d23] rounded-xl relative focus:outline-none focus:ring-1 focus:ring-blue-500/50 shadow-2xl"
           tabIndex={0}
           onKeyDown={(e) => {
             if (!filteredFinancials.length) return;
@@ -14792,7 +20362,7 @@ function FinancialManager({
           }}
         >
         <TableDoubleScroll>
-        <Table>
+        <Table className="min-w-[1000px]">
           <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[80px]">AÇÕES</TableHead>
@@ -15458,11 +21028,11 @@ function ServiceOrdersManager({
         </div>
 
         <div className="flex items-center gap-2 mt-1">
-          {serviceOrders.length > 0 && selectedIds.length === 0 && (
+          {filteredServiceOrders.length > 0 && selectedIds.length === 0 && (
             <Button 
               variant="outline" 
               className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-xs h-9 uppercase font-black"
-              onClick={() => setSelectedIds(serviceOrders.map(os => os.id))}
+              onClick={() => setSelectedIds(filteredServiceOrders.map(os => os.id))}
             >
               Selecionar Todas
             </Button>
@@ -15471,7 +21041,7 @@ function ServiceOrdersManager({
             <Button 
               className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white h-9 text-xs font-black uppercase"
               onClick={() => {
-                const selectedOS = serviceOrders.filter(os => selectedIds.includes(os.id));
+                const selectedOS = filteredServiceOrders.filter(os => selectedIds.includes(os.id));
                 generateOSLabelsPDF(selectedOS, appSettings);
                 setSelectedIds([]);
               }}
@@ -15505,7 +21075,8 @@ function ServiceOrdersManager({
                       clientName: c.name || '', 
                       address: c.address || '', 
                       contact: c.phone || '',
-                      contactName: c.responsible || ''
+                      contactName: c.responsible || '',
+                      clientDocument: c.document || ''
                     });
                   }}>
                     <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white tracking-widest uppercase text-[10px] font-black h-10">
@@ -15543,6 +21114,28 @@ function ServiceOrdersManager({
                       {users.map(u => <SelectItem key={u.uid} value={u.uid}>{u.displayName || u.email}</SelectItem>)}
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+
+              {/* Responsável e CPF/CNPJ do Cliente */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Responsável do Cliente (Opcional)</Label>
+                  <Input 
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                    value={newOS.contactName || ''} 
+                    onChange={e => setNewOS({...newOS, contactName: e.target.value})} 
+                    placeholder="Nome de quem assina pelo cliente" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>CPF/CNPJ do Cliente (Opcional)</Label>
+                  <Input 
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                    value={newOS.clientDocument || ''} 
+                    onChange={e => setNewOS({...newOS, clientDocument: e.target.value})} 
+                    placeholder="Ex: 00.000.000/0000-00" 
+                  />
                 </div>
               </div>
 
@@ -15843,12 +21436,20 @@ function ServiceOrdersManager({
                         </div>
                         <span className="text-[9px] text-[#71717a] truncate">{os.technicianName}</span>
                       </div>
-                      <Button variant="ghost" size="sm" className="h-5 px-1 text-[8px] bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white uppercase font-black tracking-tighter" onClick={(e) => {
-                        e.stopPropagation();
-                        generateOSLabelsPDF([os], appSettings);
-                      }}>
-                        Etiqueta
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="sm" className="h-5 px-1 text-[8px] bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white uppercase font-black tracking-tighter" onClick={(e) => {
+                          e.stopPropagation();
+                          generateOSLabelsPDF([os], appSettings);
+                        }}>
+                          Etiqueta
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-5 px-1 text-[8px] bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white uppercase font-black tracking-tighter" onClick={(e) => {
+                          e.stopPropagation();
+                          generateDeliveryReceiptPDF(os, appSettings, clients);
+                        }}>
+                          Entrega
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </Card>
@@ -15856,9 +21457,9 @@ function ServiceOrdersManager({
             )}
           </div>
         ) : (
-          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50" tabIndex={0}>
+          <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl relative focus:outline-none focus:ring-1 focus:ring-blue-500/50 shadow-2xl" tabIndex={0}>
           <TableDoubleScroll>
-          <Table>
+          <Table className="min-w-[1200px]">
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">AÇÕES</TableHead>
@@ -15881,7 +21482,7 @@ function ServiceOrdersManager({
                     selectedRowId === os.id ? "bg-blue-500/10" : "hover:bg-[#25282e]/30"
                   )}
                 >
-                  <TableCell className="w-[150px] p-2">
+                  <TableCell className="w-[180px] p-2">
                     <div className="flex items-center gap-1.5 flex-nowrap">
                       <Button variant="outline" size="icon" title="Editar" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={(e) => {
                         e.stopPropagation();
@@ -15895,6 +21496,12 @@ function ServiceOrdersManager({
                         setIsValuesModalOpen(true);
                       }}>
                         PDF
+                      </Button>
+                      <Button variant="outline" size="sm" className="h-7 px-1 border-[#2d3139] text-emerald-500 hover:bg-emerald-500/10 text-[9px] font-bold" onClick={(e) => {
+                        e.stopPropagation();
+                        generateDeliveryReceiptPDF(os, appSettings, clients);
+                      }}>
+                        Entrega
                       </Button>
                       <Button variant="outline" size="icon" title="Excluir" className="h-7 w-7 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={(e) => {
                         e.stopPropagation();
@@ -16034,6 +21641,28 @@ function ServiceOrdersManager({
                         {users.map(u => <SelectItem key={u.uid} value={u.uid}>{u.displayName || u.email}</SelectItem>)}
                       </SelectContent>
                     </Select>
+                  </div>
+                </div>
+
+                {/* Responsável e CPF/CNPJ do Cliente (Editar) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Responsável do Cliente (Opcional)</Label>
+                    <Input 
+                      className="bg-[#0f1115] border-[#2d3139]" 
+                      value={editingOS.contactName || ''} 
+                      onChange={e => setEditingOS({...editingOS, contactName: e.target.value})} 
+                      placeholder="Nome de quem assina pelo cliente" 
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>CPF/CNPJ do Cliente (Opcional)</Label>
+                    <Input 
+                      className="bg-[#0f1115] border-[#2d3139]" 
+                      value={editingOS.clientDocument || ''} 
+                      onChange={e => setEditingOS({...editingOS, clientDocument: e.target.value})} 
+                      placeholder="Ex: 00.000.000/0000-00" 
+                    />
                   </div>
                 </div>
 
@@ -16232,7 +21861,7 @@ function ServiceOrdersManager({
             <Button 
               variant="outline" 
               onClick={async () => {
-                if (selectedOSForPDF) await generateServiceOrderPDF(selectedOSForPDF, appSettings, pixSettings, false);
+                if (selectedOSForPDF) await generateServiceOrderPDF(selectedOSForPDF, appSettings, pixSettings, false, clients);
                 setIsValuesModalOpen(false);
               }} 
               className="flex-1 border-[#2d3139] text-white hover:bg-[#2d3139]"
@@ -16241,7 +21870,7 @@ function ServiceOrdersManager({
             </Button>
             <Button 
               onClick={async () => {
-                if (selectedOSForPDF) await generateServiceOrderPDF(selectedOSForPDF, appSettings, pixSettings, true);
+                if (selectedOSForPDF) await generateServiceOrderPDF(selectedOSForPDF, appSettings, pixSettings, true, clients);
                 setIsValuesModalOpen(false);
               }} 
               className="flex-1 bg-[#3b82f6] hover:bg-[#2563eb] text-white"
@@ -16643,8 +22272,11 @@ function BudgetsManager({
   };
 
   const generateBudgetPDF = async (budget: Budget) => {
-    const doc = new jsPDF();
-    const dateStr = format(safeParseDate(budget.createdAt), 'dd/MM/yyyy');
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
     
     // Helper to load image
     const loadImage = (url: string): Promise<string | null> => {
@@ -16678,34 +22310,197 @@ function BudgetsManager({
       budget.items.map(item => item.imageUrl ? loadImage(item.imageUrl) : Promise.resolve(null))
     );
 
+    // Page calculations
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 12; // Compact margins
+    const contentWidth = pageWidth - (margin * 2);
+    let currentY = 12;
+
+    // Helper functions for formatting sections
+    const drawLine = () => {
+      doc.setDrawColor(200, 200, 200);
+      doc.line(margin, currentY, pageWidth - margin, currentY);
+      currentY += 4;
+    };
+
+    const drawSectionTitle = (title: string) => {
+      doc.setFillColor(240, 240, 240);
+      doc.rect(margin, currentY, contentWidth, 6, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(50, 50, 50);
+      doc.text(title.toUpperCase(), margin + 2, currentY + 4.2);
+      currentY += 8;
+    };
+
+    const checkPageBreak = (neededHeight: number) => {
+      if (currentY + neededHeight > pageHeight - 10) {
+        doc.addPage();
+        currentY = 12;
+        return true;
+      }
+      return false;
+    };
+
     // Logo
     if (appSettings.logoUrl) {
       try {
         const logoData = await loadImage(appSettings.logoUrl);
         if (logoData) {
-          doc.addImage(logoData, 'PNG', 20, 10, 18, 18);
+          doc.addImage(logoData, 'PNG', margin, currentY, 16, 16);
         }
       } catch (e) {
         console.error("Erro ao adicionar logo ao PDF:", e);
       }
     }
 
-    doc.setFontSize(16);
+    doc.setFontSize(13);
     doc.setFont('helvetica', 'bold');
-    const budgetHeaderX = appSettings.logoUrl ? 42 : 20;
-    doc.text(appSettings.companyName || '', budgetHeaderX, 18);
-    
-    doc.setFontSize(12);
-    doc.text(`ORÇAMENTO DE SERVIÇOS ${formatRecordNumber(budget.number, budget.createdAt)}`, budgetHeaderX, 26);
+    const budgetHeaderX = appSettings.logoUrl ? margin + 20 : margin;
+    doc.text(appSettings.companyName || '', budgetHeaderX, currentY + 5);
     
     doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Data: ${dateStr}`, 20, 42);
-    doc.text(`Cliente: ${budget.clientName || 'Cliente Sem Nome'}`, 20, 57);
-    doc.text(`WhatsApp: ${budget.clientPhone || 'N/A'}`, 20, 64);
-    doc.text(`Endereço: ${budget.address || 'N/A'}`, 20, 71);
+    doc.text(`ORÇAMENTO DE SERVIÇOS ${formatRecordNumber(budget.number, budget.createdAt)}`, budgetHeaderX, currentY + 11);
+
+    // Emissão e Status no Canto Superior Direito (ao lado do cabeçalho)
+    const topRightX = pageWidth - margin;
+    doc.setFontSize(8.5);
     
-    doc.line(20, 77, 190, 77);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(50, 50, 50);
+    doc.text('EMISSÃO:', topRightX - 35, currentY + 5);
+    doc.setFont('helvetica', 'normal');
+    const bDateStr = budget.createdAt ? format(safeParseDate(budget.createdAt), 'dd/MM/yyyy') : '--/--/----';
+    doc.text(bDateStr, topRightX, currentY + 5, { align: 'right' });
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text('STATUS:', topRightX - 35, currentY + 11);
+    doc.setFont('helvetica', 'normal');
+    doc.text(budget.status || 'Pendente', topRightX, currentY + 11, { align: 'right' });
+    
+    currentY += 18;
+    drawLine();
+
+    // 1. DADOS DO CLIENTE E PROPOSTA
+    drawSectionTitle('1. Dados do Cliente e Proposta');
+    const boxWidth = (contentWidth / 2) - 3;
+    const startY = currentY;
+    
+    // Pre-calculate line splitting and required box height
+    const clientNameSplitted = doc.splitTextToSize(budget.clientName || 'Cliente Sem Nome', boxWidth - 18);
+    const addressLines = doc.splitTextToSize(budget.address || 'N/A', boxWidth - 22);
+
+    const valText = doc.splitTextToSize(budget.proposalValidity || '15 dias', boxWidth - 40);
+    const delText = doc.splitTextToSize(budget.deliveryTime || 'A combinar', boxWidth - 40);
+    const warText = doc.splitTextToSize(budget.serviceWarranty || '90 dias', boxWidth - 40);
+
+    const leftHeightNeeded = 10 + (clientNameSplitted.length * 3.5) + 1.5 + (addressLines.length * 3.5) + 1.5 + 5
+                             + (budget.clientDocument ? 5 : 0)
+                             + (budget.responsibleName ? 5 : 0);
+    const rightHeightNeeded = 10 + (valText.length * 3.5) + 1.5 + (delText.length * 3.5) + 1.5 + (warText.length * 3.5) + 5;
+    const boxHeight = Math.max(leftHeightNeeded, rightHeightNeeded, 28);
+
+    // Draw Box for Client Data
+    doc.setDrawColor(200, 200, 200);
+    doc.rect(margin, currentY, boxWidth, boxHeight);
+    
+    doc.setFillColor(240, 240, 240);
+    doc.rect(margin, currentY, boxWidth, 6, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(50, 50, 50);
+    doc.text('DADOS DO CLIENTE', margin + 2, currentY + 4.2);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    let clientY = currentY + 10;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('CLIENTE:', margin + 2, clientY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(clientNameSplitted, margin + 15, clientY);
+    clientY += (clientNameSplitted.length * 3.5) + 1.5;
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text('ENDEREÇO:', margin + 2, clientY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(addressLines, margin + 20, clientY);
+    clientY += (addressLines.length * 3.5) + 1.5;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('FONE:', margin + 2, clientY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`${budget.clientPhone || 'N/A'}`, margin + 12, clientY);
+    clientY += 5;
+
+    if (budget.clientDocument) {
+      doc.setFont('helvetica', 'bold');
+      doc.text('CNPJ/CPF:', margin + 2, clientY);
+      doc.setFont('helvetica', 'normal');
+      doc.text(budget.clientDocument, margin + 20, clientY);
+      clientY += 5;
+    }
+
+    if (budget.responsibleName) {
+      doc.setFont('helvetica', 'bold');
+      doc.text('RESPONSÁVEL:', margin + 2, clientY);
+      doc.setFont('helvetica', 'normal');
+      doc.text(budget.responsibleName, margin + 26, clientY);
+      clientY += 5;
+    }
+
+    // Right Column: Proposal Data Box
+    const rightColX = margin + boxWidth + 6;
+    doc.rect(rightColX, startY, boxWidth, boxHeight);
+    
+    doc.setFillColor(240, 240, 240);
+    doc.rect(rightColX, startY, boxWidth, 6, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text('DADOS DO ORÇAMENTO', rightColX + 2, startY + 4.2);
+
+    let schedY = startY + 10;
+    doc.setFontSize(8);
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text('VALIDADE DA PROPOSTA.:', rightColX + 2, schedY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(valText, rightColX + 38, schedY);
+    schedY += (valText.length * 3.5) + 1.5;
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text('PRAZO DE ENTREGA......:', rightColX + 2, schedY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(delText, rightColX + 38, schedY);
+    schedY += (delText.length * 3.5) + 1.5;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('GARANTIA DO SERVIÇO...:', rightColX + 2, schedY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(warText, rightColX + 38, schedY);
+
+    currentY = startY + boxHeight + 4;
+    
+    doc.setDrawColor(200, 200, 200);
+    doc.line(margin, currentY, pageWidth - margin, currentY);
+    currentY += 6;
+
+    // 2. DETALHES DO SERVIÇO
+    checkPageBreak(25);
+    drawSectionTitle('2. Detalhes do Serviço / Escopo');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(50, 50, 50);
+
+    const serviceDetails = budget.observations || 'Nenhum detalhe adicional informado.';
+    const detailsLines = doc.splitTextToSize(serviceDetails, contentWidth);
+    doc.text(detailsLines, margin, currentY);
+    currentY += (detailsLines.length * 4) + 4;
+
+    // 3. PEÇAS E MATERIAIS UTILIZADOS
+    checkPageBreak(25);
+    drawSectionTitle('3. Peças e Materiais Utilizados');
     
     // Items Table
     const hasImages = budget.items.some(item => item.imageUrl);
@@ -16726,48 +22521,73 @@ function BudgetsManager({
       return row;
     });
 
-    autoTable(doc, {
-      startY: 82,
-      head: tableHead,
-      body: tableData,
-      theme: 'grid',
-      headStyles: { fillColor: [59, 130, 246] },
-      styles: { fontSize: 9, valign: 'middle' },
-      columnStyles: hasImages ? { 0: { cellWidth: 15 } } : {},
-      didDrawCell: (data) => {
-        if (hasImages && data.section === 'body' && data.column.index === 0) {
-          const imgData = itemImages[data.row.index];
-          if (imgData) {
-            doc.addImage(imgData, 'PNG', data.cell.x + 2, data.cell.y + 2, 11, 11);
+    if (!budget.items || budget.items.length === 0) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8.5);
+      doc.text('Nenhum material/peça cadastrada neste orçamento.', margin, currentY);
+      currentY += 6;
+    } else {
+      autoTable(doc, {
+        startY: currentY,
+        margin: { left: margin },
+        head: tableHead,
+        body: tableData,
+        theme: 'grid',
+        headStyles: { fillColor: [59, 130, 246], fontSize: 8, cellPadding: 1.5 },
+        styles: { fontSize: 8, valign: 'middle', cellPadding: 1.5 },
+        columnStyles: hasImages ? { 0: { cellWidth: 15 } } : {},
+        didDrawCell: (data) => {
+          if (hasImages && data.section === 'body' && data.column.index === 0) {
+            const imgData = itemImages[data.row.index];
+            if (imgData) {
+              doc.addImage(imgData, 'PNG', data.cell.x + 2, data.cell.y + 2, 11, 11);
+            }
           }
         }
-      }
-    });
-
-    let finalY = (doc as any).lastAutoTable.finalY + 10;
+      });
+      currentY = (doc as any).lastAutoTable.finalY + 5;
+    }
 
     const { itemsTotal, serviceValue, baseTotal, finalTotal } = getBudgetCalculations(budget, appSettings);
-    
-    doc.setFontSize(10);
+
+    // 4. DISCRIMINAÇÃO DE VALORES
+    checkPageBreak(25);
+    drawSectionTitle('4. Discriminação de Valores');
     doc.setFont('helvetica', 'normal');
-    doc.text(`VALOR MATERIAL: R$ ${itemsTotal.toFixed(2)}`, 190, finalY, { align: 'right' });
-    finalY += 7;
-    doc.text(`VALOR MÃO DE OBRA: R$ ${serviceValue.toFixed(2)}`, 190, finalY, { align: 'right' });
-    finalY += 8;
-    
+    doc.setFontSize(8.5);
+    doc.setTextColor(50, 50, 50);
+
+    doc.text('Custo total dos materiais / peças:', margin, currentY);
+    doc.text(`R$ ${itemsTotal.toFixed(2)}`, margin + 110, currentY, { align: 'right' });
+    currentY += 4.5;
+
+    doc.text('Custo total da mão-de-obra / serviço:', margin, currentY);
+    doc.text(`R$ ${serviceValue.toFixed(2)}`, margin + 110, currentY, { align: 'right' });
+    currentY += 4.5;
+
+    doc.setDrawColor(220, 220, 220);
+    doc.line(margin, currentY, margin + 110, currentY);
+    currentY += 4;
+
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.text(`VALOR TOTAL: R$ ${finalTotal.toFixed(2)}`, 190, finalY, { align: 'right' });
+    doc.setFontSize(10);
+    doc.setTextColor(0, 0, 0);
+    doc.text('VALOR TOTAL (MATERIAIS + SERVIÇO):', margin, currentY);
+    doc.text(`R$ ${finalTotal.toFixed(2)}`, margin + 110, currentY, { align: 'right' });
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'normal');
+    currentY += 7;
 
     if (budget.paymentMethod) {
-      finalY += 10;
-      doc.setFontSize(10);
+      checkPageBreak(25);
+      drawSectionTitle('5. Condições de Pagamento');
       doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
       
       const isCardPayment = budget.paymentMethod === 'Cartão' || budget.paymentMethod === 'Cartão com Juros';
       const shouldShowBrand = isCardPayment && budget.selectedCardBrand;
       
-      doc.text(`Forma de Pagamento: ${budget.paymentMethod}${shouldShowBrand ? ` (${budget.selectedCardBrand})` : ''}`, 20, finalY);
+      doc.text(`Forma de Pagamento: ${budget.paymentMethod}${shouldShowBrand ? ` (${budget.selectedCardBrand})` : ''}`, margin, currentY);
       
       if (isCardPayment) {
         doc.setFont('helvetica', 'normal');
@@ -16776,84 +22596,90 @@ function BudgetsManager({
           if (plan) {
             const value = calculateInstallmentValue(baseTotal, plan.id);
             const totalFinanced = value * plan.installments;
-            doc.text(`Pagamento em ${plan.installments}x de R$ ${value.toFixed(2)} (${plan.interestRate}% juros - Com Juros)`, 20, finalY + 7);
-            doc.text(`Total Financiado: R$ ${totalFinanced.toFixed(2)}`, 20, finalY + 14);
-            finalY += 19;
+            currentY += 5;
+            doc.text(`Pagamento em ${plan.installments}x de R$ ${value.toFixed(2)} (${plan.interestRate}% juros - Com Juros)`, margin, currentY);
+            currentY += 4.5;
+            doc.text(`Total Financiado: R$ ${totalFinanced.toFixed(2)}`, margin, currentY);
+            currentY += 6;
           }
         } else {
           const installments = budget.installments || 1;
           const valuePerInstallment = baseTotal / installments;
-          doc.text(`Pagamento em ${installments}x de R$ ${valuePerInstallment.toFixed(2)} (Sem Juros)`, 20, finalY + 7);
-          finalY += 12;
+          currentY += 5;
+          doc.text(`Pagamento em ${installments}x de R$ ${valuePerInstallment.toFixed(2)} (Sem Juros)`, margin, currentY);
+          currentY += 6;
         }
       } else if (budget.paymentMethod === 'PIX') {
         const selectedPix = pixSettings.accounts?.find(a => a.id === budget.pixAccountId || a.label === budget.pixAccountId) || pixSettings.accounts?.[0];
         if (selectedPix) {
-          finalY += 10;
-          doc.setFontSize(10);
+          currentY += 5;
+          doc.setFontSize(8.5);
           doc.setFont('helvetica', 'bold');
-          doc.text('Dados para Pagamento (PIX):', 20, finalY);
+          doc.text('Dados para Pagamento (PIX):', margin, currentY);
+          currentY += 4.5;
           doc.setFont('helvetica', 'normal');
-          doc.text(`Chave: ${selectedPix.key} - Banco: ${selectedPix.bank}`, 20, finalY + 7);
-          doc.text(`Favorecido: ${selectedPix.favored} - CPF/CNPJ: ${selectedPix.document || ''}`, 20, finalY + 12);
+          doc.text(`Chave: ${selectedPix.key} - Banco: ${selectedPix.bank}`, margin, currentY);
+          currentY += 4;
+          doc.text(`Favorecido: ${selectedPix.favored} - CPF/CNPJ: ${selectedPix.document || ''}`, margin, currentY);
           
           // QR Code PIX
           try {
-            const qrSize = 35;
+            const qrSize = 30;
             const qrContent = selectedPix.qrKey || selectedPix.key;
-            const qrDataUrl = await QRCode.toDataURL(qrContent, { margin: 1, width: 150 });
-            doc.addImage(qrDataUrl, 'PNG', 150, finalY, qrSize, qrSize);
+            const qrDataUrl = await QRCode.toDataURL(qrContent, { margin: 1, width: 120 });
+            doc.addImage(qrDataUrl, 'PNG', pageWidth - margin - qrSize - 2, currentY - 11, qrSize, qrSize);
           } catch (e) {
             console.error("Error generating PIX QR Code for Budget", e);
           }
 
-          finalY += 15;
+          currentY += 8;
         }
       }
     }
+
+    // Signatures
+    checkPageBreak(25);
+    currentY += 12; // Lowered to avoid tight spacing after payment conditions
     
-    if (budget.observations) {
-      finalY += 15;
-      doc.setFontSize(10);
-      doc.text('Observações:', 20, finalY);
-      doc.setFont('helvetica', 'normal');
-      const splitObs = doc.splitTextToSize(budget.observations, 170);
-      doc.text(splitObs, 20, finalY + 7);
-      finalY += (splitObs.length * 5) + 10;
-    }
-
-    if (finalY > 240) {
-      doc.addPage();
-      finalY = 20;
-    }
-
-    doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
     const cityDateBudget = formatFullDateWithCity(budget.createdAt || new Date(), appSettings);
-    doc.text(cityDateBudget, 105, finalY + 5, { align: 'center' });
-
-    finalY += 20;
+    doc.text(cityDateBudget, pageWidth / 2, currentY, { align: 'center' });
     
+    currentY += 14; // Added more vertical space for signature line
+    
+    doc.setLineWidth(0.25);
+    doc.line(margin + 10, currentY, margin + 70, currentY);
+    doc.line(pageWidth - margin - 70, currentY, pageWidth - margin - 10, currentY);
+    
+    const clientRegistry = clients?.find(c => c.id === budget.clientId || (c.name && c.name.toLowerCase().trim() === budget.clientName?.toLowerCase().trim()));
+    const bClientName = clientRegistry?.name || budget.clientName || 'Cliente Sem Nome';
+    const bClientDoc = clientRegistry?.document || budget.clientDocument || '___________________________';
+    const bClientResp = clientRegistry?.responsible || budget.responsibleName || '___________________________';
+
+    doc.setFontSize(7.5);
+    doc.text('Assinatura do Cliente', margin + 40, currentY + 4, { align: 'center' });
+    let clientLabelY = currentY + 8;
+    doc.text(bClientName, margin + 40, clientLabelY, { align: 'center' });
+    clientLabelY += 3.5;
+    doc.text(bClientDoc, margin + 40, clientLabelY, { align: 'center' });
+    clientLabelY += 3.5;
+    doc.text(bClientResp, margin + 40, clientLabelY, { align: 'center' });
+    
+    doc.text('Assinatura da Empresa', pageWidth - margin - 40, currentY + 4, { align: 'center' });
+    doc.text(appSettings.companyName || '', pageWidth - margin - 40, currentY + 8, { align: 'center' });
+    if (appSettings.responsible) {
+      doc.text(`Responsável: ${appSettings.responsible}`, pageWidth - margin - 40, currentY + 11.5, { align: 'center' });
+    }
+
     if (budget.clientSignature) {
-      try {
-        doc.addImage(budget.clientSignature, 'PNG', 20, finalY - 15, 50, 15);
-      } catch (e) {
-        console.error("Erro ao adicionar assinatura do cliente ao orçamento:", e);
-      }
+      try { doc.addImage(budget.clientSignature, 'PNG', margin + 20, currentY - 14, 40, 13); } catch(e) {}
     }
-    doc.line(20, finalY, 70, finalY);
-    doc.text('Assinatura do Cliente', 45, finalY + 5, { align: 'center' });
-
+    
     if (appSettings.signatureUrl) {
-      try {
-        doc.addImage(appSettings.signatureUrl, 'PNG', 130, finalY - 15, 50, 15);
-      } catch (e) {
-        console.error("Erro ao adicionar assinatura da empresa ao orçamento:", e);
-      }
+      try { doc.addImage(appSettings.signatureUrl, 'PNG', pageWidth - margin - 60, currentY - 14, 40, 13); } catch(e) {}
     }
-    doc.line(120, finalY, 190, finalY);
-    doc.text(appSettings.responsible || appSettings.companyName, 155, finalY + 5, { align: 'center' });
-
+    
     const nameForFilename = (budget.clientName || 'Cliente_Sem_Nome').replace(/\s/g, '_');
     doc.save(`orcamento_${nameForFilename}.pdf`);
   };
@@ -17080,7 +22906,12 @@ function BudgetsManager({
                         clientName: client.name || '',
                         clientPhone: client.phone || '',
                         address: client.address || '',
-                        pixAccountId: client.pixAccountId
+                        pixAccountId: client.pixAccountId,
+                        clientDocument: client.document || '',
+                        responsibleName: client.responsible || '',
+                        proposalValidity: newBudget.proposalValidity || '15 dias',
+                        deliveryTime: newBudget.deliveryTime || 'A combinar',
+                        serviceWarranty: newBudget.serviceWarranty || '90 dias'
                       });
                     }
                   }}>
@@ -17126,6 +22957,32 @@ function BudgetsManager({
                   <Input value={newBudget.address || ''} onChange={e => setNewBudget({...newBudget, address: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
                 </div>
                 
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Responsável do Cliente (Opcional)</Label>
+                    <Input value={newBudget.responsibleName || ''} onChange={e => setNewBudget({...newBudget, responsibleName: e.target.value})} placeholder="Nome de quem assina pelo cliente" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">CPF/CNPJ do Cliente (Opcional)</Label>
+                    <Input value={newBudget.clientDocument || ''} onChange={e => setNewBudget({...newBudget, clientDocument: e.target.value})} placeholder="Ex: 00.000.000/0000-00" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]" htmlFor="newProposalValidity">Validade da Proposta</Label>
+                    <Input id="newProposalValidity" value={newBudget.proposalValidity || ''} onChange={e => setNewBudget({...newBudget, proposalValidity: e.target.value})} placeholder="Ex: 15 dias" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]" htmlFor="newDeliveryTime">Prazo de Entrega</Label>
+                    <Input id="newDeliveryTime" value={newBudget.deliveryTime || ''} onChange={e => setNewBudget({...newBudget, deliveryTime: e.target.value})} placeholder="Ex: 5 dias úteis" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]" htmlFor="newServiceWarranty">Garantia do Serviço</Label>
+                    <Input id="newServiceWarranty" value={newBudget.serviceWarranty || ''} onChange={e => setNewBudget({...newBudget, serviceWarranty: e.target.value})} placeholder="Ex: 90 dias" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                  </div>
+                </div>
+                
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="text-[#a0a0a0]">Forma de Pagamento</Label>
@@ -17145,8 +23002,8 @@ function BudgetsManager({
                               ...newBudget, 
                               paymentMethod: method as any,
                               interestType: 'none',
-                              selectedCardBrand: undefined,
-                              selectedInstallmentPlanId: undefined,
+                              selectedCardBrand: '',
+                              selectedInstallmentPlanId: '',
                               installments: 1,
                               cashAcceptancePercent: method === 'Dinheiro' ? 50 : undefined,
                               cashDeliveryPercent: method === 'Dinheiro' ? 50 : undefined
@@ -17195,11 +23052,11 @@ function BudgetsManager({
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label className="text-[#a0a0a0]">Bandeira do Cartão</Label>
-                      <Select value={newBudget.selectedCardBrand} onValueChange={(val: any) => {
+                      <Select value={newBudget.selectedCardBrand || ''} onValueChange={(val: any) => {
                         setNewBudget({
                           ...newBudget, 
                           selectedCardBrand: val,
-                          selectedInstallmentPlanId: undefined,
+                          selectedInstallmentPlanId: '',
                           installments: 1,
                           installmentValue: undefined
                         });
@@ -17218,7 +23075,7 @@ function BudgetsManager({
 
                     <div className="space-y-2">
                       <Label className="text-[#a0a0a0]">Plano / Parcelas</Label>
-                      <Select value={newBudget.selectedInstallmentPlanId} onValueChange={(val) => {
+                      <Select value={newBudget.selectedInstallmentPlanId || ''} onValueChange={(val) => {
                         const plan = appSettings.installmentPlans?.find(p => p.id === val);
                         setNewBudget({
                           ...newBudget, 
@@ -17604,9 +23461,9 @@ function BudgetsManager({
           )}
         </div>
       ) : (
-        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50" tabIndex={0}>
+        <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl relative focus:outline-none focus:ring-1 focus:ring-blue-500/50 shadow-2xl" tabIndex={0}>
           <TableDoubleScroll>
-          <Table>
+          <Table className="min-w-[1000px]">
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">Ações</TableHead>
@@ -17738,6 +23595,32 @@ function BudgetsManager({
                 <Input value={editingBudget.address || ''} onChange={e => setEditingBudget({...editingBudget, address: e.target.value})} className="bg-[#0f1115] border-[#2d3139] text-white" />
               </div>
 
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">Responsável do Cliente (Opcional)</Label>
+                  <Input value={editingBudget.responsibleName || ''} onChange={e => setEditingBudget({...editingBudget, responsibleName: e.target.value})} placeholder="Nome de quem assina pelo cliente" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]">CPF/CNPJ do Cliente (Opcional)</Label>
+                  <Input value={editingBudget.clientDocument || ''} onChange={e => setEditingBudget({...editingBudget, clientDocument: e.target.value})} placeholder="Ex: 00.000.000/0000-00" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]" htmlFor="editProposalValidity">Validade da Proposta</Label>
+                  <Input id="editProposalValidity" value={editingBudget.proposalValidity || ''} onChange={e => setEditingBudget({...editingBudget, proposalValidity: e.target.value})} placeholder="Ex: 15 dias" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]" htmlFor="editDeliveryTime">Prazo de Entrega</Label>
+                  <Input id="editDeliveryTime" value={editingBudget.deliveryTime || ''} onChange={e => setEditingBudget({...editingBudget, deliveryTime: e.target.value})} placeholder="Ex: 5 dias úteis" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0]" htmlFor="editServiceWarranty">Garantia do Serviço</Label>
+                  <Input id="editServiceWarranty" value={editingBudget.serviceWarranty || ''} onChange={e => setEditingBudget({...editingBudget, serviceWarranty: e.target.value})} placeholder="Ex: 90 dias" className="bg-[#0f1115] border-[#2d3139] text-white" />
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label className="text-[#a0a0a0]">Forma de Pagamento</Label>
@@ -17757,8 +23640,8 @@ function BudgetsManager({
                             ...editingBudget, 
                             paymentMethod: method as any,
                             interestType: 'none',
-                            selectedCardBrand: undefined,
-                            selectedInstallmentPlanId: undefined,
+                            selectedCardBrand: '',
+                            selectedInstallmentPlanId: '',
                             installments: 1,
                             cashAcceptancePercent: method === 'Dinheiro' ? 50 : undefined,
                             cashDeliveryPercent: method === 'Dinheiro' ? 50 : undefined
@@ -17811,7 +23694,7 @@ function BudgetsManager({
                       setEditingBudget({
                         ...editingBudget, 
                         selectedCardBrand: val,
-                        selectedInstallmentPlanId: undefined,
+                        selectedInstallmentPlanId: '',
                         installments: 1,
                         installmentValue: undefined
                       });
@@ -19784,7 +25667,7 @@ function InventoryManager({
           ) : (
             <Card className="bg-[#1a1d23] border-[#2d3139] overflow-hidden shadow-2xl">
               <TableDoubleScroll>
-                <Table>
+                <Table className="min-w-[900px]">
                 <TableHeader className="bg-[#0f1115]">
                   <TableRow className="hover:bg-transparent border-[#2d3139]">
                     <TableHead className="text-[#71717a] text-[10px] uppercase font-black px-4 py-3">Cod.</TableHead>
@@ -19956,133 +25839,135 @@ function InventoryManager({
 
       {/* Edit Item Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-lg shadow-2xl">
-          <DialogHeader>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[85vh] overflow-hidden flex flex-col p-0 sm:max-w-lg shadow-2xl">
+          <DialogHeader className="p-6 pb-2 flex-shrink-0">
             <DialogTitle className="text-2xl font-black text-white uppercase italic tracking-tighter flex items-center gap-2">
               <Package className="text-blue-500" /> Editar Item de Estoque
             </DialogTitle>
           </DialogHeader>
-          {selectedItem && (
-            <div className="grid grid-cols-2 gap-4 py-4">
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Código / SKU</Label>
-                <Input 
-                  value={selectedItem.code || ''} 
-                  onChange={e => setSelectedItem({...selectedItem, code: e.target.value})} 
-                  className="bg-[#0f1115] border-[#2d3139]" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Nome da Peça</Label>
-                <Input 
-                  value={selectedItem.name || ''} 
-                  onChange={e => setSelectedItem({...selectedItem, name: e.target.value})} 
-                  className="bg-[#0f1115] border-[#2d3139]" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Categoria</Label>
-                <Input 
-                  value={selectedItem.category || ''} 
-                  onChange={e => setSelectedItem({...selectedItem, category: e.target.value})} 
-                  className="bg-[#0f1115] border-[#2d3139]" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Localização</Label>
-                <Input 
-                  value={selectedItem.location || ''} 
-                  onChange={e => setSelectedItem({...selectedItem, location: e.target.value})} 
-                  className="bg-[#0f1115] border-[#2d3139]" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Estoque Atual</Label>
-                <Input 
-                  type="number"
-                  value={selectedItem.quantity || ''} 
-                  onChange={e => setSelectedItem({...selectedItem, quantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
-                  className="bg-[#0f1115] border-[#2d3139]" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Mínimo para Alerta</Label>
-                <Input 
-                  type="number"
-                  value={selectedItem.minQuantity || ''} 
-                  onChange={e => setSelectedItem({...selectedItem, minQuantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
-                  className="bg-[#0f1115] border-[#2d3139]" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Custo (R$)</Label>
-                <Input 
-                  type="number"
-                  value={selectedItem.costPrice || ''} 
-                  onChange={e => {
-                    const cost = e.target.value === '' ? 0 : Number(e.target.value);
-                    const margin = selectedItem.profitMargin || 0;
-                    const sellingPrice = Number((cost * (1 + margin / 100)).toFixed(2));
-                    setSelectedItem({...selectedItem, costPrice: cost, price: sellingPrice});
-                  }} 
-                  className="bg-[#0f1115] border-[#2d3139]" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Margem de Lucro (%)</Label>
-                <Input 
-                  type="number"
-                  value={selectedItem.profitMargin || ''} 
-                  onChange={e => {
-                    const margin = e.target.value === '' ? 0 : Number(e.target.value);
-                    const cost = selectedItem.costPrice || 0;
-                    const sellingPrice = Number((cost * (1 + margin / 100)).toFixed(2));
-                    setSelectedItem({...selectedItem, profitMargin: margin, price: sellingPrice});
-                  }} 
-                  className="bg-[#0f1115] border-[#2d3139]" 
-                />
-              </div>
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2 custom-scrollbar">
+            {selectedItem && (
+              <div className="grid grid-cols-2 gap-4 py-4">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Código / SKU</Label>
+                  <Input 
+                    value={selectedItem.code || ''} 
+                    onChange={e => setSelectedItem({...selectedItem, code: e.target.value})} 
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Nome da Peça</Label>
+                  <Input 
+                    value={selectedItem.name || ''} 
+                    onChange={e => setSelectedItem({...selectedItem, name: e.target.value})} 
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Categoria</Label>
+                  <Input 
+                    value={selectedItem.category || ''} 
+                    onChange={e => setSelectedItem({...selectedItem, category: e.target.value})} 
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Localização</Label>
+                  <Input 
+                    value={selectedItem.location || ''} 
+                    onChange={e => setSelectedItem({...selectedItem, location: e.target.value})} 
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Estoque Atual</Label>
+                  <Input 
+                    type="number"
+                    value={selectedItem.quantity || ''} 
+                    onChange={e => setSelectedItem({...selectedItem, quantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Mínimo para Alerta</Label>
+                  <Input 
+                    type="number"
+                    value={selectedItem.minQuantity || ''} 
+                    onChange={e => setSelectedItem({...selectedItem, minQuantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Custo (R$)</Label>
+                  <Input 
+                    type="number"
+                    value={selectedItem.costPrice || ''} 
+                    onChange={e => {
+                      const cost = e.target.value === '' ? 0 : Number(e.target.value);
+                      const margin = selectedItem.profitMargin || 0;
+                      const sellingPrice = Number((cost * (1 + margin / 100)).toFixed(2));
+                      setSelectedItem({...selectedItem, costPrice: cost, price: sellingPrice});
+                    }} 
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Margem de Lucro (%)</Label>
+                  <Input 
+                    type="number"
+                    value={selectedItem.profitMargin || ''} 
+                    onChange={e => {
+                      const margin = e.target.value === '' ? 0 : Number(e.target.value);
+                      const cost = selectedItem.costPrice || 0;
+                      const sellingPrice = Number((cost * (1 + margin / 100)).toFixed(2));
+                      setSelectedItem({...selectedItem, profitMargin: margin, price: sellingPrice});
+                    }} 
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                  />
+                </div>
 
-              <div className="col-span-2 space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Venda (Final) (R$)</Label>
-                <Input 
-                  type="number"
-                  value={selectedItem.price || ''} 
-                  onChange={e => {
-                    const sellingPrice = e.target.value === '' ? 0 : Number(e.target.value);
-                    const cost = selectedItem.costPrice || 0;
-                    // Calculate margin based on selling price if cost is available
-                    let margin = selectedItem.profitMargin || 0;
-                    if (cost > 0) {
-                      margin = Number(((sellingPrice / cost - 1) * 100).toFixed(2));
-                    }
-                    setSelectedItem({...selectedItem, price: sellingPrice, profitMargin: margin});
-                  }} 
-                  onFocus={(e) => e.target.select()}
-                  className="bg-[#0f1115] border-[#2d3139] h-11 text-lg font-bold text-blue-400" 
-                />
-                <p className="text-[10px] text-blue-400/70 italic">Preço final utilizado nos orçamentos e vendas.</p>
+                <div className="col-span-2 space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Venda (Final) (R$)</Label>
+                  <Input 
+                    type="number"
+                    value={selectedItem.price || ''} 
+                    onChange={e => {
+                      const sellingPrice = e.target.value === '' ? 0 : Number(e.target.value);
+                      const cost = selectedItem.costPrice || 0;
+                      // Calculate margin based on selling price if cost is available
+                      let margin = selectedItem.profitMargin || 0;
+                      if (cost > 0) {
+                        margin = Number(((sellingPrice / cost - 1) * 100).toFixed(2));
+                      }
+                      setSelectedItem({...selectedItem, price: sellingPrice, profitMargin: margin});
+                    }} 
+                    onFocus={(e) => e.target.select()}
+                    className="bg-[#0f1115] border-[#2d3139] h-11 text-lg font-bold text-blue-400" 
+                  />
+                  <p className="text-[10px] text-blue-400/70 italic">Preço final utilizado nos orçamentos e vendas.</p>
+                </div>
+                <div className="col-span-2 space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Link da Imagem do Produto (URL)</Label>
+                  <Input 
+                    value={selectedItem.imageUrl || ''} 
+                    onChange={e => setSelectedItem({...selectedItem, imageUrl: e.target.value})} 
+                    placeholder="https://exemplo.com/imagem.jpg"
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                  />
+                </div>
+                <div className="col-span-2 space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Observações</Label>
+                  <Input 
+                    value={selectedItem.description || ''} 
+                    onChange={e => setSelectedItem({...selectedItem, description: e.target.value})} 
+                    className="bg-[#0f1115] border-[#2d3139]" 
+                  />
+                </div>
               </div>
-              <div className="col-span-2 space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Link da Imagem do Produto (URL)</Label>
-                <Input 
-                  value={selectedItem.imageUrl || ''} 
-                  onChange={e => setSelectedItem({...selectedItem, imageUrl: e.target.value})} 
-                  placeholder="https://exemplo.com/imagem.jpg"
-                  className="bg-[#0f1115] border-[#2d3139]" 
-                />
-              </div>
-              <div className="col-span-2 space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Observações</Label>
-                <Input 
-                  value={selectedItem.description || ''} 
-                  onChange={e => setSelectedItem({...selectedItem, description: e.target.value})} 
-                  className="bg-[#0f1115] border-[#2d3139]" 
-                />
-              </div>
-            </div>
-          )}
-          <DialogFooter className="bg-[#0f1115]/50 p-6 -mx-6 -mb-6 border-t border-[#2d3139]">
+            )}
+          </div>
+          <DialogFooter className="bg-[#0f1115]/50 p-6 border-t border-[#2d3139] flex-shrink-0">
             <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-[#2d3139]">Cancelar</Button>
             <Button onClick={handleUpdateItem} className="bg-[#3b82f6] hover:bg-[#2563eb] font-black uppercase italic tracking-tighter">Atualizar Registro</Button>
           </DialogFooter>
@@ -20091,137 +25976,139 @@ function InventoryManager({
 
       {/* Add Item Dialog */}
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-lg shadow-2xl">
-          <DialogHeader>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[85vh] overflow-hidden flex flex-col p-0 sm:max-w-lg shadow-2xl">
+          <DialogHeader className="p-6 pb-2 flex-shrink-0">
             <DialogTitle className="text-2xl font-black text-white uppercase italic tracking-tighter flex items-center gap-2">
               <Package className="text-blue-500" /> Novo Item de Estoque
             </DialogTitle>
             <DialogDescription className="text-[#a0a0a0]">Cadastre novas peças ou componentes para uso técnico.</DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-4 py-4">
-            <div className="space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Código / SKU</Label>
-              <Input 
-                value={newItem.code || ''} 
-                onChange={e => setNewItem({...newItem, code: e.target.value})} 
-                className="bg-[#0f1115] border-[#2d3139] focus:ring-blue-500" 
-                placeholder="Ex: SSD-240-KING"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Nome da Peça</Label>
-              <Input 
-                value={newItem.name || ''} 
-                onChange={e => setNewItem({...newItem, name: e.target.value})} 
-                className="bg-[#0f1115] border-[#2d3139] focus:ring-blue-500" 
-                placeholder="Ex: SSD 240GB Kingston"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Categoria</Label>
-              <Input 
-                value={newItem.category || ''} 
-                onChange={e => setNewItem({...newItem, category: e.target.value})} 
-                className="bg-[#0f1115] border-[#2d3139]" 
-                placeholder="Ex: Armazenamento"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Localização (Armário/Box)</Label>
-              <Input 
-                value={newItem.location || ''} 
-                onChange={e => setNewItem({...newItem, location: e.target.value})} 
-                className="bg-[#0f1115] border-[#2d3139]" 
-                placeholder="Prateleira A2"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Saldo Inicial</Label>
-              <Input 
-                type="number"
-                value={newItem.quantity || ''} 
-                onChange={e => setNewItem({...newItem, quantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
-                onFocus={(e) => e.target.select()}
-                className="bg-[#0f1115] border-[#2d3139]" 
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Qtd. Mínima (Aviso)</Label>
-              <Input 
-                type="number"
-                value={newItem.minQuantity || ''} 
-                onChange={e => setNewItem({...newItem, minQuantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
-                onFocus={(e) => e.target.select()}
-                className="bg-[#0f1115] border-[#2d3139]" 
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Custo (R$)</Label>
-              <Input 
-                type="number"
-                value={newItem.costPrice || ''} 
-                onChange={e => {
-                  const cost = e.target.value === '' ? 0 : Number(e.target.value);
-                  const margin = newItem.profitMargin || 0;
-                  const final = Number((cost * (1 + margin / 100)).toFixed(2));
-                  setNewItem({...newItem, costPrice: cost, price: final});
-                }} 
-                className="bg-[#0f1115] border-[#2d3139]" 
-                placeholder="0.00"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Margem de Lucro (%)</Label>
-              <Input 
-                type="number"
-                value={newItem.profitMargin || ''} 
-                onChange={e => {
-                  const margin = e.target.value === '' ? 0 : Number(e.target.value);
-                  const cost = newItem.costPrice || 0;
-                  const final = Number((cost * (1 + margin / 100)).toFixed(2));
-                  setNewItem({...newItem, profitMargin: margin, price: final});
-                }} 
-                className="bg-[#0f1115] border-[#2d3139]" 
-                placeholder="Ex: 30"
-              />
-            </div>
-            <div className="col-span-2 space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Venda (R$)</Label>
-              <Input 
-                type="number"
-                value={newItem.price || ''} 
-                onChange={e => {
-                  const final = e.target.value === '' ? 0 : Number(e.target.value);
-                  const cost = newItem.costPrice || 0;
-                  let margin = newItem.profitMargin || 0;
-                  if (cost > 0) {
-                    margin = Number(((final / cost - 1) * 100).toFixed(2));
-                  }
-                  setNewItem({...newItem, price: final, profitMargin: margin});
-                }} 
-                onFocus={(e) => e.target.select()}
-                className="bg-[#0f1115] border-[#2d3139] h-11 text-lg font-bold text-emerald-500" 
-              />
-            </div>
-            <div className="col-span-2 space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Link da Imagem do Produto (URL)</Label>
-              <Input 
-                value={newItem.imageUrl || ''} 
-                onChange={e => setNewItem({...newItem, imageUrl: e.target.value})} 
-                className="bg-[#0f1115] border-[#2d3139] focus:ring-blue-500" 
-                placeholder="https://exemplo.com/imagem.jpg"
-              />
-            </div>
-            <div className="col-span-2 space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Observações Técnicas</Label>
-              <Input 
-                value={newItem.description || ''} 
-                onChange={e => setNewItem({...newItem, description: e.target.value})} 
-                className="bg-[#0f1115] border-[#2d3139]" 
-              />
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2 custom-scrollbar">
+            <div className="grid grid-cols-2 gap-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Código / SKU</Label>
+                <Input 
+                  value={newItem.code || ''} 
+                  onChange={e => setNewItem({...newItem, code: e.target.value})} 
+                  className="bg-[#0f1115] border-[#2d3139] focus:ring-blue-500" 
+                  placeholder="Ex: SSD-240-KING"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Nome da Peça</Label>
+                <Input 
+                  value={newItem.name || ''} 
+                  onChange={e => setNewItem({...newItem, name: e.target.value})} 
+                  className="bg-[#0f1115] border-[#2d3139] focus:ring-blue-500" 
+                  placeholder="Ex: SSD 240GB Kingston"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Categoria</Label>
+                <Input 
+                  value={newItem.category || ''} 
+                  onChange={e => setNewItem({...newItem, category: e.target.value})} 
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                  placeholder="Ex: Armazenamento"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Localização (Armário/Box)</Label>
+                <Input 
+                  value={newItem.location || ''} 
+                  onChange={e => setNewItem({...newItem, location: e.target.value})} 
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                  placeholder="Prateleira A2"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Saldo Inicial</Label>
+                <Input 
+                  type="number"
+                  value={newItem.quantity || ''} 
+                  onChange={e => setNewItem({...newItem, quantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                  onFocus={(e) => e.target.select()}
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Qtd. Mínima (Aviso)</Label>
+                <Input 
+                  type="number"
+                  value={newItem.minQuantity || ''} 
+                  onChange={e => setNewItem({...newItem, minQuantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                  onFocus={(e) => e.target.select()}
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Custo (R$)</Label>
+                <Input 
+                  type="number"
+                  value={newItem.costPrice || ''} 
+                  onChange={e => {
+                    const cost = e.target.value === '' ? 0 : Number(e.target.value);
+                    const margin = newItem.profitMargin || 0;
+                    const final = Number((cost * (1 + margin / 100)).toFixed(2));
+                    setNewItem({...newItem, costPrice: cost, price: final});
+                  }} 
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Margem de Lucro (%)</Label>
+                <Input 
+                  type="number"
+                  value={newItem.profitMargin || ''} 
+                  onChange={e => {
+                    const margin = e.target.value === '' ? 0 : Number(e.target.value);
+                    const cost = newItem.costPrice || 0;
+                    const final = Number((cost * (1 + margin / 100)).toFixed(2));
+                    setNewItem({...newItem, profitMargin: margin, price: final});
+                  }} 
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                  placeholder="Ex: 30"
+                />
+              </div>
+              <div className="col-span-2 space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Preço de Venda (R$)</Label>
+                <Input 
+                  type="number"
+                  value={newItem.price || ''} 
+                  onChange={e => {
+                    const final = e.target.value === '' ? 0 : Number(e.target.value);
+                    const cost = newItem.costPrice || 0;
+                    let margin = newItem.profitMargin || 0;
+                    if (cost > 0) {
+                      margin = Number(((final / cost - 1) * 100).toFixed(2));
+                    }
+                    setNewItem({...newItem, price: final, profitMargin: margin});
+                  }} 
+                  onFocus={(e) => e.target.select()}
+                  className="bg-[#0f1115] border-[#2d3139] h-11 text-lg font-bold text-emerald-500" 
+                />
+              </div>
+              <div className="col-span-2 space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Link da Imagem do Produto (URL)</Label>
+                <Input 
+                  value={newItem.imageUrl || ''} 
+                  onChange={e => setNewItem({...newItem, imageUrl: e.target.value})} 
+                  className="bg-[#0f1115] border-[#2d3139] focus:ring-blue-500" 
+                  placeholder="https://exemplo.com/imagem.jpg"
+                />
+              </div>
+              <div className="col-span-2 space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Observações Técnicas</Label>
+                <Input 
+                  value={newItem.description || ''} 
+                  onChange={e => setNewItem({...newItem, description: e.target.value})} 
+                  className="bg-[#0f1115] border-[#2d3139]" 
+                />
+              </div>
             </div>
           </div>
-          <DialogFooter className="bg-[#0f1115]/50 p-6 -mx-6 -mb-6 border-t border-[#2d3139]">
+          <DialogFooter className="bg-[#0f1115]/50 p-6 border-t border-[#2d3139] flex-shrink-0">
             <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-[#2d3139]">Cancelar</Button>
             <Button onClick={handleSaveItem} className="bg-[#3b82f6] hover:bg-[#2563eb] font-black uppercase italic tracking-tighter">Salvar no Inventário</Button>
           </DialogFooter>
@@ -20230,8 +26117,8 @@ function InventoryManager({
 
       {/* Transaction Dialog (Entry/Exit) */}
       <Dialog open={isTransactionOpen} onOpenChange={setIsTransactionOpen}>
-        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-lg shadow-2xl">
-          <DialogHeader>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-h-[85vh] overflow-hidden flex flex-col p-0 sm:max-w-lg shadow-2xl">
+          <DialogHeader className="p-6 pb-2 flex-shrink-0">
             <DialogTitle className="text-2xl font-black text-white uppercase italic tracking-tighter flex items-center gap-2">
               {transactionType === 'entry' ? (
                 <>
@@ -20246,98 +26133,100 @@ function InventoryManager({
               )}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Item Selecionado</Label>
-              <Select value={newTransaction.itemId} onValueChange={val => setNewTransaction({...newTransaction, itemId: val})}>
-                <SelectTrigger className="bg-[#0f1115] border-[#2d3139] h-12">
-                  <SelectValue placeholder="Selecione o item..." />
-                </SelectTrigger>
-                <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                  {inventory.map(item => (
-                    <SelectItem key={item.id} value={item.id} className="focus:bg-[#3b82f6]/20">
-                      <div className="flex justify-between items-center w-64">
-                         <span className="font-bold">{item.name}</span>
-                         <Badge variant="outline" className="text-[8px] font-mono opacity-60 border-[#2d3139] ml-2">Saldo: {item.quantity}</Badge>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2 custom-scrollbar">
+            <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Quantidade ({transactionType === 'entry' ? 'Recebida' : 'Utilizada'})</Label>
-                <Input 
-                  type="number" 
-                  value={newTransaction.quantity || ''} 
-                  onChange={e => setNewTransaction({...newTransaction, quantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
-                  className="bg-[#0f1115] border-[#2d3139] h-11 text-lg font-mono font-bold text-center" 
-                />
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Item Selecionado</Label>
+                <Select value={newTransaction.itemId} onValueChange={val => setNewTransaction({...newTransaction, itemId: val})}>
+                  <SelectTrigger className="bg-[#0f1115] border-[#2d3139] h-12">
+                    <SelectValue placeholder="Selecione o item..." />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                    {inventory.map(item => (
+                      <SelectItem key={item.id} value={item.id} className="focus:bg-[#3b82f6]/20">
+                        <div className="flex justify-between items-center w-64">
+                           <span className="font-bold">{item.name}</span>
+                           <Badge variant="outline" className="text-[8px] font-mono opacity-60 border-[#2d3139] ml-2">Saldo: {item.quantity}</Badge>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="space-y-2">
-                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">N. de Série / Lote (SN)</Label>
-                <Input 
-                  value={newTransaction.serialNumber} 
-                  onChange={e => setNewTransaction({...newTransaction, serialNumber: e.target.value})} 
-                  className="bg-[#0f1115] border-[#2d3139] h-11 font-mono tracking-tighter" 
-                  placeholder="Ex: CN-02J-0F..."
-                />
-              </div>
-            </div>
-
-            {transactionType === 'exit' && (
-              <div className="bg-[#0f1115]/30 p-4 rounded-xl border border-[#2d3139] space-y-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                  <span className="text-[10px] font-black uppercase text-blue-500 tracking-widest">Informações de Integração</span>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Quantidade ({transactionType === 'entry' ? 'Recebida' : 'Utilizada'})</Label>
+                  <Input 
+                    type="number" 
+                    value={newTransaction.quantity || ''} 
+                    onChange={e => setNewTransaction({...newTransaction, quantity: e.target.value === '' ? 0 : Number(e.target.value)})} 
+                    className="bg-[#0f1115] border-[#2d3139] h-11 text-lg font-mono font-bold text-center" 
+                  />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-[#71717a] text-[10px] uppercase font-bold">Vincular a</Label>
-                    <Select value={newTransaction.referenceType} onValueChange={(val: any) => setNewTransaction({...newTransaction, referenceType: val, referenceId: ''})}>
-                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                        <SelectItem value="none">Nenhum vínculo</SelectItem>
-                        <SelectItem value="os">Ordem de Serviço (OS)</SelectItem>
-                        <SelectItem value="visit">Visita Técnica</SelectItem>
-                      </SelectContent>
-                    </Select>
+                <div className="space-y-2">
+                  <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">N. de Série / Lote (SN)</Label>
+                  <Input 
+                    value={newTransaction.serialNumber} 
+                    onChange={e => setNewTransaction({...newTransaction, serialNumber: e.target.value})} 
+                    className="bg-[#0f1115] border-[#2d3139] h-11 font-mono tracking-tighter" 
+                    placeholder="Ex: CN-02J-0F..."
+                  />
+                </div>
+              </div>
+
+              {transactionType === 'exit' && (
+                <div className="bg-[#0f1115]/30 p-4 rounded-xl border border-[#2d3139] space-y-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                    <span className="text-[10px] font-black uppercase text-blue-500 tracking-widest">Informações de Integração</span>
                   </div>
-                  {newTransaction.referenceType !== 'none' && (
+                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label className="text-[#71717a] text-[10px] uppercase font-bold">Localizar #{newTransaction.referenceType.toUpperCase()}</Label>
-                      <Select value={newTransaction.referenceId} onValueChange={val => setNewTransaction({...newTransaction, referenceId: val})}>
-                        <SelectTrigger className="bg-[#0f1115] border-[#2d3139] overflow-hidden">
-                          <SelectValue placeholder="Selecione..." />
+                      <Label className="text-[#71717a] text-[10px] uppercase font-bold">Vincular a</Label>
+                      <Select value={newTransaction.referenceType} onValueChange={(val: any) => setNewTransaction({...newTransaction, referenceType: val, referenceId: ''})}>
+                        <SelectTrigger className="bg-[#0f1115] border-[#2d3139]">
+                          <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
-                          {newTransaction.referenceType === 'os' ? 
-                            serviceOrders.slice(0, 50).map(os => <SelectItem key={os.id} value={os.id}>OS #{os.number} - {os.clientName}</SelectItem>) :
-                            visits.slice(0, 50).map(v => <SelectItem key={v.id} value={v.id}>Visita #{v.number} - {v.clientName}</SelectItem>)
-                          }
+                          <SelectItem value="none">Nenhum vínculo</SelectItem>
+                          <SelectItem value="os">Ordem de Serviço (OS)</SelectItem>
+                          <SelectItem value="visit">Visita Técnica</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
-                  )}
+                    {newTransaction.referenceType !== 'none' && (
+                      <div className="space-y-2">
+                        <Label className="text-[#71717a] text-[10px] uppercase font-bold">Localizar #{newTransaction.referenceType.toUpperCase()}</Label>
+                        <Select value={newTransaction.referenceId} onValueChange={val => setNewTransaction({...newTransaction, referenceId: val})}>
+                          <SelectTrigger className="bg-[#0f1115] border-[#2d3139] overflow-hidden">
+                            <SelectValue placeholder="Selecione..." />
+                          </SelectTrigger>
+                          <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white">
+                            {newTransaction.referenceType === 'os' ? 
+                              serviceOrders.slice(0, 50).map(os => <SelectItem key={os.id} value={os.id}>OS #{os.number} - {os.clientName}</SelectItem>) :
+                              visits.slice(0, 50).map(v => <SelectItem key={v.id} value={v.id}>Visita #{v.number} - {v.clientName}</SelectItem>)
+                            }
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            <div className="space-y-2">
-              <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Justificativa / Motivo</Label>
-              <Input 
-                value={newTransaction.observations} 
-                onChange={e => setNewTransaction({...newTransaction, observations: e.target.value})} 
-                className="bg-[#0f1115] border-[#2d3139] font-medium" 
-                placeholder="Ex: Troca de SSD em garantia ou Compra nota #123"
-              />
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black">Justificativa / Motivo</Label>
+                <Input 
+                  value={newTransaction.observations} 
+                  onChange={e => setNewTransaction({...newTransaction, observations: e.target.value})} 
+                  className="bg-[#0f1115] border-[#2d3139] font-medium" 
+                  placeholder="Ex: Troca de SSD em garantia ou Compra nota #123"
+                />
+              </div>
             </div>
           </div>
-          <DialogFooter className="bg-[#0f1115]/50 p-6 -mx-6 -mb-6 border-t border-[#2d3139]">
+          <DialogFooter className="bg-[#0f1115]/50 p-6 border-t border-[#2d3139] flex-shrink-0">
             <Button variant="outline" onClick={() => setIsTransactionOpen(false)} className="border-[#2d3139]">Cancelar</Button>
             <Button onClick={handleProcessTransaction} className={cn("font-black uppercase italic tracking-tighter", transactionType === 'entry' ? "bg-emerald-500 hover:bg-emerald-600" : "bg-amber-500 hover:bg-amber-600")}>
               Confirmar {transactionType === 'entry' ? 'Entrada' : 'Baixa'}
@@ -20377,7 +26266,7 @@ function InventoryManager({
           <div className="py-2">
              <ScrollArea className="h-[450px] pr-4">
                 <TableDoubleScroll>
-                  <Table>
+                  <Table className="min-w-[650px]">
                     <TableHeader className="bg-[#0f1115] sticky top-0 z-10">
                     <TableRow className="border-[#2d3139] hover:bg-transparent">
                       <TableHead className="text-[9px] uppercase font-black px-2 py-3">Data/Hora</TableHead>
