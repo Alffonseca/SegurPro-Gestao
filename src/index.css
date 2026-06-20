@@ -184,4 +184,14 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   animation: moveCyberGrid 8s linear infinite;
 }
 
+/* Força a barra de rolagem vertical no lado esquerdo (usando direction: rtl) */
+/* Mas reverte a direção do conteúdo dentro para leitura padrão LTR (da esquerda para direita) */
+.scroll-left-container {
+  direction: rtl !important;
+}
+
+.scroll-left-container > * {
+  direction: ltr !important;
+}
+
 

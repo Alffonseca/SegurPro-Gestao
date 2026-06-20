@@ -208,7 +208,7 @@ const DoubleScrollContainer = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   return (
-    <div className="flex flex-col w-full relative group/scroll">
+    <div className="flex flex-col w-full relative group/scroll" style={{ direction: 'ltr' }}>
       {scrollWidth > 0 && (
         <div 
           ref={topScrollRef} 
@@ -226,7 +226,7 @@ const DoubleScrollContainer = ({ children }: { children: React.ReactNode }) => {
       <div 
         ref={bottomScrollRef} 
         onScroll={handleBottomScroll}
-        className="w-full overflow-x-auto max-h-[580px] overflow-y-auto border border-[#2d3139]/60 rounded-b-xl custom-scrollbar"
+        className="w-full overflow-x-auto border border-[#2d3139]/60 rounded-b-xl"
       >
         {children}
       </div>
@@ -1173,7 +1173,7 @@ export function PayableManager({ companyId, suppliers = [], pixSettings, appSett
             </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="max-h-[600px] overflow-y-auto custom-scrollbar scroll-left-container">
           {filteredPayables.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-12 bg-[#0f1115]/50 rounded-xl border border-dashed border-[#2d3139] text-center">
               <Building2 className="text-[#2d3139] h-12 w-12 mb-3" />
@@ -2298,7 +2298,7 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
               </div>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="max-h-[600px] overflow-y-auto custom-scrollbar scroll-left-container">
             {filteredCombinedReceivables.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-12 bg-[#0f1115]/50 rounded-xl border border-dashed border-[#2d3139] text-center">
                 <User className="text-[#2d3139] h-12 w-12 mb-3" />
@@ -2519,7 +2519,7 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
               </Button>
             )}
           </CardHeader>
-          <CardContent>
+          <CardContent className="max-h-[600px] overflow-y-auto custom-scrollbar scroll-left-container">
             {contractPredictions.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-12 bg-[#0f1115]/50 rounded-xl border border-dashed border-[#2d3139] text-center">
                 <AlertCircle className="text-blue-400 h-10 w-10 mb-3" />
@@ -3036,7 +3036,7 @@ export function SalesHistoryManager({ sales = [], clients = [], companyId }: Sal
             />
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="max-h-[600px] overflow-y-auto custom-scrollbar scroll-left-container">
           {filteredSales.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-12 bg-[#0f1115]/50 rounded-xl border border-dashed border-[#2d3139] text-center">
               <ShoppingCart className="text-[#2d3139] h-12 w-12 mb-3" />

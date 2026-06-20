@@ -182,7 +182,7 @@ const DoubleScrollContainer = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   return (
-    <div className="flex flex-col w-full relative group/scroll">
+    <div className="flex flex-col w-full relative group/scroll" style={{ direction: 'ltr' }}>
       {scrollWidth > 0 && (
         <div 
           ref={topScrollRef} 
@@ -305,7 +305,7 @@ function PhotoUploader({ photos = [], onChange }: PhotoUploaderProps) {
       <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
         {photos.map((photo, index) => (
           <div key={index} className="relative group aspect-video rounded-lg overflow-hidden border border-[#2d3139] bg-[#0f1115]">
-            <img src={photo} alt={`Foto do local ${index + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+            <img src={photo} alt={`Foto do local ${index + 1}`} className="w-full h-full object-cover" referrerpolicy="no-referrer" />
             <button
               type="button"
               onClick={() => handleRemovePhoto(index)}
@@ -775,15 +775,9 @@ export function LaudosManager({
     
     docPdf.setFont('helvetica', 'normal');
     docPdf.setFontSize(8.5);
-    const pdfDateObj = safeParseDate(laudo.date);
-    const pdfDay = pdfDateObj.getDate();
-    const pdfMonthsPt = [
-      'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-    ];
-    const pdfMonthName = pdfMonthsPt[pdfDateObj.getMonth()];
-    const pdfYear = pdfDateObj.getFullYear();
-    const cityDate = `Belém/Pa  ${pdfDay} de ${pdfMonthName} de ${pdfYear}.`;
+    const cityDate = appSettings?.city 
+      ? `${appSettings.city}, ${dateStr}`
+      : `Emissão em ${dateStr}`;
     docPdf.text(cityDate, pageWidth / 2, currentY, { align: 'center' });
     
     currentY += 12;
@@ -1018,7 +1012,7 @@ export function LaudosManager({
 
       {showList ? (
         viewMode === 'table' ? (
-          <div className="bg-[#1a1d23] border border-[#2d3139] rounded-xl overflow-hidden shadow-xl">
+          <div className="bg-[#1a1d23] border border-[#2d3139] rounded-xl overflow-y-auto max-h-[600px] custom-scrollbar scroll-left-container shadow-xl">
             <DoubleScrollContainer>
               <Table>
               <TableHeader className="bg-[#16191f]/50 border-b border-[#2d3139]">
