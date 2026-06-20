@@ -190,7 +190,8 @@ const DoubleScrollContainer = ({ children }: { children: React.ReactNode }) => {
           className="w-full overflow-x-auto overflow-y-hidden bg-[#0f1115] border-b border-[#2d3139]/30 rounded-t-lg transition-all hashScrollTop"
           style={{ 
             height: '14px', 
-            display: showTopScroll ? 'block' : 'none' 
+            display: showTopScroll ? 'block' : 'none',
+            direction: 'ltr'
           }}
         >
           <div style={{ width: `${scrollWidth}px`, height: '1px' }} />
@@ -198,11 +199,17 @@ const DoubleScrollContainer = ({ children }: { children: React.ReactNode }) => {
       )}
 
       <div 
-        ref={bottomScrollRef} 
-        onScroll={handleBottomScroll}
-        className="w-full overflow-x-auto border border-[#2d3139]/60 rounded-b-xl hashScrollBottom"
+        className="w-full overflow-y-auto overflow-x-hidden flex-1 scroll-left-container custom-scrollbar pr-0 rounded-b-xl border border-[#2d3139]/60 hashScrollBottom"
+        style={{ direction: 'rtl', maxHeight: '550px' }}
       >
-        {children}
+        <div 
+          ref={bottomScrollRef} 
+          onScroll={handleBottomScroll}
+          className="w-full overflow-x-auto overflow-y-visible"
+          style={{ direction: 'ltr' }}
+        >
+          {children}
+        </div>
       </div>
     </div>
   );
@@ -1014,7 +1021,7 @@ export function LaudosManager({
         viewMode === 'table' ? (
           <div className="bg-[#1a1d23] border border-[#2d3139] rounded-xl overflow-y-auto max-h-[600px] custom-scrollbar scroll-left-container shadow-xl">
             <DoubleScrollContainer>
-              <Table>
+              <Table className="min-w-[1100px]">
               <TableHeader className="bg-[#16191f]/50 border-b border-[#2d3139]">
                 <TableRow>
                   <TableHead className="text-white text-xs font-bold font-mono tracking-wider w-[120px]">LAUDO #</TableHead>

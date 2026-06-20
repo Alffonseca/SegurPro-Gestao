@@ -188,6 +188,7 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 /* Mas reverte a direção do conteúdo dentro para leitura padrão LTR (da esquerda para direita) */
 .scroll-left-container {
   direction: rtl !important;
+  overflow-x: hidden !important;
 }
 
 .scroll-left-container > * {

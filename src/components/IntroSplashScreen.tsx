@@ -19,6 +19,7 @@ export default function IntroSplashScreen({
   const [fadeOut, setFadeOut] = useState(false);
   const [progress, setProgress] = useState(0);
 
+  // Use ref to hold the onComplete callback to avoid tearing down the interval when the wrapper changes
   const onCompleteRef = React.useRef(onComplete);
   useEffect(() => {
     onCompleteRef.current = onComplete;
@@ -27,9 +28,7 @@ export default function IntroSplashScreen({
   // Synchronized loading effect: progress drives the splash lifecycle
   useEffect(() => {
     const start = Date.now();
-    const duration = 10000; // 10 seconds of smooth progress bar increment
-    let bufferTimer: NodeJS.Timeout | null = null;
-    let completeTimer: NodeJS.Timeout | null = null;
+    const duration = 2500; // 2.5 seconds of smooth progress bar increment is snapper and modern
     
     const progressInterval = setInterval(() => {
       const elapsed = Date.now() - start;
@@ -39,23 +38,23 @@ export default function IntroSplashScreen({
       if (currentProgress >= 100) {
         clearInterval(progressInterval);
         
-        // Wait 700ms showing "SISTEMA PRONTO!" with full green bar, then trigger fadeout
-        bufferTimer = setTimeout(() => {
+        // Wait 400ms showing "SISTEMA PRONTO!" with full green bar, then trigger fadeout
+        const bufferTimer = setTimeout(() => {
           setFadeOut(true);
           
-          // Wait 600ms of exit animation duration, then call parent onComplete()
-          completeTimer = setTimeout(() => {
+          // Wait 500ms of exit animation duration, then call parent onComplete()
+          const completeTimer = setTimeout(() => {
             onCompleteRef.current();
-          }, 600);
-        }, 700);
+          }, 500);
+          
+          return () => clearTimeout(completeTimer);
+        }, 400);
+        
+        return () => clearTimeout(bufferTimer);
       }
     }, 20);
 
-    return () => {
-      clearInterval(progressInterval);
-      if (bufferTimer) clearTimeout(bufferTimer);
-      if (completeTimer) clearTimeout(completeTimer);
-    };
+    return () => clearInterval(progressInterval);
   }, []);
 
   return (

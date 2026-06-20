@@ -216,7 +216,8 @@ const DoubleScrollContainer = ({ children }: { children: React.ReactNode }) => {
           className="w-full overflow-x-auto overflow-y-hidden bg-[#0f1115] border-b border-[#2d3139]/30 rounded-t-lg transition-all"
           style={{ 
             height: '14px', 
-            display: showTopScroll ? 'block' : 'none' 
+            display: showTopScroll ? 'block' : 'none',
+            direction: 'ltr'
           }}
         >
           <div style={{ width: `${scrollWidth}px`, height: '1px' }} />
@@ -224,11 +225,17 @@ const DoubleScrollContainer = ({ children }: { children: React.ReactNode }) => {
       )}
 
       <div 
-        ref={bottomScrollRef} 
-        onScroll={handleBottomScroll}
-        className="w-full overflow-x-auto border border-[#2d3139]/60 rounded-b-xl"
+        className="w-full overflow-y-auto overflow-x-hidden flex-1 scroll-left-container custom-scrollbar pr-0 rounded-b-xl border border-[#2d3139]/60"
+        style={{ direction: 'rtl', maxHeight: '550px' }}
       >
-        {children}
+        <div 
+          ref={bottomScrollRef} 
+          onScroll={handleBottomScroll}
+          className="w-full overflow-x-auto overflow-y-visible"
+          style={{ direction: 'ltr' }}
+        >
+          {children}
+        </div>
       </div>
     </div>
   );
@@ -1182,7 +1189,7 @@ export function PayableManager({ companyId, suppliers = [], pixSettings, appSett
             </div>
           ) : (
             <DoubleScrollContainer>
-              <table className="w-full text-left text-xs border-collapse">
+              <table className="w-full text-left text-xs border-collapse min-w-[1000px]">
                 <thead>
                   <tr className="bg-[#0f1115] border-b border-[#2d3139] text-gray-400 uppercase tracking-widest text-[9px] font-bold">
                     <th className="p-4">Destino</th>
@@ -2307,7 +2314,7 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
               </div>
             ) : (
               <DoubleScrollContainer>
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="w-full text-left text-xs border-collapse min-w-[1000px]">
                   <thead>
                     <tr className="bg-[#0f1115] border-b border-[#2d3139] text-gray-400 uppercase tracking-widest text-[9px] font-bold">
                       <th className="p-4">Cliente / Tipo</th>
@@ -2528,7 +2535,7 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
               </div>
             ) : (
               <DoubleScrollContainer>
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="w-full text-left text-xs border-collapse min-w-[1000px]">
                   <thead>
                     <tr className="bg-[#0f1115] border-b border-[#2d3139] text-gray-400 uppercase tracking-widest text-[9px] font-bold">
                       <th className="p-4">Cliente de Contrato</th>
@@ -3045,7 +3052,7 @@ export function SalesHistoryManager({ sales = [], clients = [], companyId }: Sal
             </div>
           ) : (
             <DoubleScrollContainer>
-              <table className="w-full text-left text-xs border-collapse">
+              <table className="w-full text-left text-xs border-collapse min-w-[1000px]">
                 <thead>
                   <tr className="bg-[#0f1115] border-b border-[#2d3139] text-gray-400 uppercase tracking-widest text-[10px]">
                     <th className="p-4 font-black">Cupom Nº</th>

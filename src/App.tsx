@@ -171,8 +171,13 @@ import TerminalRegistrationScreen from './components/TerminalRegistrationScreen'
 import IntroSplashScreen from './components/IntroSplashScreen';
 
 // VERSÃO DE CONSTRUÇÃO DO EXECUTÁVEL DESTE CLIENTE
-// Sincroniza automaticamente e detecta dinamicamente a versão injetada pelo .exe do Electron
+// Sincroniza automaticamente e detecta dinamicamente a versão injetada pelo .exe do Electron ou via compilação
 const getLocalVersion = (): string => {
+  // 0. Detecta via compile-time injection do Vite (package.json vindo do import.meta.env)
+  if ((import.meta as any).env && (import.meta as any).env.VITE_APP_VERSION) {
+    return (import.meta as any).env.VITE_APP_VERSION;
+  }
+
   if (typeof window === 'undefined') return '1.1.6';
   const w = window as any;
   
@@ -802,18 +807,25 @@ function TableDoubleScroll({ children }: { children: React.ReactNode }) {
         className="w-full overflow-x-auto overflow-y-hidden bg-[#0f1115] border-b border-[#2d3139]/30 rounded-t-lg transition-all custom-scrollbar"
         style={{ 
           height: '14px', 
-          display: showTopScroll ? 'block' : 'none' 
+          display: showTopScroll ? 'block' : 'none',
+          direction: 'ltr'
         }}
       >
         <div style={{ width: `${scrollWidth}px`, height: '1px' }} />
       </div>
 
       <div 
-        ref={bottomScrollRef} 
-        onScroll={handleBottomScroll}
-        className="w-full overflow-x-auto custom-scrollbar"
+        className="w-full overflow-y-auto overflow-x-hidden flex-1 scroll-left-container custom-scrollbar pr-0 rounded-b-xl"
+        style={{ direction: 'rtl', maxHeight: '550px' }}
       >
-        {children}
+        <div 
+          ref={bottomScrollRef} 
+          onScroll={handleBottomScroll}
+          className="w-full overflow-x-auto overflow-y-visible custom-scrollbar"
+          style={{ direction: 'ltr' }}
+        >
+          {children}
+        </div>
       </div>
     </div>
   );
@@ -5956,6 +5968,7 @@ export default function MainApp() {
             <ReceiptsManager 
               receipts={receipts} 
               clients={clients} 
+              receivables={receivables}
               pixSettings={pixSettings} 
               appSettings={appSettings} 
               companyId={effectiveCompanyId || ''} 
@@ -7783,7 +7796,7 @@ function ClientsManager({
         ) : (
         <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative scroll-left-container">
           <TableDoubleScroll>
-          <Table>
+          <Table className="min-w-[1100px]">
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[110px]">Ações</TableHead>
@@ -8403,7 +8416,7 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
         ) : (
           <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] shadow-2xl scroll-left-container">
             <TableDoubleScroll>
-            <Table>
+            <Table className="min-w-[1100px]">
             <TableHeader>
               <TableRow className="border-[#2d3139] hover:bg-transparent">
                 <TableHead className="w-[40px] text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Ações</TableHead>
@@ -8573,7 +8586,7 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
 
 // --- Receipts Manager Component ---
 
-function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings, companyId, currentUserData, showList, onEditClick, externalEditAction, onExternalEditHandled }: { receipts: Receipt[], clients: Client[], pixSettings: PixSettings, appSettings: AppSettings, companyId: string, currentUserData: any, showList: boolean, onEditClick: (type: 'receipt', data: any) => void, externalEditAction: any, onExternalEditHandled: () => void }) {
+function ReceiptsManager({ receipts = [], clients = [], receivables = [], pixSettings, appSettings, companyId, currentUserData, showList, onEditClick, externalEditAction, onExternalEditHandled }: { receipts: Receipt[], clients: Client[], receivables: any[], pixSettings: PixSettings, appSettings: AppSettings, companyId: string, currentUserData: any, showList: boolean, onEditClick: (type: 'receipt', data: any) => void, externalEditAction: any, onExternalEditHandled: () => void }) {
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -8585,6 +8598,9 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
   const [receiptToDelete, setReceiptToDelete] = useState<Receipt | null>(null);
   const [isReceiptConfirmOpen, setIsReceiptConfirmOpen] = useState(false);
   const [pendingReceiptForPdf, setPendingReceiptForPdf] = useState<Receipt | null>(null);
+  const [isBaixaConfirmOpen, setIsBaixaConfirmOpen] = useState(false);
+  const [receiptToUpdateStatus, setReceiptToUpdateStatus] = useState<Receipt | null>(null);
+  const [pendingReceiptStatus, setPendingReceiptStatus] = useState<'Aguardando Pagamento' | 'Recebido' | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
 
   // External edit action handler
@@ -8640,6 +8656,15 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
     return (clients || []).filter(c => (c.name || '').toLowerCase().includes(clientSearch.toLowerCase()));
   }, [clients, clientSearch]);
 
+  const findMatchingReceivable = (receiptVal: any) => {
+    return (receivables || []).find(r => 
+      r.status !== 'Pago' &&
+      (r.clientId === receiptVal.clientId || (receiptVal.clientName && r.clientName === receiptVal.clientName)) &&
+      (r.referenceMonth === receiptVal.referenceMonth || 
+       (r.description && receiptVal.referenceMonth && r.description.toLowerCase().includes(receiptVal.referenceMonth.toLowerCase())))
+    );
+  };
+
   const syncReceiptToFinancial = async (receiptId: string, receiptData: any) => {
     try {
       // Check if financial record already exists for this receipt
@@ -8648,35 +8673,62 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
       
       if (receiptData.status === 'Recebido') {
         if (snapshot.empty) {
-        await addDoc(collection(db, 'financial'), {
-          type: 'Receita',
-          category: receiptData.clientType === 'Contrato' ? 'Mensalidade Contrato' : 'Serviço Avulso',
-          description: (() => {
-            const m = receiptData.referenceMonth || format(new Date(), 'MMMM/yyyy', { locale: ptBR }).replace(/^\w/, (c) => c.toUpperCase());
-            const capM = m.charAt(0).toUpperCase() + m.slice(1);
-            return `${formatRecordNumber(receiptData.number, receiptData.date)} - ${receiptData.clientName} - ${capM}`;
-          })(),
-          origin: receiptData.number ? formatRecordNumber(receiptData.number, receiptData.date) : 'Recibo',
-          value: Number(receiptData.value),
-          date: Timestamp.now(), // Usar data atual do recebimento
-          paymentMethod: receiptData.paymentMethod || 'PIX',
-          pixAccountId: receiptData.paymentMethod === 'Dinheiro' ? null : (receiptData.pixAccountId || null),
-          serviceType: receiptData.clientType === 'Contrato' ? 'Contrato' : 'Serviço Normal',
-          clientId: receiptData.clientId || null,
-          receiptId: receiptId,
-          companyId,
-          createdAt: Timestamp.now()
-        });
-        toast.info('Lançamento financeiro realizado automaticamente!');
+          await addDoc(collection(db, 'financial'), {
+            type: 'Receita',
+            category: receiptData.clientType === 'Contrato' ? 'Mensalidade Contrato' : 'Serviço Avulso',
+            description: (() => {
+              const m = receiptData.referenceMonth || format(new Date(), 'MMMM/yyyy', { locale: ptBR }).replace(/^\w/, (c) => c.toUpperCase());
+              const capM = m.charAt(0).toUpperCase() + m.slice(1);
+              return `${formatRecordNumber(receiptData.number, receiptData.date)} - ${receiptData.clientName} - ${capM}`;
+            })(),
+            origin: receiptData.number ? formatRecordNumber(receiptData.number, receiptData.date) : 'Recibo',
+            value: Number(receiptData.value),
+            date: Timestamp.now(), // Usar data atual do recebimento
+            paymentMethod: receiptData.paymentMethod || 'PIX',
+            pixAccountId: receiptData.paymentMethod === 'Dinheiro' ? null : (receiptData.pixAccountId || null),
+            serviceType: receiptData.clientType === 'Contrato' ? 'Contrato' : 'Serviço Normal',
+            clientId: receiptData.clientId || null,
+            receiptId: receiptId,
+            companyId,
+            createdAt: Timestamp.now()
+          });
+          toast.info('Lançamento financeiro realizado automaticamente!');
+        }
+
+        // Mark matching receivable in Contas a Receber as 'Pago'
+        const matchingRec = findMatchingReceivable(receiptData);
+        if (matchingRec) {
+          await updateDoc(doc(db, 'receivables', matchingRec.id), {
+            status: 'Pago',
+            paymentDate: format(new Date(), 'yyyy-MM-dd'),
+            paymentMethod: receiptData.paymentMethod || 'PIX',
+            pixAccountId: receiptData.paymentMethod === 'Dinheiro' ? null : (receiptData.pixAccountId || null),
+            notes: `Baixa via recibimento Nº ${receiptData.number ? formatRecordNumber(receiptData.number, receiptData.date) : 'N/A'}`
+          });
+          toast.success(`Contas a Receber (Ref: ${matchingRec.referenceMonth}) marcado como PAGO automaticamente!`);
+        }
+      } else {
+        // Remove from financial if no longer 'Recebido'
+        for (const docSnap of snapshot.docs) {
+          await deleteDoc(doc(db, 'financial', docSnap.id));
+          toast.info('Lançamento financeiro removido (mudança de status).');
+        }
+
+        // Revert matching paid receivable to Pendente
+        const matchingPaidRec = (receivables || []).find(r => 
+          r.status === 'Pago' &&
+          (r.clientId === receiptData.clientId || (receiptData.clientName && r.clientName === receiptData.clientName)) &&
+          r.referenceMonth === receiptData.referenceMonth
+        );
+        if (matchingPaidRec) {
+          await updateDoc(doc(db, 'receivables', matchingPaidRec.id), {
+            status: 'Pendente',
+            paymentDate: ''
+          });
+          toast.info(`Contas a Receber (Ref: ${matchingPaidRec.referenceMonth}) revertido para Pendente.`);
+        }
       }
-    } else {
-      // Remove from financial if no longer 'Recebido'
-      for (const docSnap of snapshot.docs) {
-        await deleteDoc(doc(db, 'financial', docSnap.id));
-        toast.info('Lançamento financeiro removido (mudança de status).');
-      }
-    }
-  } catch (error) {
+    } catch (error) {
       console.error("Erro ao sincronizar recibo com financeiro:", error);
     }
   };
@@ -8689,6 +8741,12 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `receipts/${id}`);
     }
+  };
+
+  const handleRequestStatusChange = (id: string, status: 'Aguardando Pagamento' | 'Recebido', receipt: Receipt) => {
+    setReceiptToUpdateStatus(receipt);
+    setPendingReceiptStatus(status);
+    setIsBaixaConfirmOpen(true);
   };
 
   const availableYears = useMemo(() => {
@@ -9212,6 +9270,11 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                       <SelectItem value="Recebido">Recebido</SelectItem>
                     </SelectContent>
                   </Select>
+                  {newReceipt.status === 'Recebido' && (
+                    <p className="text-[11px] text-emerald-400 font-medium leading-relaxed mt-1">
+                      💡 Ao salvar, este recibo será lançado no financeiro e dará baixa automática no Contas a Receber correspondente.
+                    </p>
+                  )}
                 </div>
   
                 {newReceipt.paymentMethod === 'PIX' && (
@@ -9381,6 +9444,11 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                         <SelectItem value="Recebido">Recebido</SelectItem>
                       </SelectContent>
                     </Select>
+                    {editingReceipt.status === 'Recebido' && (
+                      <p className="text-[11px] text-emerald-400 font-medium leading-relaxed mt-1">
+                        💡 Alterar para 'Recebido' irá lançar no financeiro e dar baixa automática no Contas a Receber correspondente ao salvar.
+                      </p>
+                    )}
                   </div>
   
                   {editingReceipt.paymentMethod === 'PIX' && (
@@ -9552,14 +9620,14 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
             </div>
           </div>
           <TableDoubleScroll>
-          <Table>
+          <Table className="min-w-[950px]">
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[140px]">AÇÕES</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[150px]">STATUS / VALOR</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">INFORMAÇÃO DO CLIENTE</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">CONTA / PAGAMENTO</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">Nº / DATA</TableHead>
+                <TableHead className="text-[#a0a0a0] font-bold uppercase text-[10px] tracking-wider w-[120px]">AÇÕES</TableHead>
+                <TableHead className="text-[#a0a0a0] font-bold uppercase text-[10px] tracking-wider w-[220px]">STATUS / VALOR / DATA</TableHead>
+                <TableHead className="text-[#a0a0a0] font-bold uppercase text-[10px] tracking-wider w-[280px]">INFORMAÇÃO DO CLIENTE</TableHead>
+                <TableHead className="text-[#a0a0a0] font-bold uppercase text-[10px] tracking-wider w-[180px]">CONTA / PAGAMENTO</TableHead>
+                <TableHead className="text-[#a0a0a0] font-bold uppercase text-[10px] tracking-wider w-[100px]">Nº DOC</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -9573,13 +9641,13 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                     selectedRowId === receipt.id ? "bg-blue-500/10" : "hover:bg-[#25282e]/30"
                   )}
                 >
-                  <TableCell className="w-[140px] p-2">
-                    <div className="flex items-center gap-1.5 flex-nowrap">
+                  <TableCell className="w-[120px] p-2">
+                    <div className="flex items-center gap-1 flex-nowrap">
                       <Button variant="outline" size="icon" title="Ver Detalhes" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={(e) => {
                         e.stopPropagation();
                         setViewingReceipt(receipt);
                         setIsViewOpen(true);
-                      }}>
+                       }}>
                         <Eye size={12} />
                       </Button>
                       <Button variant="outline" size="icon" title="Gerar PDF" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={async (e) => {
@@ -9603,11 +9671,11 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                       </Button>
                     </div>
                   </TableCell>
-                  <TableCell className="w-[150px] p-2">
+                  <TableCell className="w-[220px] p-2">
                     <div className="flex flex-col gap-1 items-start">
                       <Select 
                         value={receipt.status} 
-                        onValueChange={(newStatus: any) => updateReceiptStatus(receipt.id, newStatus, receipt)}
+                        onValueChange={(newStatus: any) => handleRequestStatusChange(receipt.id, newStatus, receipt)}
                       >
                         <SelectTrigger className={cn(
                           "h-6 text-[9px] uppercase border-[#2d3139] px-2 w-fit font-bold",
@@ -9620,30 +9688,33 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                           <SelectItem value="Recebido">Recebido</SelectItem>
                         </SelectContent>
                       </Select>
-                      <span className="font-bold text-emerald-500 text-[12px] font-mono mt-0.5 whitespace-nowrap">
-                        R$ {Number(receipt.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="font-bold text-white text-[12px] truncate max-w-[200px]">{receipt.clientName}</span>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[10px] text-[#71717a] italic">Serviço: {receipt.serviceSpecification || 'N/A'}</span>
+                      
+                      <div className="flex items-center gap-2 mt-0.5 whitespace-nowrap">
+                        <span className="font-bold text-emerald-500 text-[12px] font-mono">
+                          R$ {Number(receipt.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </span>
+                        <span className="text-[10px] text-[#a0a0a0] font-mono bg-[#0f1115]/50 px-1.5 py-0.5 rounded border border-[#2d3139]/50 font-semibold">
+                          {format(safeParseDate(receipt.date), 'dd/MM/yy')}
+                        </span>
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell>
-                    <div className="flex flex-col text-[10px] text-[#a0a0a0]">
-                      <span className="text-[#e0e0e0] font-medium truncate max-w-[150px]">{pixSettings.accounts?.find(a => a.id === receipt.pixAccountId)?.label || pixSettings.accounts?.[0]?.label || 'C. Corrente'}</span>
-                      <span className="uppercase text-[9px] mt-0.5">{receipt.paymentMethod}</span>
+                  <TableCell className="w-[280px] p-2">
+                    <div className="flex flex-col">
+                      <span className="font-bold text-white text-[12px] truncate max-w-[260px]">{receipt.clientName}</span>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[10px] text-[#71717a] italic truncate max-w-[260px]">Serviço: {receipt.serviceSpecification || 'N/A'}</span>
+                      </div>
                     </div>
                   </TableCell>
-                  <TableCell className="w-[100px]">
-                    <div className="flex flex-col">
-                      <span className="text-[11px] font-mono text-[#3b82f6] font-bold">#{receipt.number ? formatRecordNumber(receipt.number, receipt.date) : '-'}</span>
-                      <span className="text-[10px] text-[#71717a] mt-0.5">{format(safeParseDate(receipt.date), 'dd/MM/yy')}</span>
+                  <TableCell className="w-[180px] p-2">
+                    <div className="flex flex-col text-[10px] text-[#a0a0a0]">
+                      <span className="text-[#e0e0e0] font-medium truncate max-w-[160px]">{pixSettings.accounts?.find(a => a.id === receipt.pixAccountId)?.label || pixSettings.accounts?.[0]?.label || 'C. Corrente'}</span>
+                      <span className="uppercase text-[9px] mt-0.5 text-[#71717a] font-semibold">{receipt.paymentMethod}</span>
                     </div>
+                  </TableCell>
+                  <TableCell className="w-[100px] p-2">
+                    <span className="text-[11px] font-mono text-[#3b82f6] font-bold">#{receipt.number ? formatRecordNumber(receipt.number, receipt.date) : '-'}</span>
                   </TableCell>
                 </TableRow>
               ))}
@@ -9749,6 +9820,65 @@ function ReceiptsManager({ receipts = [], clients = [], pixSettings, appSettings
                 }
               }
             }} className="bg-[#ef4444] hover:bg-[#dc2626] text-white">Excluir</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isBaixaConfirmOpen} onOpenChange={setIsBaixaConfirmOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Confirmar Baixa de Recibo</DialogTitle>
+            <DialogDescription className="text-[#a0a0a0] mt-2 text-xs">
+              {pendingReceiptStatus === 'Recebido' ? (
+                <>
+                  <p>Deseja dar baixa deste recibo no financeiro? Isso irá lançar automaticamente este recebimento no módulo de Contas a Receber/Financeiro.</p>
+                  {receiptToUpdateStatus && findMatchingReceivable(receiptToUpdateStatus) && (
+                    <span className="block mt-3 bg-emerald-500/10 text-emerald-400 p-2.5 rounded border border-emerald-500/20 font-medium">
+                      ✓ Encontramos um lançamento pendente em Contas a Receber para este cliente correspondente à referência {receiptToUpdateStatus.referenceMonth}. Ele receberá baixa automática como <strong>PAGO</strong>!
+                    </span>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p>Deseja reverter a baixa deste recibo? Isso irá remover o lançamento financeiro correspondente do sistema.</p>
+                  {receiptToUpdateStatus && (receivables || []).find(r => 
+                    r.status === 'Pago' &&
+                    (r.clientId === receiptToUpdateStatus.clientId || (receiptToUpdateStatus.clientName && r.clientName === receiptToUpdateStatus.clientName)) &&
+                    r.referenceMonth === receiptToUpdateStatus.referenceMonth
+                  ) && (
+                    <span className="block mt-3 bg-amber-500/10 text-amber-500 p-2.5 rounded border border-amber-500/20 font-medium">
+                      ⚠️ Atenção: O Contas a Receber correspondente ({receiptToUpdateStatus.referenceMonth}) também será alterado de volta para <strong>PENDENTE</strong>!
+                    </span>
+                  )}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0 mt-4">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsBaixaConfirmOpen(false);
+                setReceiptToUpdateStatus(null);
+                setPendingReceiptStatus(null);
+              }} 
+              className="border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] hover:text-white"
+            >
+              Cancelar
+            </Button>
+            <Button 
+              className="bg-[#3b82f6] hover:bg-[#2563eb] text-white"
+              onClick={async () => {
+                if (receiptToUpdateStatus && pendingReceiptStatus) {
+                  await updateReceiptStatus(receiptToUpdateStatus.id, pendingReceiptStatus, receiptToUpdateStatus);
+                }
+                setIsBaixaConfirmOpen(false);
+                setReceiptToUpdateStatus(null);
+                setPendingReceiptStatus(null);
+              }}
+            >
+              Confirmar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -18024,7 +18154,7 @@ function VisitsManager({
       ) : (
         <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative scroll-left-container">
           <TableDoubleScroll>
-          <Table>
+          <Table className="min-w-[1100px]">
           <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
               <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">AÇÕES</TableHead>
@@ -19244,7 +19374,7 @@ function FinancialManager({
                         {/* Transaction Table */}
                         <div className="border border-[#2d3139] rounded-xl bg-[#0f1115]/50 overflow-hidden">
                           <TableDoubleScroll>
-                            <table className="w-full text-left text-xs font-mono border-collapse min-w-[700px]">
+                            <table className="w-full text-left text-xs font-mono border-collapse min-w-[1000px]">
                             <thead>
                               <tr className="bg-[#1a1d23] border-b border-[#2d3139] text-[#71717a] tracking-wider uppercase font-black">
                                 <th className="p-3 w-10 text-center"></th>
@@ -19649,15 +19779,14 @@ function FinancialManager({
           }}
         >
         <TableDoubleScroll>
-        <Table>
+        <Table className="min-w-[950px]">
           <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
             <TableRow className="border-[#2d3139] hover:bg-transparent">
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[80px]">AÇÕES</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[100px]">TIPO</TableHead>
-              <TableHead className="text-left text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">VALOR / TRANSAÇÃO</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">DESCRIÇÃO / ORIGEM</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">FORMA DE PAG. / CONTA</TableHead>
-              <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider text-right">DATA</TableHead>
+              <TableHead className="text-[#a0a0a0] font-bold uppercase text-[10px] tracking-wider w-[80px]">AÇÕES</TableHead>
+              <TableHead className="text-[#a0a0a0] font-bold uppercase text-[10px] tracking-wider w-[90px]">TIPO</TableHead>
+              <TableHead className="text-[#a0a0a0] font-bold uppercase text-[10px] tracking-wider w-[200px]">VALOR / DATA</TableHead>
+              <TableHead className="text-[#a0a0a0] font-bold uppercase text-[10px] tracking-wider">DESCRIÇÃO / ORIGEM</TableHead>
+              <TableHead className="text-[#a0a0a0] font-bold uppercase text-[10px] tracking-wider">FORMA DE PAG. / CONTA</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -19671,7 +19800,7 @@ function FinancialManager({
                   selectedRowId === record.id ? "bg-blue-500/10" : "hover:bg-[#25282e]/30"
                 )}
               >
-                <TableCell className="w-[100px] p-2">
+                <TableCell className="w-[80px] p-2">
                   <div className="flex items-center gap-1 flex-nowrap">
                     <Button variant="outline" size="icon" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white hover:bg-[#2d3139]" onClick={() => {
                       setEditingRecord({
@@ -19690,7 +19819,7 @@ function FinancialManager({
                     </Button>
                   </div>
                 </TableCell>
-                <TableCell>
+                <TableCell className="w-[90px] p-2">
                   <Badge className={cn(
                     "text-[10px] uppercase font-bold",
                     record.type === 'Receita' ? "bg-emerald-500/10 text-emerald-500 border-none" : "bg-red-500/10 text-red-500 border-none"
@@ -19698,14 +19827,17 @@ function FinancialManager({
                     {record.type}
                   </Badge>
                 </TableCell>
-                <TableCell>
-                  <div className="flex flex-col font-bold">
+                <TableCell className="w-[200px] p-2">
+                  <div className="flex items-center gap-2 font-bold whitespace-nowrap">
                     <span className={cn("text-[13px]", record.type === 'Receita' ? "text-[#10b981]" : "text-[#ef4444]")}>
                       {record.type === 'Receita' ? '+' : '-'} R$ {(record.value || 0).toFixed(2)}
                     </span>
+                    <span className="text-[10px] text-[#a0a0a0] font-mono bg-[#0f1115]/50 px-1.5 py-0.5 rounded border border-[#2d3139]/50 font-semibold">
+                      {format(safeParseDate(record.date), 'dd/MM/yy')}
+                    </span>
                   </div>
                 </TableCell>
-                <TableCell>
+                <TableCell className="p-2">
                   <div className="flex flex-col">
                     <span className="font-medium text-white text-[12px] truncate max-w-[180px]">
                       {record.description?.replace(/^(Recebido de:|Pagamento de:|Recebido Recibo:|Venda PDV nº:|Entrada de:|Saída de:|Pagamento referente a:|Recebido de\s*[:\-]|Relativo ao recebimento de:|Pagam\. ref\.:|Referente a\s*[:\-]|Recebemos de:|Pagamos a:)/i, '').trim() || record.description}
@@ -19725,7 +19857,7 @@ function FinancialManager({
                     )}
                   </div>
                 </TableCell>
-                <TableCell>
+                <TableCell className="p-2">
                   <div className="flex flex-col gap-1">
                     <span className="text-[11px] text-[#e0e0e0] font-medium">
                       {record.paymentMethod === 'Dinheiro' 
@@ -19742,16 +19874,11 @@ function FinancialManager({
                     </Badge>
                   </div>
                 </TableCell>
-                <TableCell className="text-right text-[11px] text-[#71717a]">
-                  {format(safeParseDate(record.date), 'dd/MM/yy')}
-                </TableCell>
-
-
               </TableRow>
             ))}
             {filteredFinancials.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-12 text-[#71717a] text-sm">
+                <TableCell colSpan={5} className="text-center py-12 text-[#71717a] text-sm">
                   Nenhuma transação registrada.
                 </TableCell>
               </TableRow>
@@ -20746,7 +20873,7 @@ function ServiceOrdersManager({
         ) : (
           <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-y-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50 scroll-left-container" tabIndex={0}>
           <TableDoubleScroll>
-          <Table>
+          <Table className="min-w-[1200px]">
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">AÇÕES</TableHead>
@@ -22750,7 +22877,7 @@ function BudgetsManager({
       ) : (
         <Card className="border-[#2d3139] bg-[#1a1d23] rounded-xl overflow-auto max-h-[600px] relative focus:outline-none focus:ring-1 focus:ring-blue-500/50 scroll-left-container" tabIndex={0}>
           <TableDoubleScroll>
-          <Table>
+          <Table className="min-w-[1100px]">
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">Ações</TableHead>
@@ -24954,7 +25081,7 @@ function InventoryManager({
           ) : (
             <Card className="bg-[#1a1d23] border-[#2d3139] overflow-hidden shadow-2xl">
               <TableDoubleScroll>
-                <Table>
+                <Table className="min-w-[1100px]">
                 <TableHeader className="bg-[#0f1115]">
                   <TableRow className="hover:bg-transparent border-[#2d3139]">
                     <TableHead className="text-[#71717a] text-[10px] uppercase font-black px-4 py-3">Cod.</TableHead>
@@ -25551,9 +25678,9 @@ function InventoryManager({
             </DialogDescription>
           </DialogHeader>
           <div className="py-2">
-             <ScrollArea className="h-[450px] pr-4">
+             <ScrollArea className="h-[450px] pr-4 scroll-left-container">
                 <TableDoubleScroll>
-                  <Table>
+                  <Table className="min-w-[1000px]">
                     <TableHeader className="bg-[#0f1115] sticky top-0 z-10">
                     <TableRow className="border-[#2d3139] hover:bg-transparent">
                       <TableHead className="text-[9px] uppercase font-black px-2 py-3">Data/Hora</TableHead>
