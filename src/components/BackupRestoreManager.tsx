@@ -120,26 +120,22 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
     }
   };
 
-  // Real-time subscription to cloud restore points for visual feed
-  useEffect(() => {
+  const fetchRestorePoints = async () => {
     if (!companyId) return;
-    const q = query(collection(db, 'companies', companyId, 'restore_points'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const points: any[] = [];
-      snapshot.forEach((docSnap) => {
-        points.push({ id: docSnap.id, ...docSnap.data() });
-      });
-      // Sort newer first safely
-      points.sort((a, b) => {
-        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return dateB - dateA;
-      });
-      setRestorePoints(points);
-    }, (err) => {
-      console.error("Error reading restore points:", err);
-    });
-    return () => unsubscribe();
+    try {
+      const res = await fetch(`/api/backup/restore-points/${companyId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setRestorePoints(data);
+      }
+    } catch (err) {
+      console.error("Error fetching restore points:", err);
+    }
+  };
+
+  // Fetch list of restore points from server-side database
+  useEffect(() => {
+    fetchRestorePoints();
   }, [companyId]);
 
   const toggleBackupCollection = (colKey: string) => {
@@ -208,6 +204,14 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
           const salesSnap = await getDocs(collection(db, 'companies', docSnap.id, 'sales'));
           if (!salesSnap.empty) {
             docData.sales = salesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+          }
+          const finSnap = await getDocs(collection(db, 'companies', docSnap.id, 'financial'));
+          if (!finSnap.empty) {
+            docData.companyFinancial = finSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+          }
+          const termSnap = await getDocs(collection(db, 'companies', docSnap.id, 'terminals'));
+          if (!termSnap.empty) {
+            docData.companyTerminals = termSnap.docs.map(d => ({ id: d.id, ...d.data() }));
           }
         }
         docs.push(docData);
@@ -293,19 +297,28 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
       toast.loading("Compilando e gerando snapshot de segurança...", { id: 'bkp-cloud' });
       const fullDataset = await fetchCurrentDataset(Object.keys(BACKUP_COLLECTIONS_LABELS));
       
-      const pointDoc = {
-        description: pointDescription.trim(),
-        createdAt: new Date().toISOString(),
-        createdBy: currentUserData?.name || 'Administrador',
-        data: fullDataset.data
-      };
+      const res = await fetch("/api/backup/save-restore-point", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          description: pointDescription.trim(),
+          createdBy: currentUserData?.name || 'Administrador',
+          data: fullDataset.data
+        })
+      });
 
-      await addDoc(collection(db, 'companies', companyId, 'restore_points'), pointDoc);
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || "Erro de resposta do servidor.");
+      }
+
       toast.success("Ponto de restauração em nuvem criado com sucesso!", { id: 'bkp-cloud' });
       setPointDescription('');
+      await fetchRestorePoints();
     } catch (err: any) {
       console.error(err);
-      toast.error("Erro ao registrar ponto de restauração na nuvem.", { id: 'bkp-cloud' });
+      toast.error(`Erro ao registrar ponto de restauração na nuvem: ${err.message}`, { id: 'bkp-cloud' });
     } finally {
       setIsCreatingPoint(false);
     }
@@ -319,7 +332,14 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
     setIsRestoring(true);
     try {
       toast.loading("Restaurando os dados e aplicando rollback...", { id: 'restore-cloud' });
-      const backupWrapper = { data: point.data };
+      
+      const res = await fetch(`/api/backup/restore-points/${companyId}/${point.id}`);
+      if (!res.ok) {
+        throw new Error("Não foi possível carregar os dados completos deste ponto de restauração.");
+      }
+      const fullPoint = await res.json();
+      const backupWrapper = { data: fullPoint.data };
+      
       await performRestore(backupWrapper, Object.keys(BACKUP_COLLECTIONS_LABELS));
       toast.success("Sistema revertido com sucesso para o ponto selecionado!", { id: 'restore-cloud' });
     } catch (err: any) {
@@ -336,10 +356,16 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
     if (!isConfirmed) return;
 
     try {
-      await deleteDoc(doc(db, 'companies', companyId, 'restore_points', pointId));
+      const res = await fetch(`/api/backup/restore-points/${companyId}/${pointId}`, {
+        method: "DELETE"
+      });
+      if (!res.ok) {
+        throw new Error("Erro de processamento no servidor.");
+      }
       toast.success("Ponto de restauração excluído.");
+      await fetchRestorePoints();
     } catch (err: any) {
-      toast.error("Erro ao excluir.");
+      toast.error(`Erro ao excluir: ${err.message}`);
     }
   };
 
@@ -370,6 +396,14 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
               for (const d of salesSnap.docs) {
                 await deleteDoc(doc(db, 'companies', companyId, 'sales', d.id));
               }
+              const finSnap = await getDocs(collection(db, 'companies', companyId, 'financial'));
+              for (const d of finSnap.docs) {
+                await deleteDoc(doc(db, 'companies', companyId, 'financial', d.id));
+              }
+              const termSnap = await getDocs(collection(db, 'companies', companyId, 'terminals'));
+              for (const d of termSnap.docs) {
+                await deleteDoc(doc(db, 'companies', companyId, 'terminals', d.id));
+              }
               continue;
             }
             if (col === 'users') {
@@ -386,6 +420,14 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
             const salesSnap = await getDocs(collection(db, 'companies', companyId, 'sales'));
             for (const d of salesSnap.docs) {
               await deleteDoc(doc(db, 'companies', companyId, 'sales', d.id));
+            }
+            const finSnap = await getDocs(collection(db, 'companies', companyId, 'financial'));
+            for (const d of finSnap.docs) {
+              await deleteDoc(doc(db, 'companies', companyId, 'financial', d.id));
+            }
+            const termSnap = await getDocs(collection(db, 'companies', companyId, 'terminals'));
+            for (const d of termSnap.docs) {
+              await deleteDoc(doc(db, 'companies', companyId, 'terminals', d.id));
             }
           } else {
             const q = query(collection(db, col), where('companyId', '==', companyId));
@@ -406,7 +448,7 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
       if (!Array.isArray(docs)) continue;
 
       for (const item of docs) {
-        const { id: itemId, generalSettings, pixSettings, permissionsSettings, sales, ...data } = item;
+        const { id: itemId, generalSettings, pixSettings, permissionsSettings, sales, companyFinancial, companyTerminals, ...data } = item;
         
         // Preserve original ID in SaaS Global Restore, otherwise map to current company
         const targetId = (col === 'companies') 
@@ -435,6 +477,18 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
             for (const sale of sales) {
               const { id: saleId, ...saleData } = sale;
               await setDoc(doc(db, 'companies', targetId, 'sales', saleId), saleData);
+            }
+          }
+          if (Array.isArray(companyFinancial)) {
+            for (const fin of companyFinancial) {
+              const { id: finId, ...finData } = fin;
+              await setDoc(doc(db, 'companies', targetId, 'financial', finId), finData);
+            }
+          }
+          if (Array.isArray(companyTerminals)) {
+            for (const term of companyTerminals) {
+              const { id: termId, ...termData } = term;
+              await setDoc(doc(db, 'companies', targetId, 'terminals', termId), termData);
             }
           }
         }

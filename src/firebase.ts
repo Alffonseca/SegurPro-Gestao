@@ -40,13 +40,32 @@ export { firebaseConfig };
 
 // Dynamic mode toggle
 export const isLocalDb = (() => {
-  if (typeof window !== 'undefined' && localStorage.getItem('FIRESTORE_DISABLED') === 'true') {
+  if (typeof window !== 'undefined') {
+    const isHostLocal = window.location.hostname === 'localhost' || 
+                        window.location.hostname === '127.0.0.1' || 
+                        /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname);
+    
+    // On Cloud / Web environment, we MUST operate in Web/Online/Hybrid mode. Never force Local DB unless mock auth fallback is active.
+    if (!isHostLocal) {
+      if (localStorage.getItem('MOCK_AUTH_ACTIVE') === 'true') {
+        return true;
+      }
+      return false;
+    }
+
+    if (localStorage.getItem('FIRESTORE_DISABLED') === 'true') {
+      return true;
+    }
+    const override = localStorage.getItem('DB_MODE_OVERRIDE');
+
+    if (override === 'local') return true;
+    if (override === 'online') return false;
+
+    // By default, on localhost / LAN networks, we run in Local DB mode.
     return true;
   }
-  const override = localStorage.getItem('DB_MODE_OVERRIDE');
-
-  if (override === 'local') return true;
-  if (override === 'online') return false;
+  
+  // Default to VITE_LOCAL_DB environment variable or standard host detection
   return (import.meta as any).env.VITE_LOCAL_DB === 'true';
 })();
 console.log(`[Database Initialization] Local DB Mode: ${isLocalDb}`);
@@ -98,10 +117,18 @@ export const onSnapshot = (q: any, callback: any, errorCallback?: any) => {
   }
   return realOnSnapshot(q, callback, (err: any) => {
     handleCloudFirestoreFailure(err);
-    if (errorCallback) {
-      errorCallback(err);
+    const errStr = String(err?.message || err?.code || err || "").toLowerCase();
+    if (errStr.includes("permission") || errStr.includes("insufficient") || err?.code === 'permission-denied') {
+      console.log(`[Firebase onSnapshot] Gracefully suppressed permission denied error for query.`);
+      if (errorCallback) {
+        errorCallback(err);
+      }
     } else {
-      console.error("onSnapshot cloud database error:", err);
+      if (errorCallback) {
+        errorCallback(err);
+      } else {
+        console.error("onSnapshot cloud database error:", err);
+      }
     }
   });
 };
@@ -212,17 +239,7 @@ class MockGoogleAuthProvider {
 
 export const GoogleAuthProvider = new Proxy(class {}, {
   construct(target, args) {
-    const dynamicIsLocal = (() => {
-      if (typeof window !== 'undefined' && localStorage.getItem('FIRESTORE_DISABLED') === 'true') {
-        return true;
-      }
-      const override = typeof window !== 'undefined' ? localStorage.getItem('DB_MODE_OVERRIDE') : null;
-      if (override === 'local') return true;
-      if (override === 'online') return false;
-      return (import.meta as any).env.VITE_LOCAL_DB === 'true';
-    })();
-    
-    if (dynamicIsLocal) {
+    if (isLocalDb) {
       return new MockGoogleAuthProvider();
     } else {
       const inst = new realGoogleAuthProvider();
@@ -239,6 +256,15 @@ export const onAuthStateChanged = (authInstance: any, callback: any) => {
 };
 
 export const signOut = (authInstance: any) => {
+  if (typeof window !== 'undefined') {
+    const wasMockActive = localStorage.getItem('MOCK_AUTH_ACTIVE') === 'true';
+    localStorage.removeItem('MOCK_AUTH_ACTIVE');
+    const result = isLocalDb ? localDb.signOut(authInstance) : realSignOut(authInstance);
+    if (wasMockActive) {
+      window.location.reload();
+    }
+    return result;
+  }
   return isLocalDb ? localDb.signOut(authInstance) : realSignOut(authInstance);
 };
 
@@ -300,6 +326,18 @@ export interface FirestoreErrorInfo {
 
 export function handleCloudFirestoreFailure(err: any): void {
   const errMsg = String(err?.message || err?.code || err || "").toLowerCase();
+  
+  // Guard check: On Cloud / Web environment, we never dynamically override/switch to Local Database offline mode.
+  if (typeof window !== 'undefined') {
+    const isHostLocal = window.location.hostname === 'localhost' || 
+                        window.location.hostname === '127.0.0.1' || 
+                        /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname);
+    if (!isHostLocal) {
+      console.warn("[Firebase Resilient Handler] Firestore error occurred on cloud host, ignoring dynamic switch to local state:", err);
+      return;
+    }
+  }
+
   if (
     errMsg.includes("permission-denied") || 
     errMsg.includes("permission_denied") ||

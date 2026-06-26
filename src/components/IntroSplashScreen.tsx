@@ -27,9 +27,13 @@ export default function IntroSplashScreen({
 
   // Synchronized loading effect: progress drives the splash lifecycle
   useEffect(() => {
+    const isAlreadyPlayed = sessionStorage.getItem('INTRO_PLAYED_ACC') === 'true';
+    const duration = isAlreadyPlayed ? 200 : 2500; // 2.5 seconds of smooth progress bar increment or rapid 200ms on repeat
     const start = Date.now();
-    const duration = 2500; // 2.5 seconds of smooth progress bar increment is snapper and modern
     
+    let bufferTimer: NodeJS.Timeout | undefined;
+    let completeTimer: NodeJS.Timeout | undefined;
+
     const progressInterval = setInterval(() => {
       const elapsed = Date.now() - start;
       const currentProgress = Math.min((elapsed / duration) * 100, 100);
@@ -37,24 +41,25 @@ export default function IntroSplashScreen({
       
       if (currentProgress >= 100) {
         clearInterval(progressInterval);
+        sessionStorage.setItem('INTRO_PLAYED_ACC', 'true');
         
         // Wait 400ms showing "SISTEMA PRONTO!" with full green bar, then trigger fadeout
-        const bufferTimer = setTimeout(() => {
+        bufferTimer = setTimeout(() => {
           setFadeOut(true);
           
           // Wait 500ms of exit animation duration, then call parent onComplete()
-          const completeTimer = setTimeout(() => {
+          completeTimer = setTimeout(() => {
             onCompleteRef.current();
           }, 500);
-          
-          return () => clearTimeout(completeTimer);
         }, 400);
-        
-        return () => clearTimeout(bufferTimer);
       }
     }, 20);
 
-    return () => clearInterval(progressInterval);
+    return () => {
+      clearInterval(progressInterval);
+      if (bufferTimer) clearTimeout(bufferTimer);
+      if (completeTimer) clearTimeout(completeTimer);
+    };
   }, []);
 
   return (

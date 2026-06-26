@@ -9,10 +9,15 @@ import fs from "fs";
 
 // Safe initialization of Firebase Admin to avoid crashes in Local DB mode
 let isFirebaseInitialized = false;
-let isFirestoreEnabled = true;
+let isFirestoreEnabled = false; // Start as false to avoid transient startup errors before API confirm
+let isFirebaseAuthEnabled = false; // Start as false to avoid transient auth/signBlob errors
 
 function canUseFirestore(): boolean {
   return isFirebaseInitialized && isFirestoreEnabled;
+}
+
+function canUseFirebaseAuth(): boolean {
+  return isFirebaseInitialized && isFirebaseAuthEnabled;
 }
 
 try {
@@ -21,11 +26,47 @@ try {
     admin.initializeApp();
     isFirebaseInitialized = true;
     console.log("Firebase Admin successfully initialized.");
+
+    // Perform an asynchronous connectivity test to confirm Cloud Firestore API is active and functional
+    console.log("[Firestore Access Test] Testing credentials and API enablement for Cloud Firestore...");
+    admin.firestore().collection("_connection_test").limit(1).get()
+      .then(() => {
+        console.log("[Firestore Access Test] Cloud Firestore is ACTIVE and accessible.");
+        isFirestoreEnabled = true;
+      })
+      .catch((err: any) => {
+        console.warn("[Firestore Access Test] Cloud Firestore is disabled, unprovisioned, or restricted in this GCP project:", err?.message || err);
+        console.warn("[Firestore Access Test] Automatically disabling Firestore proxy features and falling back to Flat File local storage.");
+        isFirestoreEnabled = false;
+      });
+
+    // Perform an asynchronous connectivity test for Firebase Auth to confirm Identity Toolkit API is active
+    console.log("[Firebase Auth Access Test] Testing credentials and API enablement for Identity Toolkit (Auth)...");
+    admin.auth().listUsers(1)
+      .then(() => {
+        console.log("[Firebase Auth Access Test] Firebase Authentication API is ACTIVE and accessible.");
+        isFirebaseAuthEnabled = true;
+      })
+      .catch((err: any) => {
+        const errMsg = String(err?.message || err);
+        if (errMsg.includes("Identity Toolkit API") || errMsg.includes("disabled") || errMsg.includes("PERMISSION_DENIED")) {
+          console.warn("[Firebase Auth Access Test] Firebase Authentication API or service is disabled or restricted in this project.");
+          isFirebaseAuthEnabled = false;
+        } else {
+          // If the error is simply about permissions to list users, the API itself is enabled!
+          console.log("[Firebase Auth Access Test] Firebase Authentication API is active (permissions may be restricted, enabling with login-only fallback).");
+          isFirebaseAuthEnabled = true;
+        }
+      });
   } else {
     console.log("Firebase Admin bypassed - Running in Local DB mode.");
+    isFirestoreEnabled = false;
+    isFirebaseAuthEnabled = false;
   }
 } catch (err) {
   console.log("Firebase Admin could not be auto-initialized, falling back to local database operations.", err);
+  isFirestoreEnabled = false;
+  isFirebaseAuthEnabled = false;
 }
 
 // Local Database disk management
@@ -57,6 +98,75 @@ function writeJSONFile(filePath: string, data: any[]): void {
   } catch (err) {
     console.error(`Error writing ${filePath}:`, err);
   }
+}
+
+function getFirestorePath(flatName: string): string {
+  if (flatName && flatName.startsWith("companies_")) {
+    const parts = flatName.split("_");
+    if (parts.length >= 3) {
+      const sub = parts[parts.length - 1];
+      const companyId = parts.slice(1, parts.length - 1).join("_");
+      return `companies/${companyId}/${sub}`;
+    }
+  }
+  return flatName;
+}
+
+function formatFirestoreDoc(val: any): any {
+  if (val === null || val === undefined) return val;
+  if (val instanceof Date) {
+    return {
+      __type: "Timestamp",
+      seconds: Math.floor(val.getTime() / 1000),
+      nanoseconds: (val.getTime() % 1000) * 1000000
+    };
+  }
+  if (typeof val === "object") {
+    if (
+      typeof val.toDate === "function" || 
+      (val.constructor && val.constructor.name === "Timestamp") || 
+      (typeof val._seconds === "number" && typeof val._nanoseconds === "number") ||
+      (typeof val.seconds === "number" && typeof val.nanoseconds === "number")
+    ) {
+      const seconds = typeof val.seconds === "number" ? val.seconds : (typeof val._seconds === "number" ? val._seconds : 0);
+      const nanoseconds = typeof val.nanoseconds === "number" ? val.nanoseconds : (typeof val._nanoseconds === "number" ? val._nanoseconds : 0);
+      return {
+        __type: "Timestamp",
+        seconds,
+        nanoseconds
+      };
+    }
+    if (Array.isArray(val)) {
+      return val.map(formatFirestoreDoc);
+    }
+    const result: any = {};
+    for (const key of Object.keys(val)) {
+      result[key] = formatFirestoreDoc(val[key]);
+    }
+    return result;
+  }
+  return val;
+}
+
+function parseFirestoreDoc(val: any): any {
+  if (val === null || val === undefined) return val;
+  if (typeof val === "object") {
+    if (val.__type === "Timestamp" && typeof val.seconds === "number") {
+      return admin.firestore.Timestamp.fromMillis(val.seconds * 1000);
+    }
+    if (typeof val.seconds === "number" && typeof val.nanoseconds === "number" && Object.keys(val).length === 2) {
+      return admin.firestore.Timestamp.fromMillis(val.seconds * 1000);
+    }
+    if (Array.isArray(val)) {
+      return val.map(parseFirestoreDoc);
+    }
+    const result: any = {};
+    for (const key of Object.keys(val)) {
+      result[key] = parseFirestoreDoc(val[key]);
+    }
+    return result;
+  }
+  return val;
 }
 
 function ensureLocalDataSeeded() {
@@ -431,7 +541,7 @@ async function startServer() {
 
         console.log(`[Local Signin Debug] Checking password for: ${uDisp} (${uEmail}). Stored pass: "${uPass}", Compare pass: "${passwordToCompare}", Clean password typed: "${cleanPassword}"`);
 
-        if (passwordToCompare === cleanPassword || uPass === cleanPassword || cleanPassword === "123456" || passwordToCompare === "123456") {
+        if (cleanPassword === passwordToCompare) {
           console.log(`[Local Signin Debug] Passwords matched! Establishing user session.`);
           matchedUser = {
             uid: u.uid || `usr_${Math.random().toString(36).substring(2, 9)}`,
@@ -456,6 +566,84 @@ async function startServer() {
       emailVerified: true,
     });
   });
+
+  async function autoSeedFirestore() {
+    if (!isFirebaseInitialized || !canUseFirestore()) return;
+    try {
+      const dbObj = admin.firestore();
+      const compsSnap = await dbObj.collection("companies").get();
+      if (compsSnap.empty) {
+        console.log("[Auto-Seed] Firestore is currently empty. Starting automatic database provisioning...");
+        
+        // 1. Seed companies
+        try {
+          const companiesPath = getSafeFileName("companies");
+          const companies = readJSONFile(companiesPath);
+          for (const c of companies) {
+            const compRef = dbObj.collection("companies").doc(c.id || "default-company-id");
+            const exists = (await compRef.get()).exists;
+            if (!exists) {
+              const cleaned = JSON.parse(JSON.stringify(c), (k, v) => {
+                if (v && v.__type === 'Timestamp' && typeof v.seconds === 'number') {
+                  return admin.firestore.Timestamp.fromMillis(v.seconds * 1000);
+                }
+                return v;
+              });
+              await compRef.set(cleaned);
+              console.log(`[Auto-Seed] Seeded company: ${c.name}`);
+            }
+          }
+        } catch (e: any) {
+          console.warn("[Auto-Seed] Error seeding companies:", e.message);
+        }
+
+        // 2. Seed users
+        try {
+          const usersPath = getSafeFileName("users");
+          const users = readJSONFile(usersPath);
+          for (const u of users) {
+            const userRef = dbObj.collection("users").doc(u.id || u.uid);
+            const exists = (await userRef.get()).exists;
+            if (!exists) {
+              const cleaned = JSON.parse(JSON.stringify(u), (k, v) => {
+                if (v && v.__type === 'Timestamp' && typeof v.seconds === 'number') {
+                  return admin.firestore.Timestamp.fromMillis(v.seconds * 1000);
+                }
+                return v;
+              });
+              await userRef.set(cleaned);
+              console.log(`[Auto-Seed] Seeded user profile: ${u.email || u.displayName}`);
+            }
+          }
+        } catch (e: any) {
+          console.warn("[Auto-Seed] Error seeding users:", e.message);
+        }
+
+        // 3. Seed default-company-id settings/roles
+        try {
+          const settingsPath = getSafeFileName("companies_default-company-id_settings");
+          const settings = readJSONFile(settingsPath);
+          if (settings && Object.keys(settings).length > 0) {
+            const cleaned = JSON.parse(JSON.stringify(settings), (k, v) => {
+              if (v && v.__type === 'Timestamp' && typeof v.seconds === 'number') {
+                return admin.firestore.Timestamp.fromMillis(v.seconds * 1000);
+              }
+              return v;
+            });
+            
+            await dbObj.collection("companies").doc("default-company-id").collection("settings").doc("roles").set(cleaned);
+            console.log(`[Auto-Seed] Seeded company settings/roles`);
+          }
+        } catch (e: any) {
+           console.warn("[Auto-Seed] Error seeding company settings:", e.message);
+        }
+
+        console.log("[Auto-Seed] Automatic database provisioning successfully completed.");
+      }
+    } catch (err: any) {
+      console.error("[Auto-Seed] DB self-healing and seeding bypassed:", err.message);
+    }
+  }
 
   app.post("/api/auth/fallback-login", async (req, res) => {
     const { email, password } = req.body;
@@ -482,6 +670,8 @@ async function startServer() {
             email: u.email || "",
             displayName: u.displayName || "",
             password: String(u.password || "").trim(),
+            role: u.role || "",
+            companyId: u.companyId || "",
             altDisplayNames: u.displayName ? [u.displayName] : []
           });
         }
@@ -503,6 +693,12 @@ async function startServer() {
             if (u.password && String(u.password).trim()) {
               existing.password = String(u.password).trim();
             }
+            if (u.role) {
+              existing.role = u.role;
+            }
+            if (u.companyId) {
+              existing.companyId = u.companyId;
+            }
             if (u.displayName) {
               existing.altDisplayNames = existing.altDisplayNames || [];
               if (!existing.altDisplayNames.some((d: string) => d.toLowerCase() === u.displayName.toLowerCase())) {
@@ -515,6 +711,8 @@ async function startServer() {
               email: u.email || "",
               displayName: u.displayName || "",
               password: String(u.password || "").trim(),
+              role: u.role || "tecnico",
+              companyId: u.companyId || "default-company-id",
               altDisplayNames: u.displayName ? [u.displayName] : []
             });
           }
@@ -539,6 +737,12 @@ async function startServer() {
               if (u.password && String(u.password).trim()) {
                 existing.password = String(u.password).trim();
               }
+              if (u.role) {
+                existing.role = u.role;
+              }
+              if (u.companyId) {
+                existing.companyId = u.companyId;
+              }
               if (u.displayName) {
                 existing.altDisplayNames = existing.altDisplayNames || [];
                 if (!existing.altDisplayNames.some((d: string) => d.toLowerCase() === u.displayName.toLowerCase())) {
@@ -551,6 +755,8 @@ async function startServer() {
                 email: u.email || "",
                 displayName: u.displayName || "",
                 password: String(u.password || "").trim(),
+                role: u.role || "tecnico",
+                companyId: u.companyId || "default-company-id",
                 altDisplayNames: u.displayName ? [u.displayName] : []
               });
             }
@@ -637,12 +843,14 @@ async function startServer() {
 
         console.log(`[Fallback Auth Debug] Checking password for: "${uDisp}" (${uEmail}). Stored pass: "${uPass}", Compare pass: "${passwordToCompare}", Clean password typed: "${cleanPassword}"`);
 
-        if (passwordToCompare === cleanPassword || uPass === cleanPassword || cleanPassword === "123456" || passwordToCompare === "123456") {
+        if (cleanPassword === passwordToCompare) {
           console.log(`[Fallback Auth Debug] Passwords matched! Establishing user session.`);
           matchedUser = {
             uid: u.uid || `usr_${Math.random().toString(36).substring(2, 9)}`,
             email: u.email || `${u.uid}@segurtecpro.com`,
             displayName: u.displayName || uEmailPart || "Membro da Equipe",
+            role: u.role || "tecnico",
+            companyId: u.companyId || "default-company-id",
           };
           break;
         } else {
@@ -695,7 +903,15 @@ async function startServer() {
                 uid: resData.localId,
                 email: resData.email || candEmail,
                 displayName: resData.displayName || candEmail.split('@')[0],
+                role: "tecnico",
+                companyId: "default-company-id",
               };
+              // Try to find supplementary role/companyId for this verified user
+              const localUserMeta = Array.from(mergedUsersMap.values()).find((lu: any) => lu.uid === matchedUser.uid || lu.email.toLowerCase() === matchedUser.email.toLowerCase());
+              if (localUserMeta) {
+                if (localUserMeta.role) matchedUser.role = localUserMeta.role;
+                if (localUserMeta.companyId) matchedUser.companyId = localUserMeta.companyId;
+              }
               console.log(`Fallback login: REST API validated credentials for: ${candEmail}`);
 
               // Back-sync validated credentials to our local file so offline fallback knows it immediately
@@ -730,15 +946,49 @@ async function startServer() {
     if (matchedUser) {
       // Generate custom token if possible
       let customToken = null;
-      if (isFirebaseInitialized) {
+      if (canUseFirebaseAuth()) {
         try {
-          customToken = await admin.auth().createCustomToken(matchedUser.uid);
+          // Verify or create/update the user in Firebase Auth with correct email and displayName
+          try {
+            const authUser = await admin.auth().getUser(matchedUser.uid);
+            if (authUser.email !== matchedUser.email || authUser.displayName !== matchedUser.displayName) {
+              await admin.auth().updateUser(matchedUser.uid, {
+                email: matchedUser.email,
+                displayName: matchedUser.displayName,
+                emailVerified: true
+              });
+            }
+          } catch (authErr: any) {
+            if (authErr.code === 'auth/user-not-found') {
+              await admin.auth().createUser({
+                uid: matchedUser.uid,
+                email: matchedUser.email,
+                displayName: matchedUser.displayName,
+                emailVerified: true
+              });
+            } else {
+              console.log("[Firebase Admin Auth] Note: Auth user properties updates bypassed in this environment:", authErr?.message || authErr);
+            }
+          }
+
+          customToken = await admin.auth().createCustomToken(matchedUser.uid, {
+            email: matchedUser.email,
+            role: matchedUser.role,
+            companyId: matchedUser.companyId
+          });
         } catch (tokenErr: any) {
-          console.warn("Custom token generation omitted in merged login:", tokenErr.message || tokenErr);
+          // Suppress raw GCP/Firebase custom token IAM/signBlob errors in logs, as the app cleanly falls back to secure client-side session simulation.
+          console.log("Custom token bypassed (using secure client-side authentication fallback).", tokenErr?.message || tokenErr);
         }
       }
 
       console.log(`Merged Authentication success: Matched user ${matchedUser.displayName} (${matchedUser.email})`);
+      
+      // Seed Firebase Cloud Firestore asynchronously from JSON templates if empty
+      autoSeedFirestore().catch(e => {
+        console.warn("Background autoSeedFirestore failed:", e.message);
+      });
+
       return res.json({
         success: true,
         customToken,
@@ -800,15 +1050,50 @@ async function startServer() {
 
   // --- CRUD REST endpoints for Local Dataset operations ---
 
-  app.get("/api/localdb/:collection", (req, res) => {
+  app.get("/api/localdb/:collection", async (req, res) => {
     const { collection } = req.params;
+    try {
+      if (canUseFirestore()) {
+        const firestorePath = getFirestorePath(collection);
+        console.log(`[Firestore Proxy GET] Fetching collection docs: ${firestorePath}`);
+        const snapshot = await admin.firestore().collection(firestorePath).get();
+        const data = snapshot.docs.map(docSnap => {
+          return formatFirestoreDoc({ id: docSnap.id, ...docSnap.data() });
+        });
+        return res.json(data);
+      }
+    } catch (err: any) {
+      console.error(`[Firestore Proxy GET Error] ${collection}:`, err?.message || err);
+      console.warn("[Firestore Proxy Fallback] Disabling Firestore proxy due to API error. Falling back to local flat files.");
+      isFirestoreEnabled = false;
+    }
+
+    // Flat file fallback
     const filePath = getSafeFileName(collection);
     const data = readJSONFile(filePath);
     res.json(data);
   });
 
-  app.get("/api/localdb/:collection/:id", (req, res) => {
+  app.get("/api/localdb/:collection/:id", async (req, res) => {
     const { collection, id } = req.params;
+    try {
+      if (canUseFirestore()) {
+        const firestorePath = getFirestorePath(collection);
+        console.log(`[Firestore Proxy GET Doc] Fetching doc: ${firestorePath}/${id}`);
+        const docSnap = await admin.firestore().collection(firestorePath).doc(id).get();
+        if (docSnap.exists) {
+          return res.json(formatFirestoreDoc({ id: docSnap.id, ...docSnap.data() }));
+        } else {
+          return res.status(404).json({ error: "Documento não encontrado no Firestore" });
+        }
+      }
+    } catch (err: any) {
+      console.error(`[Firestore Proxy GET Doc Error] ${collection}/${id}:`, err?.message || err);
+      console.warn("[Firestore Proxy Fallback] Disabling Firestore proxy due to API error. Falling back to local flat files.");
+      isFirestoreEnabled = false;
+    }
+
+    // Flat file fallback
     const filePath = getSafeFileName(collection);
     const data = readJSONFile(filePath);
     const found = data.find((item) => item.id === id);
@@ -818,58 +1103,219 @@ async function startServer() {
     res.json(found);
   });
 
-  app.post("/api/localdb/:collection", (req, res) => {
+  app.post("/api/localdb/:collection", async (req, res) => {
     const { collection } = req.params;
-    const filePath = getSafeFileName(collection);
-    const data = readJSONFile(filePath);
-
     const item = req.body;
-    data.push(item);
-    writeJSONFile(filePath, data);
-    res.json(item);
-  });
+    const docId = item.id || `doc_${Math.random().toString(36).substring(2, 9)}`;
+    const cleanItem = { ...item, id: docId };
 
-  app.put("/api/localdb/:collection/:id", (req, res) => {
-    const { collection, id } = req.params;
-    const filePath = getSafeFileName(collection);
-    let data = readJSONFile(filePath);
-
-    const itemIndex = data.findIndex((item) => item.id === id);
-    const updatedItem = req.body;
-
-    if (itemIndex >= 0) {
-      data[itemIndex] = updatedItem;
-    } else {
-      data.push(updatedItem);
+    try {
+      if (canUseFirestore()) {
+        const firestorePath = getFirestorePath(collection);
+        console.log(`[Firestore Proxy POST] Creating doc: ${firestorePath}/${docId}`);
+        const parsedItem = parseFirestoreDoc(cleanItem);
+        await admin.firestore().collection(firestorePath).doc(docId).set(parsedItem);
+        return res.json(cleanItem);
+      }
+    } catch (err: any) {
+      console.error(`[Firestore Proxy POST Error] ${collection}:`, err?.message || err);
+      console.warn("[Firestore Proxy Fallback] Disabling Firestore proxy due to API error. Falling back to local flat files.");
+      isFirestoreEnabled = false;
     }
 
+    // Flat file fallback
+    const filePath = getSafeFileName(collection);
+    const data = readJSONFile(filePath);
+    data.push(cleanItem);
     writeJSONFile(filePath, data);
-    res.json(updatedItem);
+    res.json(cleanItem);
   });
 
-  app.patch("/api/localdb/:collection/:id", (req, res) => {
+  app.put("/api/localdb/:collection/:id", async (req, res) => {
     const { collection, id } = req.params;
+    const item = req.body;
+    const cleanItem = { ...item, id };
+
+    try {
+      if (canUseFirestore()) {
+        const firestorePath = getFirestorePath(collection);
+        console.log(`[Firestore Proxy PUT] Saving doc: ${firestorePath}/${id}`);
+        const parsedItem = parseFirestoreDoc(cleanItem);
+        await admin.firestore().collection(firestorePath).doc(id).set(parsedItem);
+        return res.json(cleanItem);
+      }
+    } catch (err: any) {
+      console.error(`[Firestore Proxy PUT Error] ${collection}/${id}:`, err?.message || err);
+      console.warn("[Firestore Proxy Fallback] Disabling Firestore proxy due to API error. Falling back to local flat files.");
+      isFirestoreEnabled = false;
+    }
+
+    // Flat file fallback
     const filePath = getSafeFileName(collection);
     let data = readJSONFile(filePath);
+    const itemIndex = data.findIndex((item) => item.id === id);
+    if (itemIndex >= 0) {
+      data[itemIndex] = cleanItem;
+    } else {
+      data.push(cleanItem);
+    }
+    writeJSONFile(filePath, data);
+    res.json(cleanItem);
+  });
 
+  app.patch("/api/localdb/:collection/:id", async (req, res) => {
+    const { collection, id } = req.params;
+    const updates = req.body;
+
+    try {
+      if (canUseFirestore()) {
+        const firestorePath = getFirestorePath(collection);
+        console.log(`[Firestore Proxy PATCH] Updating doc: ${firestorePath}/${id}`);
+        const parsedUpdates = parseFirestoreDoc(updates);
+        await admin.firestore().collection(firestorePath).doc(id).update(parsedUpdates);
+        
+        const docSnap = await admin.firestore().collection(firestorePath).doc(id).get();
+        return res.json(formatFirestoreDoc({ id: docSnap.id, ...docSnap.data() }));
+      }
+    } catch (err: any) {
+      console.error(`[Firestore Proxy PATCH Error] ${collection}/${id}:`, err?.message || err);
+      console.warn("[Firestore Proxy Fallback] Disabling Firestore proxy due to API error. Falling back to local flat files.");
+      isFirestoreEnabled = false;
+    }
+
+    // Flat file fallback
+    const filePath = getSafeFileName(collection);
+    let data = readJSONFile(filePath);
     const itemIndex = data.findIndex((item) => item.id === id);
     if (itemIndex < 0) {
       return res.status(404).json({ error: "Documento não encontrado para modificação" });
     }
-
-    data[itemIndex] = { ...data[itemIndex], ...req.body };
+    data[itemIndex] = { ...data[itemIndex], ...updates };
     writeJSONFile(filePath, data);
     res.json(data[itemIndex]);
   });
 
-  app.delete("/api/localdb/:collection/:id", (req, res) => {
+  app.delete("/api/localdb/:collection/:id", async (req, res) => {
     const { collection, id } = req.params;
+
+    try {
+      if (canUseFirestore()) {
+        const firestorePath = getFirestorePath(collection);
+        console.log(`[Firestore Proxy DELETE] Deleting doc: ${firestorePath}/${id}`);
+        await admin.firestore().collection(firestorePath).doc(id).delete();
+        return res.json({ success: true });
+      }
+    } catch (err: any) {
+      console.error(`[Firestore Proxy DELETE Error] ${collection}/${id}:`, err?.message || err);
+      console.warn("[Firestore Proxy Fallback] Disabling Firestore proxy due to API error. Falling back to local flat files.");
+      isFirestoreEnabled = false;
+    }
+
+    // Flat file fallback
     const filePath = getSafeFileName(collection);
     const data = readJSONFile(filePath);
-
     const filtered = data.filter((item) => item.id !== id);
     writeJSONFile(filePath, filtered);
     res.json({ success: true });
+  });
+
+  // --- Cloud/Local Unified Restore Points Endpoints ---
+
+  app.post("/api/backup/save-restore-point", (req, res) => {
+    try {
+      const { companyId, description, createdBy, data } = req.body;
+      if (!companyId || !description) {
+        return res.status(400).json({ error: "companyId e descrição são obrigatórios." });
+      }
+      const restorePointsDir = path.join(DATA_DIR, "restore_points");
+      if (!fs.existsSync(restorePointsDir)) {
+        fs.mkdirSync(restorePointsDir, { recursive: true });
+      }
+      const pointId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      const fileName = `companies_${companyId}_restore_points_${pointId}.json`;
+      const filePath = path.join(restorePointsDir, fileName);
+      
+      const pointDoc = {
+        id: pointId,
+        description,
+        createdAt: new Date().toISOString(),
+        createdBy: createdBy || "Administrador",
+        data
+      };
+      
+      fs.writeFileSync(filePath, JSON.stringify(pointDoc, null, 2), "utf-8");
+      res.json({ success: true, point: { id: pointId, description, createdAt: pointDoc.createdAt, createdBy: pointDoc.createdBy } });
+    } catch (err: any) {
+      console.error("Error saving cloud restore point:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/backup/restore-points/:companyId", (req, res) => {
+    try {
+      const { companyId } = req.params;
+      if (!companyId) {
+        return res.status(400).json({ error: "companyId é obrigatório." });
+      }
+      const restorePointsDir = path.join(DATA_DIR, "restore_points");
+      if (!fs.existsSync(restorePointsDir)) {
+        return res.json([]);
+      }
+      const files = fs.readdirSync(restorePointsDir);
+      const points: any[] = [];
+      const prefix = `companies_${companyId}_restore_points_`;
+      for (const file of files) {
+        if (file.startsWith(prefix) && file.endsWith(".json")) {
+          try {
+            const raw = fs.readFileSync(path.join(restorePointsDir, file), "utf-8");
+            const docData = JSON.parse(raw);
+            points.push({
+              id: docData.id,
+              description: docData.description,
+              createdAt: docData.createdAt,
+              createdBy: docData.createdBy
+            });
+          } catch (e) {
+             console.error("Error parsing restore point file:", file, e);
+          }
+        }
+      }
+      points.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      res.json(points);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/backup/restore-points/:companyId/:pointId", (req, res) => {
+    try {
+      const { companyId, pointId } = req.params;
+      const restorePointsDir = path.join(DATA_DIR, "restore_points");
+      const fileName = `companies_${companyId}_restore_points_${pointId}.json`;
+      const filePath = path.join(restorePointsDir, fileName);
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: "Ponto de restauração não encontrado." });
+      }
+      const raw = fs.readFileSync(filePath, "utf-8");
+      res.json(JSON.parse(raw));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/backup/restore-points/:companyId/:pointId", (req, res) => {
+    try {
+      const { companyId, pointId } = req.params;
+      const restorePointsDir = path.join(DATA_DIR, "restore_points");
+      const fileName = `companies_${companyId}_restore_points_${pointId}.json`;
+      const filePath = path.join(restorePointsDir, fileName);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // --- Administrative User Synclayers Auth Override ---
@@ -908,6 +1354,146 @@ async function startServer() {
     res.json({ success: false, message: "Senha não encontrada no cadastro local ou ambiente em nuvem real." });
   });
 
+  app.get("/api/auth/user-profile/:uidOrEmail", async (req, res) => {
+    const { uidOrEmail } = req.params;
+    if (!uidOrEmail) {
+      return res.status(400).json({ success: false, error: "UID or Email is required." });
+    }
+
+    const cleanInput = String(uidOrEmail).replace(/[^a-zA-Z0-9@._-]/g, "").trim().toLowerCase();
+
+    // 1. Compile merged map of users just like fallback-login
+    const mergedUsersMap = new Map<string, any>();
+
+    // A. Read local auth_users.json
+    try {
+      const authUsersPath = getSafeFileName("auth_users");
+      const authUsers = readJSONFile(authUsersPath);
+      authUsers.forEach((u: any) => {
+        const emailKey = String(u.email || "").trim().toLowerCase();
+        const key = emailKey || String(u.displayName || "").trim().toLowerCase() || u.uid;
+        if (key) {
+          mergedUsersMap.set(key, {
+            uid: u.uid || u.id,
+            email: u.email || "",
+            displayName: u.displayName || "",
+            role: u.role || "tecnico",
+            companyId: u.companyId || "default-company-id",
+          });
+        }
+      });
+    } catch (e) {
+      console.warn("Error reading local auth_users:", e);
+    }
+
+    // B. Read local users.json
+    try {
+      const usersPath = getSafeFileName("users");
+      const users = readJSONFile(usersPath);
+      users.forEach((u: any) => {
+        const emailKey = String(u.email || "").trim().toLowerCase();
+        const key = emailKey || String(u.displayName || "").trim().toLowerCase() || u.id;
+        if (key) {
+          if (mergedUsersMap.has(key)) {
+            const existing = mergedUsersMap.get(key);
+            if (u.role) existing.role = u.role;
+            if (u.companyId) existing.companyId = u.companyId;
+            if (u.displayName) existing.displayName = u.displayName;
+          } else {
+            mergedUsersMap.set(key, {
+              uid: u.id || u.uid,
+              email: u.email || "",
+              displayName: u.displayName || "",
+              role: u.role || "tecnico",
+              companyId: u.companyId || "default-company-id",
+            });
+          }
+        }
+      });
+    } catch (e) {
+      console.warn("Error reading local users file:", e);
+    }
+
+    // C. Read from Cloud Firestore 'users' collection (if active and configured)
+    if (canUseFirestore()) {
+      try {
+        const usersRef = admin.firestore().collection("users");
+        const snapshot = await usersRef.get();
+        snapshot.docs.forEach(docSnap => {
+          const u = docSnap.data();
+          const emailKey = String(u.email || "").trim().toLowerCase();
+          const key = emailKey || String(u.displayName || "").trim().toLowerCase() || docSnap.id;
+          if (key) {
+            if (mergedUsersMap.has(key)) {
+              const existing = mergedUsersMap.get(key);
+              if (u.role) existing.role = u.role;
+              if (u.companyId) existing.companyId = u.companyId;
+              if (u.displayName) existing.displayName = u.displayName;
+            } else {
+              mergedUsersMap.set(key, {
+                uid: docSnap.id,
+                email: u.email || "",
+                displayName: u.displayName || "",
+                role: u.role || "tecnico",
+                companyId: u.companyId || "default-company-id",
+              });
+            }
+          }
+        });
+      } catch (err: any) {
+        console.log("[User Profile Info API] Firestore users retrieval bypassed:", err?.message);
+      }
+    }
+
+    const allUnifiedUsers = Array.from(mergedUsersMap.values());
+    const cleanInputAlphanumeric = cleanInput.replace(/[^a-z0-9]/g, "");
+    const matched = allUnifiedUsers.find((u: any) => {
+      const uUid = String(u.uid || "").toLowerCase();
+      const uEmail = String(u.email || "").toLowerCase();
+      const uDisp = String(u.displayName || "").toLowerCase();
+      const uDispClean = uDisp.replace(/[^a-z0-9]/g, "");
+      
+      return (
+        uUid === cleanInput ||
+        uEmail === cleanInput ||
+        uDisp === cleanInput ||
+        (uDispClean && uDispClean === cleanInputAlphanumeric) ||
+        uEmail.startsWith(cleanInput)
+      );
+    });
+
+    if (matched) {
+      return res.json({ success: true, user: matched });
+    }
+
+    // Secondary fallback search inside Firestore directly by UID
+    if (canUseFirestore()) {
+      try {
+        const docRef = admin.firestore().collection("users").doc(uidOrEmail);
+        const docSnap = await docRef.get();
+        if (docSnap.exists) {
+          const u = docSnap.data();
+          if (u) {
+            return res.json({
+              success: true,
+              user: {
+                uid: docSnap.id,
+                email: u.email || "",
+                displayName: u.displayName || "",
+                role: u.role || "tecnico",
+                companyId: u.companyId || "default-company-id"
+              }
+            });
+          }
+        }
+      } catch (err) {
+        // Ignore
+      }
+    }
+
+    res.status(404).json({ success: false, error: "Profile not found" });
+  });
+
   app.post("/api/admin/update-user-password", async (req, res) => {
     const { uid, newPassword, newEmail } = req.body;
     
@@ -944,7 +1530,7 @@ async function startServer() {
       }
     };
 
-    if (isLocalDb || !isFirebaseInitialized) {
+    if (isLocalDb || !canUseFirebaseAuth()) {
       const resLocal = updateLocalFlatFile();
       return res.json({ 
         success: true, 
@@ -1159,7 +1745,7 @@ async function startServer() {
       writeJSONFile(usersPath, filteredUsers);
     };
 
-    if (isLocalDb || !isFirebaseInitialized) {
+    if (isLocalDb || !canUseFirebaseAuth()) {
       deleteLocalFlatFile();
       return res.json({ success: true, message: "Usuário excluído com sucesso do login local." });
     }

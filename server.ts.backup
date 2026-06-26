@@ -1,0 +1,26 @@
+// Original server.ts content backup
+import dotenv from "dotenv";
+dotenv.config();
+
+import express from "express";
+import { createServer as createViteServer } from "vite";
+import path from "path";
+import admin from "firebase-admin";
+import fs from "fs";
+
+// Safe initialization of Firebase Admin to avoid crashes in Local DB mode
+let isFirebaseInitialized = false;
+let isFirestoreEnabled = true;
+
+function canUseFirestore(): boolean {
+  return isFirebaseInitialized && isFirestoreEnabled;
+}
+
+try {
+  if (process.env.VITE_LOCAL_DB !== 'true') {
+    admin.initializeApp();
+    isFirebaseInitialized = true;
+  }
+} catch (err) {
+  // Bypassed
+}

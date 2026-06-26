@@ -64,7 +64,8 @@ service cloud.firestore {
     // 2. Business Collections
     match /companies/{companyId} {
       allow read, get, list: if true; // Allow public searching for invite codes and metadata
-      allow write: if isAdminOf(companyId);
+      allow create: if isSignedIn();
+      allow update, delete: if isSuperAdmin() || isAdminOf(companyId);
       
       match /{allSubcollections=**} {
         allow read, write: if isMemberOf(companyId);
@@ -73,7 +74,7 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isSignedIn();
-      allow list: if isSuperAdmin();
+      allow list: if isSignedIn();
       allow create: if isSignedIn();
       allow update: if isSuperAdmin() || 
                     request.auth.uid == userId || 

@@ -49,8 +49,18 @@ export default function LicenseVerifierSplash({
     { name: 'Banco de Dados do Cliente', desc: company?.dbMode === 'local' ? 'Servidor Local (SQLite / JSON no Windows %Appdata%)' : 'Modo Cloud Firebase (100% em Nuvem)' }
   ];
 
+  // Stable ref for callbacks & values to avoid resetting the 10s timer when parent state updates
+  const onVerifiedRef = React.useRef(onVerified);
+  const companyStatusRef = React.useRef(company?.status);
+
   useEffect(() => {
-    const duration = 10000; // Exact 10 seconds tracking
+    onVerifiedRef.current = onVerified;
+    companyStatusRef.current = company?.status;
+  }, [onVerified, company?.status]);
+
+  useEffect(() => {
+    const isAlreadyVerified = sessionStorage.getItem('SaaS_LICENSE_VERIFIED') === 'true';
+    const duration = isAlreadyVerified ? 500 : 10000; // Exact 10 seconds tracking on first run, fast 500ms on subsequent renders/recounts
     const intervalTime = 100; // Update every 100ms
     const start = Date.now();
 
@@ -69,15 +79,16 @@ export default function LicenseVerifierSplash({
       if (calculatedProgress >= 100) {
         clearInterval(interval);
         setIsScanning(false);
+        sessionStorage.setItem('SaaS_LICENSE_VERIFIED', 'true');
         // Stated requirement: Automatic transition after 10 seconds!
-        if (company?.status !== 'blocked') {
-          onVerified();
+        if (companyStatusRef.current !== 'blocked') {
+          onVerifiedRef.current();
         }
       }
     }, intervalTime);
 
     return () => clearInterval(interval);
-  }, [onVerified, steps.length, company?.status]);
+  }, [steps.length]);
 
   const dbModeLabel = company?.dbMode === 'local' ? 'Local Server (%AppData% JSON)' : company?.dbMode === 'online' ? 'Nuvem Cloud (Firebase)' : 'Híbrido Padrão';
   const customPriceFormatted = company?.customPrice && parseFloat(company.customPrice) > 0 

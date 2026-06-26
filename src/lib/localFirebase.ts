@@ -5,8 +5,46 @@ import { toast } from 'sonner';
 
 // Helper to allow connecting online version to local PC database
 export function getLocalApiUrl(path: string): string {
+  if (typeof window === 'undefined') return path;
+
   const customUrl = localStorage.getItem('LOCAL_DB_SERVER_URL') || '';
-  const cleanBase = customUrl.replace(/\/$/, ''); // remove trailing slash
+  const cleanBase = customUrl.replace(/\/$/, '').trim();
+  
+  if (!cleanBase) {
+    return path;
+  }
+
+  // Local/Loopback Bypass: If the configured URL points to localhost or loopback, 
+  // we must use relative routes so LAN devices seamlessly connect to the host that served the site.
+  const isLoopback = cleanBase.startsWith('localhost') || 
+                     cleanBase.startsWith('127.0.0.1') || 
+                     cleanBase.startsWith('http://localhost') || 
+                     cleanBase.startsWith('http://127.0.0.1') || 
+                     cleanBase.startsWith('https://localhost') || 
+                     cleanBase.startsWith('https://127.0.0.1');
+
+  if (isLoopback) {
+    return path;
+  }
+
+  // Cloud Sandbox Host Guardian: Detect if we are running in the AI Studio cloud run preview container
+  const isCloudHost = window.location.hostname !== 'localhost' && 
+                      window.location.hostname !== '127.0.0.1' && 
+                      !/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname);
+
+  // In the cloud run container context, external local physical PC IP/LAN addresses are physically unreachable and blocked.
+  if (isCloudHost) {
+    return path;
+  }
+
+  const isHttps = window.location.protocol === 'https:';
+  
+  // Mixed Content Guard: Browsers block standard HTTP requests from secure HTTPS hosts.
+  if (isHttps && cleanBase.startsWith('http://')) {
+    console.warn(`[LocalDB Engine] Mixed Content Guard: Blocked request to insecure "${cleanBase}". Routing securely to relative container APIs instead.`);
+    return path;
+  }
+
   const isAbsolute = cleanBase.startsWith('http://') || cleanBase.startsWith('https://');
   const base = isAbsolute ? cleanBase : '';
   return `${base}${path}`;
@@ -14,6 +52,23 @@ export function getLocalApiUrl(path: string): string {
 
 export function getCleanCollectionPath(colPath: string): string {
   return colPath.replace(/\//g, '_');
+}
+
+export async function safeFetch(path: string, options?: RequestInit): Promise<Response> {
+  const customUrl = getLocalApiUrl(path);
+  try {
+    return await fetch(customUrl, options);
+  } catch (err) {
+    if (customUrl !== path) {
+      console.warn(`[LocalDB Engine] Fetching custom URL "${customUrl}" failed. Retrying with relative path "${path}"...`, err);
+      try {
+        return await fetch(path, options);
+      } catch (innerErr) {
+        throw innerErr;
+      }
+    }
+    throw err;
+  }
 }
 
 // Custom Timestamp implementation to replicate Firebase Timestamp behavior
@@ -236,7 +291,7 @@ class LocalDatabaseCache {
 
     const fetchPromise = (async () => {
       try {
-        const res = await fetch(getLocalApiUrl(`/api/localdb/${getCleanCollectionPath(collectionName)}`));
+        const res = await safeFetch(`/api/localdb/${getCleanCollectionPath(collectionName)}`);
         if (res.ok) {
           const data = await res.json();
           const deserializedData = deserialize(data);
@@ -446,7 +501,7 @@ export async function addDoc(collectionRef: any, data: any): Promise<any> {
   const id = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
   const docData = { ...data, id };
 
-  const response = await fetch(getLocalApiUrl(`/api/localdb/${getCleanCollectionPath(path)}`), {
+  const response = await safeFetch(`/api/localdb/${getCleanCollectionPath(path)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(serialize(docData))
@@ -467,7 +522,7 @@ export async function setDoc(docRef: any, data: any, options?: any): Promise<voi
   const { path, id } = docRef;
   const docData = { ...data, id };
 
-  const response = await fetch(getLocalApiUrl(`/api/localdb/${getCleanCollectionPath(path)}/${encodeURIComponent(id)}`), {
+  const response = await safeFetch(`/api/localdb/${getCleanCollectionPath(path)}/${encodeURIComponent(id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(serialize(docData))
@@ -492,7 +547,7 @@ export async function setDoc(docRef: any, data: any, options?: any): Promise<voi
 export async function updateDoc(docRef: any, data: any): Promise<void> {
   const { path, id } = docRef;
 
-  const response = await fetch(getLocalApiUrl(`/api/localdb/${getCleanCollectionPath(path)}/${encodeURIComponent(id)}`), {
+  const response = await safeFetch(`/api/localdb/${getCleanCollectionPath(path)}/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(serialize(data))
@@ -511,7 +566,7 @@ export async function updateDoc(docRef: any, data: any): Promise<void> {
 export async function deleteDoc(docRef: any): Promise<void> {
   const { path, id } = docRef;
 
-  const response = await fetch(getLocalApiUrl(`/api/localdb/${getCleanCollectionPath(path)}/${encodeURIComponent(id)}`), {
+  const response = await safeFetch(`/api/localdb/${getCleanCollectionPath(path)}/${encodeURIComponent(id)}`, {
     method: 'DELETE'
   });
 
@@ -581,7 +636,7 @@ export function onAuthStateChanged(authInst: any, callback: (user: any) => void)
 export async function signInWithEmailAndPassword(authInst: any, emailInput: string, passwordInput: string): Promise<any> {
   const email = emailInput.trim().toLowerCase();
   
-  const response = await fetch(getLocalApiUrl('/api/localdb/auth/signin'), {
+  const response = await safeFetch('/api/localdb/auth/signin', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password: passwordInput })
@@ -600,7 +655,7 @@ export async function signInWithEmailAndPassword(authInst: any, emailInput: stri
 export async function createUserWithEmailAndPassword(authInst: any, emailInput: string, passwordInput: string): Promise<any> {
   const email = emailInput.trim().toLowerCase();
 
-  const response = await fetch(getLocalApiUrl('/api/localdb/auth/signup'), {
+  const response = await safeFetch('/api/localdb/auth/signup', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password: passwordInput, displayName: email.split('@')[0] })
@@ -625,7 +680,7 @@ export async function updateProfile(userRef: any, updateData: { displayName?: st
     const updatedUser = { ...localAuth.currentUser, ...updateData };
     localAuth.setCurrentUser(updatedUser);
 
-    await fetch(getLocalApiUrl(`/api/localdb/users/${encodeURIComponent(localAuth.currentUser.uid)}`), {
+    await safeFetch(`/api/localdb/users/${encodeURIComponent(localAuth.currentUser.uid)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ displayName: updateData.displayName })
@@ -635,7 +690,7 @@ export async function updateProfile(userRef: any, updateData: { displayName?: st
 
 export async function updatePassword(userRef: any, newPasswordStr: string): Promise<void> {
   if (localAuth.currentUser) {
-    const response = await fetch(getLocalApiUrl('/api/admin/update-user-password'), {
+    const response = await safeFetch('/api/admin/update-user-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ uid: localAuth.currentUser.uid, newPassword: newPasswordStr })

@@ -1237,7 +1237,7 @@ const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSetting
   const brandLinesBox = doc.splitTextToSize(os.brandModelSN || 'N/A', boxWidth - 18);
 
   const leftHeightNeeded = 10 + (clientNameLines.length * 3.5) + (addressLinesBox.length * 3.5) + 6;
-  const rightHeightNeeded = 10 + (equipLinesBox.length * 3.5) + (brandLinesBox.length * 3.5) + 6;
+  const rightHeightNeeded = 10 + (equipLinesBox.length * 3.5) + (brandLinesBox.length * 3.5) + (os.sealNumber ? 7 : 3.5) + 6;
   const boxHeight = Math.max(leftHeightNeeded, rightHeightNeeded, 28);
 
   // Draw Box 1: Client Data
@@ -1300,6 +1300,15 @@ const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSetting
   doc.text('TIPO:', col2X + 2, equipY);
   doc.setFont('helvetica', 'normal');
   doc.text(os.serviceType || 'N/A', col2X + 15, equipY);
+  equipY += 3.5;
+
+  if (os.sealNumber) {
+    doc.setFont('helvetica', 'bold');
+    doc.text('LACRE:', col2X + 2, equipY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(os.sealNumber, col2X + 15, equipY);
+    equipY += 3.5;
+  }
 
   currentY = startY + boxHeight + 4;
   
@@ -1654,6 +1663,16 @@ const generateDeliveryReceiptPDF = async (os: ServiceOrder, appSettings: AppSett
   doc.text(os.brandModelSN || 'Não especificado', margin + 42, currentY);
   currentY += 5;
 
+  if (os.sealNumber) {
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text('Número do Lacre:', margin, currentY);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(51, 65, 85);
+    doc.text(os.sealNumber, margin + 42, currentY);
+    currentY += 5;
+  }
+
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
   doc.text('Acessórios entregues:', margin, currentY);
@@ -1885,12 +1904,23 @@ const generateOSLabelsPDF = (selectedOSs: ServiceOrder[], appSettings: AppSettin
     const noteText = os.notes || '';
     const splitNote = doc.splitTextToSize(noteText, contentWidth);
     
-    // Calcula quantas linhas de nota cabem até o limite da etiqueta (startY + labelHeight - internalMargin)
-    const spaceLeft = (startY + labelHeight - internalMargin) - currentY;
+    // Calcula quantas linhas de nota cabem de forma a não encobrir o lacre/garantia no final
+    const spaceLeft = (startY + 48) - currentY;
     const maxLinesPossible = Math.max(1, Math.floor(spaceLeft / 3));
     const visibleNote = splitNote.slice(0, maxLinesPossible);
     
     doc.text(visibleNote, startX + internalMargin, currentY);
+
+    // Campo de Lacre e Garantia no final e centralizados
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.text(`Lacre: ${os.sealNumber || 'N/A'}`, startX + (labelWidth / 2), startY + 52, { align: 'center' });
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(5.5);
+    doc.setTextColor(180, 0, 0); // Vermelho para chamar atenção
+    doc.text('* PERDA DE GARANTIA SE VIOLADO *', startX + (labelWidth / 2), startY + 56, { align: 'center' });
+    doc.setTextColor(0, 0, 0); // Restaurar preto
 
     // Reset line width for next label
     doc.setLineWidth(0.3);
@@ -1918,6 +1948,7 @@ interface ServiceOrder {
   // Equipment Info
   equipment: string;
   brandModelSN: string;
+  sealNumber?: string;
   serviceType: 'Preventiva' | 'Corretiva' | 'Instalação';
   reportedProblem: string;
   
@@ -3374,7 +3405,8 @@ export default function MainApp() {
   const isSuperAdmin = user?.email ? SUPER_ADMIN_EMAILS.includes(user.email.toLowerCase().trim()) || currentUserData?.role === 'super_admin' : false;
 
   const effectiveCompanyId = useMemo(() => {
-    return isSuperAdmin && selectedCompanyId ? selectedCompanyId : currentUserData?.companyId;
+    const cid = isSuperAdmin && selectedCompanyId ? selectedCompanyId : currentUserData?.companyId;
+    return cid || 'default-company-id';
   }, [isSuperAdmin, selectedCompanyId, currentUserData?.companyId]);
 
   // Log system
@@ -3398,8 +3430,13 @@ export default function MainApp() {
         timestamp: Timestamp.now(),
         companyId: effectiveCompanyId
       });
-    } catch (err) {
-      console.error('Erro ao registrar log:', err);
+    } catch (err: any) {
+      const errStr = String(err?.message || err || "").toLowerCase();
+      if (errStr.includes("permission") || errStr.includes("insufficient")) {
+        console.log("[Registrar Log] Gravação de log pelo cliente não autenticado (suprimido).");
+      } else {
+        console.error('Erro ao registrar log:', err);
+      }
     }
   };
 
@@ -3445,8 +3482,13 @@ export default function MainApp() {
           }
         }
       });
-    }, (error) => {
-      console.error("Erro no listener de logins de colaboradores:", error);
+    }, (error: any) => {
+      const errStr = String(error?.message || error || "").toLowerCase();
+      if (errStr.includes("permission") || errStr.includes("insufficient")) {
+        console.log("[Listener de logins de colaboradores] Permissão negada ou sessão não autenticada no Firestore (suprimido).");
+      } else {
+        console.error("Erro no listener de logins de colaboradores:", error);
+      }
     });
 
     return () => unsubscribe();
@@ -3464,8 +3506,13 @@ export default function MainApp() {
         await updateDoc(doc(db, 'users', user.uid), {
           lastSeen: Timestamp.now()
         });
-      } catch (err) {
-        console.error('Erro ao atualizar status online:', err);
+      } catch (err: any) {
+        const errStr = String(err?.message || err || "").toLowerCase();
+        if (errStr.includes("permission") || errStr.includes("insufficient")) {
+          console.log("[Status Online] Gravação do status de presença pelo cliente não autenticado (suprimido).");
+        } else {
+          console.error('Erro ao atualizar status online:', err);
+        }
       }
     };
 
@@ -3481,6 +3528,18 @@ export default function MainApp() {
   }, [currentCompany?.name, appSettings?.companyName]);
 
   useEffect(() => {
+    // If we are on a real cloud/web host, automatically clean up any stale localStorage overrides so they don't get stuck
+    const isHostWeb = window.location.hostname !== 'localhost' && 
+                       window.location.hostname !== '127.0.0.1' && 
+                       !/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname);
+    if (isHostWeb) {
+      if (localStorage.getItem('FIRESTORE_DISABLED') === 'true' || localStorage.getItem('DB_MODE_OVERRIDE') === 'local') {
+        console.log("[Dynamic Recovery] Found stale database overrides on cloud host. Self-healing browser state to Online Mode silently without reload...");
+        localStorage.removeItem('FIRESTORE_DISABLED');
+        localStorage.removeItem('DB_MODE_OVERRIDE');
+      }
+    }
+
     async function testConnection() {
       if (signerTokenUrl || signaturePortal) return; // Se for página de assinatura externa, não testa conexão que exige auth
       try {
@@ -3545,8 +3604,13 @@ export default function MainApp() {
       if (docSnap.exists()) {
         setRolePermissions(docSnap.data());
       }
-    }, (error) => {
-      console.error("Erro no listener de permissões:", error);
+    }, (error: any) => {
+      const errStr = String(error?.message || error || "").toLowerCase();
+      if (errStr.includes("permission") || errStr.includes("insufficient")) {
+        console.log("[Listener de permissões] Permissão negada ou sessão não autenticada (suprimido).");
+      } else {
+        console.error("Erro no listener de permissões:", error);
+      }
     });
     return () => unsub();
   }, [currentUserData?.companyId]);
@@ -3558,23 +3622,115 @@ export default function MainApp() {
     const userRef = doc(db, 'users', user.uid);
     const unsubscribeUser = onSnapshot(userRef, async (snap) => {
       if (snap.exists()) {
-        const data = snap.data();
-        setCurrentUserData(data);
+        let data = snap.data() || {};
         
         // Sincroniza o nome de exibição do Auth com o Firestore se houver divergência
         // Isso resolve casos onde o usuário alterou o nome no perfil mas o Firestore ficou desatualizado
         if (user.displayName && data.displayName !== user.displayName) {
           try {
             await updateDoc(userRef, { displayName: user.displayName });
+            data.displayName = user.displayName;
           } catch (err) {
             console.error("Erro ao sincronizar nome com Firestore:", err);
           }
         }
         
+        // Força privilégios e empresa padrão para Super Admins (ex: emailparasiteslixo@gmail.com)
+        // Isso impede que o usuário veja visualizações vazias ("zeradas") causadas por perfis residuais desalinhados
+        const normalizedEmail = (data.email || user.email || '').toLowerCase().trim();
+        const isSuper = normalizedEmail ? SUPER_ADMIN_EMAILS.includes(normalizedEmail) : false;
+
+        if (isSuper) {
+          let needsUpdate = false;
+          if (data.role !== 'super_admin') {
+            data.role = 'super_admin';
+            needsUpdate = true;
+          }
+          if (data.companyId !== 'default-company-id') {
+            data.companyId = 'default-company-id';
+            needsUpdate = true;
+          }
+          if (needsUpdate) {
+            try {
+              await updateDoc(userRef, { role: 'super_admin', companyId: 'default-company-id' });
+            } catch (err) {
+              console.error("Erro ao sincronizar privilégios de Super Admin:", err);
+            }
+          }
+        }
+
+        // Se o usuário está no Firestore mas não tem companyId (ex: registro incompleto ou fallback falho anterior),
+        // realiza autorrecuperação (self-healing) consultando a API backend flat file por e-mail/uid
+        if (!data.companyId) {
+          let healedCompanyId = isSuper ? 'default-company-id' : '';
+          
+          try {
+            const lookupInput = user.email || user.uid;
+            if (lookupInput) {
+              const resp = await fetch(`/api/auth/user-profile/${encodeURIComponent(lookupInput)}`);
+              if (resp.ok) {
+                const resData = await resp.json();
+                if (resData.success && resData.user?.companyId) {
+                  healedCompanyId = resData.user.companyId;
+                }
+              }
+            }
+          } catch (healingErr) {
+            console.warn("Could not heal user companyId dynamically:", healingErr);
+          }
+
+          if (healedCompanyId) {
+            data.companyId = healedCompanyId;
+            try {
+              await updateDoc(userRef, { companyId: healedCompanyId });
+            } catch (err) {
+              console.error("Erro ao persistir autorrecuperação de empresa no Firestore:", err);
+            }
+          }
+        }
+
+        setCurrentUserData(data);
+        
         if (!data.companyId) {
           setLoading(false);
         }
       } else {
+        // Try to recover pre-configured team profile from the backend flat files before setting blank values
+        let recoveredData = null;
+        try {
+          const lookupInput = user.email || user.uid;
+          if (lookupInput) {
+            const resp = await fetch(`/api/auth/user-profile/${encodeURIComponent(lookupInput)}`);
+            if (resp.ok) {
+              const resData = await resp.json();
+              if (resData.success && resData.user) {
+                recoveredData = {
+                  uid: user.uid,
+                  email: user.email || resData.user.email,
+                  displayName: resData.user.displayName || user.displayName || 'Membro da Equipe',
+                  role: resData.user.role || 'tecnico',
+                  companyId: resData.user.companyId || 'default-company-id',
+                  createdAt: Timestamp.now()
+                };
+              }
+            }
+          }
+        } catch (apiErr) {
+          console.warn("Could not retrieve user profile from backend:", apiErr);
+        }
+
+        if (recoveredData) {
+          try {
+            await setDoc(userRef, recoveredData);
+            setCurrentUserData(recoveredData);
+          } catch (saveErr) {
+            console.error("Failed saving recovered user profile to database:", saveErr);
+            setCurrentUserData(recoveredData); // Fallback to local memory state
+          }
+          setLoading(false);
+          return;
+        }
+
         // Initial setup for new user
         const normalizedEmail = user.email?.toLowerCase().trim();
         const isSuper = normalizedEmail ? SUPER_ADMIN_EMAILS.includes(normalizedEmail) : false;
@@ -3584,7 +3740,7 @@ export default function MainApp() {
             email: user.email,
             displayName: user.displayName || 'Usuário',
             role: isSuper ? 'super_admin' : 'pending',
-            companyId: '',
+            companyId: isSuper ? 'default-company-id' : '',
             createdAt: Timestamp.now()
           };
           await setDoc(userRef, initialData);
@@ -3594,8 +3750,13 @@ export default function MainApp() {
         }
         setLoading(false);
       }
-    }, (error) => {
-      console.error("Erro no listener de usuário:", error);
+    }, (error: any) => {
+      const errStr = String(error?.message || error || "").toLowerCase();
+      if (errStr.includes("permission") || errStr.includes("insufficient")) {
+        console.log("[Listener de usuário] Permissão negada ou sessão não autenticada (suprimido).");
+      } else {
+        console.error("Erro no listener de usuário:", error);
+      }
       setLoading(false);
     });
 
@@ -3610,85 +3771,188 @@ export default function MainApp() {
     }
 
     const compRef = doc(db, 'companies', effectiveCompanyId);
-    const unsubscribeCompany = onSnapshot(compRef, (compSnap) => {
-      if (compSnap.exists()) {
-        const compData = compSnap.data() || {};
-        setCurrentCompany({ id: compSnap.id, ...compData });
+    
+    // Only subscribe to company document if publicly allowed, or user is super admin, or they belong to the company
+    const canListenToCompany = !user || isSuperAdmin || (currentUserData && currentUserData.companyId === effectiveCompanyId);
 
-        // Auto synchronization of the company's registered version with the actual executing client build version (from package.json)
-        const dbVersion = compData.version || '';
-        if (dbVersion !== LOCAL_VERSION) {
-          updateDoc(doc(db, 'companies', compSnap.id), {
-            version: LOCAL_VERSION,
-            updatedAt: Timestamp.now()
-          }).catch(err => console.warn("[Version Auto-Sync] Failed updating company version to Firestore:", err));
+    let unsubscribeCompany = () => {};
+    if (canListenToCompany) {
+      unsubscribeCompany = onSnapshot(compRef, async (compSnap) => {
+        if (compSnap.exists()) {
+          const compData = compSnap.data() || {};
+          setCurrentCompany({ id: compSnap.id, ...compData });
+
+          // Auto synchronization of the company's registered version with the actual executing client build version (from package.json)
+          const dbVersion = compData.version || '';
+          if (dbVersion !== LOCAL_VERSION) {
+            updateDoc(doc(db, 'companies', compSnap.id), {
+              version: LOCAL_VERSION,
+              updatedAt: Timestamp.now()
+            }).catch(err => console.warn("[Version Auto-Sync] Failed updating company version to Firestore:", err));
+          }
+          
+          // Auto synchronization with dbMode setting from license management
+          const savedCompanyDbMode = compData.dbMode || 'default';
+          const currentSavedMode = localStorage.getItem('DB_MODE_OVERRIDE') || 'default';
+          const isHostWeb = window.location.hostname !== 'localhost' && 
+                             window.location.hostname !== '127.0.0.1' && 
+                             !/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname);
+          
+          // If the company is strictly local-only and we are on the cloud website,
+          // we must NOT toggle DB_MODE_OVERRIDE to 'local' (otherwise it breaks Cloud Firebase Auth/session and kicks the user out).
+          // Instead, keep DB_MODE_OVERRIDE as default/online so they remain signed in, and render the lock screen.
+          const targetSavedMode = (savedCompanyDbMode === 'local' && isHostWeb) ? 'default' : savedCompanyDbMode;
+
+          if (isHostWeb) {
+            // Cloud/Web hosts always run completely in online Mode. We sync DB_MODE_OVERRIDE silently and never reload!
+            if (localStorage.getItem('DB_MODE_OVERRIDE') !== 'online') {
+              localStorage.setItem('DB_MODE_OVERRIDE', 'online');
+            }
+          } else if (targetSavedMode !== currentSavedMode) {
+            const now = Date.now();
+            const lastReloadStr = sessionStorage.getItem('LAST_SYNC_RELOAD');
+            const lastReload = lastReloadStr ? parseInt(lastReloadStr, 10) : 0;
+            
+            if (now - lastReload < 6000) {
+              console.warn("[Database Sync] Switched detected but reload suppressed because a reload happened less than 6 seconds ago. Preventing loops.");
+              return;
+            }
+            
+            sessionStorage.setItem('LAST_SYNC_RELOAD', now.toString());
+            localStorage.setItem('DB_MODE_OVERRIDE', targetSavedMode);
+            console.log(`[Database Sync] Switched from ${currentSavedMode} to ${targetSavedMode} based on company's license settings.`);
+            toast.info("Ajustando banco de dados com base na licença da empresa...", { duration: 1500 });
+            setTimeout(() => {
+              window.location.reload();
+            }, 800);
+          }
+        } else {
+          // Auto-provision default-company-id if it does not exist under Firestore (dynamic self-healing)
+          if (effectiveCompanyId === 'default-company-id') {
+            console.log("[Auto-Provision] Default company not found in DB. Seeding...");
+            try {
+              await setDoc(compRef, {
+                name: "AF Suporte Técnico em Seg. e Inf.",
+                tradeName: "AF Suporte Técnico",
+                cnpj: "42.000.000/0001-00",
+                phone: "(11) 99999-9999",
+                address: "Av. Principal, 1000",
+                status: "active",
+                inviteCode: "MASTER",
+                createdAt: Timestamp.now(),
+                dbMode: "online",
+                maxStationsLimit: 5,
+                version: LOCAL_VERSION,
+                updatedAt: Timestamp.now()
+              });
+
+              // Also seed permissions
+              await setDoc(doc(db, 'companies', 'default-company-id', 'settings', 'permissions'), {
+                rolePermissions: {
+                  super_admin: ['all'],
+                  owner: ['all'],
+                  admin: ['all'],
+                  tecnico: ['visits', 'serviceOrders', 'clients']
+                },
+                createdAt: Timestamp.now()
+              });
+
+              // Also seed general settings
+              await setDoc(doc(db, 'companies', 'default-company-id', 'settings', 'general'), {
+                companyName: "AF Suporte Técnico em Seg. e Inf.",
+                cnpj: "42.000.000/0001-00",
+                phone: "(11) 99999-9999",
+                address: "Av. Principal, 1000",
+                serviceTypes: ['Suporte Remoto', 'Visita Técnica', 'Manutenção Lab', 'Consultoria', 'Instalação de Rede', 'CFTV'],
+                payableDestinations: ['Caixa Interno Default', 'Banco Principal'],
+                payableCategories: ['Infraestrutura', 'Ferramentas de Software', 'Marketing Silencioso', 'Logística de Equipamentos', 'Impostos / Tributos', 'Equipe Remota'],
+                installmentPlans: [
+                  { installments: 1, interest: 0 },
+                  { installments: 2, interest: 1.5 },
+                  { installments: 3, interest: 2.0 },
+                  { installments: 4, interest: 2.5 },
+                  { installments: 5, interest: 3.0 },
+                  { installments: 6, interest: 3.5 },
+                  { installments: 10, interest: 5.0 },
+                  { installments: 12, interest: 6.0 }
+                ],
+                createdAt: Timestamp.now()
+              });
+
+              console.log("[Auto-Provision] Default company successfully seeded!");
+              return;
+            } catch (seedErr) {
+              console.error("Failed to seed default-company-id:", seedErr);
+            }
+          }
+          setCurrentCompany(null);
         }
-        
-        // Auto synchronization with dbMode setting from license management
-        const savedCompanyDbMode = compData.dbMode || 'default';
-        const currentSavedMode = localStorage.getItem('DB_MODE_OVERRIDE') || 'default';
-        const isHostWeb = window.location.hostname !== 'localhost' && 
-                           window.location.hostname !== '127.0.0.1' && 
-                           !/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname);
-        
-        // If the company is strictly local-only and we are on the cloud website,
-        // we must NOT toggle DB_MODE_OVERRIDE to 'local' (otherwise it breaks Cloud Firebase Auth/session and kicks the user out).
-        // Instead, keep DB_MODE_OVERRIDE as default/online so they remain signed in, and render the lock screen.
-        const targetSavedMode = (savedCompanyDbMode === 'local' && isHostWeb) ? 'default' : savedCompanyDbMode;
-
-        if (targetSavedMode !== currentSavedMode) {
-          localStorage.setItem('DB_MODE_OVERRIDE', targetSavedMode);
-          console.log(`[Database Sync] Switched from ${currentSavedMode} to ${targetSavedMode} based on company's license settings.`);
-          toast.info("Ajustando banco de dados com base na licença da empresa...", { duration: 1500 });
-          setTimeout(() => {
-            window.location.reload();
-          }, 800);
+        setLoading(false);
+      }, (error: any) => {
+        const errStr = String(error?.message || error || "").toLowerCase();
+        if (errStr.includes("permission") || errStr.includes("insufficient")) {
+          console.log("[Listener de empresa] Permissão negada ou sessão não autenticada no Firestore (suprimido).");
+        } else {
+          console.error("Erro no listener de empresa:", error);
         }
-      } else {
-        setCurrentCompany(null);
-      }
-      setLoading(false);
-    }, (error) => {
-      console.error("Erro no listener de empresa:", error);
-      setLoading(false);
-    });
+        setLoading(false);
+      });
+    }
 
-    const unsubRoles = onSnapshot(doc(db, 'companies', effectiveCompanyId, 'settings', 'roles'), (docSnap) => {
-      if (docSnap.exists()) {
-        setCustomRoles(docSnap.data().roles || []);
-      } else {
-        setCustomRoles([]);
-      }
-    }, (error) => {
-      console.error("Erro no listener de papéis customizados:", error);
-    });
+    // Only subscribe to secure subcollections (roles and terminals) if authorized and company matches user profile (or super admin)
+    const canListenToSecureData = isSuperAdmin || (user && currentUserData && currentUserData.companyId === effectiveCompanyId);
 
-    const terminalsRef = collection(db, 'companies', effectiveCompanyId, 'terminals');
-    const unsubscribeTerminals = onSnapshot(terminalsRef, (snap) => {
-      const list = snap.docs.map(tDoc => ({ id: tDoc.id, ...tDoc.data() }));
-      setCompanyTerminals(list);
-      
-      const localId = localStorage.getItem('TERMINAL_ID');
-      if (localId) {
-        const found = list.find(t => t.id === localId);
-        if (found) {
-          setCurrentTerminal(found);
+    let unsubRoles = () => {};
+    let unsubscribeTerminals = () => {};
+
+    if (canListenToSecureData) {
+      unsubRoles = onSnapshot(doc(db, 'companies', effectiveCompanyId, 'settings', 'roles'), (docSnap) => {
+        if (docSnap.exists()) {
+          setCustomRoles(docSnap.data().roles || []);
+        } else {
+          setCustomRoles([]);
+        }
+      }, (error: any) => {
+        const errStr = String(error?.message || error || "").toLowerCase();
+        if (errStr.includes("permission") || errStr.includes("insufficient")) {
+          console.log("[Listener de papéis customizados] Permissão negada ou sessão não autenticada (suprimido).");
+        } else {
+          console.error("Erro no listener de papéis customizados:", error);
+        }
+      });
+
+      const terminalsRef = collection(db, 'companies', effectiveCompanyId, 'terminals');
+      unsubscribeTerminals = onSnapshot(terminalsRef, (snap) => {
+        const list = snap.docs.map(tDoc => ({ id: tDoc.id, ...tDoc.data() }));
+        setCompanyTerminals(list);
+        
+        const localId = localStorage.getItem('TERMINAL_ID');
+        if (localId) {
+          const found = list.find(t => t.id === localId);
+          if (found) {
+            setCurrentTerminal(found);
+          } else {
+            setCurrentTerminal(null);
+          }
         } else {
           setCurrentTerminal(null);
         }
-      } else {
-        setCurrentTerminal(null);
-      }
-    }, (error) => {
-      console.error("Erro no listener de terminais:", error);
-    });
+      }, (error: any) => {
+        const errStr = String(error?.message || error || "").toLowerCase();
+        if (errStr.includes("permission") || errStr.includes("insufficient")) {
+          console.log("[Listener de terminais] Permissão negada ou sessão não autenticada (suprimido).");
+        } else {
+          console.error("Erro no listener de terminais:", error);
+        }
+      });
+    }
 
     return () => {
       unsubscribeCompany();
       unsubRoles();
       unsubscribeTerminals();
     };
-  }, [currentUserData?.companyId, selectedCompanyId, isSuperAdmin]);
+  }, [user, currentUserData?.companyId, selectedCompanyId, isSuperAdmin]);
 
   const userRoles = useMemo(() => {
     // If customRoles is empty, we show the suggested ones as virtual custom roles for existing companies
@@ -4193,6 +4457,13 @@ export default function MainApp() {
       prompt: 'select_account'
     });
     try {
+      const wasMockActive = localStorage.getItem('MOCK_AUTH_ACTIVE') === 'true';
+      localStorage.removeItem('MOCK_AUTH_ACTIVE');
+      if (wasMockActive) {
+        // Reload is needed to switch modules from localDb back to real Firebase client
+        window.location.reload();
+        return;
+      }
       await signInWithPopup(auth, provider);
       toast.success('Login realizado com sucesso!');
       enterFullscreen();
@@ -4426,9 +4697,11 @@ export default function MainApp() {
     }
 
     const finalEmail = getFinalEmail(email);
-    if (!finalEmail || !finalEmail.includes('@')) {
-      toast.error('O formato do usuário ou e-mail é inválido.');
-      return;
+    if (authMode === 'register') {
+      if (!finalEmail || !finalEmail.includes('@')) {
+        toast.error('O formato do e-mail é inválido.');
+        return;
+      }
     }
     
     setIsAuthLoading(true);
@@ -4439,79 +4712,92 @@ export default function MainApp() {
       if (authMode === 'login') {
         let isSuccessfullySignedIn = false;
         let userCredential = null;
-        try {
-          // Enforce a safety timeout on the signInWithEmailAndPassword promise
-          const signInPromise = signInWithEmailAndPassword(auth, finalEmail, cleanPassword);
-          const timeoutPromise = new Promise<never>((_, reject) => 
-            setTimeout(() => reject(new Error('TIMEOUT')), 8000)
-          );
+        let authData: any = null;
 
-          userCredential = await Promise.race([signInPromise, timeoutPromise]);
-          isSuccessfullySignedIn = true;
-        } catch (signInErr: any) {
-          // Backward-compatible fallback. If they autofilled with @segurtecpro.com, try the legacy @segurpro.com domain
-          if (finalEmail.endsWith('@segurtecpro.com')) {
-            const oldEmail = finalEmail.replace('@segurtecpro.com', '@segurpro.com');
-            console.log(`Checking backward-compatible login session for legacy domain: ${oldEmail}`);
+        try {
+          // 1. Verify credentials against 'Equipe / Permissões' (users.json and Firestore users)
+          const res = await fetch('/api/auth/fallback-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password: cleanPassword })
+          });
+
+          if (!res.ok) {
+            const errRes = await res.json().catch(() => ({}));
+            throw new Error(errRes.error || 'Credenciais de equipe incorretas.');
+          }
+
+          authData = await res.json();
+          if (!authData?.success || !authData?.user) {
+            throw new Error('Falha na validação de equipe.');
+          }
+
+          // 2. Map and sign-in
+          if (authData.customToken) {
             try {
-              const retryPromise = signInWithEmailAndPassword(auth, oldEmail, cleanPassword);
-              const timeoutPromise = new Promise<never>((_, reject) => 
-                setTimeout(() => reject(new Error('TIMEOUT')), 8000)
-              );
-              userCredential = await Promise.race([retryPromise, timeoutPromise]);
+              userCredential = await signInWithCustomToken(auth, authData.customToken);
               isSuccessfullySignedIn = true;
-            } catch (retryErr) {
-              console.warn("Legacy domain sign-in also failed, proceeding to server proxy fallback");
+            } catch (tokenErr) {
+              console.warn("Could not sign-in with custom token, falling back to standard email/password check:", tokenErr);
             }
           }
 
           if (!isSuccessfullySignedIn) {
-            console.warn("Standard client login failed or timed out, trying API fallback:", signInErr.message || signInErr);
-            
             try {
-              // Let's call the /api/auth/fallback-login endpoint
-              const res = await fetch('/api/auth/fallback-login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password: cleanPassword })
-              });
-            
-            if (res.ok) {
-              const data = await res.json();
-              if (data.success && data.customToken) {
-                // Sign in with the custom token
-                userCredential = await signInWithCustomToken(auth, data.customToken);
-                isSuccessfullySignedIn = true;
-              } else if (data.success && data.user) {
-                // Local simulation success or bypass with a mock user
-                const mockUser = {
-                  uid: data.user.uid,
-                  email: data.user.email,
-                  displayName: data.user.displayName,
-                  emailVerified: true
-                };
-                setUser(mockUser);
-                isSuccessfullySignedIn = true;
-                toast.success(`Bem-vindo, ${mockUser.displayName}!`);
-                enterFullscreen();
-                setIsAuthLoading(false);
-                return;
-              } else {
-                throw signInErr; // Re-throw original sign-in error if API response lacks tokens
-              }
-            } else {
-              throw signInErr; // Re-throw original sign-in error if API failed
+              userCredential = await signInWithEmailAndPassword(auth, finalEmail, cleanPassword);
+              isSuccessfullySignedIn = true;
+            } catch (authErr) {
+              console.warn("Could not sign-in with standard email/password, falling back to local DB/mock mode:", authErr);
             }
-          } catch (fallbackErr) {
-            console.error("Fallback login also failed:", fallbackErr);
-            throw signInErr; // Prefer throwing the original auth sign-in error with code information
           }
-        }
-      }
 
-        if (isSuccessfullySignedIn && userCredential) {
-          toast.success(`Bem-vindo, ${userCredential.user.displayName || 'usuário'}!`);
+          if (!isSuccessfullySignedIn) {
+            // Offline / local / backup fallback login mode
+            const mockUser = {
+              uid: authData.user.uid,
+              email: authData.user.email,
+              displayName: authData.user.displayName,
+              emailVerified: true
+            };
+            localStorage.setItem('MOCK_AUTH_ACTIVE', 'true');
+            setUser(mockUser);
+            isSuccessfullySignedIn = true;
+            
+            // Reload the page to initialize the applet in local database fallback mode seamlessly
+            window.location.reload();
+            return;
+          }
+
+          // 3. Populate role, company, password settings dynamically on the client
+          const finalProfile = {
+            uid: authData.user.uid,
+            email: authData.user.email,
+            displayName: authData.user.displayName,
+            role: authData.user.role || 'tecnico',
+            companyId: authData.user.companyId || 'default-company-id',
+            password: cleanPassword, // Preserve custom password field
+            createdAt: Timestamp.now()
+          };
+
+          setCurrentUserData(finalProfile);
+
+          // Proactively try to write the verified user doc to Firestore users collection
+          try {
+            await setDoc(doc(db, 'users', authData.user.uid), finalProfile, { merge: true });
+          } catch (fsErr) {
+            console.warn("Firestore save of verified user credentials bypassed:", fsErr);
+          }
+
+          toast.success(`Bem-vindo, ${authData.user.displayName || 'membro da equipe'}!`);
           enterFullscreen();
+          setIsAuthLoading(false);
+          return;
+
+        } catch (teamAuthErr: any) {
+          console.error("Team authentication check failed:", teamAuthErr);
+          toast.error(`Acesso Recusado: Usuário ou senha incorretos para o acesso de: "${email}". Certifique-se de que a senha está correta e utilize o nome correto de equipe.`);
+          setIsAuthLoading(false);
+          return;
         }
       } else {
         if (!displayName) {
@@ -4650,331 +4936,318 @@ export default function MainApp() {
             </div>
           </div>
 
-          {/* Two-Column Layout */}
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-stretch">
-            
-            {/* Left Column: Email/Password Authentication (spanning 7 columns on md) */}
-            <div className="md:col-span-7 flex flex-col">
-              <Card className={`border-[#2d3139]/80 bg-[#1a1d23] h-full flex flex-col justify-between ${inviteCodeUrl ? 'ring-2 ring-blue-500/30' : ''}`}>
-                <CardHeader className="p-4 pb-2 space-y-1">
-                  <CardTitle className="text-white text-base flex items-center gap-2">
-                    <Shield size={16} className="text-[#3b82f6]" />
-                    {inviteCodeUrl 
-                      ? (authMode === 'login' ? 'Vincular Convite' : 'Criar Conta de Admin') 
-                      : (authMode === 'login' ? 'Entrar com E-mail' : 'Criar Nova Conta')}
-                  </CardTitle>
-                  <CardDescription className="text-[#71717a] text-[11px] leading-snug">
-                    {inviteCodeUrl ? (
-                      <div className="bg-blue-500/10 border border-blue-500/20 p-2.5 rounded mb-1 text-left">
-                         <p className="text-blue-400 text-[9px] font-black uppercase tracking-[0.2em] flex items-center gap-1.5">
-                           <Shield size={12} /> Convite Mestre
-                         </p>
-                         <p className="text-white text-[11px] mt-0.5">
-                           Registrando convite mestre <span className="font-mono font-bold text-blue-300">{inviteCodeUrl}</span>.
-                         </p>
-                      </div>
-                    ) : (authMode === 'login' ? 'Insira suas credenciais de segurança cadastradas.' : 'Cadastre sua conta para começar imediatamente.')}
-                  </CardDescription>
-                </CardHeader>
+          {/* Unified Login Card */}
+          <div className="max-w-md mx-auto w-full flex flex-col">
+            <Card className={`border-[#2d3139]/80 bg-[#1a1d23] w-full flex flex-col justify-between ${inviteCodeUrl ? 'ring-2 ring-blue-500/30' : ''}`}>
+              <CardHeader className="p-5 pb-3 space-y-1">
+                <CardTitle className="text-white text-base flex items-center gap-2">
+                  <Shield size={18} className="text-[#3b82f6]" />
+                  {inviteCodeUrl 
+                    ? (authMode === 'login' ? 'Vincular Convite' : 'Criar Conta de Admin') 
+                    : 'Acesse o Painel Seguro'}
+                </CardTitle>
+                <CardDescription className="text-[#71717a] text-[11px] leading-snug">
+                  {inviteCodeUrl ? (
+                    <div className="bg-blue-500/10 border border-blue-500/20 p-2.5 rounded mb-1 text-left">
+                       <p className="text-blue-400 text-[9px] font-black uppercase tracking-[0.2em] flex items-center gap-1.5">
+                         <Shield size={12} /> Convite Mestre
+                       </p>
+                       <p className="text-white text-[11px] mt-0.5">
+                         Registrando convite mestre <span className="font-mono font-bold text-blue-300">{inviteCodeUrl}</span>.
+                       </p>
+                    </div>
+                  ) : (
+                    'Central de acesso para administradores, instaladores e parceiros autorizados.'
+                  )}
+                </CardDescription>
+              </CardHeader>
 
-                <CardContent className="p-4 pt-1 space-y-3 flex-1">
-                  {lastAuthError && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-                      <div className="bg-[#1a1d23] border border-[#2d3139] rounded-xl max-w-md w-full overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 text-left">
-                        {/* Header of Modal */}
-                        <div className="p-5 border-b border-[#2d3139] bg-[#1f232b] flex items-center gap-2.5">
-                          <div className="p-2 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400">
-                            <ShieldAlert size={20} />
-                          </div>
-                          <div>
-                            <h3 className="font-bold text-white text-sm md:text-base">
-                              {lastAuthError === 'INVALID_CREDENTIALS' 
-                                ? 'Credencial Inválida ou Não Encontrada' 
-                                : lastAuthError === 'TIMEOUT' 
-                                  ? 'Tempo de Conexão Esgotado' 
-                                  : 'Problema na Autenticação'}
-                            </h3>
-                            <p className="text-[11px] text-gray-400 mt-0.5">Identificamos o seguinte detalhe:</p>
-                          </div>
+              <CardContent className="p-5 pt-1 space-y-4 flex-1">
+                {lastAuthError && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                    <div className="bg-[#1a1d23] border border-[#2d3139] rounded-xl max-w-md w-full overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 text-left">
+                      {/* Header of Modal */}
+                      <div className="p-5 border-b border-[#2d3139] bg-[#1f232b] flex items-center gap-2.5">
+                        <div className="p-2 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400">
+                          <ShieldAlert size={20} />
                         </div>
-                        
-                        {/* Content of Modal */}
-                        <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto text-xs md:text-sm text-gray-300">
-                          {lastAuthError === 'INVALID_CREDENTIALS' ? (
-                            <div className="space-y-3 leading-relaxed">
-                              <p className="text-[#e2e8f0]">
-                                O Firebase retornou <span className="text-red-400 font-mono text-[11px] bg-[#0f1115] px-1.5 py-0.5 rounded border border-[#2d3139]">auth/invalid-credential</span>. Se o login está falhando, considere as soluções mais comuns:
-                              </p>
-                              <div className="bg-[#0f1115] rounded-lgs p-3.5 border border-[#2d3139]/55 space-y-3 rounded-lg text-xs">
-                                <div className="space-y-1">
-                                  <p className="font-bold text-white text-[11.5px] flex items-center gap-1.5">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                                    Fez o primeiro acesso via Google?
-                                  </p>
-                                  <p className="text-[#b0b0b0] text-[11px] pl-3">
-                                    Se você se cadastrou clicando no botão do Google, você <span className="text-blue-400 font-bold">não tem uma senha tradicional</span> cadastrada. Entre utilizando o botão <strong className="text-white">Google</strong> abaixo.
-                                  </p>
-                                </div>
-                                
-                                <hr className="border-[#2d3139]/40" />
+                        <div>
+                          <h3 className="font-bold text-white text-sm md:text-base">
+                            {lastAuthError === 'INVALID_CREDENTIALS' 
+                              ? 'Credencial Inválida ou Não Encontrada' 
+                              : lastAuthError === 'TIMEOUT' 
+                                ? 'Tempo de Conexão Esgotado' 
+                                : 'Problema na Autenticação'}
+                          </h3>
+                          <p className="text-[11px] text-gray-400 mt-0.5">Identificamos o seguinte detalhe:</p>
+                        </div>
+                      </div>
+                      
+                      {/* Content of Modal */}
+                      <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto text-xs md:text-sm text-gray-300">
+                        {lastAuthError === 'INVALID_CREDENTIALS' ? (
+                          <div className="space-y-3 leading-relaxed">
+                            <p className="text-[#e2e8f0]">
+                              O Firebase retornou <span className="text-red-400 font-mono text-[11px] bg-[#0f1115] px-1.5 py-0.5 rounded border border-[#2d3139]">auth/invalid-credential</span>. Se o login está falhando, considere as soluções mais comuns:
+                            </p>
+                            <div className="bg-[#0f1115] rounded-lgs p-3.5 border border-[#2d3139]/55 space-y-3 rounded-lg text-xs">
+                              <div className="space-y-1">
+                                <p className="font-bold text-white text-[11.5px] flex items-center gap-1.5">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                  Fez o primeiro acesso via Google?
+                                </p>
+                                <p className="text-[#b0b0b0] text-[11px] pl-3">
+                                  Se você se cadastrou clicando no botão do Google, você <span className="text-blue-400 font-bold">não tem uma senha tradicional</span> cadastrada. Entre utilizando o botão <strong className="text-white">Google</strong> abaixo.
+                                </p>
+                              </div>
+                              
+                              <hr className="border-[#2d3139]/40" />
 
-                                <div className="space-y-1">
-                                  <p className="font-bold text-white text-[11.5px] flex items-center gap-1.5">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                                    Quer usar Senha Tradicional?
-                                  </p>
-                                  <p className="text-[#b0b0b0] text-[11px] pl-3">
-                                    Se você usava o Google mas agora quer entrar com e-mail/senha tradicional, clique no botão <button type="button" onClick={() => { setLastAuthError(null); handlePasswordReset(); }} className="text-blue-400 font-semibold underline hover:text-blue-300 focus:outline-none">Esqueceu a senha?</button>. Você receberá um e-mail para registrar sua senha.
-                                  </p>
-                                </div>
+                              <div className="space-y-1">
+                                <p className="font-bold text-white text-[11.5px] flex items-center gap-1.5">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                  Quer usar Senha Tradicional?
+                                </p>
+                                <p className="text-[#b0b0b0] text-[11px] pl-3">
+                                  Se você usava o Google mas agora quer entrar com e-mail/senha tradicional, clique no botão <button type="button" onClick={() => { setLastAuthError(null); handlePasswordReset(); }} className="text-blue-400 font-semibold underline hover:text-blue-300 focus:outline-none">Esqueceu a senha?</button>. Você receberá um e-mail para registrar sua senha.
+                                </p>
+                              </div>
 
-                                <hr className="border-[#2d3139]/40" />
+                              <hr className="border-[#2d3139]/40" />
 
-                                <div className="space-y-1">
-                                  <p className="font-bold text-white text-[11.5px] flex items-center gap-1.5">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                                    Usuários Criados Pelo Administrador
-                                  </p>
-                                  <p className="text-[#b0b0b0] text-[11px] pl-3">
-                                    Se você é membro de equipe, o seu usuário é o seu e-mail cadastrado em letras minúsculas. Certifique-se de que não possui espaços ou letras maiúsculas.
-                                  </p>
-                                </div>
+                              <div className="space-y-1">
+                                <p className="font-bold text-white text-[11.5px] flex items-center gap-1.5">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                  Usuários Criados Pelo Administrador
+                                </p>
+                                <p className="text-[#b0b0b0] text-[11px] pl-3">
+                                  Se você é membro de equipe, o seu usuário é o seu e-mail cadastrado em letras minúsculas. Certifique-se de que não possui espaços ou letras maiúsculas.
+                                </p>
                               </div>
                             </div>
-                          ) : lastAuthError === 'TIMEOUT' ? (
-                            <p className="leading-relaxed text-xs text-gray-300">
-                              O servidor Firebase demorou mais que 8 segundos para responder. Verifique se o método de "E-mail/Senha" está devidamente ativado na aba "Autenticação" do seu console Firebase ou tente novamente com outra conexão de internet.
-                            </p>
-                          ) : lastAuthError === 'OP_NOT_ALLOWED' ? (
-                            <p className="leading-relaxed text-xs text-gray-300">
-                              O provedor de e-mail e senha está desativado no Firebase. Ative o método "E-mail/Senha" no seu console Firebase (Seção de Autenticação para que logins de equipe funcionem).
-                            </p>
-                          ) : lastAuthError === 'EMAIL_IN_USE' ? (
-                            <p className="leading-relaxed text-xs text-gray-300">
-                              Este usuário ou e-mail já está em uso em uma conta no sistema. Por favor utilize uma credencial diferente ou faça o login com o Google.
-                            </p>
-                          ) : lastAuthError === 'WEAK_PASSWORD' ? (
-                            <p className="leading-relaxed text-xs text-gray-300">
-                              A senha inserida é considerada fraca pela segurança do Firebase. A senha deve ter pelo menos 6 caracteres.
-                            </p>
-                          ) : lastAuthError === 'INVALID_EMAIL' ? (
-                            <p className="leading-relaxed text-xs text-gray-300">
-                              O formato do usuário ou e-mail é considerado inválido pelo Firebase. Verifique se digitou corretamente.
-                            </p>
-                          ) : (
-                            <p className="leading-relaxed text-xs text-gray-300">
-                              Usuário ou senha incorretos. Se você foi cadastrado pelo administrador de equipe, verifique letras maiúsculas/minúsculas e certifique-se de que a senha inserida está correta.
-                            </p>
-                          )}
-                        </div>
-
-                        {/* Footer of Modal */}
-                        <div className="p-4 bg-[#14161c] border-t border-[#2d3139] flex flex-col md:flex-row gap-2 justify-end">
-                          <Button 
-                            type="button" 
-                            disabled={isLoggingIn}
-                            onClick={() => {
-                              setLastAuthError(null);
-                              handleLogin();
-                            }}
-                            variant="outline"
-                            className="w-full md:w-auto gap-2 border-[#2d3139] text-white hover:bg-[#2d3139] h-10 px-4 text-xs font-semibold"
-                          >
-                            {isLoggingIn ? (
-                              <Loader2 className="h-4 w-4 animate-spin text-[#3b82f6]" />
-                            ) : (
-                              <svg className="h-4 w-4" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
-                                <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
-                              </svg>
-                            )}
-                            {isLoggingIn ? 'Autenticando...' : 'Entrar com Google'}
-                          </Button>
-                          <Button 
-                            type="button" 
-                            onClick={() => setLastAuthError(null)}
-                            className="w-full md:w-auto bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none h-10 px-6 text-xs font-semibold"
-                          >
-                            Ok
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  <form onSubmit={handleEmailAuth} className="space-y-2.5 text-left">
-                    {authMode === 'register' && (
-                      <div className="space-y-1">
-                        <Label htmlFor="reg-name" className="text-[#a0a0a0] text-[11px]">Nome Completo</Label>
-                        <Input 
-                          id="reg-name" 
-                          type="text" 
-                          value={displayName} 
-                          onChange={e => setDisplayName(e.target.value)} 
-                          placeholder="Seu nome"
-                          className="bg-[#0f1115] border-[#2d3139] text-white h-8.5 text-xs px-3 py-1.5" 
-                        />
-                      </div>
-                    )}
-                    <div className="space-y-1">
-                      <Label htmlFor="auth-username" className="text-[#a0a0a0] text-[11px]">Usuário ou E-mail</Label>
-                      <Input 
-                        id="auth-username" 
-                        type="text" 
-                        value={email} 
-                        onChange={e => setEmail(e.target.value)} 
-                        placeholder="Seu usuário ou e-mail registrado"
-                        className="bg-[#0f1115] border-[#2d3139] text-white h-8.5 text-xs px-3 py-1.5" 
-                      />
-                      <p className="text-[9px] text-[#555] mt-0.5 italic">Dica: Se não for e-mail, usaremos @segurtecpro.com</p>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="auth-pass" className="text-[#a0a0a0] text-[11px]">Senha</Label>
-                        {authMode === 'login' && (
-                          <button
-                            type="button"
-                            onClick={handlePasswordReset}
-                            className="text-[10px] text-[#3b82f6] hover:text-blue-300 hover:underline transition-colors focus:outline-none"
-                          >
-                            Esqueceu a senha?
-                          </button>
+                          </div>
+                        ) : lastAuthError === 'TIMEOUT' ? (
+                          <p className="leading-relaxed text-xs text-gray-300">
+                            O servidor Firebase demorou mais que 8 segundos para responder. Verifique se o método de "E-mail/Senha" está devidamente ativado na aba "Autenticação" do seu console Firebase ou tente novamente com outra conexão de internet.
+                          </p>
+                        ) : lastAuthError === 'OP_NOT_ALLOWED' ? (
+                          <p className="leading-relaxed text-xs text-gray-300">
+                            O provedor de e-mail e senha está desativado no Firebase. Ative o método "E-mail/Senha" no seu console Firebase (Seção de Autenticação para que logins de equipe funcionem).
+                          </p>
+                        ) : lastAuthError === 'EMAIL_IN_USE' ? (
+                          <p className="leading-relaxed text-xs text-gray-300">
+                            Este usuário ou e-mail já está em uso em uma conta no sistema. Por favor utilize uma credencial diferente ou faça o login com o Google.
+                          </p>
+                        ) : lastAuthError === 'WEAK_PASSWORD' ? (
+                          <p className="leading-relaxed text-xs text-gray-300">
+                            A senha inserida é considerada fraca pela segurança do Firebase. A senha deve ter pelo menos 6 caracteres.
+                          </p>
+                        ) : lastAuthError === 'INVALID_EMAIL' ? (
+                          <p className="leading-relaxed text-xs text-gray-300">
+                            O formato do usuário ou e-mail é considerado inválido pelo Firebase. Verifique se digitou corretamente.
+                          </p>
+                        ) : (
+                          <p className="leading-relaxed text-xs text-gray-300">
+                            Usuário ou senha incorretos. Se você foi cadastrado pelo administrador de equipe, verifique letras maiúsculas/minúsculas e certifique-se de que a senha inserida está correta.
+                          </p>
                         )}
                       </div>
-                      <div className="relative">
-                        <Input 
-                          id="auth-pass" 
-                          type={showPassword ? "text" : "password"} 
-                          value={password} 
-                          onChange={e => setPassword(e.target.value)} 
-                          placeholder="••••••••"
-                          className="bg-[#0f1115] border-[#2d3139] text-white pr-10 h-8.5 text-xs px-3 py-1.5" 
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-[#71717a] hover:text-white transition-colors"
+
+                      {/* Footer of Modal */}
+                      <div className="p-4 bg-[#14161c] border-t border-[#2d3139] flex flex-col md:flex-row gap-2 justify-end">
+                        <Button 
+                          type="button" 
+                          disabled={isLoggingIn}
+                          onClick={() => {
+                            setLastAuthError(null);
+                            handleLogin();
+                          }}
+                          variant="outline"
+                          className="w-full md:w-auto gap-2 border-[#2d3139] text-white hover:bg-[#2d3139] h-10 px-4 text-xs font-semibold"
                         >
-                          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                        </button>
+                          {isLoggingIn ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-[#3b82f6]" />
+                          ) : (
+                            <svg className="h-4 w-4" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
+                              <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
+                            </svg>
+                          )}
+                          {isLoggingIn ? 'Autenticando...' : 'Entrar com Google'}
+                        </Button>
+                        <Button 
+                          type="button" 
+                          onClick={() => setLastAuthError(null)}
+                          className="w-full md:w-auto bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none h-10 px-6 text-xs font-semibold"
+                        >
+                          Ok
+                        </Button>
                       </div>
                     </div>
-                    <Button type="submit" disabled={isAuthLoading} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none h-8.5 text-xs flex items-center justify-center gap-2 mt-1">
-                      {isAuthLoading ? (
-                        <>
-                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                          <span>{authMode === 'login' ? 'Entrando...' : 'Cadastrando...'}</span>
-                        </>
-                      ) : (
-                        <span>{authMode === 'login' ? 'Entrar com E-mail' : 'Cadastrar e Acessar'}</span>
-                      )}
-                    </Button>
-                  </form>
-
-                  <div className="pt-2 text-center">
-                    <button 
-                      onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
-                      className="text-[11px] text-[#3b82f6] hover:underline"
-                    >
-                      {authMode === 'login' ? 'Não tem uma conta? Cadastre-se' : 'Já tem uma conta? Faça login'}
-                    </button>
                   </div>
-                </CardContent>
-              </Card>
-            </div>
+                )}
 
-            {/* Right Column: Google Connection / Social Access (spanning 5 columns on md) */}
-            <div className="md:col-span-5 flex flex-col">
-              <Card className="border-[#2d3139]/80 bg-[#1a1d23] h-full flex flex-col justify-between">
-                <CardHeader className="p-4 pb-2 space-y-1">
-                  <CardTitle className="text-white text-base flex items-center gap-2">
-                    <svg className="h-4 w-4 text-[#3b82f6]" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
-                      <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
-                    </svg>
-                    Acesso Rápido
-                  </CardTitle>
-                  <CardDescription className="text-[#71717a] text-[11px] leading-snug">
-                    Conecte usando sua conta Google sem precisar de senhas.
-                  </CardDescription>
-                </CardHeader>
-
-                <CardContent className="p-4 pt-1 space-y-3 flex-1 flex flex-col justify-between">
-                  <div className="flex flex-col items-center justify-center text-center space-y-2 py-1">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500/20 to-purple-500/25 flex items-center justify-center border border-blue-500/30 animate-pulse">
-                      <svg className="h-5 w-5 text-[#3b82f6]" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
-                        <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
-                      </svg>
-                    </div>
-                    <div className="space-y-0.5">
-                      <p className="text-white font-semibold text-xs">Autenticação Unificada</p>
-                      <p className="text-[#a0a0a0] text-[10px]">Acesso rápido e criptografado.</p>
-                      <p className="text-[#71717a] text-[10px] leading-relaxed max-w-xs">
-                        Para administradores, instaladores e parceiros com conta Google.
-                      </p>
-                    </div>
-                  </div>
-
+                {/* Centralized Primary Login: Google Sign-In */}
+                <div className="space-y-2 pb-0.5">
                   <Button 
+                    type="button"
                     onClick={handleLogin} 
                     disabled={isLoggingIn}
-                    variant="outline" 
-                    className="w-full gap-2 border-[#2d3139] text-white hover:bg-[#3b82f6]/10 hover:text-white bg-[#0f1115] h-8.5 text-xs font-semibold shadow-sm transition-all duration-200"
+                    className="w-full flex items-center justify-center gap-2.5 bg-[#4285F4] hover:bg-[#357ae8] active:scale-[0.99] active:bg-[#2c69cf] text-white transition-all duration-150 h-10.5 text-xs font-bold rounded-lg shadow-md border border-[#4285F4]/20"
                   >
                     {isLoggingIn ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-[#3b82f6]" />
+                      <Loader2 className="h-4 w-4 animate-spin text-white" />
                     ) : (
-                      <svg className="h-3.5 w-3.5 text-white" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
+                      <svg className="h-4 w-4 fill-current text-white" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
                         <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
                       </svg>
                     )}
-                    {isLoggingIn ? 'Autenticando...' : 'Entrar com o Google'}
+                    {isLoggingIn ? 'Autenticando com Google...' : 'Entrar com o Google'}
                   </Button>
+                  <p className="text-[#a0a0a0] text-[10px] text-center font-medium leading-normal max-w-sm mx-auto">
+                    Acesso direto por credencial segura Google (Altamente Recomendado)
+                  </p>
+                </div>
 
-                  <div className="pt-2 border-t border-[#2d3139]/30 w-full space-y-1.5 mt-auto">
-                    <a 
-                      href="?assinatura=portal"
-                      className="flex items-center justify-center gap-2 text-[11px] text-[#71717a] hover:text-white transition-colors py-1"
-                    >
-                      <Key size={11} />
-                      Área de Assinatura do Cliente
-                    </a>
+                {/* Elegant Minimal Divider & Secondary Login (Shown only when running on a local host / local network) */}
+                {(() => {
+                  const isLocalHostName = window.location.hostname === 'localhost' || 
+                                          window.location.hostname === '127.0.0.1' || 
+                                          /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname);
+                  if (!isLocalHostName) return null;
+                  return (
+                    <>
+                      <div className="relative flex py-1.5 items-center">
+                          <div className="flex-grow border-t border-[#2d3139]/40"></div>
+                          <span className="flex-shrink mx-3 text-[#71717a] text-[9px] uppercase font-bold tracking-[0.16em] whitespace-nowrap">Ou com usuário e senha</span>
+                          <div className="flex-grow border-t border-[#2d3139]/40"></div>
+                      </div>
 
-                    {((import.meta as any).env.VITE_LOCAL_DB === 'true' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && (
-                      <Button 
-                        onClick={async () => {
-                          try {
-                            toast.info("Encerrando o servidor local...");
-                            await fetch('/api/system/shutdown', { method: 'POST' });
-                          } catch (e) {
-                            console.error("Não foi possível enviar comando de finalização ao servidor.", e);
-                          }
-                          window.close();
-                          setTimeout(() => {
-                            document.body.innerHTML = `
-                              <div style="min-height: 100vh; background-color: #0f1115; color: #e0e0e0; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; padding: 20px; text-align: center;">
-                                <div style="background-color: #1a1d23; border: 1px solid #2d3139; padding: 32px; border-radius: 12px; max-w: 400px; width: 100%; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);">
-                                  <div style="width: 48px; height: 48px; background-color: rgba(239, 68, 68, 0.1); border-radius: 9999px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto; border: 1px solid rgba(239, 68, 68, 0.2);">
-                                    <span style="color: #ef4444; font-size: 24px; font-weight: bold; line-height: 1;">✕</span>
-                                  </div>
-                                  <h2 style="color: #ffffff; margin-top: 0; font-size: 18px; font-weight: bold; text-transform: uppercase; tracking-wider; margin-bottom: 8px;">Servidor Encerrado</h2>
-                                  <p style="color: #a0a0a0; font-size: 13px; margin-bottom: 24px; line-height: 1.5;">O servidor local do SegurTec-Pro foi finalizado com sucesso.</p>
-                                  <p style="color: #71717a; font-size: 11px; font-style: italic;">Você já pode fechar esta janela do seu navegador.</p>
+                      {/* Secondary Login: Username and Password Form */}
+                      <form onSubmit={handleEmailAuth} className="space-y-3 text-left">
+                        {authMode === 'register' && (
+                          <div className="space-y-1 animate-in slide-in-from-top-2 duration-200">
+                            <Label htmlFor="reg-name" className="text-[#a0a0a0] text-[11px] font-medium">Nome Completo</Label>
+                            <Input 
+                              id="reg-name" 
+                              type="text" 
+                              value={displayName} 
+                              onChange={e => setDisplayName(e.target.value)} 
+                              placeholder="Seu nome"
+                              className="bg-[#0f1115] border-[#2d3139]/70 hover:border-[#3b82f6]/40 focus:border-[#3b82f6] text-white h-9 text-xs px-3 py-1.5 transition-colors duration-150" 
+                            />
+                          </div>
+                        )}
+                        <div className="space-y-1">
+                          <Label htmlFor="auth-username" className="text-[#a0a0a0] text-[11px] font-medium">Usuário ou E-mail</Label>
+                          <Input 
+                            id="auth-username" 
+                            type="text" 
+                            value={email} 
+                            onChange={e => setEmail(e.target.value)} 
+                            placeholder="Seu usuário ou e-mail registrado"
+                            className="bg-[#0f1115] border-[#2d3139]/70 hover:border-[#3b82f6]/40 focus:border-[#3b82f6] text-white h-9 text-xs px-3 py-1.5 transition-colors duration-150" 
+                          />
+                          <p className="text-[9px] text-[#555] mt-0.5 italic">Se não for e-mail, autocompletaremos com @segurtecpro.com</p>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="auth-pass" className="text-[#a0a0a0] text-[11px] font-medium">Senha</Label>
+                            {authMode === 'login' && (
+                              <button
+                                type="button"
+                                onClick={handlePasswordReset}
+                                className="text-[10px] text-[#3b82f6] hover:text-blue-300 hover:underline transition-colors focus:outline-none"
+                              >
+                                Esqueceu a senha?
+                              </button>
+                            )}
+                          </div>
+                          <div className="relative">
+                            <Input 
+                              id="auth-pass" 
+                              type={showPassword ? "text" : "password"} 
+                              value={password} 
+                              onChange={e => setPassword(e.target.value)} 
+                              placeholder="••••••••"
+                              className="bg-[#0f1115] border-[#2d3139]/70 hover:border-[#3b82f6]/40 focus:border-[#3b82f6] text-white pr-10 h-9 text-xs px-3 py-1.5 transition-colors duration-150" 
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowPassword(!showPassword)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#71717a] hover:text-white transition-colors"
+                            >
+                              {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                            </button>
+                          </div>
+                        </div>
+                        <Button type="submit" disabled={isAuthLoading} className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white border-none h-9 text-xs flex items-center justify-center gap-2 mt-1.5 font-bold transition-all duration-150">
+                          {isAuthLoading ? (
+                            <>
+                              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              <span>{authMode === 'login' ? 'Entrando...' : 'Cadastrando...'}</span>
+                            </>
+                          ) : (
+                            <span>{authMode === 'login' ? 'Entrar com E-mail' : 'Cadastrar e Acessar'}</span>
+                          )}
+                        </Button>
+                      </form>
+
+                      <div className="pt-1 text-center">
+                        <button 
+                          onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
+                          className="text-[11px] text-[#3b82f6] hover:underline hover:text-blue-400 font-medium transition-colors"
+                        >
+                          {authMode === 'login' ? 'Não tem uma conta? Cadastre-se' : 'Já tem uma conta? Faça login'}
+                        </button>
+                      </div>
+                    </>
+                  );
+                })()}
+
+                <div className="pt-2.5 border-t border-[#2d3139]/40 w-full space-y-1.5 mt-auto">
+                  <a 
+                    href="?assinatura=portal"
+                    className="flex items-center justify-center gap-2 text-[11px] text-[#71717a] hover:text-white transition-colors py-1 font-medium"
+                  >
+                    <Key size={11} />
+                    Área de Assinatura do Cliente
+                  </a>
+
+                  {((import.meta as any).env.VITE_LOCAL_DB === 'true' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && (
+                    <Button 
+                      onClick={async () => {
+                        try {
+                          toast.info("Encerrando o servidor local...");
+                          await fetch('/api/system/shutdown', { method: 'POST' });
+                        } catch (e) {
+                          console.error("Não foi possível enviar comando de finalização ao servidor.", e);
+                        }
+                        window.close();
+                        setTimeout(() => {
+                          document.body.innerHTML = `
+                            <div style="min-height: 100vh; background-color: #0f1115; color: #e0e0e0; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; padding: 20px; text-align: center;">
+                              <div style="background-color: #1a1d23; border: 1px solid #2d3139; padding: 32px; border-radius: 12px; max-w: 400px; width: 100%; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);">
+                                <div style="width: 48px; height: 48px; background-color: rgba(239, 68, 68, 0.1); border-radius: 9999px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto; border: 1px solid rgba(239, 68, 68, 0.2);">
+                                  <span style="color: #ef4444; font-size: 24px; font-weight: bold; line-height: 1;">✕</span>
                                 </div>
+                                <h2 style="color: #ffffff; margin-top: 0; font-size: 18px; font-weight: bold; text-transform: uppercase; tracking-wider; margin-bottom: 8px;">Servidor Encerrado</h2>
+                                <p style="color: #a0a0a0; font-size: 13px; margin-bottom: 24px; line-height: 1.5;">O servidor local do SegurTec-Pro foi finalizado com sucesso.</p>
+                                <p style="color: #71717a; font-size: 11px; font-style: italic;">Você já pode fechar esta janela do seu navegador.</p>
                               </div>
-                            `;
-                          }, 300);
-                        }}
-                        variant="outline"
-                        className="w-full gap-2 border-red-500/20 text-red-400 hover:bg-neutral-950 hover:text-red-500 transition-all h-8 text-[10px] font-black uppercase tracking-wider mt-0.5 border-dashed"
-                      >
-                        <Power size={11} className="mr-1.5" />
-                        Encerrar Servidor & Fechar Programa
-                      </Button>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
+                            </div>
+                          `;
+                        }, 300);
+                      }}
+                      variant="outline"
+                      className="w-full gap-2 border-red-500/20 text-red-400 hover:bg-neutral-950 hover:text-red-500 transition-all h-8 text-[10px] font-black uppercase tracking-wider mt-0.5 border-dashed"
+                    >
+                      <Power size={11} className="mr-1.5" />
+                      Encerrar Servidor & Fechar Programa
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           <p className="text-center text-xs text-[#71717a] font-medium tracking-wider pt-4">
@@ -4993,7 +5266,7 @@ export default function MainApp() {
     currentCompany && 
     (isSuperAdmin || (
       currentCompany.status !== 'blocked' &&
-      !(currentCompany.dbMode === 'local' && (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' && !/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname))) &&
+      !(currentCompany.dbMode === 'local' && !window.location.hostname.includes('.run.app') && (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' && !/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname))) &&
       !isLicenseVerifying &&
       (currentCompany.dbMode === 'online' || maxStationsLimit <= 1 || currentTerminal)
     ))
@@ -5063,7 +5336,7 @@ export default function MainApp() {
   }
 
   // Verification if company dbMode is strictly Local Only and user is accessing through standard Web (Cloud Website)
-  if (currentCompany && currentCompany.dbMode === 'local' && !isSuperAdmin) {
+  if (currentCompany && currentCompany.dbMode === 'local' && !isSuperAdmin && !window.location.hostname.includes('.run.app')) {
     const isWeb = window.location.hostname !== 'localhost' && 
                   window.location.hostname !== '127.0.0.1' && 
                   !/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname);
@@ -6450,15 +6723,36 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
       const userCredential = await createUserWithEmailAndPassword(secondaryAuth, finalEmail, cleanPassword);
       await updateProfile(userCredential.user, { displayName: newUser.name });
       
+      const targetCompanyId = currentCompany?.id || currentUserData?.companyId || 'default-company-id';
+
       // Add to Firestore
       await setDoc(doc(db, 'users', userCredential.user.uid), {
         uid: userCredential.user.uid,
         email: finalEmail,
         displayName: newUser.name,
         role: newUser.role,
-        companyId: currentUserData.companyId,
+        companyId: targetCompanyId,
+        password: cleanPassword, // Explicitly persist password inside Firestore users collection
         createdAt: Timestamp.now()
       });
+
+      // Forward-sync the newly added user to the local system database files
+      try {
+        await fetch('/api/admin/sync-local-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            uid: userCredential.user.uid,
+            email: finalEmail,
+            displayName: newUser.name,
+            password: cleanPassword,
+            role: newUser.role,
+            companyId: targetCompanyId
+          })
+        });
+      } catch (syncErr) {
+        console.warn("Could not synchronize newly created team user locally:", syncErr);
+      }
 
       await logAction('create', 'user', `Cadastrou usuário ${newUser.name} (${newUser.role})`, userCredential.user.uid);
 
@@ -6514,11 +6808,35 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
       const emailChanged = originalUser ? (originalUser.email?.trim().toLowerCase() !== finalEmail.trim().toLowerCase()) : false;
 
       // 1. Update metadata in Firestore first (Name, Email, Role)
-      await updateDoc(doc(db, 'users', editingUser.id), {
+      const resolvedCompanyId = editingUser.companyId || currentCompany?.id || currentUserData?.companyId || 'default-company-id';
+      const userDocUpdate: any = {
         displayName: editingUser.displayName,
         email: finalEmail,
-        role: editingUser.role
-      });
+        role: editingUser.role,
+        companyId: resolvedCompanyId
+      };
+      if (newPassword) {
+        userDocUpdate.password = newPassword;
+      }
+      await updateDoc(doc(db, 'users', editingUser.id), userDocUpdate);
+
+      // Force instant sync of role, company, name, and password locally
+      try {
+        await fetch('/api/admin/sync-local-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            uid: editingUser.id,
+            email: finalEmail,
+            displayName: editingUser.displayName,
+            password: newPassword || currentTeammatePassword,
+            role: editingUser.role,
+            companyId: resolvedCompanyId
+          })
+        });
+      } catch (syncErr) {
+        console.warn("Could not synchronize update of team user locally:", syncErr);
+      }
 
       await logAction('update', 'user', `Atualizou dados do usuário ${editingUser.displayName} no Firestore (${finalEmail})`, editingUser.id);
 
@@ -12963,6 +13281,14 @@ function SettingsManager({
             if (!salesSnap.empty) {
               docData.sales = salesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
             }
+            const finSnap = await getDocs(collection(db, 'companies', docSnap.id, 'financial'));
+            if (!finSnap.empty) {
+              docData.companyFinancial = finSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            }
+            const termSnap = await getDocs(collection(db, 'companies', docSnap.id, 'terminals'));
+            if (!termSnap.empty) {
+              docData.companyTerminals = termSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            }
           }
           docs.push(docData);
         }
@@ -13025,7 +13351,7 @@ function SettingsManager({
         if (!Array.isArray(docs)) continue;
 
         for (const item of docs) {
-          const { id: itemId, generalSettings, pixSettings, permissionsSettings, sales, ...data } = item;
+          const { id: itemId, generalSettings, pixSettings, permissionsSettings, sales, companyFinancial, companyTerminals, ...data } = item;
           
           const targetId = (col === 'companies') ? companyId : itemId;
 
@@ -13039,6 +13365,23 @@ function SettingsManager({
 
           // Special handling for subcollections if it's the companies collection
           if (col === 'companies') {
+            try {
+              const salesSnap = await getDocs(collection(db, 'companies', targetId, 'sales'));
+              for (const d of salesSnap.docs) {
+                await deleteDoc(doc(db, 'companies', targetId, 'sales', d.id));
+              }
+              const finSnap = await getDocs(collection(db, 'companies', targetId, 'financial'));
+              for (const d of finSnap.docs) {
+                await deleteDoc(doc(db, 'companies', targetId, 'financial', d.id));
+              }
+              const termSnap = await getDocs(collection(db, 'companies', targetId, 'terminals'));
+              for (const d of termSnap.docs) {
+                await deleteDoc(doc(db, 'companies', targetId, 'terminals', d.id));
+              }
+            } catch (err) {
+              console.error("Erro ao limpar subcoleções antigas da empresa:", err);
+            }
+
             if (generalSettings) {
               await setDoc(doc(db, 'companies', targetId, 'settings', 'general'), generalSettings);
             }
@@ -13052,6 +13395,18 @@ function SettingsManager({
               for (const sale of sales) {
                 const { id: saleId, ...saleData } = sale;
                 await setDoc(doc(db, 'companies', targetId, 'sales', saleId), saleData);
+              }
+            }
+            if (Array.isArray(companyFinancial)) {
+              for (const fin of companyFinancial) {
+                const { id: finId, ...finData } = fin;
+                await setDoc(doc(db, 'companies', targetId, 'financial', finId), finData);
+              }
+            }
+            if (Array.isArray(companyTerminals)) {
+              for (const term of companyTerminals) {
+                const { id: termId, ...termData } = term;
+                await setDoc(doc(db, 'companies', targetId, 'terminals', termId), termData);
               }
             }
           }
@@ -20554,7 +20909,7 @@ function ServiceOrdersManager({
               </div>
 
               {/* Equipment Info */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="space-y-2">
                   <Label>Equipamento</Label>
                   <Input className="bg-[#0f1115] border-[#2d3139]" value={newOS.equipment || ''} onChange={e => setNewOS({...newOS, equipment: e.target.value})} placeholder="Ex: DVR, Motor, Câmera" />
@@ -20577,6 +20932,10 @@ function ServiceOrdersManager({
                       <SelectItem value="Instalação">Instalação</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Nº do Lacre (Opcional)</Label>
+                  <Input className="bg-[#0f1115] border-[#2d3139]" value={newOS.sealNumber || ''} onChange={e => setNewOS({...newOS, sealNumber: e.target.value})} placeholder="Ex: LAC-123" />
                 </div>
               </div>
 
@@ -20843,6 +21202,12 @@ function ServiceOrdersManager({
                       <PenTool size={10} className="text-[#3b82f6] shrink-0" />
                       <span className="truncate">{os.brandModelSN || '-'}</span>
                     </div>
+                    {os.sealNumber && (
+                      <div className="flex flex-nowrap items-center gap-2 text-[11px] text-amber-400 font-medium">
+                        <Lock size={10} className="text-amber-400 shrink-0" />
+                        <span className="truncate">Lacre: {os.sealNumber}</span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between mt-1">
                       <div className="flex items-center gap-1.5 overflow-hidden">
                         <div className="h-4 w-4 rounded-full border border-[#2d3139] bg-[#0f1115] flex items-center justify-center text-[7px] text-[#3b82f6] font-black uppercase">
@@ -20876,13 +21241,12 @@ function ServiceOrdersManager({
           <Table className="min-w-[1200px]">
             <TableHeader className="bg-[#1a1d23] sticky top-0 z-10 shadow-sm border-b border-[#2d3139]">
               <TableRow className="border-[#2d3139] hover:bg-transparent">
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">AÇÕES</TableHead>
+                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[220px]">ETIQ. / AÇÕES</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider w-[120px]">STATUS</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">OS / DATA</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">CLIENTE</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">EQUIPAMENTO / MARCA / MODELO / SN</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">TÉCNICO / VALOR</TableHead>
-                <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider text-right w-[100px]">ETIQUETA</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -20896,34 +21260,49 @@ function ServiceOrdersManager({
                     selectedRowId === os.id ? "bg-blue-500/10" : "hover:bg-[#25282e]/30"
                   )}
                 >
-                  <TableCell className="w-[180px] p-2">
-                    <div className="flex items-center gap-1.5 flex-nowrap">
-                      <Button variant="outline" size="icon" title="Editar" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={(e) => {
-                        e.stopPropagation();
-                        onEditClick('service-order', os);
-                      }}>
-                        <Pencil size={12} />
-                      </Button>
-                      <Button variant="outline" size="sm" className="h-7 px-1 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-[9px] font-bold" onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedOSForPDF(os);
-                        setIsValuesModalOpen(true);
-                      }}>
-                        PDF
-                      </Button>
-                      <Button variant="outline" size="sm" className="h-7 px-1 border-[#2d3139] text-emerald-500 hover:bg-emerald-500/10 text-[9px] font-bold" onClick={(e) => {
-                        e.stopPropagation();
-                        generateDeliveryReceiptPDF(os, appSettings, clients);
-                      }}>
-                        Entrega
-                      </Button>
-                      <Button variant="outline" size="icon" title="Excluir" className="h-7 w-7 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={(e) => {
-                        e.stopPropagation();
-                        setOSToDelete(os);
-                        setIsDeleteConfirmOpen(true);
-                      }}>
-                        <Trash2 size={12} />
-                      </Button>
+                  <TableCell className="w-[220px] p-2">
+                    <div className="flex items-center gap-3 flex-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox 
+                        id={`select-${os.id}`}
+                        checked={selectedIds.includes(os.id)}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedIds(prev => [...prev, os.id]);
+                          } else {
+                            setSelectedIds(prev => prev.filter(id => id !== os.id));
+                          }
+                        }}
+                        className="bg-[#0f1115] border-[#2d3139] h-4.5 w-4.5 data-[state=checked]:bg-[#3b82f6] shrink-0"
+                        title="Selecionar para Etiqueta"
+                      />
+                      <div className="flex items-center gap-1.5 flex-nowrap">
+                        <Button variant="outline" size="icon" title="Editar" className="h-7 w-7 border-[#2d3139] text-[#a0a0a0] hover:text-white" onClick={(e) => {
+                          e.stopPropagation();
+                          onEditClick('service-order', os);
+                        }}>
+                          <Pencil size={12} />
+                        </Button>
+                        <Button variant="outline" size="sm" className="h-7 px-1 border-[#2d3139] text-[#a0a0a0] hover:bg-[#2d3139] text-[9px] font-bold" onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedOSForPDF(os);
+                          setIsValuesModalOpen(true);
+                        }}>
+                          PDF
+                        </Button>
+                        <Button variant="outline" size="sm" className="h-7 px-1 border-[#2d3139] text-emerald-500 hover:bg-emerald-500/10 text-[9px] font-bold" onClick={(e) => {
+                          e.stopPropagation();
+                          generateDeliveryReceiptPDF(os, appSettings, clients);
+                        }}>
+                          Entrega
+                        </Button>
+                        <Button variant="outline" size="icon" title="Excluir" className="h-7 w-7 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={(e) => {
+                          e.stopPropagation();
+                          setOSToDelete(os);
+                          setIsDeleteConfirmOpen(true);
+                        }}>
+                          <Trash2 size={12} />
+                        </Button>
+                      </div>
                     </div>
                   </TableCell>
                   <TableCell className="w-[120px] p-2">
@@ -20971,6 +21350,11 @@ function ServiceOrdersManager({
                     <div className="flex flex-col">
                       <span className="text-[11px] text-white font-medium truncate max-w-[200px]">{os.equipment}</span>
                       <span className="text-[10px] text-[#71717a] italic truncate max-w-[200px]">{os.brandModelSN}</span>
+                      {os.sealNumber && (
+                        <span className="text-[9px] text-amber-400 font-medium truncate max-w-[200px] flex items-center gap-1 mt-0.5">
+                          <Lock size={10} className="shrink-0" /> Lacre: {os.sealNumber}
+                        </span>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -20979,27 +21363,11 @@ function ServiceOrdersManager({
                       <span className="font-bold text-[#3b82f6] text-[13px]">R$ {(os.totalValue || 0).toFixed(2)}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
-                    <Checkbox 
-                        id={`select-${os.id}`}
-                        checked={selectedIds.includes(os.id)}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
-                            setSelectedIds(prev => [...prev, os.id]);
-                          } else {
-                            setSelectedIds(prev => prev.filter(id => id !== os.id));
-                          }
-                        }}
-                        className="bg-[#0f1115] border-[#2d3139] h-5 w-5 data-[state=checked]:bg-[#3b82f6]"
-                      />
-                    </div>
-                  </TableCell>
                 </TableRow>
               ))}
               {serviceOrders.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-20 text-[#71717a] text-sm">
+                  <TableCell colSpan={6} className="text-center py-20 text-[#71717a] text-sm">
                     Nenhuma Ordem de Serviço encontrada.
                   </TableCell>
                 </TableRow>
@@ -21080,7 +21448,7 @@ function ServiceOrdersManager({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div className="space-y-2">
                     <Label>Equipamento</Label>
                     <Input className="bg-[#0f1115] border-[#2d3139]" value={editingOS.equipment || ''} onChange={e => setEditingOS({...editingOS, equipment: e.target.value})} />
@@ -21103,6 +21471,10 @@ function ServiceOrdersManager({
                         <SelectItem value="Instalação">Instalação</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Nº do Lacre (Opcional)</Label>
+                    <Input className="bg-[#0f1115] border-[#2d3139]" value={editingOS.sealNumber || ''} onChange={e => setEditingOS({...editingOS, sealNumber: e.target.value})} placeholder="Ex: LAC-123" />
                   </div>
                 </div>
 
