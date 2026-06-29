@@ -1526,7 +1526,7 @@ const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSetting
   doc.save(`OS_${formatRecordNumber(os.number, os.date).replace('/', '-')}.pdf`);
 };
 
-const generateDeliveryReceiptPDF = async (os: ServiceOrder, appSettings: AppSettings, clients: Client[] = []) => {
+const generateDeliveryReceiptPDF = async (os: ServiceOrder, appSettings: AppSettings, clients: Client[] = [], customDate?: string) => {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -1702,6 +1702,21 @@ const generateDeliveryReceiptPDF = async (os: ServiceOrder, appSettings: AppSett
 
   // Data
   const getFormattedCurrentDate = () => {
+    if (customDate) {
+      const parts = customDate.split('-');
+      if (parts.length === 3) {
+        const year = parts[0];
+        const monthIdx = parseInt(parts[1], 10) - 1;
+        const day = parts[2];
+        const months = [
+          'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+          'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+        ];
+        const month = months[monthIdx] || parts[1];
+        return `${day} de ${month} de ${year}`;
+      }
+      return customDate;
+    }
     const months = [
       'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
       'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
@@ -20521,6 +20536,9 @@ function ServiceOrdersManager({
   const [isPrintConfirmOpen, setIsPrintConfirmOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [isValuesModalOpen, setIsValuesModalOpen] = useState(false);
+  const [isDeliveryDateModalOpen, setIsDeliveryDateModalOpen] = useState(false);
+  const [selectedOSForDeliveryDate, setSelectedOSForDeliveryDate] = useState<ServiceOrder | null>(null);
+  const [deliveryDateInput, setDeliveryDateInput] = useState('');
   const [selectedOSForPDF, setSelectedOSForPDF] = useState<ServiceOrder | null>(null);
   const [editingOS, setEditingOS] = useState<Partial<ServiceOrder> | null>(null);
   const [osToDelete, setOSToDelete] = useState<ServiceOrder | null>(null);
@@ -21334,7 +21352,13 @@ function ServiceOrdersManager({
                         </Button>
                         <Button variant="ghost" size="sm" className="h-5 px-1 text-[8px] bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white uppercase font-black tracking-tighter" onClick={(e) => {
                           e.stopPropagation();
-                          generateDeliveryReceiptPDF(os, appSettings, clients);
+                          setSelectedOSForDeliveryDate(os);
+                          const today = new Date();
+                          const yyyy = today.getFullYear();
+                          const mm = String(today.getMonth() + 1).padStart(2, '0');
+                          const dd = String(today.getDate()).padStart(2, '0');
+                          setDeliveryDateInput(`${yyyy}-${mm}-${dd}`);
+                          setIsDeliveryDateModalOpen(true);
                         }}>
                           Entrega
                         </Button>
@@ -21401,7 +21425,13 @@ function ServiceOrdersManager({
                         </Button>
                         <Button variant="outline" size="sm" className="h-7 px-1 border-[#2d3139] text-emerald-500 hover:bg-emerald-500/10 text-[9px] font-bold" onClick={(e) => {
                           e.stopPropagation();
-                          generateDeliveryReceiptPDF(os, appSettings, clients);
+                          setSelectedOSForDeliveryDate(os);
+                          const today = new Date();
+                          const yyyy = today.getFullYear();
+                          const mm = String(today.getMonth() + 1).padStart(2, '0');
+                          const dd = String(today.getDate()).padStart(2, '0');
+                          setDeliveryDateInput(`${yyyy}-${mm}-${dd}`);
+                          setIsDeliveryDateModalOpen(true);
                         }}>
                           Entrega
                         </Button>
@@ -21772,6 +21802,49 @@ function ServiceOrdersManager({
               className="flex-1 bg-[#3b82f6] hover:bg-[#2563eb] text-white"
             >
               Sim (Com Valores)
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delivery Receipt Custom Date Prompt */}
+      <Dialog open={isDeliveryDateModalOpen} onOpenChange={setIsDeliveryDateModalOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Gerar Termo de Entrega</DialogTitle>
+            <DialogDescription className="text-[#71717a]">
+              Selecione ou digite a data de entrega que constará no documento impresso.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-2">
+            <label className="text-xs text-[#a0a0a0] font-semibold uppercase tracking-wider block">
+              Data de Entrega
+            </label>
+            <Input 
+              type="date"
+              value={deliveryDateInput}
+              onChange={(e) => setDeliveryDateInput(e.target.value)}
+              className="bg-[#0f1115] border-[#2d3139] text-white text-sm h-10 w-full focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+          <DialogFooter className="flex flex-col sm:flex-row gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setIsDeliveryDateModalOpen(false)}
+              className="flex-1 border-[#2d3139] text-white hover:bg-[#2d3139]"
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={async () => {
+                if (selectedOSForDeliveryDate) {
+                  await generateDeliveryReceiptPDF(selectedOSForDeliveryDate, appSettings, clients, deliveryDateInput);
+                }
+                setIsDeliveryDateModalOpen(false);
+              }} 
+              className="flex-1 bg-[#10b981] hover:bg-[#059669] text-white font-bold"
+            >
+              Gerar PDF
             </Button>
           </DialogFooter>
         </DialogContent>

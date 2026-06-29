@@ -1858,10 +1858,25 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    // No ambiente buildado (ex: Electron ou executável compilado), o arquivo server.cjs estará dentro de /dist,
+    // e os arquivos estáticos do React (index.html, assets, etc.) também estarão na mesma pasta /dist.
+    // Usar path.resolve(__dirname) garante compatibilidade total no Electron, pois __dirname sempre
+    // apontará para o diretório físico onde o script está empacotado, independente de onde o usuário iniciou o processo (cwd).
+    const distPath = path.resolve(__dirname); 
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+      const indexPath = path.join(distPath, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        // Fallback secundário para quando rodar via script de desenvolvimento local sem bundle compilado
+        const fallbackPath = path.join(process.cwd(), 'dist', 'index.html');
+        if (fs.existsSync(fallbackPath)) {
+          res.sendFile(fallbackPath);
+        } else {
+          res.status(404).send("Erro Crítico: Interface do sistema não encontrada no pacote.");
+        }
+      }
     });
   }
 
