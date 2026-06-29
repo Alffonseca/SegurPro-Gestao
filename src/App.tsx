@@ -4177,10 +4177,10 @@ export default function MainApp() {
                         allCompanies.find(c => c.name?.toLowerCase().includes('af sistemas')) || 
                         allCompanies[0];
       if (myCompany?.id) {
-        updateDoc(doc(db, 'users', user.uid), {
+        setDoc(doc(db, 'users', user.uid), {
           companyId: myCompany.id,
           role: 'super_admin'
-        }).catch(err => console.error("Error auto-linking super admin:", err));
+        }, { merge: true }).catch(err => console.error("Error auto-linking super admin:", err));
       }
     }
   }, [allCompanies, isSuperAdmin, user, currentUserData?.companyId]);
