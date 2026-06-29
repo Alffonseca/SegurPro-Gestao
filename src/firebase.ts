@@ -45,28 +45,20 @@ export const isLocalDb = (() => {
                         window.location.hostname === '127.0.0.1' || 
                         /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname);
     
-    // On Cloud / Web environment, we MUST operate in Web/Online/Hybrid mode. Never force Local DB unless mock auth fallback is active.
-    if (!isHostLocal) {
-      if (localStorage.getItem('MOCK_AUTH_ACTIVE') === 'true') {
-        return true;
-      }
-      return false;
-    }
-
-    if (localStorage.getItem('FIRESTORE_DISABLED') === 'true') {
+    // On Localhost / LAN hosts, we strictly run in Local DB mode to satisfy the localhost requirement.
+    if (isHostLocal) {
       return true;
     }
-    const override = localStorage.getItem('DB_MODE_OVERRIDE');
 
-    if (override === 'local') return true;
-    if (override === 'online') return false;
-
-    // By default, on localhost / LAN networks, we run in Local DB mode.
-    return true;
+    // On Cloud / Web environment, we MUST operate in Web/Online/Hybrid mode. Never force Local DB unless mock auth fallback is active.
+    if (localStorage.getItem('MOCK_AUTH_ACTIVE') === 'true') {
+      return true;
+    }
+    return false;
   }
   
   // Default to VITE_LOCAL_DB environment variable or standard host detection
-  return (import.meta as any).env.VITE_LOCAL_DB === 'true';
+  return true;
 })();
 console.log(`[Database Initialization] Local DB Mode: ${isLocalDb}`);
 

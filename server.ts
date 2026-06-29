@@ -244,31 +244,34 @@ function ensureLocalDataSeeded() {
     }
     writeJSONFile(usersPath, users);
 
-    // 3. Seed Companies
+    // 3. Seed Company Settings inside nested collection companies/default-company-id/settings
+    const compSettingsPath = getSafeFileName("companies_default-company-id_settings");
+    const compSettings = readJSONFile(compSettingsPath);
+    if (!compSettings.some(s => s.id === "general")) {
+      compSettings.push({
+        id: "general",
+        companyName: "SegurTec-Pro Gestão",
+        createdAt: { seconds: 1779900000, nanoseconds: 0, __type: "Timestamp" }
+      });
+      writeJSONFile(compSettingsPath, compSettings);
+    }
+
+    const generalSettings = compSettings.find(s => s.id === "general");
+    const seededCompanyName = (generalSettings && generalSettings.companyName) || "SegurTec-Pro Gestão";
+
+    // 4. Seed Companies
     const companiesPath = getSafeFileName("companies");
     const companies = readJSONFile(companiesPath);
     if (!companies.some(c => c.id === "default-company-id")) {
       companies.push({
         id: "default-company-id",
-        name: "AF Suporte Técnico em Seg. e Inf.",
+        name: seededCompanyName,
         ownerId: "emailparasiteslixo-id",
         status: "active",
         inviteCode: "MASTER",
         createdAt: { seconds: 1779900000, nanoseconds: 0, __type: "Timestamp" }
       });
       writeJSONFile(companiesPath, companies);
-    }
-
-    // 4. Seed Company Settings inside nested collection companies/default-company-id/settings
-    const compSettingsPath = getSafeFileName("companies_default-company-id_settings");
-    const compSettings = readJSONFile(compSettingsPath);
-    if (!compSettings.some(s => s.id === "general")) {
-      compSettings.push({
-        id: "general",
-        companyName: "AF Suporte Técnico em Seg. e Inf.",
-        createdAt: { seconds: 1779900000, nanoseconds: 0, __type: "Timestamp" }
-      });
-      writeJSONFile(compSettingsPath, compSettings);
     }
 
     // 5. Seed Registration Codes
@@ -282,6 +285,25 @@ function ensureLocalDataSeeded() {
         createdAt: { seconds: 1779900000, nanoseconds: 0, __type: "Timestamp" }
       });
       writeJSONFile(regCodesPath, regCodes);
+    }
+
+    // 6. Seed SaaS Settings global
+    const saasPath = getSafeFileName("saas_settings");
+    const saasSettingsList = readJSONFile(saasPath);
+    if (!saasSettingsList.some(s => s.id === "global")) {
+      saasSettingsList.push({
+        id: "global",
+        price: 99.90,
+        billingCycle: "mensal",
+        latestVersion: "1.2.0",
+        latestNotes: "Melhorias de desempenho e correções visuais.",
+        latestFileUrl: "",
+        supportPhone: "(83) 98132-7204",
+        supportWhatsapp: "+55 (83) 98132-7204",
+        supportEmail: "suporte@segurtecpro.com.br",
+        splashDuration: 2.5
+      });
+      writeJSONFile(saasPath, saasSettingsList);
     }
     
     console.log("[Local Seeding] Seeding completed successfully!");
@@ -324,9 +346,14 @@ function ensureLocalDataSeeded() {
   const companiesPath = getSafeFileName("companies");
   const companies = readJSONFile(companiesPath);
   if (!companies.some((c: any) => c.id === "default-company-id")) {
+    const compSettingsPath = getSafeFileName("companies_default-company-id_settings");
+    const compSettings = readJSONFile(compSettingsPath);
+    const generalSettings = compSettings.find(s => s.id === "general");
+    const repairCompanyName = (generalSettings && generalSettings.companyName) || "SegurTec-Pro Gestão";
+
     companies.push({
       id: "default-company-id",
-      name: "AF Suporte Técnico em Seg. e Inf.",
+      name: repairCompanyName,
       ownerId: "emailparasiteslixo-id",
       status: "active",
       inviteCode: "MASTER",
@@ -547,6 +574,8 @@ async function startServer() {
             uid: u.uid || `usr_${Math.random().toString(36).substring(2, 9)}`,
             email: u.email || `${u.uid}@segurtecpro.com`,
             displayName: u.displayName || uEmailPart || "Membro da Equipe",
+            role: u.role || "tecnico",
+            companyId: u.companyId || "default-company-id"
           };
           break;
         } else {
@@ -563,6 +592,8 @@ async function startServer() {
       uid: matchedUser.uid,
       email: matchedUser.email,
       displayName: matchedUser.displayName,
+      role: matchedUser.role,
+      companyId: matchedUser.companyId,
       emailVerified: true,
     });
   });

@@ -8,13 +8,15 @@ interface IntroSplashScreenProps {
   companyName?: string;
   businessActivity?: string;
   videoUrl?: string; // Left in interface to maintain compatibility with App.tsx prop signature
+  duration?: number; // Splash screen duration in seconds
 }
 
 export default function IntroSplashScreen({
   onComplete,
   logoUrl,
   companyName = 'SegurTec-Pro Gestão',
-  businessActivity
+  businessActivity,
+  duration
 }: IntroSplashScreenProps) {
   const [fadeOut, setFadeOut] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -28,7 +30,8 @@ export default function IntroSplashScreen({
   // Synchronized loading effect: progress drives the splash lifecycle
   useEffect(() => {
     const isAlreadyPlayed = sessionStorage.getItem('INTRO_PLAYED_ACC') === 'true';
-    const duration = isAlreadyPlayed ? 200 : 2500; // 2.5 seconds of smooth progress bar increment or rapid 200ms on repeat
+    const baseDuration = duration && duration > 0 ? duration * 1000 : 2500;
+    const durationVal = isAlreadyPlayed ? Math.min(200, baseDuration) : baseDuration;
     const start = Date.now();
     
     let bufferTimer: NodeJS.Timeout | undefined;
@@ -36,7 +39,7 @@ export default function IntroSplashScreen({
 
     const progressInterval = setInterval(() => {
       const elapsed = Date.now() - start;
-      const currentProgress = Math.min((elapsed / duration) * 100, 100);
+      const currentProgress = Math.min((elapsed / durationVal) * 100, 100);
       setProgress(currentProgress);
       
       if (currentProgress >= 100) {
@@ -60,7 +63,7 @@ export default function IntroSplashScreen({
       if (bufferTimer) clearTimeout(bufferTimer);
       if (completeTimer) clearTimeout(completeTimer);
     };
-  }, []);
+  }, [duration]);
 
   return (
     <AnimatePresence>

@@ -3153,6 +3153,61 @@ export default function MainApp() {
     };
   }, []);
 
+  // Pre-load company name and logo settings from localStorage and/or local DB for immediate availability on login/loading screens
+  useEffect(() => {
+    const cachedName = localStorage.getItem('cached_company_name');
+    const cachedLogo = localStorage.getItem('cached_logo_url');
+    if (cachedName) {
+      setAppSettings(prev => ({
+        ...prev,
+        companyName: cachedName,
+        logoUrl: cachedLogo || prev.logoUrl
+      }));
+    }
+
+    const loadDefaultSettings = async () => {
+      try {
+        const response = await fetch('/api/localdb/companies_default-company-id_settings/general');
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.companyName) {
+            setAppSettings(prev => ({
+              ...prev,
+              companyName: data.companyName,
+              logoUrl: data.logoUrl || prev.logoUrl
+            }));
+            localStorage.setItem('cached_company_name', data.companyName);
+            if (data.logoUrl) {
+              localStorage.setItem('cached_logo_url', data.logoUrl);
+            }
+          }
+        } else {
+          // Fallback to query the collection if the document direct path yields issues
+          const colResponse = await fetch('/api/localdb/companies_default-company-id_settings');
+          if (colResponse.ok) {
+            const list = await colResponse.json();
+            const general = list.find((item: any) => item.id === 'general');
+            if (general && general.companyName) {
+              setAppSettings(prev => ({
+                ...prev,
+                companyName: general.companyName,
+                logoUrl: general.logoUrl || prev.logoUrl
+              }));
+              localStorage.setItem('cached_company_name', general.companyName);
+              if (general.logoUrl) {
+                localStorage.setItem('cached_logo_url', general.logoUrl);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Could not pre-fetch local app settings:", err);
+      }
+    };
+
+    loadDefaultSettings();
+  }, []);
+
   const hasPlayedIntro = useRef(false);
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
@@ -3273,7 +3328,8 @@ export default function MainApp() {
   const [allFinancials, setAllFinancials] = useState<any[]>([]); // New state for global metrics
   const [saasSettings, setSaasSettings] = useState<any>({
     price: 0,
-    billingCycle: 'mensal'
+    billingCycle: 'mensal',
+    splashDuration: 2.5
   });
   const [currentUserData, setCurrentUserData] = useState<any>(null);
   const [currentCompany, setCurrentCompany] = useState<any>(null);
@@ -3523,9 +3579,9 @@ export default function MainApp() {
 
   // 1. Auth Listener
   useEffect(() => {
-    const titleText = currentCompany?.name || appSettings?.companyName || 'SegurTec-Pro Gestão';
+    const titleText = appSettings?.companyName || currentCompany?.companyName || currentCompany?.name || 'SegurTec-Pro Gestão';
     document.title = titleText;
-  }, [currentCompany?.name, appSettings?.companyName]);
+  }, [appSettings?.companyName, currentCompany?.companyName, currentCompany?.name]);
 
   useEffect(() => {
     // If we are on a real cloud/web host, automatically clean up any stale localStorage overrides so they don't get stuck
@@ -3832,8 +3888,8 @@ export default function MainApp() {
             console.log("[Auto-Provision] Default company not found in DB. Seeding...");
             try {
               await setDoc(compRef, {
-                name: "AF Suporte Técnico em Seg. e Inf.",
-                tradeName: "AF Suporte Técnico",
+                name: "SegurTec-Pro Gestão",
+                tradeName: "SegurTec-Pro",
                 cnpj: "42.000.000/0001-00",
                 phone: "(11) 99999-9999",
                 address: "Av. Principal, 1000",
@@ -3859,7 +3915,7 @@ export default function MainApp() {
 
               // Also seed general settings
               await setDoc(doc(db, 'companies', 'default-company-id', 'settings', 'general'), {
-                companyName: "AF Suporte Técnico em Seg. e Inf.",
+                companyName: "SegurTec-Pro Gestão",
                 cnpj: "42.000.000/0001-00",
                 phone: "(11) 99999-9999",
                 address: "Av. Principal, 1000",
@@ -4394,6 +4450,12 @@ export default function MainApp() {
               ...initialAppSettings,
               ...data
             });
+            if (data?.companyName) {
+              localStorage.setItem('cached_company_name', data.companyName);
+            }
+            if (data?.logoUrl) {
+              localStorage.setItem('cached_logo_url', data.logoUrl);
+            }
           } else {
             setAppSettings(initialAppSettings);
           }
@@ -4733,7 +4795,14 @@ export default function MainApp() {
           }
 
           // 2. Map and sign-in
-          if (authData.customToken) {
+          if (isLocalDb) {
+            if ((auth as any).setCurrentUser) {
+              (auth as any).setCurrentUser(authData.user);
+              isSuccessfullySignedIn = true;
+            }
+          }
+
+          if (!isSuccessfullySignedIn && authData.customToken) {
             try {
               userCredential = await signInWithCustomToken(auth, authData.customToken);
               isSuccessfullySignedIn = true;
@@ -4926,7 +4995,7 @@ export default function MainApp() {
                 </div>
               )}
               <h1 className="text-xl md:text-2xl font-extrabold tracking-tight text-white bg-gradient-to-r from-white via-gray-200 to-gray-400 bg-clip-text text-transparent">
-                {inviteCodeUrl ? 'Ativação de Cadastro' : (currentCompany?.name || appSettings.companyName || 'SegurTec-Pro SaaS')}
+                {inviteCodeUrl ? 'Ativação de Cadastro' : (appSettings?.companyName || currentCompany?.companyName || currentCompany?.name || 'SegurTec-Pro Gestão')}
               </h1>
               <p className="text-[#71717a] text-[11px] md:text-xs max-w-md">
                 {inviteCodeUrl 
@@ -5087,44 +5156,59 @@ export default function MainApp() {
                 )}
 
                 {/* Centralized Primary Login: Google Sign-In */}
-                <div className="space-y-2 pb-0.5">
-                  <Button 
-                    type="button"
-                    onClick={handleLogin} 
-                    disabled={isLoggingIn}
-                    className="w-full flex items-center justify-center gap-2.5 bg-[#4285F4] hover:bg-[#357ae8] active:scale-[0.99] active:bg-[#2c69cf] text-white transition-all duration-150 h-10.5 text-xs font-bold rounded-lg shadow-md border border-[#4285F4]/20"
-                  >
-                    {isLoggingIn ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-white" />
-                    ) : (
-                      <svg className="h-4 w-4 fill-current text-white" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
-                        <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
-                      </svg>
-                    )}
-                    {isLoggingIn ? 'Autenticando com Google...' : 'Entrar com o Google'}
-                  </Button>
-                  <p className="text-[#a0a0a0] text-[10px] text-center font-medium leading-normal max-w-sm mx-auto">
-                    Acesso direto por credencial segura Google (Altamente Recomendado)
-                  </p>
-                </div>
+                {!isLocalDb && (() => {
+                  const isLocalHostName = typeof window !== 'undefined' && (
+                    window.location.hostname === 'localhost' || 
+                    window.location.hostname === '127.0.0.1' || 
+                    /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname)
+                  );
+                  if (isLocalHostName) return null;
+                  return (
+                    <div className="space-y-2 pb-0.5">
+                      <Button 
+                        type="button"
+                        onClick={handleLogin} 
+                        disabled={isLoggingIn}
+                        className="w-full flex items-center justify-center gap-2.5 bg-[#4285F4] hover:bg-[#357ae8] active:scale-[0.99] active:bg-[#2c69cf] text-white transition-all duration-150 h-10.5 text-xs font-bold rounded-lg shadow-md border border-[#4285F4]/20"
+                      >
+                        {isLoggingIn ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-white" />
+                        ) : (
+                          <svg className="h-4 w-4 fill-current text-white" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
+                            <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
+                          </svg>
+                        )}
+                        {isLoggingIn ? 'Autenticando com Google...' : 'Entrar com o Google'}
+                      </Button>
+                      <p className="text-[#a0a0a0] text-[10px] text-center font-medium leading-normal max-w-sm mx-auto">
+                        Acesso direto por credencial segura Google (Altamente Recomendado)
+                      </p>
+                    </div>
+                  );
+                })()}
 
                 {/* Elegant Minimal Divider & Secondary Login (Shown only when running on a local host / local network) */}
                 {(() => {
-                  const isLocalHostName = window.location.hostname === 'localhost' || 
-                                          window.location.hostname === '127.0.0.1' || 
-                                          /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname);
+                  const isLocalHostName = typeof window !== 'undefined' && (
+                    window.location.hostname === 'localhost' || 
+                    window.location.hostname === '127.0.0.1' || 
+                    /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname) ||
+                    isLocalDb
+                  );
                   if (!isLocalHostName) return null;
                   return (
                     <>
-                      <div className="relative flex py-1.5 items-center">
-                          <div className="flex-grow border-t border-[#2d3139]/40"></div>
-                          <span className="flex-shrink mx-3 text-[#71717a] text-[9px] uppercase font-bold tracking-[0.16em] whitespace-nowrap">Ou com usuário e senha</span>
-                          <div className="flex-grow border-t border-[#2d3139]/40"></div>
-                      </div>
+                      {!isLocalDb && !isLocalHostName && (
+                        <div className="relative flex py-1.5 items-center">
+                            <div className="flex-grow border-t border-[#2d3139]/40"></div>
+                            <span className="flex-shrink mx-3 text-[#71717a] text-[9px] uppercase font-bold tracking-[0.16em] whitespace-nowrap">Ou com usuário e senha</span>
+                            <div className="flex-grow border-t border-[#2d3139]/40"></div>
+                        </div>
+                      )}
 
                       {/* Secondary Login: Username and Password Form */}
                       <form onSubmit={handleEmailAuth} className="space-y-3 text-left">
-                        {authMode === 'register' && (
+                        {authMode === 'register' && !isLocalDb && !isLocalHostName && (
                           <div className="space-y-1 animate-in slide-in-from-top-2 duration-200">
                             <Label htmlFor="reg-name" className="text-[#a0a0a0] text-[11px] font-medium">Nome Completo</Label>
                             <Input 
@@ -5152,7 +5236,7 @@ export default function MainApp() {
                         <div className="space-y-1">
                           <div className="flex items-center justify-between">
                             <Label htmlFor="auth-pass" className="text-[#a0a0a0] text-[11px] font-medium">Senha</Label>
-                            {authMode === 'login' && (
+                            {authMode === 'login' && !isLocalDb && !isLocalHostName && (
                               <button
                                 type="button"
                                 onClick={handlePasswordReset}
@@ -5184,22 +5268,24 @@ export default function MainApp() {
                           {isAuthLoading ? (
                             <>
                               <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                              <span>{authMode === 'login' ? 'Entrando...' : 'Cadastrando...'}</span>
+                              <span>Entrando...</span>
                             </>
                           ) : (
-                            <span>{authMode === 'login' ? 'Entrar com E-mail' : 'Cadastrar e Acessar'}</span>
+                            <span>Entrar no Painel</span>
                           )}
                         </Button>
                       </form>
 
-                      <div className="pt-1 text-center">
-                        <button 
-                          onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
-                          className="text-[11px] text-[#3b82f6] hover:underline hover:text-blue-400 font-medium transition-colors"
-                        >
-                          {authMode === 'login' ? 'Não tem uma conta? Cadastre-se' : 'Já tem uma conta? Faça login'}
-                        </button>
-                      </div>
+                      {!isLocalDb && !isLocalHostName && (
+                        <div className="pt-1 text-center">
+                          <button 
+                            onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
+                            className="text-[11px] text-[#3b82f6] hover:underline hover:text-blue-400 font-medium transition-colors"
+                          >
+                            {authMode === 'login' ? 'Não tem uma conta? Cadastre-se' : 'Já tem uma conta? Faça login'}
+                          </button>
+                        </div>
+                      )}
                     </>
                   );
                 })()}
@@ -5285,6 +5371,7 @@ export default function MainApp() {
           companyName={appSettings.companyName || 'SegurTec-Pro Gestão'}
           businessActivity={currentCompany?.businessActivity || ''}
           videoUrl={appSettings.introVideoUrl}
+          duration={saasSettings?.splashDuration}
         />
       </div>
     );
@@ -5465,6 +5552,7 @@ export default function MainApp() {
           companyName={appSettings.companyName || 'SegurTec-Pro Gestão'}
           businessActivity={currentCompany?.businessActivity || ''}
           videoUrl={appSettings.introVideoUrl}
+          duration={saasSettings?.splashDuration}
         />
       )}
       
@@ -10254,6 +10342,7 @@ function SuperAdminPanel({
   const [supportPhone, setSupportPhone] = useState(saasSettings?.supportPhone || '');
   const [supportWhatsapp, setSupportWhatsapp] = useState(saasSettings?.supportWhatsapp || '');
   const [supportEmail, setSupportEmail] = useState(saasSettings?.supportEmail || '');
+  const [splashDuration, setSplashDuration] = useState(saasSettings?.splashDuration !== undefined ? saasSettings.splashDuration : 2.5);
   const [isSavingUpdatesConfig, setIsSavingUpdatesConfig] = useState(false);
 
   useEffect(() => {
@@ -10264,6 +10353,7 @@ function SuperAdminPanel({
       if (saasSettings.supportPhone) setSupportPhone(saasSettings.supportPhone);
       if (saasSettings.supportWhatsapp) setSupportWhatsapp(saasSettings.supportWhatsapp);
       if (saasSettings.supportEmail) setSupportEmail(saasSettings.supportEmail);
+      if (saasSettings.splashDuration !== undefined) setSplashDuration(saasSettings.splashDuration);
     }
   }, [saasSettings]);
 
@@ -10276,9 +10366,10 @@ function SuperAdminPanel({
         latestFileUrl: publishingFileUrl,
         supportPhone,
         supportWhatsapp,
-         supportEmail
+        supportEmail,
+        splashDuration: Number(splashDuration) || 2.5
       }, { merge: true });
-      toast.success("Novos parâmetros de atualização e canais de suporte salvos com sucesso!");
+      toast.success("Novos parâmetros de atualização, duração da splash screen e canais de suporte salvos com sucesso!");
     } catch (saveError) {
       console.error("Error saving global updates:", saveError);
       toast.error("Erro ao salvar parâmetros globais.");
@@ -11398,8 +11489,21 @@ function SuperAdminPanel({
           </div>
 
           <div className="border-t border-[#2d3139] pt-4 mt-2 space-y-4">
-            <h4 className="text-xs font-black uppercase tracking-widest text-[#3b82f6]">Canais de Suporte de Atualizações (AF TECNOLOGIA)</h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <h4 className="text-xs font-black uppercase tracking-widest text-[#3b82f6]">Parâmetros Globais e Suporte de Atualizações (AF TECNOLOGIA)</h4>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="space-y-2">
+                <Label className="text-[#a0a0a0] text-[10px] uppercase font-black tracking-widest">Tempo de Splash (segundos)</Label>
+                <Input 
+                  type="number"
+                  step="0.1"
+                  min="0.5"
+                  max="30"
+                  value={splashDuration}
+                  onChange={(e) => setSplashDuration(parseFloat(e.target.value) || 2.5)}
+                  placeholder="Ex: 2.5"
+                  className="bg-[#0f1115] border-[#2d3139] text-white h-11"
+                />
+              </div>
               <div className="space-y-2">
                 <Label className="text-[#a0a0a0] text-[10px] uppercase font-black tracking-widest">Telefone de Suporte</Label>
                 <Input 
@@ -12987,6 +13091,12 @@ function SettingsManager({
         name: localApp.companyName,
         companyName: localApp.companyName
       });
+      if (localApp.companyName) {
+        localStorage.setItem('cached_company_name', localApp.companyName);
+      }
+      if (localApp.logoUrl) {
+        localStorage.setItem('cached_logo_url', localApp.logoUrl);
+      }
       toast.success('Configurações gerais salvas!');
     } catch (error) {
       toast.error('Erro ao salvar configurações.');
