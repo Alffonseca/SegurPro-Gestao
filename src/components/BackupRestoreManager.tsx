@@ -64,6 +64,9 @@ interface BackupRestoreManagerProps {
   key?: string;
 }
 
+// INÍCIO DA ROTINA: COMPONENTE GERENCIADOR DE BACKUP E RESTAURAÇÃO (BackupRestoreManager)
+// Esta rotina controla a exportação e importação de backups locais no formato JSON,
+// e a criação e rollback de pontos de restauração instantâneos salvos diretamente na nuvem.
 export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, currentUserData }: BackupRestoreManagerProps) {
   const SUPER_ADMIN_EMAILS = ['emailparasiteslixo@gmail.com', 'alffonseca42@gmail.com'];
   const isMasterAdmin = isSuperAdmin && (currentUserData?.email ? SUPER_ADMIN_EMAILS.includes(currentUserData.email.toLowerCase().trim()) : false);
@@ -746,3 +749,4 @@ export function BackupRestoreManager({ appSettings, companyId, isSuperAdmin, cur
     </div>
   );
 }
+// FIM DA ROTINA: COMPONENTE GERENCIADOR DE BACKUP E RESTAURAÇÃO (BackupRestoreManager)

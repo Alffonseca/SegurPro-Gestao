@@ -11,6 +11,9 @@ interface IntroSplashScreenProps {
   duration?: number; // Splash screen duration in seconds
 }
 
+// INÍCIO DA ROTINA: TELA DE APRESENTAÇÃO / INTRO SPLASH SCREEN (IntroSplashScreen.tsx)
+// Esta tela exibe uma animação futurista de introdução com barra de carregamento,
+// exibindo o logotipo e nome da empresa cadastrados.
 export default function IntroSplashScreen({
   onComplete,
   logoUrl,
@@ -171,3 +174,5 @@ export default function IntroSplashScreen({
     </AnimatePresence>
   );
 }
+// FIM DA ROTINA: TELA DE APRESENTAÇÃO / INTRO SPLASH SCREEN (IntroSplashScreen.tsx)
+

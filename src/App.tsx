@@ -74,7 +74,9 @@ import {
   Monitor,
   Cpu,
   Network,
-  Server
+  Server,
+  Image,
+  FileImage
 } from 'lucide-react';
 import { 
   collection, 
@@ -1526,6 +1528,7 @@ const generateServiceOrderPDF = async (os: ServiceOrder, appSettings: AppSetting
   doc.save(`OS_${formatRecordNumber(os.number, os.date).replace('/', '-')}.pdf`);
 };
 
+// INÍCIO DA ROTINA: GERAR PDF DO TERMO DE ENTREGA ASSINADO
 const generateDeliveryReceiptPDF = async (os: ServiceOrder, appSettings: AppSettings, clients: Client[] = [], customDate?: string) => {
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -1765,7 +1768,9 @@ const generateDeliveryReceiptPDF = async (os: ServiceOrder, appSettings: AppSett
   const filePrefix = os.number ? `Comprovante_Entrega_OS_${formatRecordNumber(os.number, os.date).replace('/', '-')}` : 'Comprovante_Entrega';
   doc.save(`${filePrefix}.pdf`);
 };
+// FIM DA ROTINA: GERAR PDF DO TERMO DE ENTREGA ASSINADO
 
+// INÍCIO DA ROTINA: GERAR PDF DE ETIQUETAS DE O.S. EM FOLHA A4
 const generateOSLabelsPDF = (selectedOSs: ServiceOrder[], appSettings: AppSettings) => {
   // Configurando jsPDF para folha A4
   const doc = new jsPDF({
@@ -1943,6 +1948,7 @@ const generateOSLabelsPDF = (selectedOSs: ServiceOrder[], appSettings: AppSettin
 
   doc.save(`etiquetas_os_A4_${new Date().getTime()}.pdf`);
 };
+// FIM DA ROTINA: GERAR PDF DE ETIQUETAS DE O.S. EM FOLHA A4
 
 interface ServiceOrder {
   id: string;
@@ -1990,6 +1996,8 @@ interface ServiceOrder {
   // Signatures
   technicianSignature?: string;
   clientSignature?: string;
+  signedReceiptImage?: string;
+  attachments?: { name: string; base64: string; type?: string; date?: string }[];
   
   // Status
   status: 'Aberto' | 'Em Andamento' | 'Aguardando Peças' | 'Concluído' | 'Cancelado';
@@ -2722,7 +2730,7 @@ function SignaturePad({ value, onChange }: { value?: string, onChange: (val: str
     if (!ctx) return;
 
     if (value) {
-      const img = new Image();
+      const img = new window.Image();
       img.onload = () => {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0);
@@ -3157,6 +3165,13 @@ jsPDF.prototype.save = function (filename?: string, options?: any) {
   return result;
 };
 
+// INÍCIO DA ROTINA: APLICATIVO PRINCIPAL / TELA CENTRAL (MainApp)
+// Esta é a rotina central do sistema. Controla o estado global do usuário logado,
+// licenciamento SaaS, navegação entre menus laterais e o painel de visualização principal.
+// Importa e renderiza componentes como:
+// - IntroSplashScreen.tsx (animação de entrada do sistema)
+// - LicenseVerifierSplash.tsx (verificação de licença do SaaS)
+// - TerminalRegistrationScreen.tsx (registro de terminais locais)
 export default function MainApp() {
   const [showIntro, setShowIntro] = useState(false);
   const [pdfPreviewData, setPdfPreviewData] = useState<{ blobUrl: string; filename: string } | null>(null);
@@ -3346,7 +3361,26 @@ export default function MainApp() {
     billingCycle: 'mensal',
     splashDuration: 2.5
   });
-  const [currentUserData, setCurrentUserData] = useState<any>(null);
+  const [rawCurrentUserData, setRawCurrentUserData] = useState<any>(null);
+
+  const currentUserData = useMemo(() => {
+    if (!rawCurrentUserData) return null;
+    let resolvedCompanyId = rawCurrentUserData.companyId || '';
+    if (rawCurrentUserData.companyCpfCnpj && allCompanies.length > 0) {
+      const cleanUserCpfCnpj = rawCurrentUserData.companyCpfCnpj.replace(/\D/g, '');
+      const matchedCompany = allCompanies.find(c => {
+        const cleanCompCpfCnpj = (c.document || c.cnpj || c.companyDoc || c.cpf || '').replace(/\D/g, '');
+        return cleanCompCpfCnpj && cleanCompCpfCnpj === cleanUserCpfCnpj;
+      });
+      if (matchedCompany) {
+        resolvedCompanyId = matchedCompany.id;
+      }
+    }
+    return {
+      ...rawCurrentUserData,
+      companyId: resolvedCompanyId
+    };
+  }, [rawCurrentUserData, allCompanies]);
   const [currentCompany, setCurrentCompany] = useState<any>(null);
   const [companyTerminals, setCompanyTerminals] = useState<any[]>([]);
   const [currentTerminal, setCurrentTerminal] = useState<any>(null);
@@ -3603,13 +3637,39 @@ export default function MainApp() {
     const isHostWeb = window.location.hostname !== 'localhost' && 
                        window.location.hostname !== '127.0.0.1' && 
                        !/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname);
-    if (isHostWeb) {
-      if (localStorage.getItem('FIRESTORE_DISABLED') === 'true' || localStorage.getItem('DB_MODE_OVERRIDE') === 'local') {
-        console.log("[Dynamic Recovery] Found stale database overrides on cloud host. Self-healing browser state to Online Mode silently without reload...");
-        localStorage.removeItem('FIRESTORE_DISABLED');
-        localStorage.removeItem('DB_MODE_OVERRIDE');
+    
+    async function checkDbStatusAndHeal() {
+      if (isHostWeb) {
+        // On cloud/web hosts, we must ALWAYS run in Online/Cloud mode because the user has a valid Firebase config in firebase-applet-config.json.
+        // We clean up any local database overrides to ensure the browser connects to the real Firestore.
+        if (localStorage.getItem('FIRESTORE_DISABLED') === 'true' || localStorage.getItem('DB_MODE_OVERRIDE') === 'local') {
+          console.log("[Dynamic Recovery] Cleared local database overrides on cloud host. Activating Online Mode...");
+          localStorage.removeItem('FIRESTORE_DISABLED');
+          localStorage.removeItem('DB_MODE_OVERRIDE');
+          window.location.reload();
+        }
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/db-status');
+        if (res.ok) {
+          const status = await res.json();
+          if (!status.isFirestoreEnabled) {
+            console.log("[Dynamic Recovery] Server reports Firestore is disabled. Activating Local Database Mode...");
+            if (localStorage.getItem('FIRESTORE_DISABLED') !== 'true' || localStorage.getItem('DB_MODE_OVERRIDE') !== 'local') {
+              localStorage.setItem('FIRESTORE_DISABLED', 'true');
+              localStorage.setItem('DB_MODE_OVERRIDE', 'local');
+              window.location.reload();
+            }
+          }
+        }
+      } catch (err) {
+        console.error("[Dynamic Recovery] Failed to query DB status:", err);
       }
     }
+    
+    checkDbStatusAndHeal();
 
     async function testConnection() {
       if (signerTokenUrl || signaturePortal) return; // Se for página de assinatura externa, não testa conexão que exige auth
@@ -3634,7 +3694,7 @@ export default function MainApp() {
       setUser(currentUser);
       setIsLicenseVerifying(true);
       if (!currentUser) {
-        setCurrentUserData(null);
+        setRawCurrentUserData(null);
         setCurrentCompany(null);
         setLoading(false);
         clearTimeout(loadingTimeout);
@@ -3717,13 +3777,9 @@ export default function MainApp() {
             data.role = 'super_admin';
             needsUpdate = true;
           }
-          if (data.companyId !== 'default-company-id') {
-            data.companyId = 'default-company-id';
-            needsUpdate = true;
-          }
           if (needsUpdate) {
             try {
-              await updateDoc(userRef, { role: 'super_admin', companyId: 'default-company-id' });
+              await updateDoc(userRef, { role: 'super_admin' });
             } catch (err) {
               console.error("Erro ao sincronizar privilégios de Super Admin:", err);
             }
@@ -3733,7 +3789,7 @@ export default function MainApp() {
         // Se o usuário está no Firestore mas não tem companyId (ex: registro incompleto ou fallback falho anterior),
         // realiza autorrecuperação (self-healing) consultando a API backend flat file por e-mail/uid
         if (!data.companyId) {
-          let healedCompanyId = isSuper ? 'default-company-id' : '';
+          let healedCompanyId = '';
           
           try {
             const lookupInput = user.email || user.uid;
@@ -3760,7 +3816,27 @@ export default function MainApp() {
           }
         }
 
-        setCurrentUserData(data);
+        // Self-heal/Migrate user companyCpfCnpj if missing but companyId is present
+        if (data.companyId && !data.companyCpfCnpj) {
+          try {
+            const compSnap = await getDoc(doc(db, 'companies', data.companyId));
+            if (compSnap.exists()) {
+              const compData = compSnap.data() || {};
+              const cnpjVal = compData.document || compData.cnpj || compData.companyDoc || '';
+              if (cnpjVal) {
+                const cleanVal = cnpjVal.replace(/\D/g, '');
+                if (cleanVal) {
+                  data.companyCpfCnpj = cleanVal;
+                  await updateDoc(userRef, { companyCpfCnpj: cleanVal });
+                }
+              }
+            }
+          } catch (err) {
+            console.error("Erro ao migrar companyCpfCnpj no Firestore:", err);
+          }
+        }
+
+        setRawCurrentUserData(data);
         
         if (!data.companyId) {
           setLoading(false);
@@ -3780,7 +3856,7 @@ export default function MainApp() {
                   email: user.email || resData.user.email,
                   displayName: resData.user.displayName || user.displayName || 'Membro da Equipe',
                   role: resData.user.role || 'tecnico',
-                  companyId: resData.user.companyId || 'default-company-id',
+                  companyId: resData.user.companyId || '',
                   createdAt: Timestamp.now()
                 };
               }
@@ -3793,10 +3869,10 @@ export default function MainApp() {
         if (recoveredData) {
           try {
             await setDoc(userRef, recoveredData);
-            setCurrentUserData(recoveredData);
+            setRawCurrentUserData(recoveredData);
           } catch (saveErr) {
             console.error("Failed saving recovered user profile to database:", saveErr);
-            setCurrentUserData(recoveredData); // Fallback to local memory state
+            setRawCurrentUserData(recoveredData); // Fallback to local memory state
           }
           setLoading(false);
           return;
@@ -3811,11 +3887,11 @@ export default function MainApp() {
             email: user.email,
             displayName: user.displayName || 'Usuário',
             role: isSuper ? 'super_admin' : 'pending',
-            companyId: isSuper ? 'default-company-id' : '',
+            companyId: '',
             createdAt: Timestamp.now()
           };
           await setDoc(userRef, initialData);
-          setCurrentUserData(initialData);
+          setRawCurrentUserData(initialData);
         } catch (err) {
           console.error("Erro ao criar perfil inicial:", err);
         }
@@ -3874,12 +3950,14 @@ export default function MainApp() {
           // Instead, keep DB_MODE_OVERRIDE as default/online so they remain signed in, and render the lock screen.
           const targetSavedMode = (savedCompanyDbMode === 'local' && isHostWeb) ? 'default' : savedCompanyDbMode;
 
-          if (isHostWeb) {
-            // Cloud/Web hosts always run completely in online Mode. We sync DB_MODE_OVERRIDE silently and never reload!
+          const isFirestoreDisabledLocal = localStorage.getItem('FIRESTORE_DISABLED') === 'true';
+
+          if (isHostWeb && !isFirestoreDisabledLocal) {
+            // Cloud/Web hosts always run completely in online Mode (unless Firestore is disabled). We sync DB_MODE_OVERRIDE silently and never reload!
             if (localStorage.getItem('DB_MODE_OVERRIDE') !== 'online') {
               localStorage.setItem('DB_MODE_OVERRIDE', 'online');
             }
-          } else if (targetSavedMode !== currentSavedMode) {
+          } else if (!isFirestoreDisabledLocal && targetSavedMode !== currentSavedMode) {
             const now = Date.now();
             const lastReloadStr = sessionStorage.getItem('LAST_SYNC_RELOAD');
             const lastReload = lastReloadStr ? parseInt(lastReloadStr, 10) : 0;
@@ -3898,64 +3976,6 @@ export default function MainApp() {
             }, 800);
           }
         } else {
-          // Auto-provision default-company-id if it does not exist under Firestore (dynamic self-healing)
-          if (effectiveCompanyId === 'default-company-id') {
-            console.log("[Auto-Provision] Default company not found in DB. Seeding...");
-            try {
-              await setDoc(compRef, {
-                name: "SegurTec-Pro Gestão",
-                tradeName: "SegurTec-Pro",
-                cnpj: "42.000.000/0001-00",
-                phone: "(11) 99999-9999",
-                address: "Av. Principal, 1000",
-                status: "active",
-                inviteCode: "MASTER",
-                createdAt: Timestamp.now(),
-                dbMode: "online",
-                maxStationsLimit: 5,
-                version: LOCAL_VERSION,
-                updatedAt: Timestamp.now()
-              });
-
-              // Also seed permissions
-              await setDoc(doc(db, 'companies', 'default-company-id', 'settings', 'permissions'), {
-                rolePermissions: {
-                  super_admin: ['all'],
-                  owner: ['all'],
-                  admin: ['all'],
-                  tecnico: ['visits', 'serviceOrders', 'clients']
-                },
-                createdAt: Timestamp.now()
-              });
-
-              // Also seed general settings
-              await setDoc(doc(db, 'companies', 'default-company-id', 'settings', 'general'), {
-                companyName: "SegurTec-Pro Gestão",
-                cnpj: "42.000.000/0001-00",
-                phone: "(11) 99999-9999",
-                address: "Av. Principal, 1000",
-                serviceTypes: ['Suporte Remoto', 'Visita Técnica', 'Manutenção Lab', 'Consultoria', 'Instalação de Rede', 'CFTV'],
-                payableDestinations: ['Caixa Interno Default', 'Banco Principal'],
-                payableCategories: ['Infraestrutura', 'Ferramentas de Software', 'Marketing Silencioso', 'Logística de Equipamentos', 'Impostos / Tributos', 'Equipe Remota'],
-                installmentPlans: [
-                  { installments: 1, interest: 0 },
-                  { installments: 2, interest: 1.5 },
-                  { installments: 3, interest: 2.0 },
-                  { installments: 4, interest: 2.5 },
-                  { installments: 5, interest: 3.0 },
-                  { installments: 6, interest: 3.5 },
-                  { installments: 10, interest: 5.0 },
-                  { installments: 12, interest: 6.0 }
-                ],
-                createdAt: Timestamp.now()
-              });
-
-              console.log("[Auto-Provision] Default company successfully seeded!");
-              return;
-            } catch (seedErr) {
-              console.error("Failed to seed default-company-id:", seedErr);
-            }
-          }
           setCurrentCompany(null);
         }
         setLoading(false);
@@ -4170,17 +4190,23 @@ export default function MainApp() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeTab, currentUserData?.role, isSuperAdmin]);
 
-  // Auto-link Super Admin to their first company if missing
+  // Auto-link Super Admin to their first company if missing or if the current one is deleted/invalid
   useEffect(() => {
-    if (isSuperAdmin && user && allCompanies.length > 0 && !currentUserData?.companyId) {
-      const myCompany = allCompanies.find(c => c.ownerId === user.uid) || 
-                        allCompanies.find(c => c.name?.toLowerCase().includes('af sistemas')) || 
-                        allCompanies[0];
-      if (myCompany?.id) {
-        setDoc(doc(db, 'users', user.uid), {
-          companyId: myCompany.id,
-          role: 'super_admin'
-        }, { merge: true }).catch(err => console.error("Error auto-linking super admin:", err));
+    if (isSuperAdmin && user && allCompanies.length > 0) {
+      const currentCompanyId = currentUserData?.companyId;
+      const companyExists = currentCompanyId && allCompanies.some(c => c.id === currentCompanyId);
+      const isDefaultOrInvalid = !currentCompanyId || currentCompanyId === 'default-company-id' || !companyExists;
+
+      if (isDefaultOrInvalid) {
+        const myCompany = allCompanies.find(c => c.ownerId === user.uid) || 
+                          allCompanies.find(c => c.name?.toLowerCase().includes('af sistemas')) || 
+                          allCompanies[0];
+        if (myCompany?.id) {
+          setDoc(doc(db, 'users', user.uid), {
+            companyId: myCompany.id,
+            role: 'super_admin'
+          }, { merge: true }).catch(err => console.error("Error auto-linking super admin:", err));
+        }
       }
     }
   }, [allCompanies, isSuperAdmin, user, currentUserData?.companyId]);
@@ -4225,9 +4251,11 @@ export default function MainApp() {
         (snapshot) => {
           const comps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           setAllCompanies(comps);
-          // Auto-select first company if none selected and we have companies
+          // Auto-select company: prefer the user's registered companyId if valid, otherwise first company
           if (comps.length > 0 && !selectedCompanyId) {
-            setSelectedCompanyId(comps[0].id);
+            const userCompanyExists = currentUserData?.companyId && comps.some(c => c.id === currentUserData.companyId);
+            const defaultId = userCompanyExists ? currentUserData.companyId : comps[0].id;
+            setSelectedCompanyId(defaultId);
           }
         }
       );
@@ -4792,94 +4820,184 @@ export default function MainApp() {
         let authData: any = null;
 
         try {
-          // 1. Verify credentials against 'Equipe / Permissões' (users.json and Firestore users)
-          const res = await fetch('/api/auth/fallback-login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password: cleanPassword })
-          });
+          const isHostWebLocal = window.location.hostname !== 'localhost' && 
+                                 window.location.hostname !== '127.0.0.1' && 
+                                 !/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname);
 
-          if (!res.ok) {
-            const errRes = await res.json().catch(() => ({}));
-            throw new Error(errRes.error || 'Credenciais de equipe incorretas.');
-          }
-
-          authData = await res.json();
-          if (!authData?.success || !authData?.user) {
-            throw new Error('Falha na validação de equipe.');
-          }
-
-          // 2. Map and sign-in
-          if (isLocalDb) {
-            if ((auth as any).setCurrentUser) {
-              (auth as any).setCurrentUser(authData.user);
-              isSuccessfullySignedIn = true;
-            }
-          }
-
-          if (!isSuccessfullySignedIn && authData.customToken) {
-            try {
-              userCredential = await signInWithCustomToken(auth, authData.customToken);
-              isSuccessfullySignedIn = true;
-            } catch (tokenErr) {
-              console.warn("Could not sign-in with custom token, falling back to standard email/password check:", tokenErr);
-            }
-          }
-
-          if (!isSuccessfullySignedIn) {
+          // 1. On Cloud/Web host and not in Local DB mode, try direct standard Firebase Auth first to bypass backend service account API limitations
+          if (isHostWebLocal && !isLocalDb) {
             try {
               userCredential = await signInWithEmailAndPassword(auth, finalEmail, cleanPassword);
               isSuccessfullySignedIn = true;
+              console.log("[Auth Cloud] Successfully signed in via client-side Firebase Auth directly.");
             } catch (authErr) {
-              console.warn("Could not sign-in with standard email/password, falling back to local DB/mock mode:", authErr);
+              console.warn("[Auth Cloud] Direct client-side sign-in failed, trying fallback validation...", authErr);
             }
           }
 
+          // 2. If not signed in yet, try fallback validation via backend server
           if (!isSuccessfullySignedIn) {
-            // Offline / local / backup fallback login mode
-            const mockUser = {
-              uid: authData.user.uid,
-              email: authData.user.email,
-              displayName: authData.user.displayName,
-              emailVerified: true
-            };
-            localStorage.setItem('MOCK_AUTH_ACTIVE', 'true');
-            setUser(mockUser);
-            isSuccessfullySignedIn = true;
-            
-            // Reload the page to initialize the applet in local database fallback mode seamlessly
-            window.location.reload();
-            return;
+            const res = await fetch('/api/auth/fallback-login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email, password: cleanPassword })
+            });
+
+            if (res.ok) {
+              authData = await res.json();
+              if (authData?.success && authData?.user) {
+                if (isLocalDb) {
+                  if ((auth as any).setCurrentUser) {
+                    (auth as any).setCurrentUser(authData.user);
+                    isSuccessfullySignedIn = true;
+                  }
+                }
+
+                if (!isSuccessfullySignedIn && authData.customToken) {
+                  try {
+                    userCredential = await signInWithCustomToken(auth, authData.customToken);
+                    isSuccessfullySignedIn = true;
+                  } catch (tokenErr) {
+                    console.warn("Could not sign-in with custom token, falling back to standard email/password check:", tokenErr);
+                  }
+                }
+
+                if (!isSuccessfullySignedIn) {
+                  try {
+                    userCredential = await signInWithEmailAndPassword(auth, finalEmail, cleanPassword);
+                    isSuccessfullySignedIn = true;
+                  } catch (authErr) {
+                    console.warn("Could not sign-in with standard email/password, falling back to local DB/mock mode:", authErr);
+                  }
+                }
+
+                if (!isSuccessfullySignedIn) {
+                  // Offline / local / backup fallback login mode
+                  const mockUser = {
+                    uid: authData.user.uid,
+                    email: authData.user.email,
+                    displayName: authData.user.displayName,
+                    emailVerified: true
+                  };
+                  localStorage.setItem('MOCK_AUTH_ACTIVE', 'true');
+                  setUser(mockUser);
+                  isSuccessfullySignedIn = true;
+                  
+                  // Reload the page to initialize the applet in local database fallback mode seamlessly
+                  window.location.reload();
+                  return;
+                }
+              }
+            } else {
+              // If on localhost/local environment, we strictly require fallback login validation
+              if (!isHostWebLocal) {
+                const errRes = await res.json().catch(() => ({}));
+                throw new Error(errRes.error || 'Credenciais de equipe incorretas.');
+              }
+            }
           }
 
-          // 3. Populate role, company, password settings dynamically on the client
+          // 3. Populate and construct final profile settings dynamically
+          let userRole = 'tecnico';
+          let userCompanyId = '';
+          let userDisplayName = 'Membro da Equipe';
+          let uidToUse = '';
+          let emailToUse = finalEmail;
+
+          if (userCredential?.user) {
+            const loggedInUser = userCredential.user;
+            uidToUse = loggedInUser.uid;
+            emailToUse = loggedInUser.email || finalEmail;
+            userDisplayName = loggedInUser.displayName || 'Andre Fonseca';
+
+            // Try to retrieve their existing document from Firestore to restore accurate roles and company IDs
+            try {
+              const userDocSnap = await getDoc(doc(db, 'users', loggedInUser.uid));
+              if (userDocSnap.exists()) {
+                const uDocData = userDocSnap.data();
+                userRole = uDocData.role || 'tecnico';
+                userCompanyId = uDocData.companyId || '';
+                userDisplayName = uDocData.displayName || userDisplayName;
+              } else {
+                // If it doesn't exist in Firestore, check if we have pre-configured credentials in authData from fallback login
+                if (authData?.user) {
+                  userRole = authData.user.role || 'tecnico';
+                  userCompanyId = authData.user.companyId || '';
+                  userDisplayName = authData.user.displayName || userDisplayName;
+                } else {
+                  // Check Super Admin list by email as safety fallback
+                  const normalizedEmail = emailToUse.toLowerCase().trim();
+                  if (SUPER_ADMIN_EMAILS.includes(normalizedEmail)) {
+                    userRole = 'super_admin';
+                    userCompanyId = '';
+                  }
+                }
+              }
+            } catch (docErr) {
+              console.warn("Could not fetch user document from Firestore, using in-memory fallbacks:", docErr);
+              if (authData?.user) {
+                userRole = authData.user.role || 'tecnico';
+                userCompanyId = authData.user.companyId || '';
+                userDisplayName = authData.user.displayName || userDisplayName;
+              } else {
+                const normalizedEmail = emailToUse.toLowerCase().trim();
+                if (SUPER_ADMIN_EMAILS.includes(normalizedEmail)) {
+                  userRole = 'super_admin';
+                  userCompanyId = '';
+                }
+              }
+            }
+          } else if (authData?.user) {
+            uidToUse = authData.user.uid;
+            emailToUse = authData.user.email || finalEmail;
+            userDisplayName = authData.user.displayName || 'Membro da Equipe';
+            userRole = authData.user.role || 'tecnico';
+            userCompanyId = authData.user.companyId || '';
+          } else {
+            throw new Error('Não foi possível identificar credenciais autenticadas válidas.');
+          }
+
+          // Super Admin override check
+          const lowerEmail = emailToUse.toLowerCase().trim();
+          if (SUPER_ADMIN_EMAILS.includes(lowerEmail)) {
+            userRole = 'super_admin';
+            if (!userCompanyId || userCompanyId === 'default-company-id') {
+              userCompanyId = '';
+            }
+            if (lowerEmail === 'emailparasiteslixo@gmail.com' && (!userDisplayName || userDisplayName === 'Usuário' || userDisplayName === 'Membro da Equipe')) {
+              userDisplayName = 'André Fonseca';
+            }
+          }
+
           const finalProfile = {
-            uid: authData.user.uid,
-            email: authData.user.email,
-            displayName: authData.user.displayName,
-            role: authData.user.role || 'tecnico',
-            companyId: authData.user.companyId || 'default-company-id',
+            uid: uidToUse,
+            email: emailToUse,
+            displayName: userDisplayName,
+            role: userRole,
+            companyId: userCompanyId,
             password: cleanPassword, // Preserve custom password field
             createdAt: Timestamp.now()
           };
 
-          setCurrentUserData(finalProfile);
+          setRawCurrentUserData(finalProfile);
 
-          // Proactively try to write the verified user doc to Firestore users collection
-          try {
-            await setDoc(doc(db, 'users', authData.user.uid), finalProfile, { merge: true });
-          } catch (fsErr) {
-            console.warn("Firestore save of verified user credentials bypassed:", fsErr);
+          // Proactively write/update verified user document in Firestore users collection
+          if (!isLocalDb) {
+            try {
+              await setDoc(doc(db, 'users', uidToUse), finalProfile, { merge: true });
+            } catch (fsErr) {
+              console.warn("Firestore save of verified user credentials bypassed:", fsErr);
+            }
           }
 
-          toast.success(`Bem-vindo, ${authData.user.displayName || 'membro da equipe'}!`);
+          toast.success(`Bem-vindo, ${finalProfile.displayName || 'membro da equipe'}!`);
           enterFullscreen();
           setIsAuthLoading(false);
           return;
 
         } catch (teamAuthErr: any) {
           console.error("Team authentication check failed:", teamAuthErr);
-          toast.error(`Acesso Recusado: Usuário ou senha incorretos para o acesso de: "${email}". Certifique-se de que a senha está correta e utilize o nome correto de equipe.`);
+          toast.error(`Acesso Recusado: Usuário ou senha incorretos para o acesso de: "${email}". Certifique-se de que a senha está correta.`);
           setIsAuthLoading(false);
           return;
         }
@@ -5925,7 +6043,29 @@ export default function MainApp() {
               );
             })}
           </nav>
-          <div className="p-6 border-t border-[#2d3139]">
+          <div className="p-6 border-t border-[#2d3139] space-y-4">
+            {isSuperAdmin && allCompanies.length > 0 && (
+              <div className="space-y-1.5 text-left">
+                <span className="text-[10px] text-[#71717a] uppercase font-bold tracking-wider">Mudar Empresa (SaaS Master)</span>
+                <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
+                  <SelectTrigger className="bg-[#1a1d23] border-[#2d3139] text-white text-xs h-9 px-3 w-full">
+                    <SelectValue placeholder="Selecione a Empresa">
+                      {allCompanies.find(c => c.id === selectedCompanyId)?.name || allCompanies.find(c => c.id === selectedCompanyId)?.tradeName || allCompanies.find(c => c.id === selectedCompanyId)?.companyName || selectedCompanyId}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white text-xs">
+                    {allCompanies.map(c => {
+                      const companyName = c.name || c.tradeName || c.companyName || c.id;
+                      return (
+                        <SelectItem key={c.id} value={c.id}>
+                          {companyName}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <Button variant="ghost" className="w-full justify-between gap-2 text-[#a0a0a0]" onClick={handleLogout}>
               <div className="flex items-center gap-2">
                 <LogOut size={18} />
@@ -5993,6 +6133,28 @@ export default function MainApp() {
 
           {/* Right: User profile with badge and logout button */}
           <div className="flex items-center gap-4">
+            {isSuperAdmin && allCompanies.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
+                  <SelectTrigger className="bg-[#1a1d23] border-[#2d3139] text-white text-xs h-9 px-3 w-48 focus:ring-[#3b82f6] hover:bg-[#25282e]/50 transition-colors">
+                    <span className="truncate">
+                      {allCompanies.find(c => c.id === selectedCompanyId)?.name || allCompanies.find(c => c.id === selectedCompanyId)?.tradeName || allCompanies.find(c => c.id === selectedCompanyId)?.companyName || selectedCompanyId || "Selecionar Empresa"}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-white text-xs z-50">
+                    {allCompanies.map(c => {
+                      const companyName = c.name || c.tradeName || c.companyName || c.id;
+                      return (
+                        <SelectItem key={c.id} value={c.id}>
+                          {companyName}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             {isSuperAdmin && (
               <Badge className="bg-yellow-500/10 text-yellow-500 text-[10px] uppercase font-bold px-2 py-0.5 border border-yellow-500/20">
                 Master
@@ -6371,7 +6533,18 @@ export default function MainApp() {
               receivables={receivables}
             />
           )}
-          {activeTab === 'users' && <UsersManager users={users} currentUserData={currentUserData} currentCompany={currentCompany} showList={canViewList('users')} userRoles={userRoles} logAction={logAction} />}
+          {activeTab === 'users' && (
+            <UsersManager 
+              users={users} 
+              currentUserData={currentUserData} 
+              currentCompany={currentCompany} 
+              showList={canViewList('users')} 
+              userRoles={userRoles} 
+              logAction={logAction}
+              isSuperAdmin={isSuperAdmin}
+              allCompanies={allCompanies}
+            />
+          )}
           
           {activeTab === 'inventory' && (
             <InventoryManager 
@@ -6772,10 +6945,32 @@ export default function MainApp() {
     </div>
   );
 }
+// FIM DA ROTINA: APLICATIVO PRINCIPAL / TELA CENTRAL (MainApp)
 
-function UsersManager({ users = [], currentUserData, currentCompany, showList, userRoles, logAction }: { users?: any[], currentUserData: any, currentCompany: any, showList: boolean, userRoles: UserRole[], logAction?: any }) {
+// INÍCIO DA ROTINA: COMPONENTE GERENCIADOR DE USUÁRIOS E EQUIPE (UsersManager)
+// Esta rotina controla o cadastro de colaboradores, alteração de permissões,
+// gerenciamento de senhas e bloqueio de usuários do sistema.
+function UsersManager({ 
+  users = [], 
+  currentUserData, 
+  currentCompany, 
+  showList, 
+  userRoles, 
+  logAction,
+  isSuperAdmin = false,
+  allCompanies = []
+}: { 
+  users?: any[], 
+  currentUserData: any, 
+  currentCompany: any, 
+  showList: boolean, 
+  userRoles: UserRole[], 
+  logAction?: any,
+  isSuperAdmin?: boolean,
+  allCompanies?: any[]
+}) {
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'tecnico' });
+  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'tecnico', companyId: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showAddPassword, setShowAddPassword] = useState(false);
   const [showEditPassword, setShowEditPassword] = useState(false);
@@ -6788,6 +6983,12 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
 
   const [currentTeammatePassword, setCurrentTeammatePassword] = useState<string>('');
+
+  useEffect(() => {
+    if (isAddOpen && currentCompany?.id) {
+      setNewUser(prev => ({ ...prev, companyId: currentCompany.id }));
+    }
+  }, [isAddOpen, currentCompany?.id]);
 
   useEffect(() => {
     if (isEditOpen && editingUser?.id) {
@@ -6826,7 +7027,9 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
       const userCredential = await createUserWithEmailAndPassword(secondaryAuth, finalEmail, cleanPassword);
       await updateProfile(userCredential.user, { displayName: newUser.name });
       
-      const targetCompanyId = currentCompany?.id || currentUserData?.companyId || 'default-company-id';
+      const targetCompanyId = (isSuperAdmin && newUser.companyId) 
+        ? newUser.companyId 
+        : (currentCompany?.id || currentUserData?.companyId || 'default-company-id');
 
       // Add to Firestore
       await setDoc(doc(db, 'users', userCredential.user.uid), {
@@ -6863,7 +7066,7 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
       await deleteApp(secondaryApp);
 
       setIsAddOpen(false);
-      setNewUser({ name: '', email: '', password: '', role: 'tecnico' });
+      setNewUser({ name: '', email: '', password: '', role: 'tecnico', companyId: '' });
       toast.success('Usuário cadastrado com sucesso!');
     } catch (error: any) {
       console.error("Erro ao cadastrar usuário da equipe:", error);
@@ -7048,7 +7251,9 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#2d3139]/30 pb-4 mb-6">
         <div className="flex flex-col gap-2">
           <h2 className="text-2xl font-bold tracking-tight text-white uppercase tracking-widest text-[#3b82f6]">Equipe e Acessos</h2>
-          <p className="text-[#a0a0a0] text-sm">Gerencie os membros da sua equipe e permissões de acesso.</p>
+          <p className="text-[#a0a0a0] text-sm">
+            Gerencie os membros da equipe e permissões de acesso da empresa <span className="text-[#3b82f6] font-bold">{currentCompany?.name || currentCompany?.companyName || currentCompany?.tradeName || 'Padrão'}</span>.
+          </p>
         </div>
       </div>
 
@@ -7195,6 +7400,26 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
                     </SelectContent>
                   </Select>
                 </div>
+                {isSuperAdmin && (
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Empresa</Label>
+                    <Select 
+                      value={newUser.companyId || currentCompany?.id || ''} 
+                      onValueChange={(val: any) => setNewUser({...newUser, companyId: val})}
+                    >
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue placeholder="Selecione uma empresa" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-[#e0e0e0] z-50">
+                        {allCompanies.map((c: any) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name || c.tradeName || c.companyName || c.id}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
             </div>
             <DialogFooter className="p-6 pt-2 flex-shrink-0 m-0 border-t border-[#2d3139]/50 bg-[#1a1d23]">
@@ -7237,22 +7462,39 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
                        <div className={`w-2.5 h-2.5 rounded-full ${
                           (u.lastSeen && Date.now() - u.lastSeen.toDate().getTime() < 300000) 
                             ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' 
-                            : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'
-                        }`} />
+                            : 'bg-[#52525b] shadow-[0_0_8px_rgba(82,82,91,0.5)]'
+                        }`} title={u.lastSeen ? `Último acesso: ${format(u.lastSeen.toDate(), 'dd/MM/yy HH:mm')}` : 'Nunca acessou'} />
                        <h3 className="font-bold text-white text-sm truncate pr-14">{u.displayName}</h3>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge className={cn(
-                        "font-semibold text-[9px] uppercase tracking-wider h-4",
-                        u.role === 'owner' ? "bg-amber-500/20 text-amber-500 border border-amber-500/30" :
-                        u.role === 'admin' ? "bg-purple-500/10 text-purple-500" : 
-                        u.role === 'secretaria' ? "bg-pink-500/10 text-pink-500" : 
-                        u.role === 'tecnico' ? "bg-blue-500/10 text-blue-500" :
-                        "bg-yellow-500/10 text-yellow-500"
-                      )}>
-                        {userRoles.find(r => r.id === u.role)?.label || u.role}
-                      </Badge>
-                      <span className="text-[10px] text-[#71717a]">{u.email}</span>
+                    <div className="flex flex-col gap-1.5 mt-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge className={cn(
+                          "font-semibold text-[9px] uppercase tracking-wider h-4",
+                          u.role === 'owner' ? "bg-amber-500/20 text-amber-500 border border-amber-500/30" :
+                          u.role === 'admin' ? "bg-purple-500/10 text-purple-500" : 
+                          u.role === 'secretaria' ? "bg-pink-500/10 text-pink-500" : 
+                          u.role === 'tecnico' ? "bg-blue-500/10 text-blue-500" :
+                          "bg-yellow-500/10 text-yellow-500"
+                        )}>
+                          {userRoles.find(r => r.id === u.role)?.label || u.role}
+                        </Badge>
+                        <span className="text-[10px] text-[#71717a]">{u.email}</span>
+                        <span className="text-[10px] font-bold uppercase tracking-tighter text-[#71717a] ml-auto">
+                          {(u.lastSeen && Date.now() - u.lastSeen.toDate().getTime() < 300000) ? '🟢 Online' : '⚪ Offline'}
+                        </span>
+                      </div>
+                      {isSuperAdmin && (
+                        <div className="text-[10px] font-black text-[#3b82f6] uppercase tracking-wider bg-[#3b82f6]/5 px-2 py-1 rounded border border-[#3b82f6]/10 flex items-center gap-1 mt-1">
+                          <span>🏢</span>
+                          <span className="truncate">
+                            {allCompanies.find((c: any) => c.id === u.companyId)?.name || 
+                             allCompanies.find((c: any) => c.id === u.companyId)?.tradeName || 
+                             allCompanies.find((c: any) => c.id === u.companyId)?.companyName || 
+                             u.companyId || 
+                             'Padrão'}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="pt-2 border-t border-[#2d3139]/50 mt-1">
@@ -7277,6 +7519,7 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">E-mail</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Nível</TableHead>
                 <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Data Cadastro</TableHead>
+                {isSuperAdmin && <TableHead className="text-[#71717a] font-semibold uppercase text-[11px] tracking-wider">Empresa</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -7313,10 +7556,10 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
                        <div className={`w-2.5 h-2.5 rounded-full ${
                           (u.lastSeen && Date.now() - u.lastSeen.toDate().getTime() < 300000) 
                             ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' 
-                            : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'
-                       }`} title={u.lastSeen ? `Visto em: ${format(u.lastSeen.toDate(), 'dd/MM/yy HH:mm')}` : 'Nunca entrou'} />
+                            : 'bg-[#52525b] shadow-[0_0_8px_rgba(82,82,91,0.5)]'
+                       }`} title={u.lastSeen ? `Último acesso: ${format(u.lastSeen.toDate(), 'dd/MM/yy HH:mm')}` : 'Nunca acessou'} />
                        <span className="text-[10px] font-bold uppercase tracking-tighter text-[#71717a]">
-                        {(u.lastSeen && Date.now() - u.lastSeen.toDate().getTime() < 300000) ? 'Ativo' : 'Inativo'}
+                        {(u.lastSeen && Date.now() - u.lastSeen.toDate().getTime() < 300000) ? 'Online' : 'Offline'}
                        </span>
                     </div>
                   </TableCell>
@@ -7339,6 +7582,15 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
                   <TableCell className="text-[12px] text-[#71717a]">
                     {u.createdAt ? format(safeParseDate(u.createdAt), 'dd/MM/yyyy') : '-'}
                   </TableCell>
+                  {isSuperAdmin && (
+                    <TableCell className="text-[12px] font-extrabold text-[#3b82f6] uppercase tracking-wider">
+                      {allCompanies.find((c: any) => c.id === u.companyId)?.name || 
+                       allCompanies.find((c: any) => c.id === u.companyId)?.tradeName || 
+                       allCompanies.find((c: any) => c.id === u.companyId)?.companyName || 
+                       u.companyId || 
+                       'Padrão'}
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -7391,6 +7643,26 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
                     </SelectContent>
                   </Select>
                 </div>
+                {isSuperAdmin && (
+                  <div className="space-y-2">
+                    <Label className="text-[#a0a0a0]">Empresa</Label>
+                    <Select 
+                      value={editingUser.companyId || ''} 
+                      onValueChange={(val: any) => setEditingUser({...editingUser, companyId: val})}
+                    >
+                      <SelectTrigger className="bg-[#0f1115] border-[#2d3139] text-white">
+                        <SelectValue placeholder="Selecione uma empresa" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1d23] border-[#2d3139] text-[#e0e0e0] z-50">
+                        {allCompanies.map((c: any) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name || c.tradeName || c.companyName || c.id}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div className="space-y-2 border-t border-[#2d3139]/30 pt-3 mt-1">
                   <Label className="text-[#a0a0a0]">Senha Salva no Cadastro</Label>
                   <div className="flex items-center justify-between bg-[#13151b] border border-[#2d3139] rounded-lg p-2 text-xs">
@@ -7461,6 +7733,7 @@ function UsersManager({ users = [], currentUserData, currentCompany, showList, u
     </div>
   );
 }
+// FIM DA ROTINA: COMPONENTE GERENCIADOR DE USUÁRIOS E EQUIPE (UsersManager)
 
 function SidebarItem({ icon, label, active, onClick }: { icon: React.ReactNode, label: string, active: boolean, onClick: () => void }) {
   return (
@@ -7497,6 +7770,7 @@ const PAYMENT_METHODS = [
   "Boleto"
 ];
 
+// INÍCIO DA ROTINA: COMPONENTE GERENCIADOR DE CLIENTES
 function ClientsManager({ 
   clients = [], 
   appSettings, 
@@ -8591,7 +8865,9 @@ function ClientsManager({
     </div>
   );
 }
+// FIM DA ROTINA: COMPONENTE GERENCIADOR DE CLIENTES
 
+// INÍCIO DA ROTINA: COMPONENTE GERENCIADOR DE FORNECEDORES
 // --- Suppliers Manager Component ---
 
 function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: Supplier[], companyId: string, showList: boolean }) {
@@ -9004,7 +9280,9 @@ function SuppliersManager({ suppliers = [], companyId, showList }: { suppliers: 
     </div>
   );
 }
+// FIM DA ROTINA: COMPONENTE GERENCIADOR DE FORNECEDORES
 
+// INÍCIO DA ROTINA: COMPONENTE GERENCIADOR DE RECIBOS E CONTAS A RECEBER
 // --- Receipts Manager Component ---
 
 function ReceiptsManager({ receipts = [], clients = [], receivables = [], pixSettings, appSettings, companyId, currentUserData, showList, onEditClick, externalEditAction, onExternalEditHandled }: { receipts: Receipt[], clients: Client[], receivables: any[], pixSettings: PixSettings, appSettings: AppSettings, companyId: string, currentUserData: any, showList: boolean, onEditClick: (type: 'receipt', data: any) => void, externalEditAction: any, onExternalEditHandled: () => void }) {
@@ -12181,7 +12459,11 @@ function SuperAdminPanel({
     </div>
   );
 }
+// FIM DA ROTINA: COMPONENTE GERENCIADOR DE RECIBOS E CONTAS A RECEBER
 
+// INÍCIO DA ROTINA: COMPONENTE GERENCIADOR DE PAPÉIS E PERMISSÕES (RolePermissionManager)
+// Esta rotina controla as permissões de acesso por nível hierárquico (cargo),
+// definindo quais abas e funcionalidades cada perfil de usuário poderá visualizar ou alterar.
 function RolePermissionManager({ companyId, user, userRoles, currentUserData }: { companyId: string, user: FirebaseUser, userRoles: UserRole[], currentUserData: any }) {
   const [rolePermissions, setRolePermissions] = useState<any>({});
   const [selectedRole, setSelectedRole] = useState<string>('tecnico');
@@ -12611,7 +12893,14 @@ function RoleSettings({
     </Card>
   );
 }
+// FIM DA ROTINA: COMPONENTE GERENCIADOR DE PAPÉIS E PERMISSÕES (RolePermissionManager)
 
+// INÍCIO DA ROTINA: TELA DE CONFIGURAÇÕES DO SISTEMA (SettingsManager)
+// Esta rotina gerencia as configurações da empresa, usuários, controle de permissões (RolePermissionManager),
+// níveis de acesso (RoleSettings), contas PIX, layouts e backup/restauração.
+// Busca e integra componentes externos:
+// - `./components/BackupRestoreManager` para ações de cópia de segurança e restauração
+// - `./components/DashboardDisplayConfig` para exibição de métricas do dashboard
 function SettingsManager({ 
   pixSettings, 
   appSettings, 
@@ -15358,7 +15647,11 @@ function SettingsManager({
       </div>
     );
   }
+// FIM DA ROTINA: TELA DE CONFIGURAÇÕES DO SISTEMA (SettingsManager)
 
+// INÍCIO DA ROTINA: COMPONENTE MOTOR GERADOR DE RELATÓRIOS E GRÁFICOS (ReportsManager)
+// Esta rotina gera estatísticas financeiras, relatórios de ordens de serviço, atendimentos por técnico,
+// faturamento, inadimplência e gráficos dinâmicos usando `recharts` e exportação para PDF com `jsPDF`.
 function ReportsManager({ 
   visits = [], 
   financials = [], 
@@ -17388,7 +17681,9 @@ function Dashboard({
 </div>
 );
 }
+// FIM DA ROTINA: COMPONENTE MOTOR GERADOR DE RELATÓRIOS E GRÁFICOS (ReportsManager)
 
+// INÍCIO DA ROTINA: COMPONENTES AUXILIARES DE CARTÕES (ActionCard E StatCard)
 function ActionCard({ title, desc, onClick }: { title: string, desc: string, onClick?: () => void }) {
   return (
     <div 
@@ -17425,7 +17720,11 @@ function StatCard({ title, value, icon, trend, isBalance, isCount, onClick }: { 
     </Card>
   );
 }
+// FIM DA ROTINA: COMPONENTES AUXILIARES DE CARTÕES (ActionCard E StatCard)
 
+// INÍCIO DA ROTINA: COMPONENTE GERENCIADOR DE VISITAS TÉCNICAS (VisitsManager)
+// Esta rotina controla o cadastro, andamento, filtros e finalização de visitas técnicas,
+// gerando o PDF com as assinaturas eletrônicas do cliente e do técnico.
 // --- Visits Manager Component ---
 
 function VisitsManager({ 
@@ -17785,7 +18084,7 @@ function VisitsManager({
     // Helper to load image securely as Base64 format to bypass CORS limits
     const loadImage = (url: string): Promise<string | null> => {
       return new Promise((resolve) => {
-        const img = new Image();
+        const img = new window.Image();
         img.crossOrigin = 'Anonymous';
         img.onload = () => {
           const canvas = document.createElement('canvas');
@@ -19201,7 +19500,11 @@ function VisitsManager({
     </div>
   );
 }
+// FIM DA ROTINA: COMPONENTE GERENCIADOR DE VISITAS TÉCNICAS (VisitsManager)
 
+// INÍCIO DA ROTINA: PARSER DE EXTRATO BANCÁRIO OFX (parseOFX)
+// Esta função processa o texto bruto de um arquivo OFX bancário, extraindo e estruturando
+// as transações financeiras para conciliação.
 // OFX Statement Parser
 function parseOFX(text: string) {
   const transactionRegex = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi;
@@ -19253,7 +19556,11 @@ function parseOFX(text: string) {
 
   return transactions;
 }
+// FIM DA ROTINA: PARSER DE EXTRATO BANCÁRIO OFX (parseOFX)
 
+// INÍCIO DA ROTINA: COMPONENTE GERENCIADOR FINANCEIRO (FinancialManager)
+// Esta rotina controla o fluxo de caixa (entradas e despesas), o balanceamento por período (mensal/anual),
+// filtros avançados de busca e a importação/conciliação de arquivos OFX bancários.
 // --- Financial Manager Component ---
 
 function FinancialManager({ 
@@ -20492,9 +20799,11 @@ function FinancialManager({
     </div>
   );
 }
+// FIM DA ROTINA: COMPONENTE GERENCIADOR FINANCEIRO (FinancialManager)
 
 // --- Service Orders Manager Component ---
 
+// INÍCIO DA ROTINA: COMPONENTE GERENCIADOR DE ORDENS DE SERVIÇO (O.S.)
 function ServiceOrdersManager({ 
   serviceOrders = [], 
   clients = [], 
@@ -20539,6 +20848,12 @@ function ServiceOrdersManager({
   const [isDeliveryDateModalOpen, setIsDeliveryDateModalOpen] = useState(false);
   const [selectedOSForDeliveryDate, setSelectedOSForDeliveryDate] = useState<ServiceOrder | null>(null);
   const [deliveryDateInput, setDeliveryDateInput] = useState('');
+  const [isTermoModalOpen, setIsTermoModalOpen] = useState(false);
+  const [selectedOSForTermo, setSelectedOSForTermo] = useState<ServiceOrder | null>(null);
+  const [termoImageBase64, setTermoImageBase64] = useState<string>('');
+  const [attachmentsList, setAttachmentsList] = useState<{ name: string; base64: string; type?: string; date?: string }[]>([]);
+  const [activeAttachmentIdx, setActiveAttachmentIdx] = useState<number>(-1);
+  const [newAttachmentName, setNewAttachmentName] = useState<string>('');
   const [selectedOSForPDF, setSelectedOSForPDF] = useState<ServiceOrder | null>(null);
   const [editingOS, setEditingOS] = useState<Partial<ServiceOrder> | null>(null);
   const [osToDelete, setOSToDelete] = useState<ServiceOrder | null>(null);
@@ -21362,6 +21677,31 @@ function ServiceOrdersManager({
                         }}>
                           Entrega
                         </Button>
+                        <Button variant="ghost" size="sm" className={cn("h-5 px-1 text-[8px] uppercase font-black tracking-tighter", (os.signedReceiptImage || (os.attachments && os.attachments.length > 0)) ? "bg-amber-500/10 text-amber-400 hover:bg-amber-500 hover:text-white" : "bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white")} onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedOSForTermo(os);
+                          const loaded: { name: string; base64: string; type?: string; date?: string }[] = [];
+                          if (os.signedReceiptImage) {
+                            loaded.push({
+                              name: 'Termo de Entrega',
+                              base64: os.signedReceiptImage,
+                              type: 'receipt',
+                              date: new Date().toLocaleDateString('pt-BR')
+                            });
+                          }
+                          if (os.attachments && os.attachments.length > 0) {
+                            os.attachments.forEach(att => {
+                              if (!loaded.some(l => l.base64 === att.base64)) {
+                                loaded.push(att);
+                              }
+                            });
+                          }
+                          setAttachmentsList(loaded);
+                          setActiveAttachmentIdx(loaded.length > 0 ? 0 : -1);
+                          setIsTermoModalOpen(true);
+                        }}>
+                          {(os.signedReceiptImage || (os.attachments && os.attachments.length > 0)) ? "Ver Anexo" : "Anexo"}
+                        </Button>
                       </div>
                     </div>
                   </div>
@@ -21434,6 +21774,31 @@ function ServiceOrdersManager({
                           setIsDeliveryDateModalOpen(true);
                         }}>
                           Entrega
+                        </Button>
+                         <Button variant="outline" size="sm" className={cn("h-7 px-1 border-[#2d3139] text-[9px] font-bold", (os.signedReceiptImage || (os.attachments && os.attachments.length > 0)) ? "text-amber-400 hover:bg-amber-400/10" : "text-blue-400 hover:bg-blue-400/10")} onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedOSForTermo(os);
+                          const loaded: { name: string; base64: string; type?: string; date?: string }[] = [];
+                          if (os.signedReceiptImage) {
+                            loaded.push({
+                              name: 'Termo de Entrega',
+                              base64: os.signedReceiptImage,
+                              type: 'receipt',
+                              date: new Date().toLocaleDateString('pt-BR')
+                            });
+                          }
+                          if (os.attachments && os.attachments.length > 0) {
+                            os.attachments.forEach(att => {
+                              if (!loaded.some(l => l.base64 === att.base64)) {
+                                loaded.push(att);
+                              }
+                            });
+                          }
+                          setAttachmentsList(loaded);
+                          setActiveAttachmentIdx(loaded.length > 0 ? 0 : -1);
+                          setIsTermoModalOpen(true);
+                        }}>
+                          {(os.signedReceiptImage || (os.attachments && os.attachments.length > 0)) ? "Ver Anexo" : "Anexo"}
                         </Button>
                         <Button variant="outline" size="icon" title="Excluir" className="h-7 w-7 border-[#2d3139] text-[#ef4444] hover:bg-[#ef4444]/10" onClick={(e) => {
                           e.stopPropagation();
@@ -21849,10 +22214,299 @@ function ServiceOrdersManager({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Termo de Entrega e Anexos Múltiplos Modal */}
+      {/* INÍCIO DA ROTINA: COMPONENTE/MODAL DE GERENCIAMENTO DE MÚLTIPLOS ANEXOS DA O.S. */}
+      <Dialog open={isTermoModalOpen} onOpenChange={setIsTermoModalOpen}>
+        <DialogContent className="bg-[#1a1d23] border-[#2d3139] text-white max-w-4xl w-[90vw] md:h-[80vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="p-6 border-b border-[#2d3139] shrink-0">
+            <DialogTitle className="text-lg font-bold flex items-center gap-2">
+              <FileImage size={20} className="text-blue-500" />
+              Documentos e Anexos da O.S.
+            </DialogTitle>
+            <DialogDescription className="text-[#71717a]">
+              {selectedOSForTermo ? `O.S. #${selectedOSForTermo.number} - ${selectedOSForTermo.clientName}` : 'Gerencie fotos e termos de entrega anexados.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+            {/* Sidebar / List of Attachments */}
+            <div className="w-full md:w-64 border-r border-[#2d3139] bg-[#111318] flex flex-col overflow-y-auto shrink-0 p-4 space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-semibold uppercase tracking-wider text-[#a0a0a0]">Anexos ({attachmentsList.length})</span>
+              </div>
+
+              <div className="space-y-1.5 flex-1 overflow-y-auto">
+                {attachmentsList.map((att, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setActiveAttachmentIdx(idx)}
+                    className={cn(
+                      "w-full text-left p-2.5 rounded-lg flex items-center gap-2 text-xs border transition-all",
+                      activeAttachmentIdx === idx
+                        ? "bg-blue-600/10 border-blue-500 text-white"
+                        : "bg-[#16191f]/50 border-[#2d3139]/50 text-gray-400 hover:bg-[#1a1d23] hover:text-white"
+                    )}
+                  >
+                    <Image size={14} className={cn(activeAttachmentIdx === idx ? "text-blue-400" : "text-gray-500")} />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold truncate">{att.name || `Anexo ${idx + 1}`}</p>
+                      <p className="text-[10px] text-gray-500">{att.date || 'Recém-adicionado'}</p>
+                    </div>
+                  </button>
+                ))}
+
+                {attachmentsList.length === 0 && (
+                  <div className="text-center py-8 text-xs text-gray-500">
+                    Nenhum anexo inserido ainda.
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-2 border-t border-[#2d3139] space-y-2">
+                <label className="text-[10px] uppercase font-bold text-gray-500 tracking-wider block">Novo Nome (opcional)</label>
+                <Input
+                  type="text"
+                  placeholder="Ex: Foto do Aparelho"
+                  value={newAttachmentName}
+                  onChange={(e) => setNewAttachmentName(e.target.value)}
+                  className="bg-[#0f1115] border-[#2d3139] text-white text-xs h-8 w-full"
+                />
+                
+                <div className="relative w-full">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                          const base64 = reader.result as string;
+                          const name = newAttachmentName.trim() || file.name.split('.')[0] || `Anexo ${attachmentsList.length + 1}`;
+                          const newAtt = {
+                            name,
+                            base64,
+                            type: 'photo',
+                            date: new Date().toLocaleDateString('pt-BR')
+                          };
+                          setAttachmentsList(prev => [...prev, newAtt]);
+                          setActiveAttachmentIdx(attachmentsList.length);
+                          setNewAttachmentName('');
+                          toast.success(`"${name}" adicionado à lista! Clique em "Salvar" para gravar.`);
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                  />
+                  <Button type="button" className="w-full h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center justify-center gap-1">
+                    <Plus size={14} /> Carregar Imagem
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Main Area / Active Attachment Details */}
+            <div className="flex-1 bg-[#16191f] flex flex-col overflow-hidden">
+              {activeAttachmentIdx >= 0 && attachmentsList[activeAttachmentIdx] ? (
+                <div className="flex-1 flex flex-col overflow-hidden p-6">
+                  {/* Name input to rename the attachment */}
+                  <div className="flex items-center gap-3 mb-4 shrink-0">
+                    <div className="flex-1">
+                      <Input
+                        type="text"
+                        value={attachmentsList[activeAttachmentIdx].name}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setAttachmentsList(prev => prev.map((item, i) => i === activeAttachmentIdx ? { ...item, name: val } : item));
+                        }}
+                        className="bg-[#0f1115] border-[#2d3139] text-white text-sm font-bold h-10 w-full"
+                        placeholder="Nome do anexo"
+                      />
+                    </div>
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      className="h-10 w-10 shrink-0 bg-red-600/90 hover:bg-red-700"
+                      onClick={() => {
+                        const deletedName = attachmentsList[activeAttachmentIdx].name;
+                        const nextList = attachmentsList.filter((_, i) => i !== activeAttachmentIdx);
+                        setAttachmentsList(nextList);
+                        setActiveAttachmentIdx(nextList.length > 0 ? 0 : -1);
+                        toast.info(`"${deletedName}" removido da lista. Salve para confirmar.`);
+                      }}
+                      title="Excluir este anexo"
+                    >
+                      <Trash2 size={16} />
+                    </Button>
+                  </div>
+
+                  {/* Image Display */}
+                  <div className="flex-1 relative border border-[#2d3139] rounded-xl overflow-hidden bg-[#0f1115] flex items-center justify-center min-h-0">
+                    <img
+                      src={attachmentsList[activeAttachmentIdx].base64}
+                      alt={attachmentsList[activeAttachmentIdx].name}
+                      className="max-h-full max-w-full object-contain p-2"
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+
+                  {/* Buttons */}
+                  <div className="flex flex-wrap gap-2 justify-center pt-4 shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs bg-[#0f1115] border-[#2d3139] hover:bg-[#2d3139] text-white flex items-center gap-1 h-8 px-3"
+                      onClick={() => {
+                        const item = attachmentsList[activeAttachmentIdx];
+                        const link = document.createElement('a');
+                        link.href = item.base64;
+                        link.download = `${item.name.replace(/\s+/g, '_')}_os_${selectedOSForTermo?.number || 'os'}.png`;
+                        link.click();
+                        toast.success('Download da imagem PNG iniciado!');
+                      }}
+                    >
+                      <Download size={14} /> Download PNG
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs bg-[#0f1115] border-[#2d3139] hover:bg-[#2d3139] text-white flex items-center gap-1 h-8 px-3"
+                      onClick={() => {
+                        const item = attachmentsList[activeAttachmentIdx];
+                        try {
+                          const pdf = new jsPDF({
+                            orientation: 'portrait',
+                            unit: 'mm',
+                            format: 'a4'
+                          });
+                          pdf.addImage(item.base64, 'PNG', 10, 10, 190, 277, undefined, 'FAST');
+                          pdf.save(`${item.name.replace(/\s+/g, '_')}_os_${selectedOSForTermo?.number || 'os'}.pdf`);
+                          toast.success('PDF do anexo gerado com sucesso!');
+                        } catch (err) {
+                          toast.error('Erro ao gerar PDF do anexo.');
+                        }
+                      }}
+                    >
+                      <FileText size={14} /> Gerar PDF
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs bg-[#0f1115] border-[#2d3139] hover:bg-[#2d3139] text-white flex items-center gap-1 h-8 px-3"
+                      onClick={() => {
+                        const item = attachmentsList[activeAttachmentIdx];
+                        const iframe = document.createElement('iframe');
+                        iframe.style.position = 'fixed';
+                        iframe.style.right = '0';
+                        iframe.style.bottom = '0';
+                        iframe.style.width = '0';
+                        iframe.style.height = '0';
+                        iframe.style.border = '0';
+                        document.body.appendChild(iframe);
+                        const doc = iframe.contentWindow?.document || iframe.contentDocument;
+                        if (doc) {
+                          doc.open();
+                          doc.write(`
+                            <html>
+                              <head>
+                                <title>Imprimir Anexo</title>
+                                <style>
+                                  @page { margin: 0; }
+                                  body { margin: 0; display: flex; align-items: center; justify-content: center; height: 100vh; background-color: white; }
+                                  img { max-width: 100%; max-height: 100%; object-fit: contain; }
+                                </style>
+                              </head>
+                              <body>
+                                <img src="${item.base64}" onload="window.print();" />
+                              </body>
+                            </html>
+                          `);
+                          doc.close();
+                          setTimeout(() => {
+                            if (document.body.contains(iframe)) {
+                              document.body.removeChild(iframe);
+                            }
+                          }, 5000);
+                        }
+                      }}
+                    >
+                      <Printer size={14} /> Imprimir
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+                  <div className="max-w-sm space-y-3">
+                    <div className="w-16 h-16 bg-[#111318] border border-[#2d3139] rounded-2xl flex items-center justify-center mx-auto text-gray-400">
+                      <Image size={28} />
+                    </div>
+                    <h3 className="text-sm font-bold text-white">Nenhum Anexo Selecionado</h3>
+                    <p className="text-xs text-gray-400">Selecione um anexo na barra lateral ou clique em "Carregar Imagem" para adicionar uma foto ou termo assinado.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="p-6 border-t border-[#2d3139] bg-[#111318] shrink-0 flex flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setIsTermoModalOpen(false)}
+              className="flex-1 border-[#2d3139] text-white hover:bg-[#2d3139]"
+              disabled={isSubmitting}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!selectedOSForTermo) return;
+                setIsSubmitting(true);
+                try {
+                  const mainTermoImage = attachmentsList.length > 0 ? attachmentsList[0].base64 : '';
+                  await updateDoc(doc(db, 'serviceOrders', selectedOSForTermo.id), {
+                    signedReceiptImage: mainTermoImage,
+                    attachments: attachmentsList,
+                    updatedAt: Timestamp.now()
+                  });
+                  if (logAction) {
+                    await logAction('update', 'service_order', `Atualizou anexos/termos na O.S. #${selectedOSForTermo.number} (${selectedOSForTermo.clientName}). Total: ${attachmentsList.length}`, selectedOSForTermo.id, selectedOSForTermo.clientName);
+                  }
+                  toast.success('Todos os anexos salvos com sucesso!');
+                  setIsTermoModalOpen(false);
+                } catch (err) {
+                  toast.error('Erro ao salvar os anexos.');
+                } finally {
+                  setIsSubmitting(false);
+                }
+              }}
+              disabled={isSubmitting}
+              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center justify-center gap-1"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" /> Salvando...
+                </>
+              ) : (
+                'Salvar Alterações'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* FIM DA ROTINA: COMPONENTE/MODAL DE GERENCIAMENTO DE MÚLTIPLOS ANEXOS DA O.S. */}
     </div>
   );
 }
+// FIM DA ROTINA: COMPONENTE GERENCIADOR DE ORDENS DE SERVIÇO (O.S.)
 
+// INÍCIO DA ROTINA: COMPONENTE SELETOR DE ESTOQUE REUTILIZÁVEL (InventorySelector)
+// Este componente auxiliar reutilizável exibe um popover de busca e seleção de itens/peças
+// diretamente do estoque/inventário.
 // --- Inventory Selector Component (Reusable) ---
 
 function InventorySelector({ 
@@ -21929,7 +22583,11 @@ function InventorySelector({
     </Popover>
   );
 }
+// FIM DA ROTINA: COMPONENTE SELETOR DE ESTOQUE REUTILIZÁVEL (InventorySelector)
 
+// INÍCIO DA ROTINA: COMPONENTE GERENCIADOR DE ORÇAMENTOS (BudgetsManager)
+// Esta rotina controla o cadastro, andamento, itens (peças), mão de obra, aprovações,
+// emissão de PDFs de orçamentos e assinaturas eletrônicas.
 // --- Budgets Manager Component ---
 
 function BudgetsManager({ 
@@ -22250,7 +22908,7 @@ function BudgetsManager({
     // Helper to load image
     const loadImage = (url: string): Promise<string | null> => {
       return new Promise((resolve) => {
-        const img = new Image();
+        const img = new window.Image();
         img.crossOrigin = 'Anonymous';
         img.onload = () => {
           const canvas = document.createElement('canvas');
@@ -24003,9 +24661,12 @@ function BudgetsManager({
     </div>
   );
 }
+// FIM DA ROTINA: COMPONENTE GERENCIADOR DE ORÇAMENTOS (BudgetsManager)
 
-// --- Inventory Manager Component ---
-
+// INÍCIO DA ROTINA: COMPONENTE GERENCIADOR DO PONTO DE VENDA - PDV (PDVManager)
+// Esta rotina controla a operação do PDV/Caixa, permitindo venda de peças e produtos rápidos,
+// com atalhos de teclado (F1 a F10), carrinho de compras dinâmico, integração com estoque e financeiro,
+// e geração de cupom não fiscal de 80mm com QR Code do PIX.
 // --- PDV (POS) Manager Component ---
 
 function PDVManager({
@@ -25231,6 +25892,13 @@ function PDVManager({
   </div>
   );
 }
+// FIM DA ROTINA: COMPONENTE GERENCIADOR DO PONTO DE VENDA - PDV (PDVManager)
+
+// INÍCIO DA ROTINA: COMPONENTE GERENCIADOR DE ESTOQUE/INVENTÁRIO (InventoryManager)
+// Esta rotina controla o inventário de peças, histórico de transações de entrada/saída,
+// alertas de estoque crítico, localização física no almoxarifado, preços de custo e venda,
+// e análise de itens mais consumidos nas Ordens de Serviço.
+// --- Inventory Manager Component ---
 
 function InventoryManager({ 
   inventory = [], 
@@ -26320,3 +26988,4 @@ function InventoryManager({
     </div>
   );
 }
+// FIM DA ROTINA: COMPONENTE GERENCIADOR DE ESTOQUE/INVENTÁRIO (InventoryManager)

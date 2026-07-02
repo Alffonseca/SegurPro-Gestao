@@ -706,6 +706,9 @@ interface PayableManagerProps {
   appSettings?: any;
 }
 
+// INÍCIO DA ROTINA: COMPONENTE GERENCIADOR DE CONTAS A PAGAR (PayableManager)
+// Esta rotina controla o lançamento, controle de vencimentos, categorias, baixas parciais/totais
+// e histórico de pagamentos de contas a pagar e despesas da empresa.
 export function PayableManager({ companyId, suppliers = [], pixSettings, appSettings }: PayableManagerProps) {
   const [payables, setPayables] = useState<PayableRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -1526,6 +1529,7 @@ export function PayableManager({ companyId, suppliers = [], pixSettings, appSett
     </div>
   );
 }
+// FIM DA ROTINA: COMPONENTE GERENCIADOR DE CONTAS A PAGAR (PayableManager)
 
 // ----------------------------------------------------
 // 2. ACCOUNTS RECEIVABLE (CONTAS A RECEBER INTEGRADA COM CLIENTES E CONTRATOS)
@@ -1537,6 +1541,9 @@ interface ReceivableManagerProps {
   appSettings?: any;
 }
 
+// INÍCIO DA ROTINA: COMPONENTE GERENCIADOR DE CONTAS A RECEBER (ReceivableManager)
+// Esta rotina controla as contas a receber de faturamento de serviços, parcelamentos de vendas,
+// contratos recorrentes de manutenção (SLA) e emissão de recibos automatizados para clientes.
 export function ReceivableManager({ companyId, clients = [], pixSettings, appSettings }: ReceivableManagerProps) {
   const [receivables, setReceivables] = useState<ReceivableRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -2860,6 +2867,7 @@ export function ReceivableManager({ companyId, clients = [], pixSettings, appSet
     </div>
   );
 }
+// FIM DA ROTINA: COMPONENTE GERENCIADOR DE CONTAS A RECEBER (ReceivableManager)
 
 // ----------------------------------------------------
 // 3. SALES HISTORY (HISTÓRICO DE VENDAS REAL)
@@ -2870,6 +2878,9 @@ interface SalesHistoryProps {
   companyId: string;
 }
 
+// INÍCIO DA ROTINA: COMPONENTE GERENCIADOR DE HISTÓRICO DE VENDAS E CAIXA PDV (SalesHistoryManager)
+// Esta rotina controla a consulta e listagem de vendas realizadas através do PDV (Frente de Caixa),
+// com consulta de cupons, meios de pagamento e reimpressão de comprovantes de vendas.
 export function SalesHistoryManager({ sales = [], clients = [], companyId }: SalesHistoryProps) {
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -3109,3 +3120,4 @@ export function SalesHistoryManager({ sales = [], clients = [], companyId }: Sal
     </div>
   );
 }
+// FIM DA ROTINA: COMPONENTE GERENCIADOR DE HISTÓRICO DE VENDAS E CAIXA PDV (SalesHistoryManager)

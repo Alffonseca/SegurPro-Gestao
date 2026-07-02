@@ -217,7 +217,7 @@ const DoubleScrollContainer = ({ children }: { children: React.ReactNode }) => {
 
 const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 600): Promise<string> => {
   return new Promise((resolve) => {
-    const img = new Image();
+    const img = new window.Image();
     img.src = base64Str;
     img.onload = () => {
       const canvas = document.createElement('canvas');
@@ -352,6 +352,9 @@ function PhotoUploader({ photos = [], onChange }: PhotoUploaderProps) {
   );
 }
 
+// INÍCIO DA ROTINA: COMPONENTE GERENCIADOR DE LAUDOS TÉCNICOS (LaudosManager.tsx)
+// Esta rotina controla o cadastro, andamento, recomendações, diagnóstico técnico,
+// registro fotográfico e geração de PDFs profissionais de Laudos Técnicos baseados em vistorias.
 export function LaudosManager({ 
   laudos = [], 
   clients = [], 
@@ -558,7 +561,7 @@ export function LaudosManager({
     // Helper to load image
     const loadImage = (url: string): Promise<string | null> => {
       return new Promise((resolve) => {
-        const img = new Image();
+        const img = new window.Image();
         img.crossOrigin = 'Anonymous';
         img.onload = () => {
           const canvas = document.createElement('canvas');
@@ -1365,3 +1368,5 @@ export function LaudosManager({
     </div>
   );
 }
+// FIM DA ROTINA: COMPONENTE GERENCIADOR DE LAUDOS TÉCNICOS (LaudosManager.tsx)
+

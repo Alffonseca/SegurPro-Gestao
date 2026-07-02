@@ -42,6 +42,9 @@ type ConfigKeys =
   | 'showForecastChart'
   | 'showTodayVisitsList';
 
+// INÍCIO DA ROTINA: COMPONENTE DE CONFIGURAÇÃO DO DISPLAY DO DASHBOARD (DashboardDisplayConfig)
+// Esta rotina controla a visibilidade, exibição personalizada e ordenação arrastável/clicável 
+// dos cards de resumo estatístico e gráficos analíticos no Painel Geral do Usuário.
 export default function DashboardDisplayConfig({ canAccess, onBack }: DashboardDisplayConfigProps) {
   // Config state keys and configurations
   const [configs, setConfigs] = useState<Record<ConfigKeys, boolean>>({
@@ -592,3 +595,4 @@ export default function DashboardDisplayConfig({ canAccess, onBack }: DashboardD
     </div>
   );
 }
+// FIM DA ROTINA: COMPONENTE DE CONFIGURAÇÃO DO DISPLAY DO DASHBOARD (DashboardDisplayConfig)

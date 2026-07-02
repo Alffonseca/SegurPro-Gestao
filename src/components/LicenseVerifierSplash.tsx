@@ -27,6 +27,9 @@ interface LicenseVerifierSplashProps {
   appSettings?: any;
 }
 
+// INÍCIO DA ROTINA: TELA DE VERIFICAÇÃO DE LICENCIAMENTO SAAS (LicenseVerifierSplash.tsx)
+// Esta rotina realiza a autenticação contratual do cliente, validação de limites,
+// status de recebimento de atualizações de software e o modo de banco de dados ativo.
 export default function LicenseVerifierSplash({ 
   user, 
   company, 
@@ -290,3 +293,4 @@ export default function LicenseVerifierSplash({
     </div>
   );
 }
+// FIM DA ROTINA: TELA DE VERIFICAÇÃO DE LICENCIAMENTO SAAS (LicenseVerifierSplash.tsx)

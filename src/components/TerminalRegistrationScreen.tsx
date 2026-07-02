@@ -27,6 +27,9 @@ interface TerminalRegistrationScreenProps {
   onSignOut: () => void;
 }
 
+// INÍCIO DA ROTINA: TELA DE REGISTRO E AUTORIZAÇÃO DE TERMINAL (TerminalRegistrationScreen.tsx)
+// Esta rotina controla o registro e mapeamento de computadores na rede local do cliente,
+// definindo se a máquina atual operará como o Servidor Principal (host) ou como uma Estação secundária.
 export default function TerminalRegistrationScreen({
   company,
   terminals,
@@ -765,3 +768,4 @@ export default function TerminalRegistrationScreen({
     </div>
   );
 }
+// FIM DA ROTINA: TELA DE REGISTRO E AUTORIZAÇÃO DE TERMINAL (TerminalRegistrationScreen.tsx)
